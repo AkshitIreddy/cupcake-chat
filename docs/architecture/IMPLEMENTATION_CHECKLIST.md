@@ -10,7 +10,7 @@ explicit approval.
 - [x] Flatten the nested clone without losing Git history.
 - [x] Create the local `feat/cupcakeagi-2.0` branch.
 - [x] Normalize line endings without accepting semantic legacy changes.
-- [ ] Record repository, product, desktop, runtime, model, memory, tool,
+- [x] Record repository, product, desktop, runtime, model, memory, tool,
   migration, and release decisions.
 - [ ] Remove tracked secrets, bytecode, generated state, and unsafe legacy
   runtime code from the active 2.0 tree while preserving Git history.
