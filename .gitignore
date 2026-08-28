@@ -1,0 +1,45 @@
+# JavaScript / Electron
+node_modules/
+.vite/
+dist/
+out/
+release/
+coverage/
+playwright-report/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.python-version
+
+# Rust
+target/
+
+# Local application data and secrets
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+app-data/
+runtime-data/
+models/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Visual verification output
+artifacts/screenshots/
+artifacts/videos/
