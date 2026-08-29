@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from cupcake_runtime.observability import (
     DeveloperTrace,
@@ -34,7 +35,7 @@ def test_redactor_removes_secrets_paths_and_private_reasoning() -> None:
     assert result["bytes"] == "[BYTES:12]"
 
 
-def test_trace_store_redacts_before_persisting_and_uses_otel_ids(tmp_path) -> None:
+def test_trace_store_redacts_before_persisting_and_uses_otel_ids(tmp_path: Path) -> None:
     store = DeveloperTraceStore(str(tmp_path / "traces.sqlite"))
     recorder = TraceRecorder(store)
     saved = recorder.record(
@@ -52,7 +53,7 @@ def test_trace_store_redacts_before_persisting_and_uses_otel_ids(tmp_path) -> No
     assert loaded.payload["latency_ms"] == 12
 
 
-def test_default_retention_is_thirty_days_and_expired_rows_are_purged(tmp_path) -> None:
+def test_default_retention_is_thirty_days_and_expired_rows_are_purged(tmp_path: Path) -> None:
     store = DeveloperTraceStore(str(tmp_path / "traces.sqlite"))
     now = datetime.now(UTC)
     normal = store.record(
@@ -78,7 +79,7 @@ def test_default_retention_is_thirty_days_and_expired_rows_are_purged(tmp_path) 
     assert [trace.name for trace in store.list_run("run-1")] == ["normal"]
 
 
-def test_caller_cannot_extend_trace_beyond_retention_policy(tmp_path) -> None:
+def test_caller_cannot_extend_trace_beyond_retention_policy(tmp_path: Path) -> None:
     store = DeveloperTraceStore(str(tmp_path / "traces.sqlite"), retention_days=30)
     now = datetime.now(UTC)
     saved = store.record(
@@ -96,7 +97,7 @@ def test_caller_cannot_extend_trace_beyond_retention_policy(tmp_path) -> None:
     assert saved.expires_at == now + timedelta(days=30)
 
 
-def test_trace_span_is_idempotent_but_cannot_be_reused(tmp_path) -> None:
+def test_trace_span_is_idempotent_but_cannot_be_reused(tmp_path: Path) -> None:
     store = DeveloperTraceStore(str(tmp_path / "traces.sqlite"))
     trace = DeveloperTrace(new_trace_id(), new_span_id(), "run-1", TraceKind.RUN, "start", {"x": 1})
     assert store.record(trace).span_id == trace.span_id

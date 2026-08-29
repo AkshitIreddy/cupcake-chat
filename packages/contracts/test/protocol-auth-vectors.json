@@ -1,0 +1,27 @@
+{
+  "secretBase64Url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "unsignedEnvelope": {
+    "version": 1,
+    "messageId": "018f1e2d-3c4b-7a69-8def-0123456789ab",
+    "correlationId": "018f1e2d-3c4b-7a69-8def-0123456789ac",
+    "sessionId": "018f1e2d-3c4b-7a69-8def-0123456789ad",
+    "sequence": 1,
+    "deadline": "2030-01-02T03:04:05.000Z",
+    "lineage": {},
+    "type": "request",
+    "payload": {
+      "probe": 0.000001,
+      "decimal": 0.0000025,
+      "ordinary": 0.0001,
+      "tiny": 1e-7,
+      "negativeZero": -0.0,
+      "largeDecimal": 100000000000000000000,
+      "scientific": 1e21,
+      "hardware": 31.62752914428711,
+      "": 1,
+      "😀": 2
+    }
+  },
+  "canonicalUnsigned": "{\"correlationId\":\"018f1e2d-3c4b-7a69-8def-0123456789ac\",\"deadline\":\"2030-01-02T03:04:05.000Z\",\"lineage\":{},\"messageId\":\"018f1e2d-3c4b-7a69-8def-0123456789ab\",\"payload\":{\"decimal\":0.0000025,\"hardware\":31.62752914428711,\"largeDecimal\":100000000000000000000,\"negativeZero\":0,\"ordinary\":0.0001,\"probe\":0.000001,\"scientific\":1e+21,\"tiny\":1e-7,\"😀\":2,\"\":1},\"sequence\":1,\"sessionId\":\"018f1e2d-3c4b-7a69-8def-0123456789ad\",\"type\":\"request\",\"version\":1}",
+  "authTag": "dKFgiRmUIwnND70jn7uBfJeUFk5pDHrrgf-7twWTsnU"
+}

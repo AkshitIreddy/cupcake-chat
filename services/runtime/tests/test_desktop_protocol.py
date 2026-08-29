@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import os
+import struct
 import threading
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -14,32 +17,93 @@ from cupcake_runtime.application import RuntimeService
 from cupcake_runtime.desktop_protocol import (
     DesktopProtocolError,
     DesktopRuntimeServer,
-    _canonical,
-    _read_frame,
-    _sign,
-    _write_frame,
+    canonical_json,
+    read_frame,
+    sign_envelope,
+    verify_envelope,
+    write_frame,
 )
 from cupcake_runtime.domain.ids import new_id
 from cupcake_runtime.providers.types import NormalizedStreamEvent, StreamEventType
 
 
 def test_canonical_float_preserves_wire_precision_for_cross_language_hmac() -> None:
-    assert _canonical(31.62752914428711) == "31.62752914428711"
-    assert _canonical(1.0) == "1"
-    assert _canonical(1e-6) == "0.000001"
-    assert _canonical(2.5e-6) == "0.0000025"
-    assert _canonical(1e-7) == "1e-7"
-    assert _canonical(1e20) == "100000000000000000000"
-    assert _canonical(1e21) == "1e+21"
+    assert canonical_json(31.62752914428711) == "31.62752914428711"
+    assert canonical_json(1.0) == "1"
+    assert canonical_json(1e-6) == "0.000001"
+    assert canonical_json(2.5e-6) == "0.0000025"
+    assert canonical_json(1e-7) == "1e-7"
+    assert canonical_json(1e20) == "100000000000000000000"
+    assert canonical_json(1e21) == "1e+21"
 
 
 def test_canonical_object_keys_follow_utf16_ordering() -> None:
-    assert _canonical({"\ue000": 1, "😀": 2}) == '{"😀":2,"\ue000":1}'
+    assert canonical_json({"\ue000": 1, "😀": 2}) == '{"😀":2,"\ue000":1}'
 
 
 def test_canonical_json_rejects_non_string_object_keys() -> None:
     with pytest.raises(DesktopProtocolError, match="keys must be strings"):
-        _canonical({1: "would collide with a string key"})
+        canonical_json({1: "would collide with a string key"})
+
+
+def test_cross_language_authentication_vectors() -> None:
+    fixture_path = Path(__file__).parents[3] / "packages/contracts/test/protocol-auth-vectors.json"
+    fixture = cast(dict[str, Any], json.loads(fixture_path.read_text(encoding="utf-8")))
+    unsigned = cast(dict[str, Any], fixture["unsignedEnvelope"])
+    secret = base64.urlsafe_b64decode(fixture["secretBase64Url"] + "=")
+    assert canonical_json(unsigned) == fixture["canonicalUnsigned"]
+    signed = sign_envelope(unsigned, secret)
+    assert signed["authTag"] == fixture["authTag"]
+    assert verify_envelope(signed, secret)
+
+
+def test_wire_writer_emits_canonical_json_and_reader_rejects_noncanonical_body() -> None:
+    value = {"z": 1, "a": {"probe": 1e-6}}
+    stream = BytesIO()
+    write_frame(stream, value)
+    body = stream.getvalue()[4:]
+    assert body == canonical_json(value).encode("utf-8")
+
+    noncanonical = json.dumps(value, separators=(",", ":")).encode("utf-8")
+    assert noncanonical != body
+    framed = BytesIO(struct.pack(">I", len(noncanonical)) + noncanonical)
+    with pytest.raises(DesktopProtocolError, match="canonical"):
+        read_frame(framed)
+
+
+def test_failed_frame_preparation_does_not_consume_outbound_sequence(tmp_path: Path) -> None:
+    secret = b"p" * 32
+    correlation_id = new_id()
+    session_id = new_id()
+    target = BytesIO()
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    server = DesktopRuntimeServer(runtime, secret)
+    test_server = cast(Any, server)
+
+    with pytest.raises(DesktopProtocolError, match="unsupported JSON value"):
+        test_server._send(
+            target,
+            "response",
+            correlation_id,
+            session_id,
+            {"ok": True, "result": object()},
+        )
+
+    assert server.out_sequences[correlation_id] == 0
+    assert target.getvalue() == b""
+    test_server._send_error(
+        target,
+        correlation_id,
+        session_id,
+        "RUNTIME_ERROR",
+        "The local runtime could not complete the request",
+        retryable=True,
+    )
+    target.seek(0)
+    fallback = required_frame(target)
+    assert fallback["sequence"] == 1
+    assert fallback["payload"]["error"]["code"] == "RUNTIME_ERROR"
+    runtime.close()
 
 
 def envelope(
@@ -50,7 +114,7 @@ def envelope(
     correlation_id: str,
     secret: bytes,
 ) -> dict[str, object]:
-    return _sign(
+    return sign_envelope(
         {
             "version": 1,
             "messageId": new_id(),
@@ -69,16 +133,16 @@ def envelope(
 
 
 def required_frame(stream: Any) -> dict[str, Any]:
-    frame = _read_frame(stream)
+    frame = read_frame(stream)
     assert frame is not None
-    return cast(dict[str, Any], frame)
+    return frame
 
 
 def test_authenticated_stdio_handshake_and_request(tmp_path: Path) -> None:
     secret = b"s" * 32
     session_id = new_id()
     source = BytesIO()
-    _write_frame(
+    write_frame(
         source,
         envelope(
             "handshake",
@@ -89,7 +153,7 @@ def test_authenticated_stdio_handshake_and_request(tmp_path: Path) -> None:
         ),
     )
     request_id = new_id()
-    _write_frame(
+    write_frame(
         source,
         envelope(
             "request",
@@ -99,7 +163,7 @@ def test_authenticated_stdio_handshake_and_request(tmp_path: Path) -> None:
             secret=secret,
         ),
     )
-    _write_frame(
+    write_frame(
         source,
         envelope(
             "shutdown",
@@ -115,8 +179,8 @@ def test_authenticated_stdio_handshake_and_request(tmp_path: Path) -> None:
     DesktopRuntimeServer(service, secret).run(source, target)
 
     target.seek(0)
-    responses = []
-    while frame := _read_frame(target):
+    responses: list[dict[str, Any]] = []
+    while frame := read_frame(target):
         responses.append(frame)
     assert responses[0]["type"] == "handshake"
     health = next(item for item in responses if item["correlationId"] == request_id)
@@ -147,7 +211,7 @@ def test_stdio_streams_before_response_and_accepts_cancel(tmp_path: Path) -> Non
     thread = threading.Thread(target=server.run, args=(source, target), daemon=True)
     thread.start()
 
-    _write_frame(
+    write_frame(
         incoming,
         envelope(
             "handshake",
@@ -159,7 +223,7 @@ def test_stdio_streams_before_response_and_accepts_cancel(tmp_path: Path) -> Non
     )
     assert required_frame(outgoing)["type"] == "handshake"
     request_id = new_id()
-    _write_frame(
+    write_frame(
         incoming,
         envelope(
             "request",
@@ -178,7 +242,7 @@ def test_stdio_streams_before_response_and_accepts_cancel(tmp_path: Path) -> Non
     assert first["payload"]["type"] == "message.started"
 
     cancel_id = new_id()
-    _write_frame(
+    write_frame(
         incoming,
         envelope(
             "cancel",
@@ -188,7 +252,7 @@ def test_stdio_streams_before_response_and_accepts_cancel(tmp_path: Path) -> Non
             secret=secret,
         ),
     )
-    received = []
+    received: list[dict[str, Any]] = []
     while len(received) < 8:
         item = required_frame(outgoing)
         received.append(item)
@@ -205,7 +269,7 @@ def test_stdio_streams_before_response_and_accepts_cancel(tmp_path: Path) -> Non
     assert original_response["payload"]["error"]["code"] == "CANCELLED"
 
     shutdown_id = new_id()
-    _write_frame(
+    write_frame(
         incoming,
         envelope(
             "shutdown",

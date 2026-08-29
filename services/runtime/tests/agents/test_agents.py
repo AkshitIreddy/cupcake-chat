@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
 from threading import Event, Thread
+from typing import Any
 
 import pytest
 
@@ -12,6 +14,7 @@ from cupcake_runtime.agents import (
     BudgetUsage,
     DelegateControl,
     DelegateCoordinator,
+    DelegateRequest,
     DelegateResult,
     DelegateStatus,
     DeterministicDelegateExecutor,
@@ -21,14 +24,14 @@ from cupcake_runtime.agents import (
 from cupcake_runtime.events import EventKind, SqliteEventJournal
 
 
-def coordinator(tmp_path, *, usage: BudgetUsage | None = None):
+def coordinator(tmp_path: Path, *, usage: BudgetUsage | None = None):
     journal = SqliteEventJournal(str(tmp_path / "events.sqlite"))
     executor = DeterministicDelegateExecutor(usage=usage or BudgetUsage(100, 50, 1, 0.1, 0.01))
     ledger = BudgetLedger(BudgetLimits(100_000, 100_000, 100, 50.0, 3600.0))
     return DelegateCoordinator(executor, journal, ledger), executor, journal, ledger
 
 
-def test_all_registered_roles_execute_with_bounded_tools(tmp_path) -> None:
+def test_all_registered_roles_execute_with_bounded_tools(tmp_path: Path) -> None:
     manager, executor, journal, ledger = coordinator(tmp_path)
     tools = {
         AgentRole.RESEARCHER: frozenset({"web.search"}),
@@ -52,7 +55,7 @@ def test_all_registered_roles_execute_with_bounded_tools(tmp_path) -> None:
     assert kinds.count(EventKind.SUBAGENT_FINISHED) == 4
 
 
-def test_role_tool_policy_and_recursion_are_denied_before_execution(tmp_path) -> None:
+def test_role_tool_policy_and_recursion_are_denied_before_execution(tmp_path: Path) -> None:
     manager, executor, _journal, _ledger = coordinator(tmp_path)
     denied = manager.make_request(
         "run-1", AgentRole.RESEARCHER, "Modify code", requested_tools=frozenset({"patch.propose"})
@@ -80,7 +83,9 @@ def test_role_tool_policy_and_recursion_are_denied_before_execution(tmp_path) ->
         BudgetUsage(cost_usd=1.01),
     ],
 )
-def test_delegate_token_tool_and_cost_budgets_are_enforced(tmp_path, usage) -> None:
+def test_delegate_token_tool_and_cost_budgets_are_enforced(
+    tmp_path: Path, usage: BudgetUsage
+) -> None:
     manager, _executor, _journal, _ledger = coordinator(tmp_path, usage=usage)
     request = manager.make_request(
         "run-1",
@@ -91,7 +96,7 @@ def test_delegate_token_tool_and_cost_budgets_are_enforced(tmp_path, usage) -> N
     assert manager.execute(request).status is DelegateStatus.BUDGET_EXCEEDED
 
 
-def test_parent_budget_is_checked_before_execution(tmp_path) -> None:
+def test_parent_budget_is_checked_before_execution(tmp_path: Path) -> None:
     _manager, executor, _journal, _ledger = coordinator(tmp_path)
 
     small_parent = DelegateCoordinator(
@@ -113,17 +118,20 @@ def test_optional_pydantic_ai_adapter_uses_duck_typed_agent() -> None:
     class Result:
         output = "model output"
 
-        def usage(self):
+        def usage(self) -> Usage:
             return Usage()
 
     class Agent:
-        def run_sync(self, prompt, *, deps):
+        def run_sync(self, prompt: str, *, deps: dict[str, Any]) -> Result:
             assert prompt == "Research"
             assert deps["allowed_tools"] == ["web.search"]
             assert isinstance(deps["cancellation"], DelegateControl)
             return Result()
 
-    executor = PydanticAIExecutor(lambda _profile: Agent())
+    def agent_factory(_profile: RoleProfile) -> Agent:
+        return Agent()
+
+    executor = PydanticAIExecutor(agent_factory)
     request = DelegateCoordinator(
         DeterministicDelegateExecutor(),
         SqliteEventJournal(":memory:"),
@@ -143,7 +151,7 @@ def test_optional_pydantic_ai_adapter_uses_duck_typed_agent() -> None:
     assert result.usage.input_tokens == 12
 
 
-def test_cancelled_delegate_never_reaches_executor(tmp_path) -> None:
+def test_cancelled_delegate_never_reaches_executor(tmp_path: Path) -> None:
     manager, executor, _journal, _ledger = coordinator(tmp_path)
     request = manager.make_request("run-1", AgentRole.REVIEWER, "Review")
     manager.cancel(request.delegate_id)
@@ -151,13 +159,13 @@ def test_cancelled_delegate_never_reaches_executor(tmp_path) -> None:
     assert executor.calls == []
 
 
-def test_parent_cancellation_propagates_to_active_delegate(tmp_path) -> None:
+def test_parent_cancellation_propagates_to_active_delegate(tmp_path: Path) -> None:
     entered = Event()
 
     class CooperativeExecutor:
         def execute(
             self,
-            request,
+            request: DelegateRequest,
             profile: RoleProfile,
             control: DelegateControl,
         ) -> DelegateResult:
@@ -188,7 +196,7 @@ def test_parent_cancellation_propagates_to_active_delegate(tmp_path) -> None:
 
 
 def test_concurrent_delegate_reservations_prevent_parent_budget_oversubscription(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     entered = Event()
     release = Event()
@@ -196,7 +204,7 @@ def test_concurrent_delegate_reservations_prevent_parent_budget_oversubscription
     class BlockingExecutor:
         def execute(
             self,
-            request,
+            request: DelegateRequest,
             profile: RoleProfile,
             control: DelegateControl,
         ) -> DelegateResult:

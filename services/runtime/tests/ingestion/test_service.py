@@ -94,18 +94,14 @@ class IngestionServiceTests(unittest.TestCase):
         writer.add_blank_page(width=72, height=72)
         with pdf.open("wb") as output:
             writer.write(output)
-        service = IngestionService(
-            limits=replace(IngestionLimits(), max_document_pages=1)
-        )
+        service = IngestionService(limits=replace(IngestionLimits(), max_document_pages=1))
         with self.assertRaises(LimitExceededError):
             service.ingest_path(project_id="alpha", path=pdf, granted_root=self.root)
 
     def test_native_spreadsheet_row_limit_is_checked(self) -> None:
         sheet = self.root / "large.csv"
         sheet.write_text("one\ntwo\nthree\n", encoding="utf-8")
-        service = IngestionService(
-            limits=replace(IngestionLimits(), max_document_entries=2)
-        )
+        service = IngestionService(limits=replace(IngestionLimits(), max_document_entries=2))
         with self.assertRaises(LimitExceededError):
             service.ingest_path(project_id="alpha", path=sheet, granted_root=self.root)
 

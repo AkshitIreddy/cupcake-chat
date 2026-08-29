@@ -1,4 +1,6 @@
 import base64
+from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -11,7 +13,7 @@ from cupcake_runtime.local_models.catalog import (
 )
 
 
-def _payload(sha256: str, size: int) -> dict:
+def _payload(sha256: str, size: int) -> dict[str, Any]:
     return {
         "version": 1,
         "generated_at": "2026-08-28T00:00:00Z",
@@ -34,7 +36,7 @@ def _payload(sha256: str, size: int) -> dict:
     }
 
 
-def test_signed_catalog_and_artifact_checksum(tmp_path) -> None:
+def test_signed_catalog_and_artifact_checksum(tmp_path: Path) -> None:
     data = b"gguf fixture"
     import hashlib
 

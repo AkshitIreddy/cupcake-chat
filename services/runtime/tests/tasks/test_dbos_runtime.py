@@ -62,7 +62,7 @@ def wait_for_status(
     raise AssertionError(f"run did not reach {expected.value}")
 
 
-def test_real_dbos_steps_and_workflow_id_are_idempotent(tmp_path) -> None:
+def test_real_dbos_steps_and_workflow_id_are_idempotent(tmp_path: Path) -> None:
     executor = DeterministicFakeExecutor()
     runtime, coordinator, store, journal = build_runtime(tmp_path, executor)
     try:
@@ -106,7 +106,7 @@ def test_real_dbos_steps_and_workflow_id_are_idempotent(tmp_path) -> None:
         journal.close()
 
 
-def test_approval_resumes_in_an_idempotent_continuation_workflow(tmp_path) -> None:
+def test_approval_resumes_in_an_idempotent_continuation_workflow(tmp_path: Path) -> None:
     runtime, coordinator, store, journal = build_runtime(tmp_path)
     try:
         step = TaskStep(
@@ -142,7 +142,7 @@ def test_approval_resumes_in_an_idempotent_continuation_workflow(tmp_path) -> No
         journal.close()
 
 
-def test_cancellation_preempts_a_workflow_waiting_for_approval(tmp_path) -> None:
+def test_cancellation_preempts_a_workflow_waiting_for_approval(tmp_path: Path) -> None:
     runtime, coordinator, store, journal = build_runtime(tmp_path)
     try:
         step = TaskStep(
@@ -167,7 +167,7 @@ def test_cancellation_preempts_a_workflow_waiting_for_approval(tmp_path) -> None
         journal.close()
 
 
-def test_process_restart_recovers_without_duplicate_completed_effects(tmp_path) -> None:
+def test_process_restart_recovers_without_duplicate_completed_effects(tmp_path: Path) -> None:
     worker = Path(__file__).with_name("_dbos_recovery_worker.py")
     crashed = subprocess.run(
         [sys.executable, str(worker), str(tmp_path), "crash"],

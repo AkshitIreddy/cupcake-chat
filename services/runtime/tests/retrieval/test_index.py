@@ -73,6 +73,43 @@ class RetrievalTests(unittest.TestCase):
                 ],
             )
 
+    def test_exact_source_resolution_is_deterministic_and_project_scoped(self) -> None:
+        self.index.upsert_many(
+            (
+                SearchDocument(
+                    id="alpha-2",
+                    project_id="alpha",
+                    source_kind="file",
+                    source_id="attachment",
+                    title="Alpha second",
+                    content="second exact chunk",
+                ),
+                SearchDocument(
+                    id="alpha-1",
+                    project_id="alpha",
+                    source_kind="file",
+                    source_id="attachment",
+                    title="Alpha first",
+                    content="first exact chunk",
+                ),
+                SearchDocument(
+                    id="beta-1",
+                    project_id="beta",
+                    source_kind="file",
+                    source_id="attachment",
+                    title="Private beta",
+                    content="must never cross the boundary",
+                ),
+            )
+        )
+
+        documents = self.index.documents_for_sources(
+            project_id="alpha", source_ids=("attachment",), max_documents=10
+        )
+
+        self.assertEqual([document.id for document in documents], ["alpha-1", "alpha-2"])
+        self.assertNotIn("must never cross", " ".join(item.content for item in documents))
+
 
 if __name__ == "__main__":
     unittest.main()

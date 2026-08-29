@@ -89,9 +89,7 @@ class _RecordingBroker:
             {
                 "version": PROTOCOL_VERSION,
                 "kind": WorkerResponseKind.COMPLETE,
-                "request_id": "forged-request-000"
-                if self.forge_identity
-                else request.request_id,
+                "request_id": "forged-request-000" if self.forge_identity else request.request_id,
                 "stage_token": request.stage_token,
                 "result": {
                     "output_name": request.output_name,

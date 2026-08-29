@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from cupcake_runtime.events import SqliteEventJournal
@@ -14,6 +15,7 @@ from cupcake_runtime.tasks import (
     RunStatus,
     RuntimeRevision,
     SqliteDurabilityStore,
+    StepContext,
     TaskSpec,
     TaskStep,
     create_production_dbos_runtime,
@@ -35,11 +37,15 @@ def main() -> int:
     store = SqliteDurabilityStore(str(root / "product-tasks.sqlite"))
     journal = SqliteEventJournal(str(root / "events.sqlite"))
 
-    def first_effect(_step, _context, _idempotency_key):
+    def first_effect(
+        _step: TaskStep, _context: StepContext, _idempotency_key: str
+    ) -> Mapping[str, object]:
         append_effect(effects, "one")
         return {"effect": "one"}
 
-    def second_effect(_step, _context, _idempotency_key):
+    def second_effect(
+        _step: TaskStep, _context: StepContext, _idempotency_key: str
+    ) -> Mapping[str, object]:
         if phase == "crash":
             os._exit(73)
         append_effect(effects, "two")

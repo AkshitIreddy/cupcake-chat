@@ -3,7 +3,9 @@
 //! helper is never staged as a product sidecar.
 
 use chrono::{SecondsFormat, Utc};
-use cupcake_tool_broker::framing::{read_frame, write_frame, DEFAULT_MAX_FRAME_BYTES};
+use cupcake_tool_broker::framing::{
+    read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES,
+};
 use cupcake_tool_broker::protocol::{
     decode_transport_secret, uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
 };
@@ -37,13 +39,15 @@ fn run() -> Result<()> {
     let mut output = BufWriter::new(stdout().lock());
     let mut replay = ReplayGuard::default();
     let mut sequences: HashMap<Uuid, u64> = HashMap::new();
+    let mut local_models_discovered = false;
 
     loop {
-        let envelope: ProtocolEnvelope = match read_frame(&mut input, DEFAULT_MAX_FRAME_BYTES) {
-            Ok(value) => value,
-            Err(BrokerError::TruncatedFrame) => return Ok(()),
-            Err(error) => return Err(error),
-        };
+        let envelope: ProtocolEnvelope =
+            match read_protocol_frame(&mut input, DEFAULT_MAX_FRAME_BYTES) {
+                Ok(value) => value,
+                Err(BrokerError::TruncatedFrame) => return Ok(()),
+                Err(error) => return Err(error),
+            };
         envelope.verify_auth(&secret)?;
         replay.accept(&envelope, Utc::now())?;
         match envelope.message_type {
@@ -57,7 +61,13 @@ fn run() -> Result<()> {
             )?,
             MessageType::Request => {
                 let method = envelope.payload.get("method").and_then(Value::as_str);
-                if method == Some("chat.send") {
+                let model_id = envelope
+                    .payload
+                    .get("params")
+                    .and_then(Value::as_object)
+                    .and_then(|params| params.get("modelId"))
+                    .and_then(Value::as_str);
+                if method == Some("chat.send") && model_id == Some("mock:stream") {
                     write(
                         &mut output,
                         &mut sequences,
@@ -72,13 +82,49 @@ fn run() -> Result<()> {
                     )?;
                     thread::sleep(Duration::from_millis(1_500));
                 }
+                let result = match method {
+                    Some("local_models.discover") => {
+                        local_models_discovered = true;
+                        json!({
+                            "endpoints": [{
+                                "id": "lm_studio:http://127.0.0.1:1234",
+                                "kind": "lm_studio",
+                                "base_url": "",
+                                "state": "ready",
+                                "models": ["local-test-model"]
+                            }],
+                            "models": [{
+                                "id": "openai-compatible:lm-studio-local/local-test-model",
+                                "provider": "openai-compatible",
+                                "model": "local-test-model",
+                                "display_name": "Local test model",
+                                "privacy_route": "local",
+                                "metadata": {"runtime_kind": "lm_studio"}
+                            }]
+                        })
+                    }
+                    Some("broker.providers.resolve_compatible_route")
+                        if local_models_discovered
+                            && model_id
+                                == Some("openai-compatible:lm-studio-local/local-test-model") =>
+                    {
+                        json!({
+                            "modelId": model_id,
+                            "baseUrl": "http://127.0.0.1:1234/v1",
+                            "runtimeKind": "lm_studio",
+                            "privacyRoute": "local"
+                        })
+                    }
+                    Some("broker.providers.resolve_compatible_route") => Value::Null,
+                    _ => json!({"method": method}),
+                };
                 write(
                     &mut output,
                     &mut sequences,
                     &secret,
                     &envelope,
                     MessageType::Response,
-                    object(json!({"ok":true,"result":{"method":method}})),
+                    object(json!({"ok":true,"result":result})),
                 )?;
             }
             MessageType::Cancel => write(
@@ -132,7 +178,7 @@ fn write<W: std::io::Write>(
         payload,
     )
     .sign(secret)?;
-    write_frame(output, &response, DEFAULT_MAX_FRAME_BYTES)
+    write_protocol_frame(output, &response, DEFAULT_MAX_FRAME_BYTES)
 }
 
 fn object(value: Value) -> Map<String, Value> {

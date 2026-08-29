@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +25,7 @@ def event(run_id: str, sequence: int, key: str, payload: dict[str, object]) -> R
     )
 
 
-def test_journal_is_ordered_and_semantically_idempotent(tmp_path) -> None:
+def test_journal_is_ordered_and_semantically_idempotent(tmp_path: Path) -> None:
     journal = SqliteEventJournal(str(tmp_path / "events.sqlite"))
     first = event("run-1", 1, "one", {"status": "queued"})
     second = event("run-1", 2, "two", {"status": "running"})
@@ -47,7 +48,7 @@ def test_journal_is_ordered_and_semantically_idempotent(tmp_path) -> None:
     assert journal.next_sequence("run-1") == 3
 
 
-def test_journal_rejects_id_and_sequence_conflicts(tmp_path) -> None:
+def test_journal_rejects_id_and_sequence_conflicts(tmp_path: Path) -> None:
     journal = SqliteEventJournal(str(tmp_path / "events.sqlite"))
     original = event("run-1", 1, "same", {"value": 1})
     journal.append(original)
@@ -58,7 +59,7 @@ def test_journal_rejects_id_and_sequence_conflicts(tmp_path) -> None:
         journal.append(event("run-1", 1, "different", {"value": 1}))
 
 
-def test_append_many_is_transactional(tmp_path) -> None:
+def test_append_many_is_transactional(tmp_path: Path) -> None:
     journal = SqliteEventJournal(str(tmp_path / "events.sqlite"))
     with pytest.raises(EventConflictError):
         journal.append_many(
@@ -70,7 +71,7 @@ def test_append_many_is_transactional(tmp_path) -> None:
     assert journal.read("run-1") == []
 
 
-def test_append_next_allocates_unique_sequences_concurrently(tmp_path) -> None:
+def test_append_next_allocates_unique_sequences_concurrently(tmp_path: Path) -> None:
     journal = SqliteEventJournal(str(tmp_path / "events.sqlite"))
 
     def append(index: int) -> None:

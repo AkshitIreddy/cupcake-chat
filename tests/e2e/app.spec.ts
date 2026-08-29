@@ -182,7 +182,7 @@ test('live workspace windows long history and switches immutable branches', asyn
           },
           onEvent: () => () => {},
           onStatus: () => () => {},
-          request: async ({ method }: { method: string }) => {
+          request: async ({ method, params }: { method: string; params?: unknown }) => {
             await Promise.resolve();
             calls.push(method);
             const results: Record<string, unknown> = {
@@ -257,9 +257,7 @@ test('live workspace windows long history and switches immutable branches', asyn
               return {
                 ok: true,
                 result: history(
-                  calls.filter((item) => item === 'chat.history').length > 1
-                    ? 'branch-b'
-                    : 'branch-a',
+                  (params as { branchId?: string } | undefined)?.branchId ?? 'branch-a',
                 ),
               };
             return { ok: true, result: results[method] };
@@ -272,10 +270,29 @@ test('live workspace windows long history and switches immutable branches', asyn
   await page.locator('.chat-list__main').filter({ hasText: 'Long history' }).click();
   await expect(page.locator('.live-conversation')).toHaveAttribute('data-rendered-messages', '80');
   await expect(page.getByText('500 turns')).toBeVisible();
+
+  const assistantTurn = page.locator('article.turn--assistant').filter({
+    has: page.getByText('Persisted turn 499', { exact: true }),
+  });
+  await expect(assistantTurn.getByTitle('Edit')).toHaveCount(0);
+  const userTurn = page.locator('article.turn--user').filter({
+    has: page.getByText('Persisted turn 498', { exact: true }),
+  });
+  await expect(userTurn.getByTitle('Edit')).toBeVisible();
+
   await page.getByRole('button', { name: 'Sibling B' }).click();
   await expect(page.getByText('Sibling branch B is intact.')).toBeVisible();
+  await expect(page.locator('article.turn--assistant').getByTitle('Edit')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Main' }).click();
+  await expect(page.getByText('Persisted turn 498', { exact: true })).toBeVisible();
   page.once('dialog', (dialog) => dialog.accept('Edited sibling text'));
-  await page.getByTitle('Edit').last().click();
+  await page
+    .locator('article.turn--user')
+    .filter({ has: page.getByText('Persisted turn 498', { exact: true }) })
+    .getByTitle('Edit')
+    .click();
+  await expect(page.getByText('Sibling branch B is intact.')).toBeVisible();
   expect(
     await page.evaluate(() => (window as unknown as { __runtimeCalls: string[] }).__runtimeCalls),
   ).toContain('chat.edit');
@@ -406,8 +423,23 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   const nim = picker.getByRole('button', { name: /NVIDIA NIM/ });
   await expect(nim).toBeEnabled();
   await expect(nim).toHaveClass(/is-active/);
-  page.once('dialog', (dialog) => dialog.accept());
   await nim.click();
+
+  const compatibility = page.getByRole('dialog', {
+    name: 'Confirm unverified model compatibility',
+  });
+  await expect(compatibility).toBeVisible();
+  const confirm = compatibility.getByRole('button', { name: 'Confirm and select' });
+  await expect(confirm).toBeDisabled();
+  const acknowledgement = compatibility.getByRole('checkbox', {
+    name: /I checked the model information and accept the unverified compatibility/,
+  });
+  await acknowledgement.check();
+  await expect(acknowledgement).toBeChecked();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+
+  await expect(compatibility).toBeHidden();
   await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeHidden();
   const calls = await page.evaluate(
     () =>
@@ -423,4 +455,185 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   });
   const memoryList = calls.find((item) => item.method === 'memory.list');
   expect(memoryList?.params).not.toMatchObject({ states: expect.arrayContaining(['disabled']) });
+});
+
+test('discovered LM Studio model keeps its canonical id through selection and chat', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ method: string; params?: unknown }> = [];
+    Object.assign(window, { __localModelRuntimeCalls: calls });
+    Object.defineProperty(window, 'cupcake', {
+      value: {
+        apiVersion: 1,
+        platform: 'win32',
+        app: {
+          getInfo: async () => {
+            await Promise.resolve();
+            return {
+              apiVersion: 1,
+              appVersion: 'test',
+              platform: 'win32',
+              packaged: false,
+              runtime: 'ready',
+            };
+          },
+        },
+        window: {
+          minimize: async () => {},
+          toggleMaximize: async () => {
+            await Promise.resolve();
+            return false;
+          },
+          close: async () => {},
+          isMaximized: async () => {
+            await Promise.resolve();
+            return false;
+          },
+        },
+        dialog: {
+          openFiles: async () => {
+            await Promise.resolve();
+            return [];
+          },
+          openDirectory: async () => {
+            await Promise.resolve();
+            return null;
+          },
+          chooseSaveTarget: async () => {
+            await Promise.resolve();
+            return null;
+          },
+          releaseHandle: async () => {},
+        },
+        commands: { execute: async () => {}, onCommand: () => () => {} },
+        runtime: {
+          status: async () => {
+            await Promise.resolve();
+            return { state: 'ready', mode: 'broker', restartCount: 0 };
+          },
+          cancel: async () => {
+            await Promise.resolve();
+            return true;
+          },
+          onEvent: () => () => {},
+          onStatus: () => () => {},
+          request: async ({ method, params }: { method: string; params?: unknown }) => {
+            await Promise.resolve();
+            calls.push({ method, params });
+            const canonicalId =
+              'openai-compatible:lm_studio-http---127-0-0-1-1234/google/gemma-3n-e4b';
+            const results: Record<string, unknown> = {
+              'app.bootstrap': {
+                selectedModelId: 'mock:cupcake-deterministic',
+                projects: [],
+                conversations: [],
+                models: [
+                  {
+                    id: 'mock:cupcake-deterministic',
+                    provider: 'mock',
+                    model: 'cupcake-deterministic',
+                    display_name: 'Deterministic local',
+                    privacy_route: 'local',
+                    capabilities: ['chat'],
+                  },
+                ],
+                tools: [],
+                hardware: {},
+                localRuntimes: [],
+                suggestionsEnabled: false,
+              },
+              'tasks.list': [],
+              'memory.list': [],
+              'providers.status': { providers: [] },
+              'settings.list': {},
+              'migration.detect': { state: 'not_found', available: false },
+              'local_models.discover': {
+                endpoints: [
+                  {
+                    id: 'lm_studio:http://127.0.0.1:1234',
+                    kind: 'lm_studio',
+                    state: 'ready',
+                    models: ['google/gemma-3n-e4b'],
+                  },
+                ],
+                models: [
+                  {
+                    id: canonicalId,
+                    provider: 'openai-compatible',
+                    model: 'google/gemma-3n-e4b',
+                    display_name: 'Gemma 3n E4B',
+                    privacy_route: 'local',
+                    context_window: 32_768,
+                    capabilities: { streaming: true },
+                    metadata: {
+                      runtime_kind: 'lm_studio',
+                      runtime_loaded: true,
+                      endpoint_id: 'lm_studio-http---127-0-0-1-1234',
+                    },
+                  },
+                ],
+              },
+              'models.select': {},
+              'conversations.create': {
+                conversation: {
+                  id: 'conversation-local',
+                  title: 'Local chat',
+                  status: 'active',
+                },
+                branch: {
+                  id: 'branch-local',
+                  conversation_id: 'conversation-local',
+                  name: 'Main',
+                },
+              },
+              'chat.send': {
+                conversationId: 'conversation-local',
+                branchId: 'branch-local',
+                content: 'Local response',
+              },
+              'chat.history': [],
+              'conversations.list': [],
+              'conversations.get': { branches: [], activeBranchId: 'branch-local' },
+              'artifacts.list': [],
+              'developer.events': [],
+            };
+            return { ok: true, result: results[method] };
+          },
+        },
+      },
+    });
+  });
+
+  await page.goto('/?view=models');
+  const gemma = page.locator('.model-card').filter({ hasText: 'Gemma 3n E4B' });
+  await expect(gemma).toBeVisible();
+  await gemma.getByRole('button', { name: 'Make default' }).click();
+  await expect(gemma.getByText('Default model')).toBeVisible();
+
+  if ((page.viewportSize()?.width ?? 1440) < 960) {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  }
+  await page.getByRole('button', { name: 'Chats' }).click();
+  await page.getByRole('button', { name: 'New chat', exact: true }).last().click();
+  const composer = page.getByLabel('Message Cupcake');
+  await composer.fill('Reply locally');
+  await composer.press('Enter');
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __localModelRuntimeCalls: Array<{ method: string; params?: Record<string, unknown> }>;
+        }
+      ).__localModelRuntimeCalls,
+  );
+  const canonicalId = 'openai-compatible:lm_studio-http---127-0-0-1-1234/google/gemma-3n-e4b';
+  expect(calls).toContainEqual({
+    method: 'models.select',
+    params: { modelId: canonicalId, compatibilityConfirmed: false },
+  });
+  expect(calls.find((call) => call.method === 'chat.send')?.params).toMatchObject({
+    modelId: canonicalId,
+  });
 });

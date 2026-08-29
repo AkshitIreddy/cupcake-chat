@@ -10,7 +10,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -27,7 +27,7 @@ def _decode(frame: bytes) -> dict[str, Any]:
     assert len(frame) == size + 4
     value = json.loads(frame[4:])
     assert isinstance(value, dict)
-    return value
+    return cast(dict[str, Any], value)
 
 
 def _stage_request(
@@ -63,7 +63,7 @@ def _stage_request(
         "max_stdout_characters": 64 * 1024,
     }
     limits.update(overrides or {})
-    request = {
+    request: dict[str, object] = {
         "version": 1,
         "kind": "python.execute",
         "request_id": uuid.uuid4().hex,
@@ -145,12 +145,15 @@ def test_packaged_entry_executes_bounded_script_and_input_manifest(tmp_path: Pat
     assert response["stage_token"] == request["stage_token"]
     result = response["result"]
     assert isinstance(result, dict)
+    result = cast(dict[str, Any], result)
     assert result["stdout"] == "calculating\n"
     assert result["value"] == {"sum": 10}
     metadata = result["metadata"]
     assert isinstance(metadata, dict)
+    metadata = cast(dict[str, Any], metadata)
     loaded = metadata["product_runtime_modules_loaded"]
     assert isinstance(loaded, list)
+    loaded = cast(list[str], loaded)
     assert not any(
         name.endswith("application")
         or ".providers" in name
@@ -192,8 +195,10 @@ def test_staged_script_digest_tampering_is_rejected(tmp_path: Path) -> None:
     request = _stage_request(tmp_path, "result = 1")
     payload = request["payload"]
     assert isinstance(payload, dict)
+    payload = cast(dict[str, Any], payload)
     script = payload["script"]
     assert isinstance(script, dict)
+    script = cast(dict[str, Any], script)
     path = tmp_path / str(script["staged_name"])
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
     original = path.read_bytes()
@@ -210,8 +215,10 @@ def test_manifest_path_traversal_is_rejected_without_reading_outside(tmp_path: P
     try:
         payload = request["payload"]
         assert isinstance(payload, dict)
+        payload = cast(dict[str, Any], payload)
         script = payload["script"]
         assert isinstance(script, dict)
+        script = cast(dict[str, Any], script)
         script["staged_name"] = "../outside-python-worker.txt"
         os.chmod(tmp_path / REQUEST_FILE, stat.S_IRUSR | stat.S_IWUSR)
         (tmp_path / REQUEST_FILE).write_bytes(_frame(request))

@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -121,9 +121,11 @@ def _client(provider: str, stream: Any) -> Any:
 
         return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     if provider == "anthropic":
-        return SimpleNamespace(
-            messages=SimpleNamespace(stream=lambda **_kwargs: AsyncContextStream(stream))
-        )
+
+        def anthropic_stream(**_kwargs: Any) -> AsyncContextStream:
+            return AsyncContextStream(stream)
+
+        return SimpleNamespace(messages=SimpleNamespace(stream=anthropic_stream))
     if provider == "google":
 
         async def generate_content_stream(**_kwargs: Any) -> Any:
@@ -141,7 +143,11 @@ def _client(provider: str, stream: Any) -> Any:
 
         return SimpleNamespace(chat=SimpleNamespace(stream_async=stream_async))
     if provider == "cohere":
-        return SimpleNamespace(v2=SimpleNamespace(chat_stream=lambda **_kwargs: stream))
+
+        def cohere_stream(**_kwargs: Any) -> Any:
+            return stream
+
+        return SimpleNamespace(v2=SimpleNamespace(chat_stream=cohere_stream))
     raise AssertionError(provider)
 
 
@@ -156,7 +162,10 @@ def _raising_client(provider: str, error: Exception) -> Any:
             async def __aexit__(self, *_args: object) -> None:
                 return None
 
-        return SimpleNamespace(messages=SimpleNamespace(stream=lambda **_kwargs: RaisingContext()))
+        def raising_stream(**_kwargs: Any) -> RaisingContext:
+            return RaisingContext()
+
+        return SimpleNamespace(messages=SimpleNamespace(stream=raising_stream))
     if provider == "cohere":
 
         def raise_sync(**_kwargs: Any) -> Any:
@@ -266,33 +275,36 @@ def test_recorded_streams_normalize_full_provider_matrix(provider: str) -> None:
         assert events[-1].continuity.applies_to(descriptor)
 
 
+MALFORMED_EVENTS: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("openai", {"type": "response.output_text.delta"}),
+    ("anthropic", {"type": "content_block_delta", "index": 0, "delta": {}}),
+    (
+        "google",
+        {"candidates": [{"content": {"parts": [{"thought": True}]}}]},
+    ),
+    (
+        "xai",
+        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
+    ),
+    (
+        "mistral",
+        {"data": {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]}},
+    ),
+    ("cohere", {"type": "content-delta", "delta": {"message": {"content": {}}}}),
+    (
+        "openai-compatible",
+        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
+    ),
+    (
+        "nvidia-nim",
+        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
+    ),
+)
+
+
 @pytest.mark.parametrize(
     ("provider", "event"),
-    (
-        ("openai", {"type": "response.output_text.delta"}),
-        ("anthropic", {"type": "content_block_delta", "index": 0, "delta": {}}),
-        (
-            "google",
-            {"candidates": [{"content": {"parts": [{"thought": True}]}}]},
-        ),
-        (
-            "xai",
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
-        ),
-        (
-            "mistral",
-            {"data": {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]}},
-        ),
-        ("cohere", {"type": "content-delta", "delta": {"message": {"content": {}}}}),
-        (
-            "openai-compatible",
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
-        ),
-        (
-            "nvidia-nim",
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {}}]}}]},
-        ),
-    ),
+    MALFORMED_EVENTS,
 )
 def test_malformed_known_events_fail_closed(provider: str, event: dict[str, Any]) -> None:
     adapter, descriptor = _adapter(provider, RecordedAsyncStream([event]))
@@ -421,7 +433,7 @@ def test_generic_endpoints_are_selectable_isolated_and_retain_canonical_history(
     adapter = registry.adapter(private.id, client=object())
     request = ModelRequest(private.id, visible_history, continuity=state)
     adapter.validate_request(request)
-    payload = adapter.build_request(request)  # type: ignore[attr-defined]
+    payload = cast(dict[str, Any], cast(Any, adapter).build_request(request))
     assert [message["content"] for message in payload["messages"]] == [
         "first turn",
         "first answer",

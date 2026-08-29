@@ -84,7 +84,7 @@ def _model_artifact(data: bytes) -> ModelArtifact:
 
 
 def test_signed_runtime_catalog_accepts_only_windows_x64_manifest() -> None:
-    payload = {
+    payload: dict[str, Any] = {
         "version": 1,
         "generated_at": "2026-08-28T00:00:00Z",
         "runtimes": [
@@ -105,7 +105,7 @@ def test_signed_runtime_catalog_accepts_only_windows_x64_manifest() -> None:
         ],
     }
     private = Ed25519PrivateKey.generate()
-    document = {
+    document: dict[str, Any] = {
         "key_id": "release-1",
         "payload": payload,
         "signature": base64.b64encode(private.sign(canonical_json(payload))).decode(),
@@ -283,19 +283,12 @@ def test_runtime_pack_selection_respects_driver_and_falls_back() -> None:
 def test_cuda_companion_license_requires_explicit_acceptance(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[4]
     document = json.loads(
-        (root / "packaging/catalogs/cupcake-local-runtime-v1.json").read_text(
-            encoding="utf-8"
-        )
+        (root / "packaging/catalogs/cupcake-local-runtime-v1.json").read_text(encoding="utf-8")
     )
     key_document = json.loads(
-        (root / "packaging/catalogs/cupcake-local-public-keys.json").read_text(
-            encoding="utf-8"
-        )
+        (root / "packaging/catalogs/cupcake-local-public-keys.json").read_text(encoding="utf-8")
     )
-    keys = {
-        key_id: base64.b64decode(encoded)
-        for key_id, encoded in key_document["keys"].items()
-    }
+    keys = {key_id: base64.b64decode(encoded) for key_id, encoded in key_document["keys"].items()}
     catalog = SignedRuntimeCatalog.verify_and_load(document, keys)
     cuda = catalog.get("llama.cpp:b10679:windows-x64-cuda-12.4")
     manager = CupcakeLocalManager(tmp_path)
@@ -335,14 +328,21 @@ def test_installed_model_store_rechecks_checksum_and_blocks_active_removal(tmp_p
     assert store.get(artifact.id).integrity_verified is False
 
 
+class _InterruptedModelDownload(ModelDownload):
+    """Expose a test seam for simulating a crash between persisted states."""
+
+    def mark_downloading(self, *, bytes_downloaded: int) -> None:
+        self._transition(DownloadState.RESOLVING)
+        self._transition(DownloadState.DOWNLOADING, bytes_downloaded=bytes_downloaded)
+
+
 def test_interrupted_download_recovers_as_paused(tmp_path: Path) -> None:
     data = b"complete model bytes"
     artifact = _model_artifact(data)
     destination = tmp_path / artifact.filename
-    first = ModelDownload(artifact, destination)
+    first = _InterruptedModelDownload(artifact, destination)
     first.partial.write_bytes(data[:5])
-    first._transition(DownloadState.RESOLVING)
-    first._transition(DownloadState.DOWNLOADING, bytes_downloaded=5)
+    first.mark_downloading(bytes_downloaded=5)
 
     recovered = ModelDownload(artifact, destination)
     assert recovered.snapshot.state == DownloadState.PAUSED

@@ -1,6 +1,8 @@
 use base64::prelude::*;
 use chrono::{SecondsFormat, Utc};
-use cupcake_tool_broker::framing::{read_frame, write_frame, DEFAULT_MAX_FRAME_BYTES};
+use cupcake_tool_broker::framing::{
+    read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES,
+};
 use cupcake_tool_broker::protocol::{
     uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
 };
@@ -87,12 +89,12 @@ impl BrokerProcess {
         )
         .sign(&self.secret)
         .unwrap();
-        write_frame(&mut self.output, &envelope, DEFAULT_MAX_FRAME_BYTES).unwrap();
+        write_protocol_frame(&mut self.output, &envelope, DEFAULT_MAX_FRAME_BYTES).unwrap();
     }
 
     fn read(&mut self) -> ProtocolEnvelope {
         let envelope: ProtocolEnvelope =
-            read_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES).unwrap();
+            read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES).unwrap();
         envelope.verify_auth(&self.secret).unwrap();
         self.replay.accept(&envelope, Utc::now()).unwrap();
         envelope
@@ -233,6 +235,57 @@ fn runtime_event_is_forwarded_before_terminal_response() {
         started.elapsed().saturating_sub(event_elapsed) >= Duration::from_millis(1_300),
         "event and terminal response were delivered together"
     );
+}
+
+#[test]
+fn discovered_local_compatible_model_chats_without_a_cloud_credential() {
+    let mut broker = BrokerProcess::launch();
+    let discover_correlation = uuid_v7();
+    broker.send(
+        discover_correlation,
+        MessageType::Request,
+        object(json!({"method":"local_models.discover","params":{}})),
+    );
+    let discovered = broker.read();
+    assert_eq!(discovered.payload["ok"], true);
+    let model_id = discovered.payload["result"]["models"][0]["id"]
+        .as_str()
+        .expect("discovery returns a selectable local model")
+        .to_owned();
+
+    let chat_correlation = uuid_v7();
+    broker.send(
+        chat_correlation,
+        MessageType::Request,
+        object(json!({"method":"chat.send","params":{"modelId":model_id}})),
+    );
+    let response = broker.read();
+    assert_eq!(response.correlation_id, chat_correlation);
+    assert_eq!(response.message_type, MessageType::Response);
+    assert_eq!(response.payload["ok"], true);
+    assert_eq!(response.payload["result"]["method"], "chat.send");
+}
+
+#[test]
+fn undiscovered_remote_compatible_model_still_requires_a_connected_endpoint() {
+    let mut broker = BrokerProcess::launch();
+    let correlation = uuid_v7();
+    broker.send(
+        correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"chat.send",
+            "params":{"modelId":"openai-compatible:remote/model"}
+        })),
+    );
+    let response = broker.read();
+    assert_eq!(response.message_type, MessageType::Response);
+    assert_eq!(response.payload["ok"], false);
+    assert_eq!(response.payload["error"]["code"], "RUNTIME_UNAVAILABLE");
+    assert!(response.payload["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("endpoint is not connected"));
 }
 
 #[test]

@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -14,7 +16,10 @@ from cupcake_runtime.local_models.types import (
 
 
 class FakeHttp:
-    async def request(self, method, url, payload=None):
+    async def request(
+        self, method: str, url: str, payload: Mapping[str, Any] | None = None
+    ) -> object:
+        del method, payload
         if url.endswith("/api/version"):
             return {"version": "1.0"}
         if url.endswith("/api/tags"):

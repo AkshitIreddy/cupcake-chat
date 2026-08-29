@@ -186,6 +186,7 @@ def test_nim_reasoning_and_tool_payload_are_explicit_model_capabilities() -> Non
     assert payload["model"] == "deepseek-ai/reasoning-chat"
     assert payload["reasoning_effort"] == "medium"
     assert payload["tools"][0]["function"]["name"] == "lookup"
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_no_automatic_nim_model_is_present_before_catalog_discovery() -> None:

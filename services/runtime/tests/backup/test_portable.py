@@ -4,6 +4,7 @@ import hashlib
 import json
 import zipfile
 from pathlib import Path
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -73,7 +74,7 @@ def _manifest(*, portable: bool = True) -> dict[str, object]:
         "database/dbos.sqlite": "dbosDatabase",
         "database/security.sqlite": "securityDatabase",
     }
-    entries = []
+    entries: list[dict[str, object]] = []
     for path, body in payloads.items():
         if path.startswith("objects/"):
             entries.append(_entry(path, "encryptedObject", body, object_id="b" * 64))
@@ -154,10 +155,13 @@ def test_rejects_unsafe_argon2_work_factors(field: str, value: int) -> None:
     manifest = _manifest()
     protection = manifest["protection"]
     assert isinstance(protection, dict)
+    protection = cast(dict[str, Any], protection)
     envelope = protection["keyEnvelope"]
     assert isinstance(envelope, dict)
+    envelope = cast(dict[str, Any], envelope)
     kdf = envelope["kdf"]
     assert isinstance(kdf, dict)
+    kdf = cast(dict[str, Any], kdf)
     kdf[field] = value
     with pytest.raises(IntegrityViolation):
         validate_manifest_bytes(json.dumps(manifest).encode())
@@ -179,6 +183,7 @@ def test_rejects_unknown_fields_missing_snapshots_and_unsafe_paths() -> None:
     missing_dbos = _manifest()
     entries = missing_dbos["entries"]
     assert isinstance(entries, list)
+    entries = cast(list[dict[str, object]], entries)
     missing_dbos["entries"] = [entry for entry in entries if entry["role"] != "dbosDatabase"]
     with pytest.raises(IntegrityViolation):
         validate_manifest_bytes(json.dumps(missing_dbos).encode())
@@ -186,6 +191,7 @@ def test_rejects_unknown_fields_missing_snapshots_and_unsafe_paths() -> None:
     traversal = _manifest()
     traversal_entries = traversal["entries"]
     assert isinstance(traversal_entries, list)
+    traversal_entries = cast(list[dict[str, object]], traversal_entries)
     traversal_entries[0]["path"] = "../product.sqlite"
     with pytest.raises(IntegrityViolation):
         validate_manifest_bytes(json.dumps(traversal).encode())

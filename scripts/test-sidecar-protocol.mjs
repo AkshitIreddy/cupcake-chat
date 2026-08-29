@@ -48,30 +48,67 @@ try {
   // extracted only on its first proxied request. Match the desktop's safe
   // startup path by warming that process with an idempotent health request
   // before asserting the richer bootstrap surface.
-  const healthId = uuidV7();
-  send('request', healthId, { method: 'runtime.health', params: {} });
-  let health;
-  while (!health) {
-    const frame = await nextFrame(120_000);
-    assert(verify(frame), 'runtime health response authentication failed');
-    if (frame.correlationId === healthId && frame.type === 'response') health = frame;
-  }
+  const health = await requestRuntime('runtime.health', {
+    protocolProbe: {
+      probe: 1e-6,
+      decimal: 2.5e-6,
+      ordinary: 1e-4,
+      tiny: 1e-7,
+      negativeZero: -0,
+      largeDecimal: 1e20,
+      scientific: 1e21,
+      hardware: 31.62752914428711,
+      '\ue000': 1,
+      '😀': 2,
+    },
+  });
   assert(health.payload?.ok === true, `runtime health failed: ${JSON.stringify(health.payload)}`);
 
-  const bootstrapId = uuidV7();
-  send('request', bootstrapId, { method: 'app.bootstrap', params: {} });
-  let response;
-  while (!response) {
-    const frame = await nextFrame(120_000);
-    assert(verify(frame), 'runtime response authentication failed');
-    if (frame.correlationId === bootstrapId && frame.type === 'response') response = frame;
-  }
+  const project = await requestRuntime('projects.create', {
+    name: 'Canonical seed 😀 \ue000',
+    description: 'Numbers: 0.000001, 1e-7, 100000000000000000000',
+  });
+  assert(project.payload?.ok === true, `project seed failed: ${JSON.stringify(project.payload)}`);
+  const projectId = project.payload.result?.id;
+  assert(typeof projectId === 'string', 'project seed did not return an id');
+  const conversation = await requestRuntime('conversations.create', {
+    title: 'Protocol bootstrap seed',
+    projectId,
+  });
   assert(
-    response.payload?.ok === true,
-    `runtime bootstrap failed: ${JSON.stringify(response.payload)}`,
+    conversation.payload?.ok === true,
+    `conversation seed failed: ${JSON.stringify(conversation.payload)}`,
   );
-  assert(response.payload.result?.mode === 'runtime', 'broker did not reach the Python runtime');
-  assert(Array.isArray(response.payload.result?.models), 'runtime model catalog missing');
+
+  let response;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await requestRuntime('app.bootstrap', {});
+    assert(
+      response.payload?.ok === true,
+      `runtime bootstrap ${attempt + 1} failed: ${JSON.stringify(response.payload)}`,
+    );
+    assert(response.payload.result?.mode === 'runtime', 'broker did not reach the Python runtime');
+    assert(Array.isArray(response.payload.result?.models), 'runtime model catalog missing');
+    assert(
+      response.payload.result?.projects?.some((item) => item.id === projectId),
+      'seeded project missing from bootstrap',
+    );
+  }
+  assert(response, 'runtime bootstrap response missing');
+
+  // This response contains runtime endpoint dataclasses in the production
+  // service. Exercise it over the authenticated frozen pipe so JSON-safe
+  // redaction and outbound sequencing regressions cannot hide behind the
+  // desktop's noncritical refresh recovery.
+  const discovery = await requestRuntime('local_models.discover', {});
+  assert(
+    discovery.payload?.ok === true,
+    `local model discovery failed: ${JSON.stringify(discovery.payload)}`,
+  );
+  assert(
+    Array.isArray(discovery.payload.result?.endpoints),
+    'local model discovery endpoint list missing',
+  );
 
   const shutdownId = uuidV7();
   send('shutdown', shutdownId, {});
@@ -108,10 +145,20 @@ function send(type, correlationId, payload) {
     payload,
   };
   const envelope = { ...unsigned, authTag: authenticate(unsigned) };
-  const body = Buffer.from(JSON.stringify(envelope));
+  const body = Buffer.from(canonicalJson(envelope));
   const header = Buffer.allocUnsafe(4);
   header.writeUInt32BE(body.length);
   processHandle.stdin.write(Buffer.concat([header, body]));
+}
+
+async function requestRuntime(method, params) {
+  const correlationId = uuidV7();
+  send('request', correlationId, { method, params });
+  while (true) {
+    const frame = await nextFrame(120_000);
+    assert(verify(frame), `${method} response authentication failed`);
+    if (frame.correlationId === correlationId && frame.type === 'response') return frame;
+  }
 }
 
 function authenticate(value) {
@@ -154,7 +201,9 @@ function frameReader(stream) {
     while (buffer.length >= 4) {
       const length = buffer.readUInt32BE(0);
       if (buffer.length < length + 4) return;
-      const value = JSON.parse(buffer.subarray(4, length + 4).toString('utf8'));
+      const text = buffer.subarray(4, length + 4).toString('utf8');
+      const value = JSON.parse(text);
+      assert(canonicalJson(value) === text, 'sidecar emitted a noncanonical protocol frame');
       buffer = buffer.subarray(length + 4);
       const resolve = waiting.shift();
       if (resolve) resolve(value);

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from pathlib import Path
 from threading import Event, Thread
+from typing import Any, NoReturn
 
 import pytest
 
@@ -18,6 +22,7 @@ from cupcake_runtime.tasks import (
     RunStatus,
     RuntimeRevision,
     SqliteDurabilityStore,
+    StepContext,
     TaskPromotionPolicy,
     TaskSpec,
     TaskStep,
@@ -58,6 +63,20 @@ def spec(
     )
 
 
+def step_input_digest(
+    operation: str,
+    arguments: Mapping[str, Any],
+    steering: list[str],
+) -> str:
+    canonical = json.dumps(
+        {"operation": operation, "arguments": arguments, "steering": steering},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 @pytest.mark.parametrize(
     ("task_spec", "expected_mode", "reason"),
     [
@@ -76,7 +95,11 @@ def spec(
         (spec(TaskStep("one", "chat"), explicit=True), RunMode.BACKGROUND, "explicit_request"),
     ],
 )
-def test_promotion_policy(task_spec, expected_mode, reason) -> None:
+def test_promotion_policy(
+    task_spec: TaskSpec,
+    expected_mode: RunMode,
+    reason: str | None,
+) -> None:
     decision = TaskPromotionPolicy().decide(task_spec)
     assert decision.mode is expected_mode
     if reason:
@@ -85,7 +108,7 @@ def test_promotion_policy(task_spec, expected_mode, reason) -> None:
         assert decision.reasons == ()
 
 
-def test_checkpointed_run_is_idempotent(tmp_path) -> None:
+def test_checkpointed_run_is_idempotent(tmp_path: Path) -> None:
     executor = DeterministicFakeExecutor()
     coordinator, store, journal = build_coordinator(tmp_path, executor)
     run, _ = coordinator.create(spec(TaskStep("one", "alpha"), TaskStep("two", "beta")))
@@ -100,8 +123,8 @@ def test_checkpointed_run_is_idempotent(tmp_path) -> None:
     assert any(item.kind is EventKind.STEP_CHECKPOINTED for item in journal.read(run.run_id))
 
 
-def test_restart_recovers_from_last_checkpoint_without_duplicate_effect(tmp_path) -> None:
-    def crash(_step, _context, _key):
+def test_restart_recovers_from_last_checkpoint_without_duplicate_effect(tmp_path: Path) -> None:
+    def crash(_step: TaskStep, _context: StepContext, _key: str) -> NoReturn:
         raise KeyboardInterrupt("simulated process death")
 
     first_executor = DeterministicFakeExecutor(operations={"crash": crash})
@@ -125,7 +148,7 @@ def test_restart_recovers_from_last_checkpoint_without_duplicate_effect(tmp_path
     assert EventKind.RUN_RECOVERED in kinds
 
 
-def test_approval_survives_restart_and_can_resume(tmp_path) -> None:
+def test_approval_survives_restart_and_can_resume(tmp_path: Path) -> None:
     coordinator, store, journal = build_coordinator(tmp_path)
     step = TaskStep(
         "publish",
@@ -151,7 +174,7 @@ def test_approval_survives_restart_and_can_resume(tmp_path) -> None:
         recovered.resolve_approval(approval.approval_id, approved=False)
 
 
-def test_denied_approval_and_cancel_are_terminal(tmp_path) -> None:
+def test_denied_approval_and_cancel_are_terminal(tmp_path: Path) -> None:
     coordinator, store, _ = build_coordinator(tmp_path)
     step = TaskStep("delete", "delete", requires_approval=True, approval_intent_digest="digest")
     run, _ = coordinator.create(spec(step))
@@ -167,10 +190,14 @@ def test_denied_approval_and_cancel_are_terminal(tmp_path) -> None:
     assert coordinator.request_cancel(queued.run_id).status is RunStatus.CANCELLED
 
 
-def test_steer_and_followup_commands_are_durable(tmp_path) -> None:
+def test_steer_and_followup_commands_are_durable(tmp_path: Path) -> None:
     captured: list[tuple[str, ...]] = []
 
-    def capture(_step, context, _key):
+    def capture(
+        _step: TaskStep,
+        context: StepContext,
+        _key: str,
+    ) -> Mapping[str, Any]:
         captured.append(context.steering)
         return {"ok": True}
 
@@ -186,7 +213,7 @@ def test_steer_and_followup_commands_are_durable(tmp_path) -> None:
     assert coordinator.take_followups(run.run_id) == []
 
 
-def test_followup_queue_survives_store_restart(tmp_path) -> None:
+def test_followup_queue_survives_store_restart(tmp_path: Path) -> None:
     coordinator, store, journal = build_coordinator(tmp_path)
     run, _ = coordinator.create(spec(TaskStep("one", "work")))
     coordinator.queue_followup(run.run_id, "Continue after restart")
@@ -197,7 +224,7 @@ def test_followup_queue_survives_store_restart(tmp_path) -> None:
     assert recovered.take_followups(run.run_id) == ["Continue after restart"]
 
 
-def test_pending_cancellation_is_completed_during_restart_recovery(tmp_path) -> None:
+def test_pending_cancellation_is_completed_during_restart_recovery(tmp_path: Path) -> None:
     coordinator, store, journal = build_coordinator(tmp_path)
     run, _ = coordinator.create(spec(TaskStep("one", "work")))
     store.transition(run.run_id, RunStatus.RUNNING)
@@ -211,11 +238,15 @@ def test_pending_cancellation_is_completed_during_restart_recovery(tmp_path) -> 
     assert recovered_store.get_run(run.run_id).status is RunStatus.CANCELLED
 
 
-def test_cancel_during_a_running_step_finishes_cancelled(tmp_path) -> None:
+def test_cancel_during_a_running_step_finishes_cancelled(tmp_path: Path) -> None:
     entered = Event()
     release = Event()
 
-    def blocking(_step, _context, _key):
+    def blocking(
+        _step: TaskStep,
+        _context: StepContext,
+        _key: str,
+    ) -> Mapping[str, Any]:
         entered.set()
         assert release.wait(timeout=5)
         return {"effect": "completed_once"}
@@ -236,17 +267,25 @@ def test_cancel_during_a_running_step_finishes_cancelled(tmp_path) -> None:
     assert store.get_checkpoint(run.run_id, "one") is not None
 
 
-def test_steering_received_mid_step_applies_at_next_boundary(tmp_path) -> None:
+def test_steering_received_mid_step_applies_at_next_boundary(tmp_path: Path) -> None:
     entered = Event()
     release = Event()
     captured: list[tuple[str, ...]] = []
 
-    def blocking(_step, _context, _key):
+    def blocking(
+        _step: TaskStep,
+        _context: StepContext,
+        _key: str,
+    ) -> Mapping[str, Any]:
         entered.set()
         assert release.wait(timeout=5)
         return {"ok": True}
 
-    def capture(_step, context, _key):
+    def capture(
+        _step: TaskStep,
+        context: StepContext,
+        _key: str,
+    ) -> Mapping[str, Any]:
         captured.append(context.steering)
         return {"ok": True}
 
@@ -266,7 +305,7 @@ def test_steering_received_mid_step_applies_at_next_boundary(tmp_path) -> None:
     assert captured == [("Use the reviewed evidence",)]
 
 
-def test_checkpoint_and_approval_intents_cannot_change(tmp_path) -> None:
+def test_checkpoint_and_approval_intents_cannot_change(tmp_path: Path) -> None:
     coordinator, store, _journal = build_coordinator(tmp_path)
     run, _ = coordinator.create(spec(TaskStep("one", "work")))
     store.save_checkpoint(run.run_id, "one", "digest-a", {"a": 1}, RuntimeRevision(1))
@@ -277,10 +316,10 @@ def test_checkpoint_and_approval_intents_cannot_change(tmp_path) -> None:
         store.save_checkpoint(run.run_id, "one", "digest-b", {"a": 2}, RuntimeRevision(1))
 
 
-def test_newer_checkpoint_revision_cannot_be_reused(tmp_path) -> None:
+def test_newer_checkpoint_revision_cannot_be_reused(tmp_path: Path) -> None:
     coordinator, store, _journal = build_coordinator(tmp_path, revision=RuntimeRevision(1, 2, 0))
     run, _ = coordinator.create(spec(TaskStep("one", "work")))
-    digest = coordinator._step_input_digest("work", {}, [])
+    digest = step_input_digest("work", {}, [])
     store.save_checkpoint(
         run.run_id,
         "one",
@@ -294,17 +333,23 @@ def test_newer_checkpoint_revision_cannot_be_reused(tmp_path) -> None:
     assert "newer than runtime" in (result.error or "")
 
 
-def test_steering_after_checkpoint_crash_applies_to_next_unfinished_step(tmp_path) -> None:
+def test_steering_after_checkpoint_crash_applies_to_next_unfinished_step(
+    tmp_path: Path,
+) -> None:
     captured: list[tuple[str, ...]] = []
 
-    def capture(_step, context, _key):
+    def capture(
+        _step: TaskStep,
+        context: StepContext,
+        _key: str,
+    ) -> Mapping[str, Any]:
         captured.append(context.steering)
         return {"ok": True}
 
     executor = DeterministicFakeExecutor(operations={"capture": capture})
     coordinator, store, _journal = build_coordinator(tmp_path, executor)
     run, _ = coordinator.create(spec(TaskStep("one", "already-done"), TaskStep("two", "capture")))
-    original_digest = coordinator._step_input_digest("already-done", {}, [])
+    original_digest = step_input_digest("already-done", {}, [])
     store.save_checkpoint(
         run.run_id,
         "one",
@@ -319,7 +364,7 @@ def test_steering_after_checkpoint_crash_applies_to_next_unfinished_step(tmp_pat
     assert captured == [("Apply this only to remaining work",)]
 
 
-def test_incompatible_runtime_fails_recovery_without_execution(tmp_path) -> None:
+def test_incompatible_runtime_fails_recovery_without_execution(tmp_path: Path) -> None:
     original, store, journal = build_coordinator(tmp_path, revision=RuntimeRevision(2, 0, 0))
     _run, _ = original.create(spec(TaskStep("one", "work")))
     store.close()
@@ -344,7 +389,7 @@ def test_revision_policy_accepts_older_same_major_and_rejects_newer() -> None:
         policy.assert_can_resume(RuntimeRevision(1, 9, 9))
 
 
-def test_terminal_state_machine_rejects_illegal_transition(tmp_path) -> None:
+def test_terminal_state_machine_rejects_illegal_transition(tmp_path: Path) -> None:
     coordinator, store, _journal = build_coordinator(tmp_path)
     run, _ = coordinator.create(spec(TaskStep("one", "work")))
     assert coordinator.run(run.run_id).status is RunStatus.SUCCEEDED

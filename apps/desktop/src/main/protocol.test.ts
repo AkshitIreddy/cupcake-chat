@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { uuidV7 } from './ids';
 import {
@@ -42,6 +44,25 @@ describe('framed protocol', () => {
     expect(canonicalJson({ '\ue000': 1, '😀': 2 })).toBe('{"😀":2,"\ue000":1}');
   });
 
+  it('matches the shared Python-Rust authentication vectors', () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        resolve(__dirname, '../../../../packages/contracts/test/protocol-auth-vectors.json'),
+        'utf8',
+      ),
+    ) as {
+      secretBase64Url: string;
+      unsignedEnvelope: Parameters<typeof signEnvelope>[0];
+      canonicalUnsigned: string;
+      authTag: string;
+    };
+    expect(canonicalJson(fixture.unsignedEnvelope)).toBe(fixture.canonicalUnsigned);
+    expect(
+      signEnvelope(fixture.unsignedEnvelope, Buffer.from(fixture.secretBase64Url, 'base64url'))
+        .authTag,
+    ).toBe(fixture.authTag);
+  });
+
   it('verifies the HMAC and rejects payload tampering', () => {
     const secret = randomBytes(32);
     const message = signEnvelope(
@@ -72,6 +93,33 @@ describe('framed protocol', () => {
     decoder.end(bytes.subarray(11));
     await once(decoder, 'end');
     expect(values).toEqual([{ one: 1 }, { two: 2 }]);
+  });
+
+  it('emits canonical wire JSON and rejects a noncanonical representation', async () => {
+    const value = { z: 1, a: { probe: 1e-6 } };
+    const frame = encodeFrame(value);
+    expect(frame.subarray(4).toString('utf8')).toBe(canonicalJson(value));
+
+    const body = Buffer.from(JSON.stringify(value), 'utf8');
+    expect(body.toString('utf8')).not.toBe(canonicalJson(value));
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(body.length);
+    const decoder = new JsonFrameDecoder();
+    const errorPromise = once(decoder, 'error');
+    decoder.end(Buffer.concat([header, body]));
+    const [error] = await errorPromise;
+    expect((error as Error).message).toContain('canonical');
+  });
+
+  it('rejects invalid UTF-8 before parsing or authentication', async () => {
+    const body = Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]);
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(body.length);
+    const decoder = new JsonFrameDecoder();
+    const errorPromise = once(decoder, 'error');
+    decoder.end(Buffer.concat([header, body]));
+    const [error] = await errorPromise;
+    expect((error as Error).message).toContain('UTF-8');
   });
 
   it('rejects declared frames above the configured limit', async () => {

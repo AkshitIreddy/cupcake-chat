@@ -15,6 +15,19 @@ from cupcake_runtime.providers.types import (
 )
 
 
+class StubbedPydanticModelFactory(PydanticModelFactory):
+    """Expose a public test seam while production builders remain protected."""
+
+    @classmethod
+    def patch_builder(
+        cls,
+        monkeypatch: pytest.MonkeyPatch,
+        provider: str,
+        builder: Any,
+    ) -> None:
+        monkeypatch.setitem(cls._builders, provider, builder)
+
+
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "google", "xai", "mistral", "cohere"])
 def test_factory_dispatches_every_direct_cloud_provider_builder(
     provider: str, monkeypatch: pytest.MonkeyPatch
@@ -26,8 +39,8 @@ def test_factory_dispatches_every_direct_cloud_provider_builder(
         seen.update(model_name=model_name, **kwargs)
         return object()
 
-    monkeypatch.setitem(
-        PydanticModelFactory._builders,
+    StubbedPydanticModelFactory.patch_builder(
+        monkeypatch,
         provider,
         builder,
     )
@@ -35,7 +48,7 @@ def test_factory_dispatches_every_direct_cloud_provider_builder(
         descriptor.id,
         (CanonicalMessage("user", "hello"),),
     )
-    result = PydanticModelFactory().build(
+    result = StubbedPydanticModelFactory().build(
         descriptor,
         ProviderConfig(api_key="secret", base_url="https://example.invalid/v1"),
         request,
@@ -82,9 +95,9 @@ def test_factory_dispatches_dynamic_nvidia_nim_model_without_generic_routing(
         seen.update(model_name=model_name, **kwargs)
         return object()
 
-    monkeypatch.setitem(PydanticModelFactory._builders, "nvidia-nim", builder)
+    StubbedPydanticModelFactory.patch_builder(monkeypatch, "nvidia-nim", builder)
     request = ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),))
-    result = PydanticModelFactory().build(
+    result = StubbedPydanticModelFactory().build(
         descriptor,
         ProviderConfig(api_key="nvapi-recorded"),
         request,

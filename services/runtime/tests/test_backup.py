@@ -43,7 +43,8 @@ def test_backup_contains_only_reachable_verified_objects(
     restored = tmp_path / "restored"
     service.restore_to(archive, restored)
     assert (restored / "database" / "product.sqlite").is_file()
-    assert (restored / service._object_archive_path(reachable)).is_file()
+    restored_object = restored / "objects" / reachable[:2] / reachable[2:4] / f"{reachable}.cupobj"
+    assert restored_object.is_file()
 
 
 def test_backup_detects_modified_entries(
