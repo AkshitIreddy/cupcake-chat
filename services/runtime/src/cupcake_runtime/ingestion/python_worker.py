@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 PROTOCOL_VERSION = 1
 REQUEST_FILE = "python-request.frame"
@@ -66,8 +66,6 @@ class _BoundedOutput:
         del flush
         if file is not None:
             raise PythonWorkerError("print redirection is unavailable")
-        if not isinstance(sep, str) or not isinstance(end, str):
-            raise TypeError("print separators must be strings")
         rendered = sep.join(str(value) for value in values) + end
         if self.length + len(rendered) > self.max_characters:
             raise PythonWorkerLimitError("captured output exceeds its character limit")
@@ -129,15 +127,9 @@ def _execute(stage: Path, payload: Mapping[str, object]) -> Mapping[str, object]
     _check_deadline(_integer(limits["deadline_unix_ms"], "deadline_unix_ms"))
     max_script_bytes = _positive(limits["max_script_bytes"], "max_script_bytes")
     max_input_bytes = _positive(limits["max_input_bytes"], "max_input_bytes")
-    max_result_characters = _positive(
-        limits["max_result_characters"], "max_result_characters"
-    )
-    max_stdout_characters = _positive(
-        limits["max_stdout_characters"], "max_stdout_characters"
-    )
-    script = _read_manifest_object(
-        stage, _object(payload["script"], "script"), max_script_bytes
-    )
+    max_result_characters = _positive(limits["max_result_characters"], "max_result_characters")
+    max_stdout_characters = _positive(limits["max_stdout_characters"], "max_stdout_characters")
+    script = _read_manifest_object(stage, _object(payload["script"], "script"), max_script_bytes)
     try:
         script_text = script.decode("utf-8", errors="strict")
     except UnicodeError as exc:
@@ -347,21 +339,21 @@ def _normalize_result(value: object, max_characters: int) -> object:
         if isinstance(item, bytes):
             return {"type": "bytes", "hex": item.hex()}
         if isinstance(item, (list, tuple)):
-            if len(item) > 10_000:
+            values = cast(Sequence[object], item)
+            if len(values) > 10_000:
                 raise PythonWorkerLimitError("structured result collection is too large")
-            return [normalize(child, depth + 1) for child in item]
-        if isinstance(item, dict):
-            if len(item) > 10_000 or not all(isinstance(key, str) for key in item):
+            return [normalize(child, depth + 1) for child in values]
+        if isinstance(item, Mapping):
+            mapping = cast(Mapping[object, object], item)
+            if len(mapping) > 10_000 or not all(isinstance(key, str) for key in mapping):
                 raise PythonWorkerError(
                     "structured result dictionaries require bounded string keys"
                 )
-            return {key: normalize(child, depth + 1) for key, child in item.items()}
+            return {str(key): normalize(child, depth + 1) for key, child in mapping.items()}
         raise PythonWorkerError("structured result contains an unsupported value")
 
     normalized = normalize(value, 0)
-    encoded = json.dumps(
-        normalized, ensure_ascii=False, allow_nan=False, separators=(",", ":")
-    )
+    encoded = json.dumps(normalized, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     if len(encoded) > max_characters:
         raise PythonWorkerLimitError("structured result exceeds its character limit")
     return normalized
@@ -381,9 +373,7 @@ def _read_bounded(path: Path, max_bytes: int) -> bytes:
         raise PythonWorkerError("staged object cannot be a symbolic link")
     descriptor = os.open(
         path,
-        os.O_RDONLY
-        | int(getattr(os, "O_BINARY", 0))
-        | int(getattr(os, "O_NOFOLLOW", 0)),
+        os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0)),
     )
     try:
         info = os.fstat(descriptor)
@@ -501,15 +491,18 @@ def _exact(value: Mapping[str, object], expected: set[str]) -> None:
 
 
 def _object(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+    if not isinstance(value, Mapping):
         raise PythonWorkerError(f"{field} must be an object")
-    return value
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise PythonWorkerError(f"{field} must be an object")
+    return cast(Mapping[str, object], mapping)
 
 
 def _array(value: object, field: str) -> list[object]:
     if not isinstance(value, list):
         raise PythonWorkerError(f"{field} must be an array")
-    return value
+    return cast(list[object], value)
 
 
 def _string(value: object, field: str) -> str:

@@ -82,7 +82,7 @@ class DelegateRequest:
     budget: BudgetLimits | None = None
     project_id: str | None = None
     delegation_depth: int = 1
-    context: Mapping[str, Any] = field(default_factory=dict)
+    context: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

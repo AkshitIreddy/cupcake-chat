@@ -8,11 +8,13 @@ import os
 import shutil
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+
+from pydantic import TypeAdapter
 
 from .catalog import sha256_file
 from .types import (
@@ -22,6 +24,8 @@ from .types import (
     RuntimeCompanionArtifact,
     RuntimePackArtifact,
 )
+
+_DOWNLOAD_SNAPSHOT_ADAPTER = TypeAdapter(DownloadSnapshot)
 
 
 class DownloadCancelled(Exception):
@@ -213,7 +217,7 @@ class CheckedDownload:
         headers = {"Range": f"bytes={offset}-"} if offset else {}
         request = Request(url, headers=headers)
         with urlopen(request, timeout=60) as response:
-            final_scheme = urlsplit(response.geturl()).scheme.lower()
+            final_scheme = urlsplit(cast(str, response.geturl())).scheme.lower()
             if requested_scheme == "https" and final_scheme != "https":
                 raise ValueError("download redirect downgraded HTTPS")
             status = getattr(response, "status", 200)
@@ -248,9 +252,7 @@ class CheckedDownload:
                         raise ValueError("download exceeds signed artifact size")
                     # Update persisted progress at chunk boundaries so recovery is
                     # precise without making correctness depend on UI callbacks.
-                    values = asdict(self.snapshot)
-                    values["bytes_downloaded"] = downloaded
-                    self.snapshot = DownloadSnapshot(**values)
+                    self.snapshot = replace(self.snapshot, bytes_downloaded=downloaded)
                     self._persist()
                     for listener in tuple(self._listeners):
                         try:
@@ -267,29 +269,25 @@ class CheckedDownload:
 
     def _recover(self, fallback: DownloadSnapshot) -> DownloadSnapshot:
         try:
-            value = json.loads(self.state_file.read_text(encoding="utf-8"))
-            if value.get("model_id") != self.artifact.id or value.get("destination") != str(
+            snapshot = _DOWNLOAD_SNAPSHOT_ADAPTER.validate_json(
+                self.state_file.read_text(encoding="utf-8")
+            )
+            if snapshot.model_id != self.artifact.id or snapshot.destination != str(
                 self.destination
             ):
                 return fallback
-            value["state"] = DownloadState(value["state"])
-            snapshot = DownloadSnapshot(**value)
             if snapshot.state == DownloadState.COMPLETED:
                 self._verify(self.destination)
                 return snapshot
             if snapshot.state == DownloadState.CANCELLED:
                 return snapshot
             if self.partial.is_file():
-                return DownloadSnapshot(
-                    **{
-                        **asdict(snapshot),
-                        "state": DownloadState.PAUSED,
-                        "bytes_downloaded": min(
-                            self.partial.stat().st_size, self.artifact.size_bytes
-                        ),
-                        "error_code": None,
-                        "error_detail": None,
-                    }
+                return replace(
+                    snapshot,
+                    state=DownloadState.PAUSED,
+                    bytes_downloaded=min(self.partial.stat().st_size, self.artifact.size_bytes),
+                    error_code=None,
+                    error_detail=None,
                 )
         except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
             pass

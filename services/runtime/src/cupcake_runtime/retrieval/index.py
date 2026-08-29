@@ -8,7 +8,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from .models import (
     Citation,
@@ -80,7 +80,7 @@ class SearchIndex:
             self._owns_connection = True
             self._connection.row_factory = sqlite3.Row
         else:
-            self._connection = cast(sqlite3.Connection, database)
+            self._connection = database
             self._owns_connection = False
         self._lock = threading.RLock()
         self._semantic = semantic_index
@@ -183,6 +183,43 @@ class SearchIndex:
             else:
                 self._connection.commit()
                 return cursor.rowcount
+
+    def documents_for_sources(
+        self,
+        *,
+        project_id: str,
+        source_ids: Sequence[str],
+        max_documents: int = 32,
+    ) -> list[SearchDocument]:
+        """Return deterministic exact-source context inside one privacy scope.
+
+        Attachments and explicit references must not depend on lexical overlap
+        with the user's prompt.  The project predicate is deliberately part of
+        the same SQL statement as the source predicate so a guessed source ID
+        can never cross a project boundary.
+        """
+        if not project_id.strip():
+            raise ValueError("project_id is required")
+        identifiers = tuple(dict.fromkeys(item.strip() for item in source_ids if item.strip()))
+        if not identifiers:
+            return []
+        if len(identifiers) > 32:
+            raise ValueError("at most 32 source IDs can be resolved")
+        if not 1 <= max_documents <= 256:
+            raise ValueError("max_documents must be between 1 and 256")
+        per_source_limit = max(1, max_documents // len(identifiers))
+        with self._lock:
+            rows = [
+                row
+                for source_id in identifiers
+                for row in self._connection.execute(
+                    """SELECT * FROM retrieval_documents
+                       WHERE project_id = ? AND source_id = ?
+                       ORDER BY id LIMIT ?""",
+                    (project_id, source_id, per_source_limit),
+                ).fetchall()
+            ][:max_documents]
+        return [_decode(row) for row in rows]
 
     def search(self, plan: RetrievalPlan) -> list[SearchHit]:
         rows = self._candidate_rows(plan)

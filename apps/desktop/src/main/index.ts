@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { CommandRouter } from './commands';
 import { FileHandleRegistry } from './file-handles';
 import { registerIpcHandlers } from './ipc';
+import { createQuitLifecycle } from './quit-lifecycle';
 import { getDesktopSession, installSessionSecurity } from './security';
 import { SidecarSupervisor } from './sidecar-supervisor';
 import { TrayController } from './tray';
@@ -39,7 +40,6 @@ const commands = new CommandRouter();
 const tray = new TrayController();
 let mainWindow: BrowserWindow | undefined;
 let unregisterIpc: (() => void) | undefined;
-let quittingAfterCleanup = false;
 
 const sidecarDirectory = app.isPackaged ? join(process.resourcesPath, 'sidecars') : undefined;
 const executableSuffix = process.platform === 'win32' ? '.exe' : '';
@@ -92,7 +92,7 @@ void app
     mainWindow.on('close', (event) => {
       // Closing the workbench keeps durable work alive in the tray. The tray
       // menu's explicit Quit path runs the checkpoint/shutdown sequence below.
-      if (!quittingAfterCleanup) {
+      if (!quitLifecycle.isReadyToQuit()) {
         event.preventDefault();
         mainWindow?.hide();
       }
@@ -114,15 +114,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', (event) => {
-  if (quittingAfterCleanup) return;
-  event.preventDefault();
-  quittingAfterCleanup = true;
-  unregisterIpc?.();
-  handles.clear();
-  tray.destroy();
-  void runtime.stop().finally(() => app.quit());
-});
+const quitLifecycle = createQuitLifecycle(
+  async () => {
+    unregisterIpc?.();
+    unregisterIpc = undefined;
+    handles.clear();
+    tray.destroy();
+    await runtime.stop();
+  },
+  () => app.quit(),
+);
+
+app.on('before-quit', (event) => quitLifecycle.beforeQuit(event));
 
 async function activateApplication(): Promise<void> {
   if (BrowserWindow.getAllWindows().length === 0) {

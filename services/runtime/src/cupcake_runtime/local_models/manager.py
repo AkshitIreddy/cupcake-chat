@@ -12,10 +12,10 @@ import sys
 import threading
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -102,7 +102,10 @@ class LMStudioManager:
         self, base_url: str = "http://127.0.0.1:1234", client: JsonHttpClient | None = None
     ):
         self.base_url = validate_endpoint(base_url, allow_remote=False)
-        self.client = client or JsonHttpClient()
+        # Loading a GGUF may involve a multi-gigabyte mmap and GPU allocation.
+        # Discovery remains separately bounded; management calls must not give
+        # up after the generic two-second localhost probe timeout.
+        self.client = client or JsonHttpClient(timeout_seconds=120.0)
 
     async def list_models(self) -> Any:
         return await self.client.request("GET", f"{self.base_url}/api/v1/models")
@@ -122,6 +125,20 @@ class LMStudioManager:
         return await self.client.request(
             "POST", f"{self.base_url}/api/v1/models/unload", {"model": model}
         )
+
+
+class LocalRuntimeDiscovery(Protocol):
+    async def discover_defaults(
+        self, *, vllm_endpoints: tuple[str, ...] = ()
+    ) -> tuple[RuntimeEndpoint, ...]: ...
+
+    async def probe(
+        self, kind: RuntimeKind, base_url: str, *, allow_remote: bool = False
+    ) -> RuntimeEndpoint: ...
+
+
+class LMStudioCatalogClient(Protocol):
+    async def list_models(self) -> Any: ...
 
 
 class LlamaCppSupervisor:
@@ -284,9 +301,13 @@ class LlamaCppSupervisor:
                 if status == 200:
                     self._state = RuntimeState.READY
                     self._detail = None
-                    return self.endpoint(metadata=payload if isinstance(payload, dict) else {})
+                    metadata = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+                    return self.endpoint(metadata=metadata)
                 if isinstance(payload, dict):
-                    last_detail = str(payload.get("error") or payload.get("status") or last_detail)
+                    payload_map = cast(dict[str, Any], payload)
+                    last_detail = str(
+                        payload_map.get("error") or payload_map.get("status") or last_detail
+                    )
             except (OSError, URLError, TimeoutError):
                 pass
             await asyncio.sleep(0.1)
@@ -454,12 +475,44 @@ def _minimal_server_environment(api_key: str | None, api_prefix: str | None) -> 
 class LocalModelManager:
     """Facade used by runtime RPC. External vLLM is discovery-only."""
 
-    def __init__(self, discovery: RuntimeDiscovery | None = None):
+    def __init__(
+        self,
+        discovery: LocalRuntimeDiscovery | None = None,
+        lm_studio: LMStudioCatalogClient | None = None,
+    ):
         self.discovery = discovery or RuntimeDiscovery()
+        self.lm_studio = lm_studio or LMStudioManager()
         self._measurements: dict[tuple[str, str], PerformanceMeasurement] = {}
 
     async def discover(self, vllm_endpoints: tuple[str, ...] = ()) -> tuple[RuntimeEndpoint, ...]:
-        return await self.discovery.discover_defaults(vllm_endpoints=vllm_endpoints)
+        endpoints = list(await self.discovery.discover_defaults(vllm_endpoints=vllm_endpoints))
+        for index, endpoint in enumerate(endpoints):
+            if (
+                endpoint.kind is not RuntimeKind.LM_STUDIO
+                or endpoint.state is not RuntimeState.READY
+            ):
+                continue
+            try:
+                payload = await self.lm_studio.list_models()
+            except Exception:
+                # The bounded discovery result remains useful if LM Studio
+                # exits between its probe and the richer management query.
+                continue
+            records = _lm_studio_llm_records(payload)
+            model_states = {
+                record["key"]: {
+                    "display_name": record.get("display_name"),
+                    "loaded": bool(record.get("loaded_instances")),
+                    "context_window": record.get("max_context_length"),
+                }
+                for record in records
+            }
+            endpoints[index] = replace(
+                endpoint,
+                models=tuple(model_states),
+                metadata={**endpoint.metadata, "model_states": model_states},
+            )
+        return tuple(endpoints)
 
     async def attach_vllm(self, base_url: str) -> RuntimeEndpoint:
         # Explicit remote opt-in occurs in the UI before this boundary.
@@ -496,3 +549,23 @@ class LocalModelManager:
 
     def performance(self, runtime_id: str, model_id: str) -> PerformanceMeasurement | None:
         return self._measurements.get((runtime_id, model_id))
+
+
+def _lm_studio_llm_records(payload: Any) -> tuple[dict[str, Any], ...]:
+    if not isinstance(payload, dict):
+        return ()
+    payload_map = cast(dict[str, Any], payload)
+    items = payload_map.get("models", payload_map.get("data", ()))
+    if not isinstance(items, list):
+        return ()
+    records: list[dict[str, Any]] = []
+    for item in cast(list[Any], items):
+        if not isinstance(item, dict):
+            continue
+        item_map = cast(dict[str, Any], item)
+        model_type = item_map.get("type")
+        key = item_map.get("key") or item_map.get("id")
+        if model_type not in {None, "llm"} or not isinstance(key, str) or not key.strip():
+            continue
+        records.append({**item_map, "key": key})
+    return tuple(records)

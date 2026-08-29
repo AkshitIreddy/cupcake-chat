@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Any, cast
 
 SECRET_KEYS = frozenset(
     {
@@ -37,7 +37,7 @@ def _redacted_path(match: re.Match[str]) -> str:
 
 
 class TraceRedactor:
-    def redact(self, value: Any, *, key: str | None = None) -> Any:
+    def redact(self, value: object, *, key: str | None = None) -> Any:
         normalized_key = key.lower().replace("-", "_") if key else None
         if normalized_key in PRIVATE_REASONING_KEYS:
             return "[PRIVATE_REASONING_OMITTED]"
@@ -47,12 +47,13 @@ class TraceRedactor:
         ):
             return "[REDACTED]"
         if isinstance(value, Mapping):
+            mapping = cast(Mapping[object, object], value)
             return {
                 str(item_key): self.redact(item, key=str(item_key))
-                for item_key, item in value.items()
+                for item_key, item in mapping.items()
             }
         if isinstance(value, (list, tuple, set, frozenset)):
-            return [self.redact(item) for item in value]
+            return [self.redact(item) for item in cast(Iterable[object], value)]
         if isinstance(value, bytes):
             return f"[BYTES:{len(value)}]"
         if isinstance(value, str):

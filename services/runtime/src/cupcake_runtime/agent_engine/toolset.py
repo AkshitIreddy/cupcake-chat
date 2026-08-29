@@ -39,7 +39,7 @@ class BrokerDeferredToolset(AbstractToolset[object]):
             if raw_schema is None:
                 schema = {"type": "object", "properties": {}, "additionalProperties": False}
             elif isinstance(raw_schema, Mapping):
-                schema = cast(ObjectJsonSchema, dict(raw_schema))
+                schema = dict(cast(Mapping[str, Any], raw_schema))
             else:
                 raise ValueError(f"tool {name!r} schema must be an object")
             description_value = raw.get("description")

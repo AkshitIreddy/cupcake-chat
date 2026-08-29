@@ -34,13 +34,82 @@ interface SidecarOptions {
   userDataPath?: string;
 }
 
+interface ShutdownTimings {
+  gracefulMs: number;
+  stdinCloseMs: number;
+  terminateMs: number;
+  forceKillMs: number;
+}
+
+interface StoppableChildProcess {
+  readonly exitCode: number | null;
+  readonly stdin: {
+    readonly writable: boolean;
+    end(): unknown;
+  };
+  kill(signal?: NodeJS.Signals | number): boolean;
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  removeListener(
+    event: 'exit',
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): this;
+}
+
 interface PendingRequest {
   resolve: (response: RuntimeResponse) => void;
   timer: NodeJS.Timeout;
 }
 
+interface BrokerFileGrant {
+  id: string;
+  kind: InternalFileGrant['kind'];
+  name: string;
+  absolutePath: string;
+  writable: boolean;
+}
+
+/**
+ * Main-owned replay ledger for desktop file capabilities. Broker processes are
+ * disposable, while renderer handles remain active until explicitly released.
+ * The ledger stores immutable copies so a restarted broker receives the exact
+ * same grants and never a later-mutated object.
+ */
+export class FileGrantReplayLedger {
+  readonly #grants = new Map<string, Readonly<BrokerFileGrant>>();
+
+  register(grant: InternalFileGrant): Readonly<BrokerFileGrant> {
+    const snapshot = Object.freeze({
+      id: grant.id,
+      kind: grant.kind,
+      name: grant.name,
+      absolutePath: grant.absolutePath,
+      writable: grant.writable,
+    });
+    const existing = this.#grants.get(snapshot.id);
+    if (existing && !sameFileGrant(existing, snapshot)) {
+      throw new Error('Conflicting file grant re-registration');
+    }
+    if (!existing) this.#grants.set(snapshot.id, snapshot);
+    return existing ?? snapshot;
+  }
+
+  release(handleId: string): boolean {
+    return this.#grants.delete(handleId);
+  }
+
+  replay(send: (grant: Readonly<BrokerFileGrant>) => void): void {
+    for (const grant of this.#grants.values()) send(grant);
+  }
+}
+
 const METHOD_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,7}$/i;
 const MAX_REQUEST_JSON_BYTES = 4 * 1024 * 1024;
+const DEFAULT_SHUTDOWN_TIMINGS: Readonly<ShutdownTimings> = {
+  gracefulMs: 20_000,
+  stdinCloseMs: 1_000,
+  terminateMs: 2_000,
+  forceKillMs: 2_000,
+};
 
 export class SidecarSupervisor extends EventEmitter {
   readonly #options: Required<
@@ -54,9 +123,11 @@ export class SidecarSupervisor extends EventEmitter {
   #outSequenceByCorrelation = new Map<string, number>();
   #replayGuard = new ReplayGuard(4096, this.#sessionId);
   #pending = new Map<string, PendingRequest>();
+  readonly #fileGrants = new FileGrantReplayLedger();
   #restartCount = 0;
   #status: RuntimeStatus = { state: 'stopped', mode: 'disabled', restartCount: 0 };
   #stopping = false;
+  #stopPromise?: Promise<void>;
   #handshakeTimer?: NodeJS.Timeout;
   #restartTimer?: NodeJS.Timeout;
 
@@ -102,6 +173,11 @@ export class SidecarSupervisor extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.#stopPromise ??= this.#stop();
+    await this.#stopPromise;
+  }
+
+  async #stop(): Promise<void> {
     this.#stopping = true;
     if (this.#handshakeTimer) clearTimeout(this.#handshakeTimer);
     if (this.#restartTimer) clearTimeout(this.#restartTimer);
@@ -111,17 +187,15 @@ export class SidecarSupervisor extends EventEmitter {
 
     const child = this.#child;
     if (child && child.exitCode === null) {
+      const wasReady = this.#status.state === 'ready';
       // Ask the broker to checkpoint/cancel its Python runtime first. Closing
       // stdin alone makes the broker drop its child, bypassing DBOS recovery
       // and provider cleanup during an ordinary desktop quit.
-      if (this.#status.state === 'ready') this.#write('shutdown', {});
-      await waitForChildExit(child, 20_000);
-      if (child.exitCode === null) {
-        child.stdin.end();
-        child.kill('SIGTERM');
-        await waitForChildExit(child, 2_000);
-      }
-      if (child.exitCode === null) child.kill('SIGKILL');
+      await stopChildProcess(
+        child,
+        wasReady ? () => this.#write('shutdown', {}) : undefined,
+        wasReady ? DEFAULT_SHUTDOWN_TIMINGS : { ...DEFAULT_SHUTDOWN_TIMINGS, gracefulMs: 0 },
+      );
     }
     this.#child = undefined;
     this.#secret.fill(0);
@@ -184,7 +258,12 @@ export class SidecarSupervisor extends EventEmitter {
   }
 
   registerFileGrant(grant: InternalFileGrant): void {
+    const snapshot = this.#fileGrants.register(grant);
     if (!this.#child || this.#status.state !== 'ready') return;
+    this.#writeFileGrant(snapshot);
+  }
+
+  #writeFileGrant(grant: Readonly<BrokerFileGrant>): void {
     this.#write('event', {
       type: 'files.granted',
       handle: {
@@ -198,6 +277,8 @@ export class SidecarSupervisor extends EventEmitter {
   }
 
   releaseFileGrant(handleId: string): void {
+    const wasActive = this.#fileGrants.release(handleId);
+    if (!wasActive) return;
     if (!this.#child || this.#status.state !== 'ready') return;
     this.#write('event', { type: 'files.released', handleId });
   }
@@ -289,6 +370,10 @@ export class SidecarSupervisor extends EventEmitter {
         return;
       }
       if (this.#handshakeTimer) clearTimeout(this.#handshakeTimer);
+      // A broker restart loses its in-memory capability store. Replay every
+      // still-active grant before advertising readiness so a renderer request
+      // cannot race ahead of capability restoration.
+      this.#fileGrants.replay((grant) => this.#writeFileGrant(grant));
       this.#updateStatus({
         state: 'ready',
         mode: 'broker',
@@ -395,6 +480,16 @@ export class SidecarSupervisor extends EventEmitter {
   }
 }
 
+function sameFileGrant(left: Readonly<BrokerFileGrant>, right: Readonly<BrokerFileGrant>): boolean {
+  return (
+    left.id === right.id &&
+    left.kind === right.kind &&
+    left.name === right.name &&
+    left.absolutePath === right.absolutePath &&
+    left.writable === right.writable
+  );
+}
+
 function validateRequest(request: RuntimeRequest): { code: string; message: string } | null {
   if (!request || typeof request !== 'object' || !METHOD_PATTERN.test(request.method ?? '')) {
     return { code: 'INVALID_REQUEST', message: 'Runtime method is invalid' };
@@ -482,15 +577,60 @@ function failure<T>(code: string, message: string, retryable: boolean): RuntimeR
   return { ok: false, error: { code, message, retryable } };
 }
 
-async function waitForChildExit(
-  child: ChildProcessWithoutNullStreams,
-  timeoutMs: number,
+export async function stopChildProcess(
+  child: StoppableChildProcess,
+  sendShutdown: (() => void) | undefined,
+  timings: Readonly<ShutdownTimings> = DEFAULT_SHUTDOWN_TIMINGS,
 ): Promise<void> {
   if (child.exitCode !== null) return;
-  await Promise.race([
-    new Promise<void>((resolve) => child.once('exit', () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+
+  if (sendShutdown) {
+    try {
+      sendShutdown();
+    } catch {
+      // Continue through the bounded escalation path when the pipe closed
+      // between the liveness check and the shutdown write.
+    }
+  }
+  if (await waitForChildExit(child, timings.gracefulMs)) return;
+
+  try {
+    if (child.stdin.writable) child.stdin.end();
+  } catch {
+    // A concurrently closing pipe is equivalent to this escalation stage.
+  }
+  if (await waitForChildExit(child, timings.stdinCloseMs)) return;
+
+  child.kill('SIGTERM');
+  if (await waitForChildExit(child, timings.terminateMs)) return;
+
+  child.kill('SIGKILL');
+  await waitForChildExit(child, timings.forceKillMs);
+}
+
+export async function waitForChildExit(
+  child: Pick<StoppableChildProcess, 'exitCode' | 'once' | 'removeListener'>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null) return true;
+  if (timeoutMs <= 0) return child.exitCode !== null;
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (exited: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      resolve(exited);
+    };
+    const onExit = (): void => finish(true);
+    const timer = setTimeout(() => finish(child.exitCode !== null), timeoutMs);
+
+    child.once('exit', onExit);
+    // The process may exit between the initial check and listener install.
+    if (child.exitCode !== null) finish(true);
+  });
 }
 
 function normalizePayload(payload: unknown): Record<string, unknown> {

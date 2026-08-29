@@ -7,9 +7,9 @@ import re
 import sqlite3
 import uuid
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .models import LegacyRecord, MigrationReport
 
@@ -38,6 +38,7 @@ GENERATED_DIRECTORY_NAMES = frozenset(
     {"__pycache__", "generated", "build", "dist", ".git", ".venv", "venv"}
 )
 SECRET_PLACEHOLDER = "[legacy credential omitted]"
+type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b([a-z0-9_.-]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|"
     r"secret|password|authorization)[a-z0-9_.-]*)\s*([:=])\s*"
@@ -326,10 +327,9 @@ class LegacyImporter:
                         "document", candidate.get("text", candidate.get("content"))
                     )
                     if isinstance(text, str):
-                        metadata = (
-                            candidate.get("metadata")
-                            if isinstance(candidate.get("metadata"), dict)
-                            else {}
+                        raw_metadata = candidate.get("metadata")
+                        metadata: dict[str, JsonValue] = (
+                            raw_metadata if isinstance(raw_metadata, dict) else {}
                         )
                         result.append(
                             (
@@ -418,7 +418,7 @@ class LegacyImporter:
             self._warnings.append(f"could not read legacy file: {path.name}")
             return None
 
-    def _read_json(self, path: Path, *, relative_to: Path | None = None) -> Any | None:
+    def _read_json(self, path: Path, *, relative_to: Path | None = None) -> JsonValue:
         if relative_to is None:
             raw = self._read_text(path)
         else:
@@ -441,7 +441,8 @@ class LegacyImporter:
         if raw is None:
             return None
         try:
-            return json.loads(raw)
+            # The stdlib JSON decoder guarantees this recursive value shape.
+            return cast(JsonValue, json.loads(raw))
         except json.JSONDecodeError:
             self._warnings.append(f"invalid JSON was ignored: {path.name}")
             return None
@@ -493,11 +494,11 @@ class LegacyImporter:
         return found
 
 
-def _flatten_strings(value: Any) -> Iterable[str]:
+def _flatten_strings(value: object) -> Iterable[str]:
     if isinstance(value, str):
         yield value
     elif isinstance(value, (list, tuple)):
-        for item in value:
+        for item in cast(Sequence[object], value):
             yield from _flatten_strings(item)
 
 
@@ -532,13 +533,14 @@ def _redact_secret_text(value: str) -> str:
     return _KNOWN_KEY_SHAPE.sub(SECRET_PLACEHOLDER, value)
 
 
-def _redact_payload(value: Any) -> Any:
+def _redact_payload(value: object) -> Any:
     if isinstance(value, str):
         return _redact_secret_text(value)
-    if isinstance(value, dict):
-        return {str(key): _redact_payload(item) for key, item in value.items()}
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        return {str(key): _redact_payload(item) for key, item in mapping.items()}
     if isinstance(value, list):
-        return [_redact_payload(item) for item in value]
+        return [_redact_payload(item) for item in cast(list[object], value)]
     if isinstance(value, tuple):
-        return tuple(_redact_payload(item) for item in value)
+        return tuple(_redact_payload(item) for item in cast(tuple[object, ...], value))
     return value

@@ -7,7 +7,7 @@ import sqlite3
 from collections.abc import Iterable
 from dataclasses import replace
 from threading import RLock
-from typing import Protocol, cast
+from typing import Protocol
 
 from .models import RunEvent
 
@@ -41,7 +41,7 @@ class SqliteEventJournal:
             self._connection.row_factory = sqlite3.Row
             self._owns_connection = True
         else:
-            self._connection = cast(sqlite3.Connection, database)
+            self._connection = database
             self._owns_connection = False
         self._lock = RLock()
         self._configure()

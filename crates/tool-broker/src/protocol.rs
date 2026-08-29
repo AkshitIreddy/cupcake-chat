@@ -378,6 +378,16 @@ fn utf16_cmp(left: &str, right: &str) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AuthenticationFixture {
+        secret_base64_url: String,
+        unsigned_envelope: Value,
+        canonical_unsigned: String,
+        auth_tag: String,
+    }
 
     fn envelope(sequence: u64) -> ProtocolEnvelope {
         ProtocolEnvelope::unsigned(
@@ -433,10 +443,38 @@ mod tests {
             canonical_json(&serde_json::json!({"value": 1e-7})).unwrap(),
             r#"{"value":1e-7}"#
         );
+        let parsed: Value = serde_json::from_str(r#"{"value":13.356231689453125}"#).unwrap();
+        assert_eq!(
+            parsed["value"].as_f64().unwrap().to_bits(),
+            13.356231689453125_f64.to_bits()
+        );
+        assert_eq!(
+            canonical_json(&parsed).unwrap(),
+            r#"{"value":13.356231689453125}"#
+        );
         assert_eq!(
             canonical_json(&serde_json::json!({"\u{e000}": 1, "😀": 2})).unwrap(),
             "{\"😀\":2,\"\u{e000}\":1}"
         );
+    }
+
+    #[test]
+    fn matches_shared_python_typescript_authentication_vectors() {
+        let fixture: AuthenticationFixture = serde_json::from_str(include_str!(
+            "../../../packages/contracts/test/protocol-auth-vectors.json"
+        ))
+        .unwrap();
+        let secret = BASE64_URL_SAFE_NO_PAD
+            .decode(fixture.secret_base64_url)
+            .unwrap();
+        assert_eq!(
+            canonical_json(&fixture.unsigned_envelope).unwrap(),
+            fixture.canonical_unsigned
+        );
+        let mut envelope_value = fixture.unsigned_envelope;
+        envelope_value["authTag"] = Value::String(String::new());
+        let envelope: ProtocolEnvelope = serde_json::from_value(envelope_value).unwrap();
+        assert_eq!(envelope.sign(&secret).unwrap().auth_tag, fixture.auth_tag);
     }
 
     #[test]

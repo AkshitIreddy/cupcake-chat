@@ -5,10 +5,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from .types import (
@@ -21,6 +21,31 @@ from .types import (
 
 class CatalogSignatureError(ValueError):
     pass
+
+
+def _string_mapping(value: object, *, context: str) -> Mapping[str, Any]:
+    """Validate the object boundary before using dynamic signed-catalog fields."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{context} must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError(f"{context} keys must be strings")
+    return cast(Mapping[str, Any], mapping)
+
+
+def _object_sequence(value: object, *, context: str) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise ValueError(f"{context} must be an array")
+    items = cast(Sequence[object], value)
+    return tuple(_string_mapping(item, context=f"{context} entry") for item in items)
+
+
+def _string_dictionary(value: object, *, context: str) -> dict[str, str]:
+    mapping = _string_mapping(value, context=context)
+    if not all(isinstance(item, str) for item in mapping.values()):
+        raise ValueError(f"{context} values must be strings")
+    return {key: cast(str, item) for key, item in mapping.items()}
 
 
 def canonical_json(payload: Mapping[str, Any]) -> bytes:
@@ -42,9 +67,10 @@ class SignedModelCatalog:
     ) -> SignedModelCatalog:
         signature = document.get("signature")
         key_id = str(document.get("key_id", ""))
-        payload = document.get("payload")
-        if not signature or not key_id or not isinstance(payload, Mapping):
+        raw_payload = document.get("payload")
+        if not signature or not key_id or not isinstance(raw_payload, Mapping):
             raise CatalogSignatureError("catalog requires key_id, payload, and detached signature")
+        payload = _string_mapping(cast(object, raw_payload), context="catalog payload")
         try:
             public_key = public_keys[key_id]
         except KeyError as exc:
@@ -53,13 +79,16 @@ class SignedModelCatalog:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
             Ed25519PublicKey.from_public_bytes(public_key).verify(
-                base64.b64decode(signature, validate=True), canonical_json(payload)
+                base64.b64decode(str(signature), validate=True), canonical_json(payload)
             )
         except ImportError as exc:
             raise RuntimeError("signed catalogs require the cryptography package") from exc
         except Exception as exc:
             raise CatalogSignatureError("catalog signature verification failed") from exc
-        models = tuple(ModelArtifact(**model) for model in payload.get("models", []))
+        models = tuple(
+            ModelArtifact(**dict(model))
+            for model in _object_sequence(payload.get("models", ()), context="catalog models")
+        )
         ids = [model.id for model in models]
         filenames = [model.filename for model in models]
         if len(ids) != len(set(ids)) or len(filenames) != len(set(filenames)):
@@ -102,14 +131,12 @@ class SignedRuntimeCatalog:
     ) -> SignedRuntimeCatalog:
         signature, key_id, payload = _verify_signed_document(document, public_keys)
         del signature
-        runtime_values = payload.get("runtimes", [])
-        if not isinstance(runtime_values, list):
-            raise ValueError("runtime catalog runtimes must be an array")
+        runtime_values = _object_sequence(
+            payload.get("runtimes", ()), context="runtime catalog runtimes"
+        )
         runtimes: list[RuntimePackArtifact] = []
         runtimes_by_id: dict[str, RuntimePackArtifact] = {}
         for value in runtime_values:
-            if not isinstance(value, Mapping):
-                raise ValueError("runtime catalog entries must be objects")
             companions = tuple(
                 RuntimeCompanionArtifact(
                     id=str(companion["id"]),
@@ -117,18 +144,18 @@ class SignedRuntimeCatalog:
                     sha256=str(companion["sha256"]),
                     urls=tuple(str(item) for item in companion["urls"]),
                     filename=str(companion["filename"]),
-                    files={
-                        str(path): str(digest) for path, digest in dict(companion["files"]).items()
-                    },
+                    files=_string_dictionary(companion["files"], context="runtime companion files"),
                     license=str(companion["license"]),
                     license_url=str(companion["license_url"]),
                     license_requires_acceptance=bool(
                         companion.get("license_requires_acceptance", False)
                     ),
                 )
-                for companion in value.get("companions", [])
+                for companion in _object_sequence(
+                    value.get("companions", ()), context="runtime companions"
+                )
             )
-            files = {str(path): str(digest) for path, digest in dict(value["files"]).items()}
+            files = _string_dictionary(value["files"], context="runtime files")
             inherited_id = value.get("inherits_files_from")
             if inherited_id is not None:
                 try:
@@ -168,7 +195,12 @@ class SignedRuntimeCatalog:
                     )
                 ),
                 companions=companions,
-                hardware_compatibility=dict(value.get("hardware_compatibility", {})),
+                hardware_compatibility=dict(
+                    _string_mapping(
+                        value.get("hardware_compatibility", {}),
+                        context="runtime hardware compatibility",
+                    )
+                ),
                 prerequisites=tuple(str(item) for item in value.get("prerequisites", [])),
                 bundled_by_default=bool(value.get("bundled_by_default", False)),
             )
@@ -193,9 +225,10 @@ def _verify_signed_document(
 ) -> tuple[str, str, Mapping[str, Any]]:
     signature = document.get("signature")
     key_id = str(document.get("key_id", ""))
-    payload = document.get("payload")
-    if not signature or not key_id or not isinstance(payload, Mapping):
+    raw_payload = document.get("payload")
+    if not signature or not key_id or not isinstance(raw_payload, Mapping):
         raise CatalogSignatureError("catalog requires key_id, payload, and detached signature")
+    payload = _string_mapping(cast(object, raw_payload), context="catalog payload")
     try:
         public_key = public_keys[key_id]
     except KeyError as exc:

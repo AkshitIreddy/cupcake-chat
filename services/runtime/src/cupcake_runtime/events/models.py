@@ -38,7 +38,7 @@ class RunEvent:
     run_id: str
     sequence: int
     kind: EventKind
-    payload: Mapping[str, Any] = field(default_factory=dict)
+    payload: Mapping[str, Any] = field(default_factory=dict[str, Any])
     task_id: str | None = None
     parent_run_id: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

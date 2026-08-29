@@ -42,8 +42,8 @@ def _canonical(value: Any) -> str:
         return _canonical_float(value)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    if isinstance(value, list):
-        array_value = cast(list[Any], value)
+    if isinstance(value, (list, tuple)):
+        array_value = cast(list[Any] | tuple[Any, ...], value)
         return "[" + ",".join(_canonical(item) for item in array_value) + "]"
     if isinstance(value, dict):
         object_value = cast(dict[object, Any], value)
@@ -126,19 +126,73 @@ def _read_frame(stream: BinaryIO) -> dict[str, Any] | None:
     body = stream.read(length)
     if len(body) != length:
         raise DesktopProtocolError("truncated frame body")
-    value = json.loads(body)
+    try:
+        text = body.decode("utf-8")
+        value = json.loads(
+            text,
+            object_pairs_hook=_object_without_duplicate_keys,
+            parse_constant=_reject_nonfinite_number,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, DesktopProtocolError) as exc:
+        raise DesktopProtocolError("frame body is not strict UTF-8 JSON") from exc
     if not isinstance(value, dict):
         raise DesktopProtocolError("frame body must be an object")
-    return cast(dict[str, Any], value)
+    typed = cast(dict[str, Any], value)
+    if _canonical(typed) != text:
+        raise DesktopProtocolError("frame body must use canonical JSON encoding")
+    return typed
+
+
+def _encode_frame(envelope: dict[str, Any]) -> bytes:
+    body = _canonical(envelope).encode("utf-8")
+    if not body or len(body) > MAX_FRAME_BYTES:
+        raise DesktopProtocolError("encoded frame exceeds limit")
+    return struct.pack(">I", len(body)) + body
+
+
+def _write_encoded_frame(stream: BinaryIO, frame: bytes) -> None:
+    stream.write(frame)
+    stream.flush()
 
 
 def _write_frame(stream: BinaryIO, envelope: dict[str, Any]) -> None:
-    body = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if not body or len(body) > MAX_FRAME_BYTES:
-        raise DesktopProtocolError("encoded frame exceeds limit")
-    stream.write(struct.pack(">I", len(body)))
-    stream.write(body)
-    stream.flush()
+    _write_encoded_frame(stream, _encode_frame(envelope))
+
+
+def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DesktopProtocolError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite_number(value: str) -> None:
+    raise DesktopProtocolError(f"non-finite JSON number: {value}")
+
+
+# Public, typed protocol primitives used by conformance and transport tests.
+# The server keeps the underscored implementations internally so the wire loop
+# remains visually distinct from its test-facing boundary.
+def canonical_json(value: Any) -> str:
+    return _canonical(value)
+
+
+def sign_envelope(envelope: dict[str, Any], secret: bytes) -> dict[str, Any]:
+    return _sign(envelope, secret)
+
+
+def verify_envelope(envelope: dict[str, Any], secret: bytes) -> bool:
+    return _verify(envelope, secret)
+
+
+def read_frame(stream: BinaryIO) -> dict[str, Any] | None:
+    return _read_frame(stream)
+
+
+def write_frame(stream: BinaryIO, envelope: dict[str, Any]) -> None:
+    _write_frame(stream, envelope)
 
 
 class ReplayGuard:
@@ -482,7 +536,7 @@ class DesktopRuntimeServer:
         payload: dict[str, Any],
     ) -> None:
         with self._write_lock:
-            self.out_sequences[correlation_id] += 1
+            next_sequence = self.out_sequences[correlation_id] + 1
             deadline = (
                 (datetime.now(UTC) + timedelta(seconds=30))
                 .isoformat(timespec="milliseconds")
@@ -493,13 +547,18 @@ class DesktopRuntimeServer:
                 "messageId": new_id(),
                 "correlationId": correlation_id,
                 "sessionId": session_id,
-                "sequence": self.out_sequences[correlation_id],
+                "sequence": next_sequence,
                 "deadline": deadline,
                 "lineage": {},
                 "type": message_type,
                 "payload": payload,
             }
-            _write_frame(stream, _sign(envelope, self.secret))
+            # Sign and encode before reserving the sequence. If a result contains
+            # a non-JSON value (or exceeds the frame limit), the caller can still
+            # send its fallback error as sequence 1 instead of creating a gap.
+            frame = _encode_frame(_sign(envelope, self.secret))
+            self.out_sequences[correlation_id] = next_sequence
+            _write_encoded_frame(stream, frame)
 
 
 def _run_event_loop(loop: asyncio.AbstractEventLoop) -> None:
@@ -512,4 +571,9 @@ __all__ = [
     "PROTOCOL_VERSION",
     "DesktopProtocolError",
     "DesktopRuntimeServer",
+    "canonical_json",
+    "read_frame",
+    "sign_envelope",
+    "verify_envelope",
+    "write_frame",
 ]

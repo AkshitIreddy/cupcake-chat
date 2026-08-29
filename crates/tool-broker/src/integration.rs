@@ -39,6 +39,7 @@ use uuid::Uuid;
 
 const MAX_FILE_READ_BYTES: usize = 4 * 1024 * 1024;
 const MAX_STAGED_ATTACHMENT_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_ATTACHMENT_MANIFEST_BYTES: u64 = 16 * 1024;
 const MAX_MIGRATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_MIGRATION_SNAPSHOT_FILES: usize = 50_000;
 const GRANT_LIFETIME_DAYS: i64 = 30;
@@ -487,6 +488,7 @@ impl BrokerIntegration {
         let staging_id = Uuid::now_v7().to_string();
         let directory = self.data_dir.join("broker-ingestion").join(&staging_id);
         std::fs::create_dir_all(&directory)?;
+        let mut cleanup = AttachmentStageCleanup::new(directory.clone());
         let partial = directory.join("payload.partial");
         let destination = directory.join(format!("{staging_id}.input"));
         let mut source = File::open(resolved.as_path())?;
@@ -525,7 +527,14 @@ impl BrokerIntegration {
             return Err(error);
         }
         if total != metadata.len() {
-            let _ = std::fs::remove_dir_all(&directory);
+            return Err(BrokerError::Integrity(
+                "attachment changed while it was staged".into(),
+            ));
+        }
+        resolved.revalidate()?;
+        validate_exact_target(desktop, &resolved)?;
+        let source_metadata = source.metadata()?;
+        if !source_metadata.is_file() || source_metadata.len() != total {
             return Err(BrokerError::Integrity(
                 "attachment changed while it was staged".into(),
             ));
@@ -553,6 +562,7 @@ impl BrokerIntegration {
                 "sha256": sha256
             }),
         })?;
+        cleanup.disarm();
         Ok(StagedAttachment {
             staging_id,
             payload_path: destination,
@@ -560,7 +570,73 @@ impl BrokerIntegration {
             byte_size: total,
             sha256,
             display_name: desktop.display_name.clone(),
+            source_handle_id: handle_id.to_owned(),
+            broker_grant_id: desktop.broker_id.expose_opaque().to_owned(),
         })
+    }
+
+    /// Re-bind a staged attachment to the still-live desktop capability and to
+    /// both copies' exact digests immediately before it crosses the private
+    /// broker/runtime pipe. The runtime independently verifies the staged copy
+    /// again before consuming it.
+    pub fn revalidate_staged_attachment(&mut self, staged: &StagedAttachment) -> Result<()> {
+        validate_handle_id(&staged.staging_id)?;
+        validate_handle_id(&staged.source_handle_id)?;
+        let desktop = self
+            .desktop_grants
+            .get(&staged.source_handle_id)
+            .ok_or(BrokerError::InvalidGrant)?;
+        if desktop.kind != DesktopFileKind::File
+            || desktop.broker_id.expose_opaque() != staged.broker_grant_id
+        {
+            return Err(BrokerError::InvalidGrant);
+        }
+        let relative = desktop
+            .fixed_relative
+            .as_deref()
+            .ok_or(BrokerError::InvalidGrant)?;
+        let resolved = self.grants.resolve(
+            &desktop.broker_id,
+            relative,
+            FilesystemPermission::Read,
+            Utc::now().timestamp_millis(),
+            None,
+        )?;
+        resolved.revalidate()?;
+        validate_exact_target(desktop, &resolved)?;
+        verify_regular_file_digest(resolved.as_path(), staged.byte_size, &staged.sha256)?;
+        verify_regular_file_digest(&staged.payload_path, staged.byte_size, &staged.sha256)?;
+
+        let manifest_metadata = std::fs::symlink_metadata(&staged.manifest_path)?;
+        if !manifest_metadata.is_file()
+            || manifest_metadata.file_type().is_symlink()
+            || manifest_metadata.len() > MAX_ATTACHMENT_MANIFEST_BYTES
+        {
+            return Err(BrokerError::Integrity(
+                "attachment staging manifest changed".into(),
+            ));
+        }
+        let manifest: Value = serde_json::from_slice(&std::fs::read(&staged.manifest_path)?)?;
+        let payload_name = staged
+            .payload_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or(BrokerError::PathEscape)?;
+        if manifest.get("version").and_then(Value::as_u64) != Some(1)
+            || manifest.get("stagingId").and_then(Value::as_str) != Some(staged.staging_id.as_str())
+            || manifest.get("sourceHandle").and_then(Value::as_str)
+                != Some(staged.source_handle_id.as_str())
+            || manifest.get("brokerGrantId").and_then(Value::as_str)
+                != Some(staged.broker_grant_id.as_str())
+            || manifest.get("byteSize").and_then(Value::as_u64) != Some(staged.byte_size)
+            || manifest.get("sha256").and_then(Value::as_str) != Some(staged.sha256.as_str())
+            || manifest.get("payload").and_then(Value::as_str) != Some(payload_name)
+        {
+            return Err(BrokerError::Integrity(
+                "attachment staging manifest binding is invalid".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn cleanup_staged_attachment(&self, staging_id: &str) -> Result<()> {
@@ -1498,6 +1574,72 @@ pub struct StagedAttachment {
     pub byte_size: u64,
     pub sha256: String,
     pub display_name: String,
+    pub source_handle_id: String,
+    pub broker_grant_id: String,
+}
+
+#[derive(Debug)]
+struct AttachmentStageCleanup {
+    directory: Option<PathBuf>,
+}
+
+impl AttachmentStageCleanup {
+    fn new(directory: PathBuf) -> Self {
+        Self {
+            directory: Some(directory),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.directory = None;
+    }
+}
+
+impl Drop for AttachmentStageCleanup {
+    fn drop(&mut self) {
+        if let Some(directory) = self.directory.take() {
+            let _ = std::fs::remove_dir_all(directory);
+        }
+    }
+}
+
+fn verify_regular_file_digest(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() != expected_size {
+        return Err(BrokerError::Integrity(
+            "attachment staging file binding changed".into(),
+        ));
+    }
+    let mut input = File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let count = input.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count as u64)
+            .ok_or_else(|| BrokerError::Integrity("attachment size overflow".into()))?;
+        if total > MAX_STAGED_ATTACHMENT_BYTES {
+            return Err(BrokerError::Integrity(
+                "attachment exceeds staging limit".into(),
+            ));
+        }
+        digest.update(&buffer[..count]);
+    }
+    buffer.fill(0);
+    if total != expected_size || hex::encode(digest.finalize()) != expected_sha256 {
+        return Err(BrokerError::Integrity(
+            "attachment staging digest changed".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -2022,12 +2164,82 @@ mod tests {
             b"private attachment"
         );
         assert_eq!(staged.byte_size, 18);
+        broker.revalidate_staged_attachment(&staged).unwrap();
         let manifest = std::fs::read_to_string(&staged.manifest_path).unwrap();
         assert!(!manifest.contains(selected.path().to_str().unwrap()));
         let staging_id = staged.staging_id.clone();
         let staging_root = staged.payload_path.parent().unwrap().to_path_buf();
         broker.cleanup_staged_attachment(&staging_id).unwrap();
         assert!(!staging_root.exists());
+    }
+
+    #[test]
+    fn attachment_revalidation_rejects_source_stage_and_grant_changes() {
+        for mutation in ["source", "stage", "grant"] {
+            let data = tempdir().unwrap();
+            let selected = tempdir().unwrap();
+            let path = selected.path().join("source.txt");
+            std::fs::write(&path, "bound attachment").unwrap();
+            let mut broker = BrokerIntegration::open(data.path()).unwrap();
+            let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+            broker
+                .handle_desktop_event(
+                    json!({"type":"files.granted","handle":{"id":handle_id,"kind":"file","name":"source.txt","absolutePath":path,"writable":false}})
+                        .as_object().unwrap(),
+                )
+                .unwrap();
+            let staged = broker.stage_attachment(handle_id).unwrap();
+            match mutation {
+                "source" => std::fs::write(&path, "other attachment").unwrap(),
+                "stage" => std::fs::write(&staged.payload_path, "other attachment").unwrap(),
+                "grant" => {
+                    broker
+                        .handle_desktop_event(
+                            json!({"type":"files.released","handleId":handle_id})
+                                .as_object()
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert!(broker.revalidate_staged_attachment(&staged).is_err());
+            broker
+                .cleanup_staged_attachment(&staged.staging_id)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn attachment_revalidation_rejects_manifest_tampering() {
+        let data = tempdir().unwrap();
+        let selected = tempdir().unwrap();
+        let path = selected.path().join("source.txt");
+        std::fs::write(&path, "bound attachment").unwrap();
+        let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"file","name":"source.txt","absolutePath":path,"writable":false}})
+                    .as_object().unwrap(),
+            )
+            .unwrap();
+        let staged = broker.stage_attachment(handle_id).unwrap();
+        let mut manifest: Value =
+            serde_json::from_slice(&std::fs::read(&staged.manifest_path).unwrap()).unwrap();
+        manifest["sha256"] = json!("00".repeat(32));
+        std::fs::write(
+            &staged.manifest_path,
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            broker.revalidate_staged_attachment(&staged),
+            Err(BrokerError::Integrity(_))
+        ));
+        broker
+            .cleanup_staged_attachment(&staged.staging_id)
+            .unwrap();
     }
 
     #[test]

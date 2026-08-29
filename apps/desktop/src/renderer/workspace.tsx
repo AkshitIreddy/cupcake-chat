@@ -25,6 +25,7 @@ import type {
   Task,
   ToolDescriptor,
 } from './types';
+import { createKeyedRequestCoalescer, mergeModelDescriptors } from './model-selection';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
@@ -51,13 +52,17 @@ export interface MessageRecord extends LiveChatMessage {
   modelId?: string | null;
   providerId?: string | null;
   attachments?: AttachmentRecord[];
+  references?: ReferenceRecord[];
   usage?: { inputTokens?: number; outputTokens?: number; estimatedCost?: string };
   citations?: Array<{ id: string; title: string; url?: string }>;
   reasoningSummary?: string;
 }
 
 export interface AttachmentRecord {
-  handleId: string;
+  /** Present only while the desktop file grant is live in the composer. */
+  handleId?: string;
+  /** Product-owned persisted identity; never a raw path or desktop grant. */
+  id?: string;
   name: string;
   size?: number;
   extension?: string;
@@ -68,6 +73,39 @@ export interface ReferenceRecord {
   id: string;
   type: 'project' | 'task' | 'artifact' | 'memory';
   label: string;
+  projectId?: string | null;
+  conversationId?: string | null;
+  revisionId?: string;
+}
+
+export interface StagedAttachmentRecord extends AttachmentRecord {
+  handleId: string;
+}
+
+export interface OutboundIntent {
+  provider: string;
+  modelId: string;
+  privacyRoute: string;
+  costClass: string;
+  projectId: string | null;
+  conversationId: string | null;
+  branchId: string | null;
+  messageId: string | null;
+  contentSha256: string;
+  attachmentHandleIds: string[];
+  attachmentBindings: Array<{ handleId: string; byteSize: number; sha256: string }>;
+  referenceIds: string[];
+  referenceBindings: Array<{
+    id: string;
+    type: ReferenceRecord['type'];
+    contentSha256: string;
+    revisionId?: string;
+    objectDigest?: string;
+    version?: number;
+    status?: string;
+  }>;
+  memoryIds: string[];
+  toolIds: string[];
 }
 
 export interface ArtifactRecord {
@@ -105,9 +143,21 @@ export interface LocalRuntimeRecord {
   id: string;
   name: string;
   status: string;
-  models?: Array<Record<string, unknown>>;
+  models?: Array<Record<string, unknown> | string>;
   detail?: string;
 }
+
+type ModelAction =
+  | 'download'
+  | 'load'
+  | 'unload'
+  | 'remove'
+  | 'status'
+  | 'benchmark'
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'reset';
 
 export interface ToolActivity {
   id: string;
@@ -180,11 +230,13 @@ interface RuntimeBranch {
 interface RuntimeMessage {
   id: string;
   branch_id?: string;
+  run_id?: string | null;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   created_at?: string;
   model_id?: string | null;
   provider_id?: string | null;
+  canonical_metadata?: Record<string, unknown>;
 }
 
 interface RuntimeMemory {
@@ -284,7 +336,9 @@ interface WorkspaceContextValue {
   activeRunId: string | null;
   setActiveProject(projectId: string | null): Promise<void>;
   createProject(name: string, description?: string): Promise<void>;
-  createConversation(title?: string): Promise<void>;
+  createConversation(
+    title?: string,
+  ): Promise<{ conversationId: string; branchId: string; projectId: string | null } | null>;
   selectConversation(conversationId: string): Promise<void>;
   selectBranch(branchId: string): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
@@ -293,22 +347,32 @@ interface WorkspaceContextValue {
   sendMessage(input: {
     content: string;
     modelId: string;
-    attachments: AttachmentRecord[];
+    attachments: StagedAttachmentRecord[];
     references?: ReferenceRecord[];
     reasoningEffort: ReasoningEffort;
     enabledToolIds: string[];
     mode?: 'send' | 'retry' | 'continue' | 'edit' | 'regenerate';
     messageId?: string;
+    conversationId?: string;
+    branchId?: string;
+    projectId?: string | null;
     outboundConfirmationToken?: string;
-  }): Promise<void>;
+    outboundIntent?: OutboundIntent;
+  }): Promise<boolean>;
   preflightCloudDisclosure(input: {
     content: string;
     modelId: string;
-    attachments: AttachmentRecord[];
+    attachments: StagedAttachmentRecord[];
     references: ReferenceRecord[];
+    enabledToolIds?: string[];
+    messageId?: string;
+    conversationId?: string;
+    branchId?: string;
+    projectId?: string | null;
   }): Promise<{
-    confirmationToken: string;
+    confirmationToken: string | null;
     disclosure: { privacyRoute?: string; costClass?: string };
+    outboundIntent: OutboundIntent;
   }>;
   stopRun(): Promise<void>;
   copyMessage(messageId: string): Promise<boolean>;
@@ -330,20 +394,7 @@ interface WorkspaceContextValue {
   exportArtifact(artifact: ArtifactRecord): Promise<void>;
   querySearch(query: string, globalScope?: boolean): Promise<void>;
   selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
-  runModelAction(
-    action:
-      | 'download'
-      | 'load'
-      | 'unload'
-      | 'remove'
-      | 'status'
-      | 'benchmark'
-      | 'pause'
-      | 'resume'
-      | 'cancel'
-      | 'reset',
-    modelId: string,
-  ): Promise<void>;
+  runModelAction(action: ModelAction, modelId: string): Promise<void>;
   setToolEnabled(toolId: string, enabled: boolean): Promise<void>;
   connectMcp(input: {
     name: string;
@@ -390,6 +441,198 @@ function textValue(value: unknown, fallback = ''): string {
   return fallback;
 }
 
+export async function recoverWorkspaceSupportRequest<T>(
+  label: string,
+  operation: Promise<T>,
+  fallback: T,
+): Promise<{ value: T; failure?: string }> {
+  try {
+    return { value: await operation };
+  } catch (reason) {
+    const detail = reason instanceof Error ? reason.message : 'request failed';
+    return { value: fallback, failure: `${label}: ${detail}` };
+  }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function runtimeEventRunId(
+  payload: Record<string, unknown>,
+  activeRunId: string | null,
+): string | null {
+  return typeof payload.runId === 'string'
+    ? payload.runId
+    : typeof payload.run_id === 'string'
+      ? payload.run_id
+      : activeRunId;
+}
+
+function withFinalMessageProvenance(
+  message: MessageRecord,
+  payload: Record<string, unknown>,
+): MessageRecord {
+  const persisted = recordValue(payload.message);
+  if (!persisted) return message;
+  const branchId = textValue(persisted.branch_id ?? persisted.branchId, message.branchId);
+  const createdAt = textValue(persisted.created_at ?? persisted.createdAt, message.createdAt);
+  const modelId = textValue(persisted.model_id ?? persisted.modelId, message.modelId ?? '');
+  const providerId = textValue(
+    persisted.provider_id ?? persisted.providerId,
+    message.providerId ?? '',
+  );
+  return {
+    ...message,
+    branchId: branchId || message.branchId,
+    createdAt: createdAt || message.createdAt,
+    modelId: modelId || message.modelId,
+    providerId: providerId || message.providerId,
+  };
+}
+
+function upsertAssistantMessage(
+  messages: MessageRecord[],
+  runId: string,
+  update: (message: MessageRecord) => MessageRecord,
+): MessageRecord[] {
+  const existing = messages.find((message) => message.id === runId);
+  if (!existing) {
+    return [...messages, update({ id: runId, role: 'assistant', content: '', streaming: true })];
+  }
+  return messages.map((message) => (message.id === runId ? update(message) : message));
+}
+
+function runtimeFailureEvent(type: string): boolean {
+  return (
+    type === 'run.failed' ||
+    type === 'message.failed' ||
+    type === 'runtime.failed' ||
+    type === 'runtime.error' ||
+    type.endsWith('.error')
+  );
+}
+
+function runtimeFailureMessage(payload: Record<string, unknown>): string {
+  const error = recordValue(payload.error);
+  return textValue(
+    payload.message ?? error?.message ?? error?.detail,
+    'The runtime could not complete the response.',
+  );
+}
+
+class RuntimeRequestFailure extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RuntimeRequestFailure';
+  }
+}
+
+export function applyRuntimeMessageEvent(
+  messages: MessageRecord[],
+  event: RuntimeEvent,
+  activeRunId: string | null,
+): MessageRecord[] {
+  const payload = recordValue(event.payload) ?? {};
+  const runId = runtimeEventRunId(payload, activeRunId);
+
+  if (event.type === 'message.started' && runId) {
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      streaming: true,
+    }));
+  }
+  if (event.type === 'message.delta' && runId && typeof payload.delta === 'string') {
+    const delta = payload.delta;
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      content: message.content + delta,
+      streaming: true,
+    }));
+  }
+  if (event.type === 'provider.fallback.started' && runId && payload.discardPriorDeltas === true) {
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      content: '',
+      reasoningSummary: undefined,
+      citations: undefined,
+      usage: undefined,
+      streaming: true,
+    }));
+  }
+  if (event.type === 'reasoning.summary.delta' && runId && typeof payload.delta === 'string') {
+    const delta = payload.delta;
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      reasoningSummary: (message.reasoningSummary ?? '') + delta,
+    }));
+  }
+  if (event.type === 'reasoning.summary' && runId && typeof payload.summary === 'string') {
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      reasoningSummary: payload.summary as string,
+    }));
+  }
+  if (event.type === 'usage.updated' && runId) {
+    const usage = recordValue(payload.usage) ?? {};
+    const cost = recordValue(payload.cost);
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      usage: {
+        inputTokens: Number(usage.inputTokens ?? usage.input_tokens ?? 0),
+        outputTokens: Number(usage.outputTokens ?? usage.output_tokens ?? 0),
+        estimatedCost: cost ? textValue(cost.amount, 'estimated') : undefined,
+      },
+    }));
+  }
+  if (event.type === 'citation.created' && runId) {
+    return upsertAssistantMessage(messages, runId, (message) => {
+      const citation = {
+        id: textValue(payload.id, String(event.sequence)),
+        title: textValue(payload.title ?? payload.source, 'Source'),
+        url: typeof payload.url === 'string' ? payload.url : undefined,
+      };
+      const citations = message.citations ?? [];
+      return citations.some((existing) => existing.id === citation.id)
+        ? message
+        : { ...message, citations: [...citations, citation] };
+    });
+  }
+  if (event.type === 'message.completed' && runId) {
+    return upsertAssistantMessage(messages, runId, (message) => {
+      const persisted = recordValue(payload.message);
+      const content = textValue(payload.content ?? persisted?.content, message.content);
+      return withFinalMessageProvenance({ ...message, content, streaming: false }, payload);
+    });
+  }
+  if (event.type === 'message.cancelled' && runId) {
+    return upsertAssistantMessage(messages, runId, (message) => {
+      const persisted = recordValue(payload.message);
+      const partial = textValue(
+        payload.partialContent ?? payload.partial_content ?? persisted?.content,
+        message.content,
+      );
+      return withFinalMessageProvenance(
+        { ...message, content: partial || 'Response stopped.', streaming: false },
+        payload,
+      );
+    });
+  }
+  if (runtimeFailureEvent(event.type) && runId) {
+    return upsertAssistantMessage(messages, runId, (message) => ({
+      ...message,
+      content: message.content || runtimeFailureMessage(payload),
+      streaming: false,
+    }));
+  }
+  return messages;
+}
+
 function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): Conversation {
   return {
     id: item.id,
@@ -401,8 +644,73 @@ function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): 
   };
 }
 
-function mapMessage(item: RuntimeMessage): MessageRecord {
+function safeAttachmentMetadata(value: unknown, index: number): AttachmentRecord | null {
+  const item = recordValue(value);
+  if (!item) return null;
+  const name = textValue(item.name ?? item.displayName ?? item.display_name);
+  if (!name) return null;
+  const size = Number(item.size ?? item.byteSize ?? item.byte_size);
+  const route = textValue(item.destination ?? item.route ?? item.privacyRoute).toLowerCase();
+  return {
+    id: textValue(item.id ?? item.attachmentId ?? item.attachment_id, `attachment-${index}`),
+    name,
+    size: Number.isFinite(size) && size >= 0 ? size : undefined,
+    extension: textValue(item.extension) || undefined,
+    destination: route === 'cloud' ? 'cloud' : 'local',
+  };
+}
+
+function safeReferenceMetadata(value: unknown): ReferenceRecord | null {
+  const item = recordValue(value);
+  if (!item) return null;
+  const id = textValue(item.id ?? item.referenceId ?? item.reference_id);
+  const type = textValue(item.type ?? item.referenceType ?? item.reference_type);
+  const label = textValue(item.label ?? item.name ?? item.title);
+  if (!id || !label || !['project', 'task', 'artifact', 'memory'].includes(type)) return null;
+  return {
+    id,
+    type: type as ReferenceRecord['type'],
+    label,
+    projectId:
+      typeof (item.projectId ?? item.project_id) === 'string'
+        ? String(item.projectId ?? item.project_id)
+        : null,
+    conversationId:
+      typeof (item.conversationId ?? item.conversation_id) === 'string'
+        ? String(item.conversationId ?? item.conversation_id)
+        : null,
+    revisionId: textValue(item.revisionId ?? item.revision_id) || undefined,
+  };
+}
+
+function metadataArray(metadata: Record<string, unknown>, ...keys: string[]): unknown[] {
+  for (const key of keys) {
+    if (Array.isArray(metadata[key])) return metadata[key];
+  }
+  return [];
+}
+
+export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
   const role = item.role === 'user' ? 'user' : item.role === 'assistant' ? 'assistant' : 'status';
+  const metadata = recordValue(item.canonical_metadata) ?? {};
+  const attachments = metadataArray(
+    metadata,
+    'attachments',
+    'attachmentMetadata',
+    'attachment_metadata',
+  ).flatMap((value, index) => {
+    const attachment = safeAttachmentMetadata(value, index);
+    return attachment ? [attachment] : [];
+  });
+  const references = metadataArray(
+    metadata,
+    'references',
+    'referenceMetadata',
+    'reference_metadata',
+  ).flatMap((value) => {
+    const reference = safeReferenceMetadata(value);
+    return reference ? [reference] : [];
+  });
   return {
     id: item.id,
     role,
@@ -411,7 +719,80 @@ function mapMessage(item: RuntimeMessage): MessageRecord {
     createdAt: item.created_at,
     modelId: item.model_id,
     providerId: item.provider_id,
+    attachments: attachments.length ? attachments : undefined,
+    references: references.length ? references : undefined,
   };
+}
+
+export function structuredAttachments(
+  attachments: readonly StagedAttachmentRecord[],
+): Array<{ handleId: string }> {
+  return attachments.map(({ handleId }) => ({ handleId }));
+}
+
+export function structuredReferences(
+  references: readonly ReferenceRecord[],
+): Array<{ id: string; type: ReferenceRecord['type']; revisionId?: string }> {
+  return references.map(({ id, type, revisionId }) => ({
+    id,
+    type,
+    ...(revisionId ? { revisionId } : {}),
+  }));
+}
+
+export function shouldOptimisticallyAppendUser(
+  mode: Parameters<WorkspaceContextValue['sendMessage']>[0]['mode'],
+): boolean {
+  return !mode || mode === 'send';
+}
+
+export function scopedReferenceOptions(input: {
+  projects: ProjectRecord[];
+  tasks: Task[];
+  artifacts: ArtifactRecord[];
+  memories: MemoryRecord[];
+  activeProjectId: string | null;
+  activeConversationId: string | null;
+}): ReferenceRecord[] {
+  const { activeProjectId, activeConversationId } = input;
+  const project = activeProjectId
+    ? input.projects.find((item) => item.id === activeProjectId)
+    : undefined;
+  const projectReferences: ReferenceRecord[] = project
+    ? [{ id: project.id, type: 'project', label: project.name, projectId: project.id }]
+    : [];
+  const taskReferences: ReferenceRecord[] = input.tasks
+    .filter((item) => (activeProjectId ? item.projectId === activeProjectId : !item.projectId))
+    .map((item) => ({
+      id: item.id,
+      type: 'task',
+      label: item.title,
+      projectId: item.projectId,
+    }));
+  const artifactReferences: ReferenceRecord[] = input.artifacts
+    .filter((item) => activeProjectId !== null && item.projectId === activeProjectId)
+    .map((item) => ({
+      id: item.id,
+      type: 'artifact',
+      label: item.name,
+      projectId: item.projectId,
+      revisionId: item.revisionId,
+    }));
+  const memoryReferences: ReferenceRecord[] = input.memories
+    .filter(
+      (item) =>
+        item.enabled &&
+        (!item.projectId || item.projectId === activeProjectId) &&
+        (!item.conversationId || item.conversationId === activeConversationId),
+    )
+    .map((item) => ({
+      id: item.id,
+      type: 'memory',
+      label: item.title,
+      projectId: item.projectId,
+      conversationId: item.conversationId,
+    }));
+  return [...projectReferences, ...taskReferences, ...artifactReferences, ...memoryReferences];
 }
 
 function mapTask(run: RuntimeTask): Task {
@@ -431,6 +812,7 @@ function mapTask(run: RuntimeTask): Task {
     status,
     progress: steps.length ? Math.min(100, Math.round((run.current_step / steps.length) * 100)) : 0,
     project: run.spec.project_id ?? 'No project',
+    projectId: run.spec.project_id ?? null,
     elapsed: displayDate(run.updated_at ?? run.created_at),
     steps: steps.map((step, index) => ({
       label: step.key,
@@ -465,12 +847,70 @@ function mapMemory(item: RuntimeMemory, projects: ProjectRecord[]): MemoryRecord
     source: item.state === 'candidate' ? 'Suggested memory' : 'Saved memory',
     confidence: item.confidence,
     enabled: item.state === 'active',
+    projectId: item.scope.project_id ?? null,
+    conversationId: item.scope.conversation_id ?? null,
   };
 }
 
-function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
+function runtimeKind(item: RuntimeModel): string | undefined {
+  return typeof item.metadata?.runtime_kind === 'string' ? item.metadata.runtime_kind : undefined;
+}
+
+export function normalizeHardware(value: unknown): HardwareRecord | null {
+  const record = recordValue(value);
+  if (!record) return null;
+  const result: HardwareRecord = {};
+  const ramBytes = Number(record.ramBytes);
+  const systemRamGb = Number(record.system_ram_gb);
+  if (Number.isFinite(ramBytes) && ramBytes > 0) result.ramBytes = ramBytes;
+  else if (Number.isFinite(systemRamGb) && systemRamGb > 0)
+    result.ramBytes = systemRamGb * 1024 ** 3;
+  const vramBytes = Number(record.vramBytes);
+  const vramGb = Number(record.vram_gb);
+  if (Number.isFinite(vramBytes) && vramBytes > 0) result.vramBytes = vramBytes;
+  else if (Number.isFinite(vramGb) && vramGb > 0) result.vramBytes = vramGb * 1024 ** 3;
+  const gpu = record.gpu ?? record.gpu_name;
+  if (typeof gpu === 'string' && gpu) result.gpu = gpu;
+  if (typeof record.cpu === 'string' && record.cpu) result.cpu = record.cpu;
+  else if (Number.isFinite(Number(record.cpu_threads)) && Number(record.cpu_threads) > 0)
+    result.cpu = `${Number(record.cpu_threads)} threads`;
+  if (typeof record.os === 'string' && record.os) result.os = record.os;
+  if (Array.isArray(record.acceleration))
+    result.acceleration = record.acceleration.filter(
+      (item): item is string => typeof item === 'string',
+    );
+  return result;
+}
+
+export function mapDiscoveredRuntime(item: Record<string, unknown>): LocalRuntimeRecord {
+  const kind = textValue(item.kind, 'local');
+  const names: Record<string, string> = {
+    cupcake_llama_cpp: 'Cupcake Local',
+    lm_studio: 'LM Studio',
+    ollama: 'Ollama',
+    vllm: 'vLLM',
+  };
+  const rawModels = Array.isArray(item.models) ? item.models : undefined;
+  const models = rawModels?.filter(
+    (model): model is string | Record<string, unknown> =>
+      typeof model === 'string' || (typeof model === 'object' && model !== null),
+  );
+  return {
+    id: textValue(item.id, kind),
+    name: names[kind] ?? cap(kind),
+    status: textValue(item.state ?? item.status, 'unknown'),
+    models,
+    detail: typeof item.detail === 'string' ? item.detail : undefined,
+  };
+}
+
+export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
   const id = item.id ?? item.model_id ?? `${item.provider}:${item.model ?? 'model'}`;
-  const local = ['local', 'ollama', 'lm-studio', 'vllm', 'cupcake-local'].includes(item.provider);
+  const kind = runtimeKind(item);
+  const local =
+    item.privacy_route === 'local' ||
+    item.privacy_route === 'self_hosted' ||
+    ['local', 'ollama', 'lm_studio', 'vllm', 'cupcake_llama_cpp'].includes(kind ?? item.provider);
   const providerNames: Record<string, string> = {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
@@ -479,6 +919,10 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
     mistral: 'Mistral',
     cohere: 'Cohere',
     'nvidia-nim': 'NVIDIA NIM',
+    lm_studio: 'LM Studio',
+    ollama: 'Ollama',
+    vllm: 'vLLM',
+    cupcake_llama_cpp: 'Cupcake Local',
   };
   const capabilityTags = Array.isArray(item.capabilities)
     ? item.capabilities
@@ -497,10 +941,11 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
       ? metadataChatCompatibility
       : undefined);
   const contextWindowKnown = metadata.context_window_known !== false;
+  const runtimeLoaded = metadata.runtime_loaded;
   return {
     id,
-    runtimeModelId: id,
-    provider: providerNames[item.provider] ?? cap(item.provider),
+    runtimeModelId: kind && item.model ? item.model : id,
+    provider: providerNames[kind ?? item.provider] ?? cap(item.provider),
     name: item.display_name ?? item.model ?? id.split(':').at(-1) ?? id,
     route: local || item.privacy_route === 'local' ? 'Local' : 'Cloud',
     tags: capabilityTags.slice(0, 4),
@@ -510,7 +955,7 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
         : `Unknown · safe ${item.context_window.toLocaleString()} cap`
       : 'Unknown',
     cost: local ? 'Local' : item.pricing?.input ? `From ${item.pricing.input}` : 'Provider pricing',
-    status: local ? 'offline' : 'setup',
+    status: local ? (runtimeLoaded === false ? 'offline' : 'ready') : 'setup',
     description: item.reasoning_presets?.length
       ? `Reasoning: ${item.reasoning_presets.join(', ')}`
       : 'Explicitly selected model',
@@ -527,6 +972,42 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
       item.pricing?.provenance ??
       (typeof metadata.pricing_provenance === 'string' ? metadata.pricing_provenance : undefined),
   };
+}
+
+export function localModelActionRequest(
+  action: ModelAction,
+  model: ModelDescriptor,
+): { method: string; params: Record<string, unknown> } {
+  const nativeModel = model.runtimeModelId ?? model.id;
+  if (model.provider === 'LM Studio') {
+    if (action === 'load' || action === 'unload') {
+      return {
+        method: `local_models.lm_studio.${action}`,
+        params: { model: nativeModel },
+      };
+    }
+    if (action === 'status') return { method: 'local_models.lm_studio.list', params: {} };
+    if (action === 'remove') {
+      throw new Error('Remove LM Studio models from LM Studio so its model catalog stays intact.');
+    }
+  }
+  if (model.provider === 'Ollama' && ['load', 'unload', 'remove'].includes(action)) {
+    return {
+      method: `local_models.ollama.${action}`,
+      params: { model: nativeModel },
+    };
+  }
+  const method =
+    action === 'download'
+      ? 'local_models.cupcake.download'
+      : action === 'benchmark'
+        ? 'local_models.performance.get'
+        : action === 'status'
+          ? 'local_models.cupcake.download.status'
+          : ['pause', 'resume', 'cancel', 'reset'].includes(action)
+            ? `local_models.cupcake.download.${action}`
+            : `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`;
+  return { method, params: { modelId: nativeModel } };
 }
 
 function mapTool(item: RuntimeTool): ToolDescriptor {
@@ -633,6 +1114,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const bootstrapped = useRef(false);
   const nvidiaCatalogRefresh = useRef<Promise<void> | null>(null);
+  const selectedModelIdRef = useRef<string | null>(
+    fixtureModels.find((model) => model.selected)?.id ?? null,
+  );
+  const coalesceModelSelection = useRef(createKeyedRequestCoalescer());
+  const activeProjectIdRef = useRef(activeProjectId);
+  const activeRunIdRef = useRef(activeRunId);
+  const projectsRef = useRef(projects);
+  activeProjectIdRef.current = activeProjectId;
+  activeRunIdRef.current = activeRunId;
+  projectsRef.current = projects;
+
+  const updateActiveRunId = useCallback((runId: string | null) => {
+    activeRunIdRef.current = runId;
+    setActiveRunId(runId);
+  }, []);
 
   const request = useCallback(
     async <T,>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
@@ -643,7 +1139,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         params,
         timeoutMs,
       });
-      if (!response.ok) throw new Error(response.error?.message ?? `${method} failed`);
+      if (!response.ok) {
+        throw new RuntimeRequestFailure(
+          response.error?.code ?? 'RUNTIME_REQUEST_FAILED',
+          response.error?.message ?? `${method} failed`,
+        );
+      }
       return response.result as T;
     },
     [],
@@ -655,6 +1156,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       await operation();
     } catch (reason) {
+      if (reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED') return;
       setError(reason instanceof Error ? reason.message : 'The runtime request failed');
     } finally {
       setBusy(false);
@@ -733,6 +1235,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!bootstrap) throw bootstrapFailure ?? new Error('The local workspace could not open.');
+      selectedModelIdRef.current = bootstrap.selectedModelId ?? selectedModelIdRef.current;
       const projectRecords = (bootstrap.projects ?? []).map((item) => ({
         id: item.id,
         name: item.name,
@@ -745,9 +1248,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setConversations(
         (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
       );
-      setModels((bootstrap.models ?? []).map((item) => mapModel(item, bootstrap.selectedModelId)));
+      setModels((current) =>
+        mergeModelDescriptors(
+          current,
+          (bootstrap.models ?? []).map((item) => mapModel(item, bootstrap.selectedModelId)),
+          selectedModelIdRef.current,
+        ),
+      );
       setTools((bootstrap.tools ?? []).map(mapTool));
-      setHardware(bootstrap.hardware ?? null);
+      setHardware(normalizeHardware(bootstrap.hardware));
       setLocalRuntimes(
         (bootstrap.localRuntimes ?? []).map((item) =>
           typeof item === 'string' ? { id: item, name: cap(item), status: 'available' } : item,
@@ -758,21 +1267,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ? activeProjectId
           : (projectRecords[0]?.id ?? null);
       setActiveProjectId(selectedProject);
-      const [taskResult, memoryResult, providerResult, runtimeSettings, migration] =
+      const auxiliaryFailures: string[] = [];
+      const recover = async <T,>(label: string, operation: Promise<T>, fallback: T): Promise<T> => {
+        const result = await recoverWorkspaceSupportRequest(label, operation, fallback);
+        if (result.failure) auxiliaryFailures.push(result.failure);
+        return result.value;
+      };
+      const memoryRequest = request<RuntimeMemory[]>('memory.list', {
+        states: ['active', 'candidate', 'superseded', 'expired'],
+      }).catch(() => request<RuntimeMemory[]>('memory.list'));
+      const [taskResult, memoryResult, providerResult, runtimeSettings, migration, localDiscovery] =
         await Promise.all([
-          request<RuntimeTask[]>('tasks.list'),
-          request<RuntimeMemory[]>('memory.list', {
-            states: ['active', 'candidate', 'superseded', 'expired'],
+          recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
+          recover('Memory', memoryRequest, []),
+          recover(
+            'Providers',
+            request<{
+              providers: Array<{
+                provider: string;
+                configured: boolean;
+                catalog?: { models?: Array<Record<string, unknown>> };
+              }>;
+            }>('providers.status'),
+            { providers: [] },
+          ),
+          recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
+          recover('Migration', request<LegacyMigrationState>('migration.detect'), {
+            available: false,
+            state: 'unavailable',
           }),
-          request<{
-            providers: Array<{
-              provider: string;
-              configured: boolean;
-              catalog?: { models?: Array<Record<string, unknown>> };
-            }>;
-          }>('providers.status'),
-          request<Record<string, unknown>>('settings.list'),
-          request<LegacyMigrationState>('migration.detect'),
+          recover<{
+            endpoints: Array<Record<string, unknown>>;
+            models: RuntimeModel[];
+          } | null>(
+            'Local model discovery',
+            request<{
+              endpoints: Array<Record<string, unknown>>;
+              models: RuntimeModel[];
+            }>('local_models.discover', undefined, 120_000),
+            null,
+          ),
         ]);
       setTasks(taskResult.map(mapTask));
       setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
@@ -790,24 +1324,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const allRuntimeModels: RuntimeModel[] = [
         ...(bootstrap.models ?? []),
         ...discoveredModels,
+        ...(localDiscovery?.models ?? []),
       ].map((item) => item as unknown as RuntimeModel);
-      setModels(
-        allRuntimeModels.map((item) => ({
-          ...mapModel(item, bootstrap.selectedModelId),
-          status: ['local', 'ollama', 'lm-studio', 'vllm', 'cupcake-local', 'mock'].includes(
-            item.provider,
-          )
-            ? item.provider === 'mock'
-              ? 'ready'
-              : 'offline'
-            : configuredProviders[item.provider]
-              ? 'ready'
-              : 'setup',
-        })),
+      const uniqueRuntimeModels = [
+        ...new Map(
+          allRuntimeModels.map((item) => [
+            item.id ?? item.model_id ?? `${item.provider}:${item.model ?? 'model'}`,
+            item,
+          ]),
+        ).values(),
+      ];
+      setModels((current) =>
+        mergeModelDescriptors(
+          current,
+          uniqueRuntimeModels.map((item) => {
+            const mapped = mapModel(item, bootstrap.selectedModelId);
+            return {
+              ...mapped,
+              status:
+                mapped.route === 'Local'
+                  ? mapped.status
+                  : configuredProviders[item.provider]
+                    ? ('ready' as const)
+                    : ('setup' as const),
+            };
+          }),
+          selectedModelIdRef.current,
+        ),
       );
+      if (localDiscovery) {
+        setLocalRuntimes(localDiscovery.endpoints.map(mapDiscoveredRuntime));
+      }
       if (configuredProviders['nvidia-nim']) {
         if (!nvidiaCatalogRefresh.current) {
-          const selectedModelId = bootstrap.selectedModelId;
           const refreshCatalog = request<Record<string, unknown>>(
             'providers.catalog.refresh',
             { provider: 'nvidia-nim' },
@@ -824,11 +1373,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               if (!catalogModels.length) return;
               setModels((current) => {
                 const incoming = catalogModels.map((item) => ({
-                  ...mapModel(item as unknown as RuntimeModel, selectedModelId),
+                  ...mapModel(
+                    item as unknown as RuntimeModel,
+                    selectedModelIdRef.current ?? undefined,
+                  ),
                   status: 'ready' as const,
                 }));
-                const ids = new Set(incoming.map((item) => item.id));
-                return [...current.filter((item) => !ids.has(item.id)), ...incoming];
+                return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
               });
             })
             .catch((reason) => {
@@ -844,6 +1395,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           nvidiaCatalogRefresh.current = refreshCatalog;
           void refreshCatalog;
         }
+      }
+      if (auxiliaryFailures.length) {
+        setError(
+          `The workspace opened, but some supporting data could not refresh. ${auxiliaryFailures.join(
+            ' · ',
+          )}. Use Retry on the Models page after the runtime is ready.`,
+        );
       }
       setLegacyMigration(
         migration.available && !['declined', 'completed'].includes(migration.state)
@@ -917,96 +1475,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (bootstrapped.current) return;
     bootstrapped.current = true;
     void refresh();
-    if (!window.cupcake) return;
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!window.cupcake) return undefined;
     const stopEvents = window.cupcake.runtime.onEvent((event) => {
       setRuntimeEvents((items) => [event, ...items].slice(0, 500));
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+      setMessages((items) => applyRuntimeMessageEvent(items, event, activeRunIdRef.current));
       if (event.type === 'message.started' && runId) {
-        setActiveRunId(runId);
-        setMessages((items) =>
-          items.some((item) => item.id === runId)
-            ? items
-            : [...items, { id: runId, role: 'assistant', content: '', streaming: true }],
-        );
-      } else if (event.type === 'message.delta' && runId && typeof payload.delta === 'string') {
-        setMessages((items) =>
-          items.map((item) =>
-            item.id === runId
-              ? { ...item, content: item.content + (payload.delta as string) }
-              : item,
-          ),
-        );
-      } else if (event.type === 'message.completed' && runId) {
-        setActiveRunId(null);
-        setMessages((items) =>
-          items.map((item) =>
-            item.id === runId
-              ? {
-                  ...item,
-                  content: typeof payload.content === 'string' ? payload.content : item.content,
-                  streaming: false,
-                }
-              : item,
-          ),
-        );
-      } else if (event.type === 'usage.updated') {
-        const usage = (payload.usage ?? {}) as Record<string, unknown>;
-        const targetId = runId ?? activeRunId;
-        if (targetId)
-          setMessages((items) =>
-            items.map((item) =>
-              item.id === targetId
-                ? {
-                    ...item,
-                    usage: {
-                      inputTokens: Number(usage.inputTokens ?? usage.input_tokens ?? 0),
-                      outputTokens: Number(usage.outputTokens ?? usage.output_tokens ?? 0),
-                      estimatedCost: payload.cost
-                        ? textValue((payload.cost as Record<string, unknown>).amount, 'estimated')
-                        : undefined,
-                    },
-                  }
-                : item,
-            ),
-          );
-      } else if (event.type === 'citation.created') {
-        const targetId = runId ?? activeRunId;
-        if (targetId)
-          setMessages((items) =>
-            items.map((item) =>
-              item.id === targetId
-                ? {
-                    ...item,
-                    citations: [
-                      ...(item.citations ?? []),
-                      {
-                        id: textValue(payload.id, String(event.sequence)),
-                        title: textValue(payload.title ?? payload.source, 'Source'),
-                        url: typeof payload.url === 'string' ? payload.url : undefined,
-                      },
-                    ],
-                  }
-                : item,
-            ),
-          );
-      } else if (event.type === 'reasoning.summary' && typeof payload.summary === 'string') {
-        const targetId = runId ?? activeRunId;
-        if (targetId)
-          setMessages((items) =>
-            items.map((item) =>
-              item.id === targetId
-                ? { ...item, reasoningSummary: payload.summary as string }
-                : item,
-            ),
-          );
-      } else if (event.type.startsWith('artifact.')) {
-        void loadArtifacts(activeProjectId).catch(() => undefined);
+        updateActiveRunId(runId);
+      } else if (
+        event.type === 'message.completed' ||
+        event.type === 'message.cancelled' ||
+        runtimeFailureEvent(event.type)
+      ) {
+        if (!runId || activeRunIdRef.current === runId) updateActiveRunId(null);
+        if (runtimeFailureEvent(event.type)) setError(runtimeFailureMessage(payload));
+      }
+      if (event.type.startsWith('artifact.')) {
+        void loadArtifacts(activeProjectIdRef.current).catch(() => undefined);
       } else if (event.type.startsWith('memory.')) {
         void request<RuntimeMemory[]>('memory.list', {
           states: ['active', 'candidate', 'superseded', 'expired'],
         })
-          .then((items) => setMemories(items.map((item) => mapMemory(item, projects))))
+          .then((items) => setMemories(items.map((item) => mapMemory(item, projectsRef.current))))
           .catch(() => undefined);
       } else if (
         event.type.startsWith('local_model.download') ||
@@ -1040,15 +1534,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : item,
           ),
         );
-      } else if (event.type.includes('error') || event.type === 'run.failed') {
-        setMessages((items) => [
-          ...items,
-          {
-            id: `error-${event.sequence}`,
-            role: 'status',
-            content: textValue(payload.message ?? payload.error, 'The runtime reported an error.'),
-          },
-        ]);
       } else if (event.type.startsWith('task.')) {
         void request<RuntimeTask[]>('tasks.list')
           .then((items) => setTasks(items.map(mapTask)))
@@ -1071,7 +1556,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     });
     return stopEvents;
-  }, [activeProjectId, activeRunId, loadArtifacts, projects, refresh, request]);
+  }, [loadArtifacts, request, updateActiveRunId]);
 
   useEffect(() => {
     localStorage.setItem('cupcake-workspace-settings', JSON.stringify(settings));
@@ -1132,14 +1617,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (title = 'New conversation') => {
       if (fixtureMode) {
         const id = `fixture-conversation-${Date.now()}`;
+        const branchId = `fixture-branch-${Date.now()}`;
         setConversations((items) => [
           { id, title, preview: 'Deterministic fixture', updated: 'now' },
           ...items,
         ]);
         setActiveConversationId(id);
+        setActiveBranchId(branchId);
         setMessages([]);
-        return;
+        return { conversationId: id, branchId, projectId: activeProjectId };
       }
+      let created: { conversationId: string; branchId: string; projectId: string | null } | null =
+        null;
       await guard(async () => {
         const result = await request<{ conversation: RuntimeConversation; branch: RuntimeBranch }>(
           'conversations.create',
@@ -1161,7 +1650,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveConversationId(result.conversation.id);
         setActiveBranchId(result.branch.id);
         setMessages([]);
+        created = {
+          conversationId: result.conversation.id,
+          branchId: result.branch.id,
+          projectId: activeProjectId,
+        };
       });
+      return created;
     },
     [activeProjectId, fixtureMode, guard, projects, request],
   );
@@ -1187,7 +1682,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveBranchId(branchId);
         if (branchId) {
           const history = await request<RuntimeMessage[]>('chat.history', { branchId });
-          setMessages(history.map(mapMessage));
+          setMessages(history.map(mapRuntimeMessage));
         } else setMessages([]);
       });
     },
@@ -1203,7 +1698,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (fixtureMode) return;
       await guard(async () => {
         const history = await request<RuntimeMessage[]>('chat.history', { branchId });
-        setMessages(history.map(mapMessage));
+        setMessages(history.map(mapRuntimeMessage));
       });
     },
     [branches, fixtureMode, guard, request],
@@ -1249,7 +1744,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setBranches((items) => [...items, record]);
         setActiveBranchId(item.id);
         const history = await request<RuntimeMessage[]>('chat.history', { branchId: item.id });
-        setMessages(history.map(mapMessage));
+        setMessages(history.map(mapRuntimeMessage));
       });
     },
     [activeConversationId, fixtureMode, guard, request],
@@ -1259,16 +1754,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (input: Parameters<WorkspaceContextValue['sendMessage']>[0]) => {
       if (
         settings.offline &&
-        !models.find((item) => item.id === input.modelId)?.route.startsWith('Local')
+        !models
+          .find((item) => item.id === input.modelId || item.runtimeModelId === input.modelId)
+          ?.route.startsWith('Local')
       ) {
         setError('Offline mode blocked this cloud model. Choose a local model before sending.');
-        return;
+        return false;
       }
       const optimisticId = `user-${Date.now()}`;
-      setMessages((items) => [
-        ...items,
-        { id: optimisticId, role: 'user', content: input.content, attachments: input.attachments },
-      ]);
+      if (shouldOptimisticallyAppendUser(input.mode)) {
+        setMessages((items) => [
+          ...items,
+          {
+            id: optimisticId,
+            role: 'user',
+            content: input.content,
+            attachments: input.attachments,
+            references: input.references,
+          },
+        ]);
+      }
       if (fixtureMode) {
         setMessages((items) => [
           ...items,
@@ -1279,9 +1784,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               'Deterministic fixture response. The desktop bridge is absent, so no provider or tool was contacted.',
           },
         ]);
-        return;
+        return true;
       }
-      await guard(async () => {
+      setBusy(true);
+      setError(null);
+      try {
         const method =
           input.mode === 'edit'
             ? 'chat.edit'
@@ -1290,19 +1797,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : input.mode === 'continue'
                 ? 'chat.continue'
                 : 'chat.send';
+        const stableIntent = input.outboundIntent;
+        const attachmentItems = structuredAttachments(input.attachments);
+        const referenceItems = structuredReferences(input.references ?? []);
+        const memoryIds =
+          stableIntent?.memoryIds ?? memories.filter((item) => item.enabled).map((item) => item.id);
+        const toolIds = stableIntent?.toolIds ?? input.enabledToolIds;
         const result = await request<{
           conversationId: string;
           branchId: string;
           runId?: string;
           content?: string;
+          message?: RuntimeMessage;
         }>(
           method,
           {
             content: input.content,
             messageId: input.messageId,
-            conversationId: activeConversationId,
-            branchId: activeBranchId,
-            projectId: activeProjectId,
+            conversationId: stableIntent
+              ? stableIntent.conversationId
+              : (input.conversationId ?? activeConversationId),
+            branchId: stableIntent ? stableIntent.branchId : (input.branchId ?? activeBranchId),
+            projectId: stableIntent
+              ? stableIntent.projectId
+              : input.projectId !== undefined
+                ? input.projectId
+                : activeProjectId,
             modelId: input.modelId,
             reasoningEffort: input.reasoningEffort,
             enabledToolIds: input.enabledToolIds,
@@ -1311,40 +1831,100 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             personalityInstructions: settings.personalityInstructions,
             offline: settings.offline,
             outboundConfirmationToken: input.outboundConfirmationToken,
-            attachmentHandles: input.attachments.map((item) => item.handleId),
-            referenceIds: (input.references ?? []).map((item) => item.id),
-            memoryIds: memories.filter((item) => item.enabled).map((item) => item.id),
-            toolIds: input.enabledToolIds,
+            outboundIntent: stableIntent,
+            attachments: attachmentItems,
+            attachmentHandles: attachmentItems.map((item) => item.handleId),
+            references: referenceItems,
+            referenceIds: referenceItems.map((item) => item.id),
+            memoryIds,
+            toolIds,
           },
           120_000,
         );
         setActiveConversationId(result.conversationId);
         setActiveBranchId(result.branchId);
-        if (result.runId) setActiveRunId(result.runId);
-        if (result.content && !messages.some((item) => item.id === result.runId)) {
-          setMessages((items) => [
-            ...items,
-            {
-              id: result.runId ?? `assistant-${Date.now()}`,
-              role: 'assistant',
-              content: result.content ?? '',
-            },
-          ]);
+        if (result.content) {
+          const messageId = result.runId ?? result.message?.run_id ?? result.message?.id;
+          setMessages((items) => {
+            if (messageId && items.some((item) => item.id === messageId)) return items;
+            return [
+              ...items,
+              {
+                id: messageId ?? `assistant-${Date.now()}`,
+                role: 'assistant',
+                content: result.content ?? '',
+                branchId: result.message?.branch_id,
+                createdAt: result.message?.created_at,
+                modelId: result.message?.model_id,
+                providerId: result.message?.provider_id,
+              },
+            ];
+          });
         }
-        const list = await request<RuntimeConversation[]>('conversations.list', {
-          projectId: activeProjectId,
-          includeArchived: true,
-        });
-        setConversations(list.map((item) => mapConversation(item, projects)));
-      });
+        const refreshErrors: string[] = [];
+        try {
+          const history = await request<RuntimeMessage[]>('chat.history', {
+            branchId: result.branchId,
+          });
+          setMessages(history.map(mapRuntimeMessage));
+        } catch (reason) {
+          refreshErrors.push(reason instanceof Error ? reason.message : 'history refresh failed');
+        }
+        const [conversationList, conversationState] = await Promise.all([
+          recoverWorkspaceSupportRequest(
+            'Conversation list refresh',
+            request<RuntimeConversation[]>('conversations.list', {
+              projectId: stableIntent ? stableIntent.projectId : activeProjectId,
+              includeArchived: true,
+            }),
+            [] as RuntimeConversation[],
+          ),
+          recoverWorkspaceSupportRequest(
+            'Branch refresh',
+            request<{ branches: RuntimeBranch[] }>('conversations.get', {
+              conversationId: result.conversationId,
+            }),
+            { branches: [] as RuntimeBranch[] },
+          ),
+        ]);
+        if (!conversationList.failure) {
+          setConversations(conversationList.value.map((item) => mapConversation(item, projects)));
+        } else refreshErrors.push(conversationList.failure);
+        if (!conversationState.failure) {
+          setBranches(
+            (conversationState.value.branches ?? []).map((item) => ({
+              id: item.id,
+              conversationId: item.conversation_id,
+              name: item.name ?? 'Branch',
+              headMessageId: item.head_message_id,
+              parentMessageId: item.parent_message_id,
+            })),
+          );
+        } else refreshErrors.push(conversationState.failure);
+        if (refreshErrors.length) {
+          setError(
+            `Message sent, but the conversation refresh failed: ${refreshErrors.join('; ')}`,
+          );
+        }
+        return true;
+      } catch (reason) {
+        if (!(reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED')) {
+          setError(reason instanceof Error ? reason.message : 'The runtime request failed');
+        }
+        if (shouldOptimisticallyAppendUser(input.mode)) {
+          setMessages((items) => items.filter((item) => item.id !== optimisticId));
+        }
+        return false;
+      } finally {
+        setBusy(false);
+      }
     },
     [
       activeBranchId,
       activeConversationId,
       activeProjectId,
       fixtureMode,
-      guard,
-      messages,
+      memories,
       models,
       projects,
       request,
@@ -1355,31 +1935,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const stopRun = useCallback(async () => {
     if (!activeRunId) return;
     if (window.cupcake) await window.cupcake.runtime.cancel(activeRunId);
-    setActiveRunId(null);
+    updateActiveRunId(null);
     setMessages((items) =>
       items.map((item) => (item.streaming ? { ...item, streaming: false } : item)),
     );
-  }, [activeRunId]);
+  }, [activeRunId, updateActiveRunId]);
   const preflightCloudDisclosure = useCallback(
     async (input: {
       content: string;
       modelId: string;
-      attachments: AttachmentRecord[];
+      attachments: StagedAttachmentRecord[];
       references: ReferenceRecord[];
+      enabledToolIds?: string[];
+      messageId?: string;
+      conversationId?: string;
+      branchId?: string;
+      projectId?: string | null;
     }) =>
       request<{
-        confirmationToken: string;
+        confirmationToken: string | null;
         disclosure: { privacyRoute?: string; costClass?: string };
+        outboundIntent: OutboundIntent;
       }>('chat.preflight', {
         content: input.content,
         modelId: input.modelId,
-        projectId: activeProjectId,
-        conversationId: activeConversationId,
-        branchId: activeBranchId,
+        projectId: input.projectId !== undefined ? input.projectId : activeProjectId,
+        conversationId: input.conversationId ?? activeConversationId,
+        branchId: input.branchId ?? activeBranchId,
+        messageId: input.messageId,
+        attachments: structuredAttachments(input.attachments),
         attachmentHandles: input.attachments.map((item) => item.handleId),
+        references: structuredReferences(input.references),
         referenceIds: input.references.map((item) => item.id),
         memoryIds: memories.filter((item) => item.enabled).map((item) => item.id),
-        toolIds: settings.enabledToolIds,
+        toolIds: input.enabledToolIds ?? settings.enabledToolIds,
       }),
     [
       activeBranchId,
@@ -1578,47 +2167,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const selectModel = useCallback(
     async (id: string, options?: { compatibilityConfirmed?: boolean }) => {
-      if (!fixtureMode)
-        await request('models.select', {
-          modelId: id,
-          compatibilityConfirmed: options?.compatibilityConfirmed === true,
-        });
-      setModels((items) => items.map((item) => ({ ...item, selected: item.id === id })));
+      const compatibilityConfirmed = options?.compatibilityConfirmed === true;
+      await coalesceModelSelection.current(
+        `${id}:${compatibilityConfirmed ? 'confirmed' : 'standard'}`,
+        async () => {
+          if (!fixtureMode)
+            await request('models.select', {
+              modelId: id,
+              compatibilityConfirmed,
+            });
+          selectedModelIdRef.current = id;
+          setModels((items) => items.map((item) => ({ ...item, selected: item.id === id })));
+        },
+      );
     },
     [fixtureMode, request],
   );
   const runModelAction = useCallback(
-    async (
-      action:
-        | 'download'
-        | 'load'
-        | 'unload'
-        | 'remove'
-        | 'status'
-        | 'benchmark'
-        | 'pause'
-        | 'resume'
-        | 'cancel'
-        | 'reset',
-      modelId: string,
-    ) => {
+    async (action: ModelAction, modelId: string) => {
       if (fixtureMode) return;
-      const method =
-        action === 'download'
-          ? 'local_models.cupcake.download'
-          : action === 'benchmark'
-            ? 'local_models.performance.get'
-            : action === 'status'
-              ? 'local_models.cupcake.download.status'
-              : ['pause', 'resume', 'cancel', 'reset'].includes(action)
-                ? `local_models.cupcake.download.${action}`
-                : `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`;
       await guard(async () => {
-        await request(method, { modelId });
+        const target = models.find(
+          (model) => model.id === modelId || model.runtimeModelId === modelId,
+        );
+        if (!target) throw new Error('The selected local model is no longer available.');
+        const operation = localModelActionRequest(action, target);
+        await request(operation.method, operation.params, 180_000);
         await refresh();
       });
     },
-    [fixtureMode, guard, refresh, request],
+    [fixtureMode, guard, models, refresh, request],
   );
 
   const setToolEnabled = useCallback(
@@ -1713,16 +2291,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             : [];
         if (catalogModels.length) {
           setModels((current) => {
-            const selectedModelId = current.find((item) => item.selected)?.id;
             const incoming = catalogModels.map((item) => ({
-              ...mapModel(item as unknown as RuntimeModel, selectedModelId),
+              ...mapModel(item as unknown as RuntimeModel, selectedModelIdRef.current ?? undefined),
               status: 'ready' as const,
             }));
-            const ids = new Set(incoming.map((item) => item.id));
-            return [...current.filter((item) => !ids.has(item.id)), ...incoming];
+            return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
           });
         }
         setProviders((items) => ({ ...items, [provider]: true }));
+        const providerNames: Record<string, string> = {
+          openai: 'OpenAI',
+          anthropic: 'Anthropic',
+          google: 'Google',
+          xai: 'xAI',
+          mistral: 'Mistral',
+          cohere: 'Cohere',
+          'nvidia-nim': 'NVIDIA NIM',
+          'openai-compatible': 'OpenAI-compatible',
+        };
+        setModels((items) =>
+          items.map((model) =>
+            model.provider === providerNames[provider] ? { ...model, status: 'ready' } : model,
+          ),
+        );
         return true;
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Provider connection failed');

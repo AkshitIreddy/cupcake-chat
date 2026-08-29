@@ -122,7 +122,7 @@ class ModelDescriptor:
     pricing: ModelPricing = field(default_factory=ModelPricing)
     knowledge_cutoff: str | None = None
     deprecated: bool = False
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
     def with_reasoning(self, effort: ReasoningEffort) -> ModelDescriptor:
         if effort not in self.reasoning_efforts:
@@ -168,7 +168,7 @@ class ModelRequest:
     temperature: float | None = None
     tools: tuple[Mapping[str, Any], ...] = ()
     continuity: ProviderContinuity | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,4 +207,4 @@ class NormalizedStreamEvent:
     finish_reason: str | None = None
     error_code: str | None = None
     retryable: bool | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])

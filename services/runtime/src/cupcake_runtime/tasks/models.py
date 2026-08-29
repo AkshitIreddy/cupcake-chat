@@ -138,7 +138,7 @@ class RevisionCompatibility:
 class TaskStep:
     key: str
     operation: str
-    arguments: Mapping[str, Any] = field(default_factory=dict)
+    arguments: Mapping[str, Any] = field(default_factory=dict[str, Any])
     requires_approval: bool = False
     approval_intent_digest: str | None = None
 
@@ -159,7 +159,7 @@ class TaskSpec:
     explicitly_background: bool = False
     parent_run_id: str | None = None
     project_id: str | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
     def __post_init__(self) -> None:
         if not self.title.strip() or not self.prompt.strip():

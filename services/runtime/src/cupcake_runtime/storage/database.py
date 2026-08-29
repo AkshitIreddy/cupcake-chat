@@ -4,7 +4,7 @@ import contextlib
 import importlib
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -40,13 +40,10 @@ class Database:
         self.config.path.parent.mkdir(parents=True, exist_ok=True)
         module = self._driver()
         self._module = module
-        self._connection = cast(
-            sqlite3.Connection,
-            module.connect(
-                str(config.path),
-                timeout=config.busy_timeout_ms / 1000,
-                check_same_thread=False,
-            ),
+        self._connection = module.connect(
+            str(config.path),
+            timeout=config.busy_timeout_ms / 1000,
+            check_same_thread=False,
         )
         # sqlcipher3 ships its own DB-API cursor/Row implementation; mixing it
         # with ``sqlite3.Row`` raises at fetch time on Windows.
@@ -116,7 +113,7 @@ class Database:
             connection.execute(f"PRAGMA user_version = {LATEST_SCHEMA_VERSION}")
 
     @contextlib.contextmanager
-    def transaction(self, *, immediate: bool = True) -> Iterator[sqlite3.Connection]:
+    def transaction(self, *, immediate: bool = True) -> Generator[sqlite3.Connection, None, None]:
         with self._lock:
             outermost = self._transaction_depth == 0
             savepoint = f"cupcake_nested_{self._transaction_depth}"
@@ -163,13 +160,10 @@ class Database:
     def backup_to(self, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
-            target = cast(
-                sqlite3.Connection,
-                self._module.connect(
-                    str(destination),
-                    timeout=self.config.busy_timeout_ms / 1000,
-                    check_same_thread=False,
-                ),
+            target = self._module.connect(
+                str(destination),
+                timeout=self.config.busy_timeout_ms / 1000,
+                check_same_thread=False,
             )
             try:
                 if self.config.encryption_key:

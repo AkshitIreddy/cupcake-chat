@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from .types import (
     CanonicalMessage,
@@ -75,7 +75,7 @@ class ProviderAdapter(ABC):
             )
         self.descriptor = descriptor
         self.config = config
-        self._client = client
+        self._client: Any = client
 
     def validate_request(self, request: ModelRequest) -> None:
         if request.model_id != self.descriptor.id:
@@ -230,24 +230,34 @@ def anthropic_messages(
 
 def coerce_mapping(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
-        return value
+        return cast(Mapping[str, Any], value)
     if hasattr(value, "model_dump"):
-        return value.model_dump()
+        dumped = value.model_dump()
+        return cast(Mapping[str, Any], dumped) if isinstance(dumped, Mapping) else {}
     if hasattr(value, "to_dict"):
-        return value.to_dict()
-    return vars(value) if hasattr(value, "__dict__") else {}
+        dumped = value.to_dict()
+        return cast(Mapping[str, Any], dumped) if isinstance(dumped, Mapping) else {}
+    return cast(dict[str, Any], vars(value)) if hasattr(value, "__dict__") else {}
 
 
 def get_path(value: Any, path: str, default: Any = None) -> Any:
     current = value
     for part in path.split("."):
         if isinstance(current, Mapping):
-            current = current.get(part, default)
+            current = cast(Mapping[str, Any], current).get(part, default)
         else:
             current = getattr(current, part, default)
         if current is default:
             break
     return current
+
+
+def provider_items(value: Any) -> Iterable[Any]:
+    """Normalize dynamic SDK list fields at one typed provider boundary."""
+
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, Mapping)):
+        return cast(Iterable[Any], value)
+    return ()
 
 
 def json_arguments(value: Any) -> str:

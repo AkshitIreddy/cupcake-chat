@@ -35,7 +35,7 @@ class SourceLocator:
     archive_member: str | None = None
     timestamp_start_ms: int | None = None
     timestamp_end_ms: int | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +59,7 @@ class IngestionResult:
     status: IngestionStatus
     chunks: tuple[IngestedChunk, ...]
     warnings: tuple[str, ...] = ()
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

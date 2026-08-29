@@ -29,7 +29,7 @@ class Artifact:
     head_revision_id: str
     created_at: datetime
     updated_at: datetime
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +42,7 @@ class ArtifactRevision:
     author_kind: str
     change_summary: str | None
     created_at: datetime
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

@@ -60,7 +60,7 @@ class RuntimeEndpoint:
     managed: bool = False
     detail: str | None = None
     latency_ms: float | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +91,7 @@ class ModelArtifact:
     context_window: int
     architecture: str = "llama"
     min_runtime_version: str | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
     def target(self, model_directory: Path) -> Path:
         return model_directory / self.filename
@@ -134,7 +134,7 @@ class RuntimePackArtifact:
     license: str = "MIT"
     license_url: str = "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE"
     companions: tuple[RuntimeCompanionArtifact, ...] = ()
-    hardware_compatibility: Mapping[str, Any] = field(default_factory=dict)
+    hardware_compatibility: Mapping[str, Any] = field(default_factory=dict[str, Any])
     prerequisites: tuple[str, ...] = ()
     bundled_by_default: bool = False
 

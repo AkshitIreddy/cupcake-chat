@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pydantic import TypeAdapter
+
 from .catalog import verify_artifact
 from .types import InstalledModel, ModelArtifact
+
+_INSTALLED_MODEL_ADAPTER = TypeAdapter(InstalledModel)
 
 
 class ModelInUseError(RuntimeError):
@@ -44,10 +48,9 @@ class InstalledModelStore:
 
     def get(self, model_id: str, *, verify: bool = True) -> InstalledModel:
         path = self._manifest_path(model_id)
-        value = json.loads(path.read_text(encoding="utf-8"))
-        model = InstalledModel(**value)
+        model = _INSTALLED_MODEL_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
         integrity = self.verify(model) if verify else model.integrity_verified
-        return InstalledModel(**{**asdict(model), "integrity_verified": integrity})
+        return replace(model, integrity_verified=integrity)
 
     def list(self, *, verify: bool = False) -> tuple[InstalledModel, ...]:
         if not self.manifests.is_dir():
@@ -55,10 +58,9 @@ class InstalledModelStore:
         models: list[InstalledModel] = []
         for path in sorted(self.manifests.glob("*.json")):
             try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                model = InstalledModel(**value)
+                model = _INSTALLED_MODEL_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
                 integrity = self.verify(model) if verify else Path(model.path).is_file()
-                models.append(InstalledModel(**{**asdict(model), "integrity_verified": integrity}))
+                models.append(replace(model, integrity_verified=integrity))
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return tuple(models)

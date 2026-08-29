@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeGuard, cast
 from urllib.parse import urlparse
 
 from .http import JsonHttpClient
@@ -16,7 +16,7 @@ from .types import RuntimeEndpoint, RuntimeKind, RuntimeState
 class JsonRequestClient(Protocol):
     async def request(
         self, method: str, url: str, payload: Mapping[str, Any] | None = None
-    ) -> Any: ...
+    ) -> object: ...
 
 
 DEFAULT_ENDPOINTS = {
@@ -24,6 +24,24 @@ DEFAULT_ENDPOINTS = {
     RuntimeKind.LM_STUDIO: "http://127.0.0.1:1234",
     RuntimeKind.CUPCAKE_LLAMA_CPP: "http://127.0.0.1:8080",
 }
+
+
+def _is_object(value: object) -> TypeGuard[Mapping[str, object]]:
+    if not isinstance(value, Mapping):
+        return False
+    mapping = cast(Mapping[object, object], value)
+    return all(isinstance(key, str) for key in mapping)
+
+
+def _object_sequence(value: object) -> tuple[Mapping[str, object], ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return ()
+    items = cast(Sequence[object], value)
+    return tuple(item for item in items if _is_object(item))
+
+
+def _optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def validate_endpoint(base_url: str, *, allow_remote: bool) -> str:
@@ -58,32 +76,48 @@ class RuntimeDiscovery:
         base_url = validate_endpoint(base_url, allow_remote=allow_remote)
         started = time.monotonic()
         try:
+            version: str | None
+            models: tuple[str, ...]
             if kind == RuntimeKind.OLLAMA:
                 version_data, model_data = await asyncio.gather(
                     self.client.request("GET", f"{base_url}/api/version"),
                     self.client.request("GET", f"{base_url}/api/tags"),
                 )
-                version = (version_data or {}).get("version")
+                version_object: Mapping[str, object] = (
+                    version_data if _is_object(version_data) else {}
+                )
+                model_object: Mapping[str, object] = model_data if _is_object(model_data) else {}
+                version = _optional_text(version_object.get("version"))
                 models = tuple(
-                    item.get("name", "")
-                    for item in (model_data or {}).get("models", [])
-                    if item.get("name")
+                    name
+                    for item in _object_sequence(model_object.get("models"))
+                    if (name := _optional_text(item.get("name"))) is not None
                 )
             elif kind == RuntimeKind.LM_STUDIO:
                 model_data = await self.client.request("GET", f"{base_url}/api/v1/models")
-                items = (model_data or {}).get("models", (model_data or {}).get("data", []))
+                model_object = model_data if _is_object(model_data) else {}
+                items = _object_sequence(model_object.get("models", model_object.get("data", ())))
                 models = tuple(
-                    item.get("key") or item.get("id")
+                    model_id
                     for item in items
-                    if item.get("key") or item.get("id")
+                    if (
+                        model_id := _optional_text(item.get("key"))
+                        or _optional_text(item.get("id"))
+                    )
+                    is not None
                 )
-                version = (model_data or {}).get("version")
+                version = _optional_text(model_object.get("version"))
             else:
                 health_path = "/health" if kind == RuntimeKind.CUPCAKE_LLAMA_CPP else "/v1/models"
                 data = await self.client.request("GET", f"{base_url}{health_path}")
-                items = (data or {}).get("data", []) if isinstance(data, dict) else []
-                models = tuple(item.get("id") for item in items if item.get("id"))
-                version = (data or {}).get("version") if isinstance(data, dict) else None
+                data_object: Mapping[str, object] = data if _is_object(data) else {}
+                items = _object_sequence(data_object.get("data", ()))
+                models = tuple(
+                    model_id
+                    for item in items
+                    if (model_id := _optional_text(item.get("id"))) is not None
+                )
+                version = _optional_text(data_object.get("version"))
             return RuntimeEndpoint(
                 id=f"{kind.value}:{base_url}",
                 kind=kind,

@@ -94,11 +94,7 @@ def prepare_visible_history(
             break
         selected_turns_reversed.append(turn)
         used_tokens += cost
-    selected = [
-        message
-        for turn in reversed(selected_turns_reversed)
-        for message in turn
-    ]
+    selected = [message for turn in reversed(selected_turns_reversed) for message in turn]
 
     history: list[ModelMessage] = []
     for message in selected:

@@ -14,7 +14,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 from .base import (
     MissingProviderCredential,
@@ -179,7 +179,8 @@ class NvidiaNimCatalogDiscovery:
                 "NVIDIA NIM returned an invalid model catalog.",
                 code="invalid_model_catalog",
             )
-        if len(raw_models) > self.max_models:
+        model_records = cast(Sequence[Any], raw_models)
+        if len(model_records) > self.max_models:
             raise ProviderError(
                 "NVIDIA NIM returned more models than the safety limit.",
                 code="oversized_model_catalog",
@@ -190,7 +191,7 @@ class NvidiaNimCatalogDiscovery:
         unknown = 0
         seen: set[str] = set()
         total_bytes = 0
-        for raw in raw_models:
+        for raw in model_records:
             record = coerce_mapping(raw)
             try:
                 encoded = json.dumps(record, default=str, separators=(",", ":")).encode("utf-8")
@@ -257,6 +258,11 @@ class NvidiaNimAdapter(OpenAICompatibleAdapter):
 
     def build_request(self, request: ModelRequest) -> dict[str, Any]:
         payload = super().build_request(request)
+        # Nemotron 3 Nano emits its private reasoning trace in `content` by
+        # default. CUPCAKEAGI never surfaces hidden chain-of-thought, so use
+        # NVIDIA's documented non-thinking chat-template mode unless a future
+        # explicit, provider-safe reasoning control is introduced.
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
         effort = self.effort(request)
         if effort is not ReasoningEffort.NONE:
             payload["reasoning_effort"] = effort.value
@@ -267,11 +273,15 @@ def build_pydantic_model(model_name: str, *, api_key: str | None = None) -> Any:
     try:
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
+        from pydantic_ai.settings import ModelSettings
     except ImportError as exc:
         raise MissingProviderDependency(NVIDIA_NIM_PROVIDER, "pydantic-ai-slim[openai]") from exc
     return OpenAIChatModel(
         model_name,
         provider=OpenAIProvider(api_key=api_key, base_url=NVIDIA_NIM_BASE_URL),
+        settings=ModelSettings(
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        ),
     )
 
 
@@ -300,11 +310,13 @@ def _declared_markers(record: Mapping[str, Any]) -> frozenset[str]:
             values.append(value)
     capabilities = record.get("capabilities")
     if isinstance(capabilities, Mapping):
-        values.extend(str(key) for key, enabled in capabilities.items() if enabled is True)
+        capability_map = cast(Mapping[Any, Any], capabilities)
+        values.extend(str(key) for key, enabled in capability_map.items() if enabled is True)
     elif isinstance(capabilities, Sequence) and not isinstance(
         capabilities, (str, bytes, bytearray)
     ):
-        values.extend(item for item in capabilities if isinstance(item, str))
+        capability_list = cast(Sequence[Any], capabilities)
+        values.extend(item for item in capability_list if isinstance(item, str))
     tokens: set[str] = set()
     for value in values:
         normalized = value.casefold().strip().replace("_", "-")

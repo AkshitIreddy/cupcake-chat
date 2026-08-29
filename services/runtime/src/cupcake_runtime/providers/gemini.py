@@ -13,6 +13,7 @@ from .base import (
     get_path,
     json_arguments,
     provider_error_event,
+    provider_items,
     require_event_field,
 )
 from .types import (
@@ -105,11 +106,11 @@ class GeminiAdapter(ProviderAdapter):
             async for chunk in stream:
                 saw_chunk = True
                 response_id = get_path(chunk, "response_id", response_id)
-                for candidate in get_path(chunk, "candidates", []) or []:
+                for candidate in provider_items(get_path(chunk, "candidates", [])):
                     finish_reason = (
                         get_path(candidate, "finish_reason", finish_reason) or finish_reason
                     )
-                    for part in get_path(candidate, "content.parts", []) or []:
+                    for part in provider_items(get_path(candidate, "content.parts", [])):
                         if get_path(part, "thought", False):
                             yield builder.make(
                                 StreamEventType.REASONING_SUMMARY_DELTA,
@@ -139,8 +140,8 @@ class GeminiAdapter(ProviderAdapter):
                             yield builder.make(
                                 StreamEventType.TOOL_CALL_END, item_id=item_id, name=name
                             )
-                    for grounding in (
-                        get_path(candidate, "grounding_metadata.grounding_chunks", []) or []
+                    for grounding in provider_items(
+                        get_path(candidate, "grounding_metadata.grounding_chunks", [])
                     ):
                         web = get_path(grounding, "web")
                         if web:

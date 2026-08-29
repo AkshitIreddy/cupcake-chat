@@ -47,8 +47,8 @@ class SearchDocument:
     source_id: str
     title: str
     content: str
-    locator: Mapping[str, Any] = field(default_factory=dict)
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    locator: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
     indexed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
@@ -158,7 +158,7 @@ class ContextItem:
     token_count: int
     project_id: str | None
     destination: DestinationKind
-    provenance: Mapping[str, Any] = field(default_factory=dict)
+    provenance: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

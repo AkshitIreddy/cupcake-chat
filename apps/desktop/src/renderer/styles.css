@@ -622,6 +622,31 @@ kbd {
   font-size: 15px;
   line-height: 1.55;
 }
+
+.page-intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 0;
+  color: var(--text-secondary);
+}
+
+.provider-dialog > .checkbox-row input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-top: 3px;
+  padding: 0;
+  accent-color: var(--berry);
+}
 .section-heading {
   display: flex;
   align-items: flex-end;
@@ -1031,13 +1056,15 @@ kbd {
 .composer textarea::placeholder {
   color: color-mix(in srgb, var(--muted), transparent 15%);
 }
-.composer-attachments {
+.composer-attachments,
+.composer-references {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   padding: 10px 12px 0;
 }
-.composer-attachments > span {
+.composer-attachments > span,
+.composer-references > span {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1049,10 +1076,26 @@ kbd {
   color: var(--blueberry);
   font-size: 10px;
 }
-.composer-attachments > span > svg {
+.composer-references > span {
+  max-width: 260px;
+  border-color: color-mix(in srgb, var(--blueberry), transparent 68%);
+  background: color-mix(in srgb, var(--blueberry), transparent 92%);
+}
+.composer-references b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-references small {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.composer-attachments > span > svg,
+.composer-references > span > svg {
   flex: 0 0 auto;
 }
-.composer-attachments > span > button {
+.composer-attachments > span > button,
+.composer-references > span > button {
   display: grid;
   place-items: center;
   width: 17px;
@@ -1062,7 +1105,8 @@ kbd {
   background: transparent;
   color: var(--muted);
 }
-.composer-attachments > span > button svg {
+.composer-attachments > span > button svg,
+.composer-references > span > button svg {
   width: 12px;
 }
 .composer__footer {
@@ -1202,6 +1246,12 @@ kbd {
 }
 .reference-popover small {
   color: var(--muted);
+}
+.reference-popover .reference-popover__empty {
+  display: block;
+  max-width: 260px;
+  padding: 10px 12px 12px;
+  line-height: 1.4;
 }
 
 /* Lists, projects */

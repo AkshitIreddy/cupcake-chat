@@ -19,15 +19,47 @@ class StrictGeneratedModel(BaseModel):
 
 class AppSettingsDefaultModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class AppSettingsDefaultModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: AppSettingsDefaultModelFallback = Field(default=cast(Any, None))
+
 
 class AppSettingsPersonality(StrictGeneratedModel):
     preset: Literal["balanced", "concise", "warm", "analytical", "custom"]
@@ -36,11 +68,15 @@ class AppSettingsPersonality(StrictGeneratedModel):
     initiative: float = Field(ge=0, le=1)
     playfulness: float = Field(ge=0, le=1)
 
+
 class AppSettingsExecutionPolicy(StrictGeneratedModel):
     sandboxed_code_enabled: bool = Field(alias="sandboxedCodeEnabled")
     unsandboxed_code_enabled: Literal[False] = Field(alias="unsandboxedCodeEnabled")
     network_default: Literal["denied"] = Field(alias="networkDefault")
-    automatic_task_threshold_ms: int = Field(alias="automaticTaskThresholdMs", ge=0, le=9007199254740991)
+    automatic_task_threshold_ms: int = Field(
+        alias="automaticTaskThresholdMs", ge=0, le=9007199254740991
+    )
+
 
 class AppSettings(StrictGeneratedModel):
     schema_version: Literal[1] = Field(alias="schemaVersion")
@@ -54,7 +90,9 @@ class AppSettings(StrictGeneratedModel):
     proactive_suggestions: bool = Field(alias="proactiveSuggestions")
     send_shortcut: Literal["enter", "ctrl-enter"] = Field(alias="sendShortcut")
     telemetry: Literal["off", "local-only"]
-    developer_event_retention_ms: int = Field(alias="developerEventRetentionMs", ge=0, le=9007199254740991)
+    developer_event_retention_ms: int = Field(
+        alias="developerEventRetentionMs", ge=0, le=9007199254740991
+    )
     personality: AppSettingsPersonality
     execution_policy: AppSettingsExecutionPolicy = Field(alias="executionPolicy")
 
@@ -62,29 +100,65 @@ class AppSettings(StrictGeneratedModel):
 class Artifact(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     title: str = Field(min_length=1, max_length=512)
-    kind: Literal["document", "code", "configuration", "table", "spreadsheet", "image", "diagram", "webpage", "report"]
-    current_revision_id: str = Field(alias="currentRevisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    kind: Literal[
+        "document",
+        "code",
+        "configuration",
+        "table",
+        "spreadsheet",
+        "image",
+        "diagram",
+        "webpage",
+        "report",
+    ]
+    current_revision_id: str = Field(
+        alias="currentRevisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
 
 class ArtifactRevisionProvenance(StrictGeneratedModel):
     kind: Literal["user", "assistant", "tool", "import", "system"]
-    source_id: str = Field(alias="sourceId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    source_label: str = Field(alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    source_id: str = Field(
+        alias="sourceId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    source_label: str = Field(
+        alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None)
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class ArtifactRevision(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    artifact_id: str = Field(alias="artifactId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    artifact_id: str = Field(
+        alias="artifactId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     parent_revision_id: str | None = Field(alias="parentRevisionId", default=cast(Any, None))
     content_object_sha256: str = Field(alias="contentObjectSha256", pattern="^[a-f0-9]{64}$")
-    mime_type: str = Field(alias="mimeType", min_length=3, max_length=255, pattern="^[^/\\s]+/[^/\\s]+$")
+    mime_type: str = Field(
+        alias="mimeType", min_length=3, max_length=255, pattern="^[^/\\s]+/[^/\\s]+$"
+    )
     byte_size: int = Field(alias="byteSize", ge=0, le=9007199254740991)
     summary: str = Field(max_length=4096, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     provenance: ArtifactRevisionProvenance
     metadata: dict[str, JsonValue] = Field(default=cast(Any, None))
 
@@ -97,7 +171,10 @@ class BrokerRequestVariant1PayloadIntent(StrictGeneratedModel):
     arguments: dict[str, JsonValue]
     project_id: str | None
     task_id: str | None
-    requested_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    requested_at: str = Field(
+        pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class BrokerRequestVariant1PayloadDescriptorDefaultDataFlowsItem(StrictGeneratedModel):
     destination: Literal["local", "provider", "mcp_server", "public_web"]
@@ -106,6 +183,7 @@ class BrokerRequestVariant1PayloadDescriptorDefaultDataFlowsItem(StrictGenerated
     purpose: str = Field(min_length=1, max_length=2048)
     contains_user_content: bool
 
+
 class BrokerRequestVariant1PayloadDescriptor(StrictGeneratedModel):
     name: str = Field(pattern="^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$")
     version: str = Field(pattern="^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$")
@@ -113,21 +191,40 @@ class BrokerRequestVariant1PayloadDescriptor(StrictGeneratedModel):
     description: str = Field(min_length=1, max_length=4096)
     input_schema: dict[str, JsonValue]
     output_schema: dict[str, JsonValue]
-    effects: Annotated[list[Literal["read_files", "write_files", "network", "execute_code", "delete", "external_communication", "money", "install", "system_change", "unsandboxed_execution"]], Field(json_schema_extra={"uniqueItems": True})]
+    effects: Annotated[
+        list[
+            Literal[
+                "read_files",
+                "write_files",
+                "network",
+                "execute_code",
+                "delete",
+                "external_communication",
+                "money",
+                "install",
+                "system_change",
+                "unsandboxed_execution",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ]
     required_grants: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})]
     default_data_flows: list[BrokerRequestVariant1PayloadDescriptorDefaultDataFlowsItem]
     timeout_seconds: int = Field(ge=1, le=86400)
     cancellable: bool
     category: str = Field(min_length=1, max_length=128)
 
+
 class BrokerRequestVariant1Payload(StrictGeneratedModel):
     intent: BrokerRequestVariant1PayloadIntent
     descriptor: BrokerRequestVariant1PayloadDescriptor
+
 
 class BrokerRequestVariant1(StrictGeneratedModel):
     protocol_version: Literal[1]
     request_type: Literal["tool.preflight"]
     payload: BrokerRequestVariant1Payload
+
 
 class BrokerRequestVariant2PayloadPreflightDisclosuresItem(StrictGeneratedModel):
     destination: Literal["local", "provider", "mcp_server", "public_web"]
@@ -136,37 +233,74 @@ class BrokerRequestVariant2PayloadPreflightDisclosuresItem(StrictGeneratedModel)
     purpose: str = Field(min_length=1, max_length=2048)
     contains_user_content: bool
 
+
 class BrokerRequestVariant2PayloadPreflight(StrictGeneratedModel):
     invocation_id: str = Field(min_length=1, max_length=255)
     descriptor_identity: str = Field(min_length=3, max_length=384)
     schema_digest: str = Field(pattern="^[a-f0-9]{64}$")
     resolved_resources: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})]
-    effects: Annotated[list[Literal["read_files", "write_files", "network", "execute_code", "delete", "external_communication", "money", "install", "system_change", "unsandboxed_execution"]], Field(json_schema_extra={"uniqueItems": True})]
+    effects: Annotated[
+        list[
+            Literal[
+                "read_files",
+                "write_files",
+                "network",
+                "execute_code",
+                "delete",
+                "external_communication",
+                "money",
+                "install",
+                "system_change",
+                "unsandboxed_execution",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ]
     disclosures: list[BrokerRequestVariant2PayloadPreflightDisclosuresItem]
     decision: Literal["allow", "ask", "deny"]
     requires_fresh_approval: bool
     intent_digest: str = Field(pattern="^[a-f0-9]{64}$")
     created_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
 
+
 class BrokerRequestVariant2PayloadApproval(StrictGeneratedModel):
     approval_id: str = Field(min_length=1, max_length=255)
     invocation_id: str = Field(min_length=1, max_length=255)
     intent_digest: str = Field(pattern="^[a-f0-9]{64}$")
-    approved_effects: Annotated[list[Literal["read_files", "write_files", "network", "execute_code", "delete", "external_communication", "money", "install", "system_change", "unsandboxed_execution"]], Field(json_schema_extra={"uniqueItems": True})]
+    approved_effects: Annotated[
+        list[
+            Literal[
+                "read_files",
+                "write_files",
+                "network",
+                "execute_code",
+                "delete",
+                "external_communication",
+                "money",
+                "install",
+                "system_change",
+                "unsandboxed_execution",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ]
     approved_resources: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})]
     issued_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
     expires_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
     nonce: str = Field(min_length=16, max_length=255)
     signature: str = Field(pattern="^[a-f0-9]{64}$")
 
+
 class BrokerRequestVariant2Payload(StrictGeneratedModel):
     preflight: BrokerRequestVariant2PayloadPreflight
     approval: BrokerRequestVariant2PayloadApproval
+
 
 class BrokerRequestVariant2(StrictGeneratedModel):
     protocol_version: Literal[1]
     request_type: Literal["tool.approval.verify"]
     payload: BrokerRequestVariant2Payload
+
 
 class BrokerRequestVariant3PayloadIntent(StrictGeneratedModel):
     invocation_id: str = Field(min_length=1, max_length=255)
@@ -176,7 +310,10 @@ class BrokerRequestVariant3PayloadIntent(StrictGeneratedModel):
     arguments: dict[str, JsonValue]
     project_id: str | None
     task_id: str | None
-    requested_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    requested_at: str = Field(
+        pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class BrokerRequestVariant3PayloadPreflightDisclosuresItem(StrictGeneratedModel):
     destination: Literal["local", "provider", "mcp_server", "public_web"]
@@ -185,57 +322,111 @@ class BrokerRequestVariant3PayloadPreflightDisclosuresItem(StrictGeneratedModel)
     purpose: str = Field(min_length=1, max_length=2048)
     contains_user_content: bool
 
+
 class BrokerRequestVariant3PayloadPreflight(StrictGeneratedModel):
     invocation_id: str = Field(min_length=1, max_length=255)
     descriptor_identity: str = Field(min_length=3, max_length=384)
     schema_digest: str = Field(pattern="^[a-f0-9]{64}$")
     resolved_resources: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})]
-    effects: Annotated[list[Literal["read_files", "write_files", "network", "execute_code", "delete", "external_communication", "money", "install", "system_change", "unsandboxed_execution"]], Field(json_schema_extra={"uniqueItems": True})]
+    effects: Annotated[
+        list[
+            Literal[
+                "read_files",
+                "write_files",
+                "network",
+                "execute_code",
+                "delete",
+                "external_communication",
+                "money",
+                "install",
+                "system_change",
+                "unsandboxed_execution",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ]
     disclosures: list[BrokerRequestVariant3PayloadPreflightDisclosuresItem]
     decision: Literal["allow", "ask", "deny"]
     requires_fresh_approval: bool
     intent_digest: str = Field(pattern="^[a-f0-9]{64}$")
     created_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
 
+
 class BrokerRequestVariant3PayloadApprovalVariant1(StrictGeneratedModel):
     approval_id: str = Field(min_length=1, max_length=255)
     invocation_id: str = Field(min_length=1, max_length=255)
     intent_digest: str = Field(pattern="^[a-f0-9]{64}$")
-    approved_effects: Annotated[list[Literal["read_files", "write_files", "network", "execute_code", "delete", "external_communication", "money", "install", "system_change", "unsandboxed_execution"]], Field(json_schema_extra={"uniqueItems": True})]
+    approved_effects: Annotated[
+        list[
+            Literal[
+                "read_files",
+                "write_files",
+                "network",
+                "execute_code",
+                "delete",
+                "external_communication",
+                "money",
+                "install",
+                "system_change",
+                "unsandboxed_execution",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ]
     approved_resources: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})]
     issued_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
     expires_at: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
     nonce: str = Field(min_length=16, max_length=255)
     signature: str = Field(pattern="^[a-f0-9]{64}$")
 
+
 class BrokerRequestVariant3Payload(StrictGeneratedModel):
     intent: BrokerRequestVariant3PayloadIntent
     preflight: BrokerRequestVariant3PayloadPreflight
     approval: BrokerRequestVariant3PayloadApprovalVariant1 | None
+
 
 class BrokerRequestVariant3(StrictGeneratedModel):
     protocol_version: Literal[1]
     request_type: Literal["tool.execute"]
     payload: BrokerRequestVariant3Payload
 
+
 class BrokerRequestVariant4Payload(StrictGeneratedModel):
     invocation_id: str = Field(min_length=1, max_length=255)
     reason: str = Field(min_length=1, max_length=2048)
+
 
 class BrokerRequestVariant4(StrictGeneratedModel):
     protocol_version: Literal[1]
     request_type: Literal["tool.cancel"]
     payload: BrokerRequestVariant4Payload
 
+
 class BrokerRequestVariant5(StrictGeneratedModel):
     protocol_version: Literal[1]
     request_type: Literal["mcp.connect", "mcp.tools.list", "mcp.tool.call", "mcp.disconnect"]
     payload: dict[str, JsonValue]
 
-class BrokerRequest(RootModel[BrokerRequestVariant1 | BrokerRequestVariant2 | BrokerRequestVariant3 | BrokerRequestVariant4 | BrokerRequestVariant5]):
+
+class BrokerRequest(
+    RootModel[
+        BrokerRequestVariant1
+        | BrokerRequestVariant2
+        | BrokerRequestVariant3
+        | BrokerRequestVariant4
+        | BrokerRequestVariant5
+    ]
+):
     """Generated root union for the BrokerRequest contract."""
 
-    root: BrokerRequestVariant1 | BrokerRequestVariant2 | BrokerRequestVariant3 | BrokerRequestVariant4 | BrokerRequestVariant5
+    root: (
+        BrokerRequestVariant1
+        | BrokerRequestVariant2
+        | BrokerRequestVariant3
+        | BrokerRequestVariant4
+        | BrokerRequestVariant5
+    )
 
 
 class BrokerToolResult(StrictGeneratedModel):
@@ -251,15 +442,47 @@ class BrokerToolResult(StrictGeneratedModel):
 
 class ContextSnapshotModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class ContextSnapshotModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: ContextSnapshotModelFallback = Field(default=cast(Any, None))
+
 
 class ContextSnapshotItemsItemVariant1(StrictGeneratedModel):
     kind: Literal["instruction"]
@@ -267,11 +490,13 @@ class ContextSnapshotItemsItemVariant1(StrictGeneratedModel):
     label: str = Field(min_length=1, max_length=512)
     token_count: int = Field(alias="tokenCount", ge=0)
 
+
 class ContextSnapshotItemsItemVariant2(StrictGeneratedModel):
     kind: Literal["file"]
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     label: str = Field(min_length=1, max_length=512)
     token_count: int = Field(alias="tokenCount", ge=0)
+
 
 class ContextSnapshotItemsItemVariant3(StrictGeneratedModel):
     kind: Literal["memory"]
@@ -280,50 +505,105 @@ class ContextSnapshotItemsItemVariant3(StrictGeneratedModel):
     token_count: int = Field(alias="tokenCount", ge=0)
     confidence: float = Field(ge=0, le=1)
 
+
 class ContextSnapshotItemsItemVariant4(StrictGeneratedModel):
     kind: Literal["tool"]
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     label: str = Field(min_length=1, max_length=512)
     token_count: int = Field(alias="tokenCount", ge=0)
 
+
 class ContextSnapshotOutboundDestinationVariant1(StrictGeneratedModel):
     route: Literal["local"]
+
 
 class ContextSnapshotOutboundDestinationVariant2(StrictGeneratedModel):
     route: Literal["cloud"]
     provider: str = Field(min_length=1, max_length=128)
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
 
+
 class ContextSnapshot(StrictGeneratedModel):
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     model: ContextSnapshotModel
-    items: list[ContextSnapshotItemsItemVariant1 | ContextSnapshotItemsItemVariant2 | ContextSnapshotItemsItemVariant3 | ContextSnapshotItemsItemVariant4] = Field(max_length=10000)
+    items: list[
+        ContextSnapshotItemsItemVariant1
+        | ContextSnapshotItemsItemVariant2
+        | ContextSnapshotItemsItemVariant3
+        | ContextSnapshotItemsItemVariant4
+    ] = Field(max_length=10000)
     total_tokens: int = Field(alias="totalTokens", ge=0)
     maximum_tokens: int = Field(alias="maximumTokens", ge=1)
-    outbound_destination: ContextSnapshotOutboundDestinationVariant1 | ContextSnapshotOutboundDestinationVariant2 = Field(alias="outboundDestination")
-    compiled_at: str = Field(alias="compiledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    outbound_destination: (
+        ContextSnapshotOutboundDestinationVariant1 | ContextSnapshotOutboundDestinationVariant2
+    ) = Field(alias="outboundDestination")
+    compiled_at: str = Field(
+        alias="compiledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
 
 class ConversationModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class ConversationModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: ConversationModelFallback = Field(default=cast(Any, None))
+
 
 class Conversation(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
     title: str = Field(min_length=1, max_length=512)
-    active_branch_id: str = Field(alias="activeBranchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    active_branch_id: str = Field(
+        alias="activeBranchId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     archived_at: str | None = Field(alias="archivedAt", default=cast(Any, None))
     pinned_at: str | None = Field(alias="pinnedAt", default=cast(Any, None))
     model: ConversationModel
@@ -331,93 +611,164 @@ class Conversation(StrictGeneratedModel):
 
 class ConversationBranch(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     parent_branch_id: str | None = Field(alias="parentBranchId", default=cast(Any, None))
     forked_from_message_id: str | None = Field(alias="forkedFromMessageId", default=cast(Any, None))
     head_message_id: str | None = Field(alias="headMessageId", default=cast(Any, None))
     label: str = Field(min_length=1, max_length=255, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
 
 class FileRecordIngestionVariant1(StrictGeneratedModel):
     state: Literal["pending"]
 
+
 class FileRecordIngestionVariant2(StrictGeneratedModel):
     state: Literal["parsing"]
     progress: float = Field(ge=0, le=1)
 
+
 class FileRecordIngestionVariant3(StrictGeneratedModel):
     state: Literal["indexed"]
-    indexed_at: str = Field(alias="indexedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    indexed_at: str = Field(
+        alias="indexedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     chunk_count: int = Field(alias="chunkCount", ge=0)
+
 
 class FileRecordIngestionVariant4(StrictGeneratedModel):
     state: Literal["unsupported"]
     reason: str = Field(min_length=1, max_length=2048)
+
 
 class FileRecordIngestionVariant5(StrictGeneratedModel):
     state: Literal["failed"]
     reason: str = Field(min_length=1, max_length=2048)
     retryable: bool
 
+
 class FileRecordProvenance(StrictGeneratedModel):
     kind: Literal["user", "assistant", "tool", "import", "system"]
-    source_id: str = Field(alias="sourceId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    source_label: str = Field(alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    source_id: str = Field(
+        alias="sourceId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    source_label: str = Field(
+        alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None)
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class FileRecord(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
     display_name: str = Field(alias="displayName", min_length=1, max_length=512)
     source_handle: str = Field(alias="sourceHandle", min_length=1, max_length=512)
-    mime_type: str = Field(alias="mimeType", min_length=3, max_length=255, pattern="^[^/\\s]+/[^/\\s]+$")
+    mime_type: str = Field(
+        alias="mimeType", min_length=3, max_length=255, pattern="^[^/\\s]+/[^/\\s]+$"
+    )
     byte_size: int = Field(alias="byteSize", ge=0, le=9007199254740991)
     content_sha256: str = Field(alias="contentSha256", pattern="^[a-f0-9]{64}$")
-    modified_at: str = Field(alias="modifiedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    modified_at: str = Field(
+        alias="modifiedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     destination: Literal["local", "cloud"]
-    ingestion: FileRecordIngestionVariant1 | FileRecordIngestionVariant2 | FileRecordIngestionVariant3 | FileRecordIngestionVariant4 | FileRecordIngestionVariant5
+    ingestion: (
+        FileRecordIngestionVariant1
+        | FileRecordIngestionVariant2
+        | FileRecordIngestionVariant3
+        | FileRecordIngestionVariant4
+        | FileRecordIngestionVariant5
+    )
     provenance: FileRecordProvenance
 
 
 class MemoryRecordScopeVariant1(StrictGeneratedModel):
     kind: Literal["global"]
 
+
 class MemoryRecordScopeVariant2(StrictGeneratedModel):
     kind: Literal["project"]
-    project_id: str = Field(alias="projectId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    project_id: str = Field(
+        alias="projectId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class MemoryRecordScopeVariant3(StrictGeneratedModel):
     kind: Literal["conversation"]
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class MemoryRecordEvidenceItem(StrictGeneratedModel):
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
     excerpt: str = Field(min_length=1, max_length=4096)
-    observed_at: str = Field(alias="observedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    observed_at: str = Field(
+        alias="observedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryRecordProvenance(StrictGeneratedModel):
     kind: Literal["user", "assistant", "tool", "import", "system"]
-    source_id: str = Field(alias="sourceId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    source_label: str = Field(alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    source_id: str = Field(
+        alias="sourceId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    source_label: str = Field(
+        alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None)
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryRecord(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    kind: Literal["preference", "fact", "instruction", "decision", "event", "task-state", "temporary-context"]
+    kind: Literal[
+        "preference", "fact", "instruction", "decision", "event", "task-state", "temporary-context"
+    ]
     scope: MemoryRecordScopeVariant1 | MemoryRecordScopeVariant2 | MemoryRecordScopeVariant3
     content: str = Field(min_length=1, max_length=32768)
     status: Literal["active", "candidate", "superseded", "expired", "tombstoned"]
     sensitivity: Literal["ordinary", "personal", "sensitive"]
     confidence: float = Field(ge=0, le=1)
     explicit: bool
-    revision_id: str = Field(alias="revisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    supersedes_revision_id: str | None = Field(alias="supersedesRevisionId", default=cast(Any, None))
+    revision_id: str = Field(
+        alias="revisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    supersedes_revision_id: str | None = Field(
+        alias="supersedesRevisionId", default=cast(Any, None)
+    )
     evidence: list[MemoryRecordEvidenceItem] = Field(max_length=100)
     provenance: MemoryRecordProvenance
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     expires_at: str | None = Field(alias="expiresAt", default=cast(Any, None))
     tombstoned_at: str | None = Field(alias="tombstonedAt", default=cast(Any, None))
     metadata: dict[str, JsonValue] = Field(default=cast(Any, None))
@@ -426,144 +777,312 @@ class MemoryRecord(StrictGeneratedModel):
 class MemoryMutationVariant1RecordScopeVariant1(StrictGeneratedModel):
     kind: Literal["global"]
 
+
 class MemoryMutationVariant1RecordScopeVariant2(StrictGeneratedModel):
     kind: Literal["project"]
-    project_id: str = Field(alias="projectId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    project_id: str = Field(
+        alias="projectId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class MemoryMutationVariant1RecordScopeVariant3(StrictGeneratedModel):
     kind: Literal["conversation"]
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class MemoryMutationVariant1RecordEvidenceItem(StrictGeneratedModel):
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
     excerpt: str = Field(min_length=1, max_length=4096)
-    observed_at: str = Field(alias="observedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    observed_at: str = Field(
+        alias="observedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryMutationVariant1RecordProvenance(StrictGeneratedModel):
     kind: Literal["user", "assistant", "tool", "import", "system"]
-    source_id: str = Field(alias="sourceId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    source_label: str = Field(alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    source_id: str = Field(
+        alias="sourceId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    source_label: str = Field(
+        alias="sourceLabel", min_length=1, max_length=512, default=cast(Any, None)
+    )
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryMutationVariant1Record(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    kind: Literal["preference", "fact", "instruction", "decision", "event", "task-state", "temporary-context"]
-    scope: MemoryMutationVariant1RecordScopeVariant1 | MemoryMutationVariant1RecordScopeVariant2 | MemoryMutationVariant1RecordScopeVariant3
+    kind: Literal[
+        "preference", "fact", "instruction", "decision", "event", "task-state", "temporary-context"
+    ]
+    scope: (
+        MemoryMutationVariant1RecordScopeVariant1
+        | MemoryMutationVariant1RecordScopeVariant2
+        | MemoryMutationVariant1RecordScopeVariant3
+    )
     content: str = Field(min_length=1, max_length=32768)
     status: Literal["active", "candidate", "superseded", "expired", "tombstoned"]
     sensitivity: Literal["ordinary", "personal", "sensitive"]
     confidence: float = Field(ge=0, le=1)
     explicit: bool
-    revision_id: str = Field(alias="revisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    supersedes_revision_id: str | None = Field(alias="supersedesRevisionId", default=cast(Any, None))
+    revision_id: str = Field(
+        alias="revisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    supersedes_revision_id: str | None = Field(
+        alias="supersedesRevisionId", default=cast(Any, None)
+    )
     evidence: list[MemoryMutationVariant1RecordEvidenceItem] = Field(max_length=100)
     provenance: MemoryMutationVariant1RecordProvenance
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     expires_at: str | None = Field(alias="expiresAt", default=cast(Any, None))
     tombstoned_at: str | None = Field(alias="tombstonedAt", default=cast(Any, None))
     metadata: dict[str, JsonValue] = Field(default=cast(Any, None))
+
 
 class MemoryMutationVariant1(StrictGeneratedModel):
     action: Literal["create"]
     record: MemoryMutationVariant1Record
 
+
 class MemoryMutationVariant2(StrictGeneratedModel):
     action: Literal["confirm-candidate"]
-    memory_id: str = Field(alias="memoryId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    expected_revision_id: str = Field(alias="expectedRevisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    decided_at: str = Field(alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    memory_id: str = Field(
+        alias="memoryId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    expected_revision_id: str = Field(
+        alias="expectedRevisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    decided_at: str = Field(
+        alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryMutationVariant3(StrictGeneratedModel):
     action: Literal["reject-candidate"]
-    memory_id: str = Field(alias="memoryId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    expected_revision_id: str = Field(alias="expectedRevisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    decided_at: str = Field(alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    memory_id: str = Field(
+        alias="memoryId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    expected_revision_id: str = Field(
+        alias="expectedRevisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    decided_at: str = Field(
+        alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class MemoryMutationVariant4(StrictGeneratedModel):
     action: Literal["tombstone"]
-    memory_id: str = Field(alias="memoryId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    expected_revision_id: str = Field(alias="expectedRevisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    memory_id: str = Field(
+        alias="memoryId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    expected_revision_id: str = Field(
+        alias="expectedRevisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     reason: str = Field(min_length=1, max_length=2048)
-    decided_at: str = Field(alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    decided_at: str = Field(
+        alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
-class MemoryMutation(RootModel[MemoryMutationVariant1 | MemoryMutationVariant2 | MemoryMutationVariant3 | MemoryMutationVariant4]):
+
+class MemoryMutation(
+    RootModel[
+        MemoryMutationVariant1
+        | MemoryMutationVariant2
+        | MemoryMutationVariant3
+        | MemoryMutationVariant4
+    ]
+):
     """Generated root union for the MemoryMutation contract."""
 
-    root: MemoryMutationVariant1 | MemoryMutationVariant2 | MemoryMutationVariant3 | MemoryMutationVariant4
+    root: (
+        MemoryMutationVariant1
+        | MemoryMutationVariant2
+        | MemoryMutationVariant3
+        | MemoryMutationVariant4
+    )
 
 
 class MessageContentItemVariant1(StrictGeneratedModel):
     type_: Literal["text"] = Field(alias="type")
     text: str = Field(max_length=2000000)
 
+
 class MessageContentItemVariant2(StrictGeneratedModel):
     type_: Literal["code"] = Field(alias="type")
     language: str = Field(max_length=64, default=cast(Any, None))
     code: str = Field(max_length=2000000)
 
+
 class MessageContentItemVariant3(StrictGeneratedModel):
     type_: Literal["file"] = Field(alias="type")
-    file_id: str = Field(alias="fileId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    file_id: str = Field(
+        alias="fileId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     label: str = Field(min_length=1, max_length=512)
+
 
 class MessageContentItemVariant4(StrictGeneratedModel):
     type_: Literal["artifact"] = Field(alias="type")
-    artifact_id: str = Field(alias="artifactId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    revision_id: str = Field(alias="revisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    artifact_id: str = Field(
+        alias="artifactId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    revision_id: str = Field(
+        alias="revisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     label: str = Field(min_length=1, max_length=512)
+
 
 class MessageContentItemVariant5(StrictGeneratedModel):
     type_: Literal["citation"] = Field(alias="type")
-    file_id: str = Field(alias="fileId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    file_id: str = Field(
+        alias="fileId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
     url: str = Field(max_length=4096, default=cast(Any, None))
     locator: str = Field(min_length=1, max_length=2048)
     label: str = Field(min_length=1, max_length=512)
+
 
 class MessageContentItemVariant6(StrictGeneratedModel):
     type_: Literal["tool"] = Field(alias="type")
     tool_intent_id: str = Field(alias="toolIntentId", min_length=1, max_length=512)
 
+
 class MessageContentItemVariant7(StrictGeneratedModel):
     type_: Literal["task"] = Field(alias="type")
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class MessageContentItemVariant8(StrictGeneratedModel):
     type_: Literal["memory-notice"] = Field(alias="type")
-    memory_id: str = Field(alias="memoryId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    memory_id: str = Field(
+        alias="memoryId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     action: Literal["added", "updated", "removed", "suggested"]
+
 
 class MessageModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class MessageModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: MessageModelFallback = Field(default=cast(Any, None))
+
 
 class MessageTokenUsage(StrictGeneratedModel):
     input: int = Field(ge=0)
     cached_input: int = Field(alias="cachedInput", ge=0)
     output: int = Field(ge=0)
 
+
 class Message(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    branch_id: str = Field(alias="branchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    branch_id: str = Field(
+        alias="branchId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     parent_message_id: str | None = Field(alias="parentMessageId", default=cast(Any, None))
     role: Literal["user", "assistant", "system"]
     status: Literal["queued", "streaming", "completed", "stopped", "failed", "superseded"]
-    content: list[MessageContentItemVariant1 | MessageContentItemVariant2 | MessageContentItemVariant3 | MessageContentItemVariant4 | MessageContentItemVariant5 | MessageContentItemVariant6 | MessageContentItemVariant7 | MessageContentItemVariant8] = Field(max_length=10000)
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    content: list[
+        MessageContentItemVariant1
+        | MessageContentItemVariant2
+        | MessageContentItemVariant3
+        | MessageContentItemVariant4
+        | MessageContentItemVariant5
+        | MessageContentItemVariant6
+        | MessageContentItemVariant7
+        | MessageContentItemVariant8
+    ] = Field(max_length=10000)
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     completed_at: str | None = Field(alias="completedAt", default=cast(Any, None))
-    run_id: str = Field(alias="runId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    run_id: str = Field(
+        alias="runId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
     model: MessageModel = Field(default=cast(Any, None))
-    provider_continuity_token: str = Field(alias="providerContinuityToken", min_length=1, max_length=8192, default=cast(Any, None))
+    provider_continuity_token: str = Field(
+        alias="providerContinuityToken", min_length=1, max_length=8192, default=cast(Any, None)
+    )
     token_usage: MessageTokenUsage = Field(alias="tokenUsage", default=cast(Any, None))
 
 
@@ -578,22 +1097,45 @@ class ModelDescriptorCapabilities(StrictGeneratedModel):
     reasoning: bool
     embeddings: bool
 
+
 class ModelDescriptorPricing(StrictGeneratedModel):
     currency: str = Field(pattern="^[A-Z]{3}$")
     input_per_million: float = Field(alias="inputPerMillion", ge=0)
-    cached_input_per_million: float = Field(alias="cachedInputPerMillion", ge=0, default=cast(Any, None))
+    cached_input_per_million: float = Field(
+        alias="cachedInputPerMillion", ge=0, default=cast(Any, None)
+    )
     output_per_million: float = Field(alias="outputPerMillion", ge=0)
     provenance_url: str = Field(alias="provenanceUrl", max_length=4096, default=cast(Any, None))
-    checked_at: str = Field(alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    checked_at: str = Field(
+        alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class ModelDescriptor(StrictGeneratedModel):
     id: str = Field(min_length=1, max_length=255)
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     family: str = Field(min_length=1, max_length=255)
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
     description: str = Field(max_length=2048, default=cast(Any, None))
     capabilities: ModelDescriptorCapabilities
-    reasoning_levels: Annotated[list[Literal["none", "minimal", "low", "medium", "high", "xhigh"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="reasoningLevels", max_length=6)
+    reasoning_levels: Annotated[
+        list[Literal["none", "minimal", "low", "medium", "high", "xhigh"]],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="reasoningLevels", max_length=6)
     context_window_tokens: int = Field(alias="contextWindowTokens", ge=1)
     maximum_output_tokens: int = Field(alias="maximumOutputTokens", ge=1)
     privacy_route: Literal["local", "direct-cloud", "custom-endpoint"] = Field(alias="privacyRoute")
@@ -606,43 +1148,105 @@ class ModelDescriptor(StrictGeneratedModel):
 
 class ProjectDefaultModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class ProjectDefaultModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: ProjectDefaultModelFallback = Field(default=cast(Any, None))
+
 
 class Project(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(max_length=4096, default=cast(Any, None))
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     archived_at: str | None = Field(alias="archivedAt", default=cast(Any, None))
     default_model: ProjectDefaultModel = Field(alias="defaultModel", default=cast(Any, None))
-    root_handles: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="rootHandles")
+    root_handles: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = Field(
+        alias="rootHandles"
+    )
     read_only_by_default: bool = Field(alias="readOnlyByDefault")
     instructions: str = Field(max_length=32768, default=cast(Any, None))
 
 
 class ProtocolEnvelopeLineage(StrictGeneratedModel):
-    run_id: str = Field(alias="runId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
-    parent_run_id: str = Field(alias="parentRunId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    run_id: str = Field(
+        alias="runId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+    parent_run_id: str = Field(
+        alias="parentRunId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
+
 
 class ProtocolEnvelope(StrictGeneratedModel):
     version: Literal[1]
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    correlation_id: str = Field(alias="correlationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    session_id: str = Field(alias="sessionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    correlation_id: str = Field(
+        alias="correlationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    session_id: str = Field(
+        alias="sessionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     sequence: int = Field(ge=1, le=9007199254740991)
     deadline: str = Field(pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
     lineage: ProtocolEnvelopeLineage
-    type_: Literal["handshake", "request", "response", "event", "cancel", "ping", "pong", "shutdown"] = Field(alias="type")
+    type_: Literal[
+        "handshake", "request", "response", "event", "cancel", "ping", "pong", "shutdown"
+    ] = Field(alias="type")
     payload: dict[str, JsonValue]
     auth_tag: str = Field(alias="authTag", pattern="^[A-Za-z0-9_-]{43}$")
 
@@ -650,248 +1254,569 @@ class ProtocolEnvelope(StrictGeneratedModel):
 class ProviderDescriptorHealthVariant1(StrictGeneratedModel):
     state: Literal["unknown"]
 
+
 class ProviderDescriptorHealthVariant2(StrictGeneratedModel):
     state: Literal["checking"]
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class ProviderDescriptorHealthVariant3(StrictGeneratedModel):
     state: Literal["ready"]
-    checked_at: str = Field(alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    checked_at: str = Field(
+        alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     latency_ms: int = Field(alias="latencyMs", ge=0, le=9007199254740991)
+
 
 class ProviderDescriptorHealthVariant4(StrictGeneratedModel):
     state: Literal["degraded"]
-    checked_at: str = Field(alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    checked_at: str = Field(
+        alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=1024)
+
 
 class ProviderDescriptorHealthVariant5(StrictGeneratedModel):
     state: Literal["unavailable"]
-    checked_at: str = Field(alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    checked_at: str = Field(
+        alias="checkedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=1024)
 
+
 class ProviderDescriptor(StrictGeneratedModel):
-    id: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    id: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     display_name: str = Field(alias="displayName", min_length=1, max_length=128)
     privacy_route: Literal["local", "direct-cloud", "custom-endpoint"] = Field(alias="privacyRoute")
     authentication: Literal["none", "api-key", "oauth-pkce", "external-runtime"]
     endpoint: str = Field(max_length=4096, default=cast(Any, None))
-    health: ProviderDescriptorHealthVariant1 | ProviderDescriptorHealthVariant2 | ProviderDescriptorHealthVariant3 | ProviderDescriptorHealthVariant4 | ProviderDescriptorHealthVariant5
-    credential_state: Literal["not-required", "missing", "configured", "invalid"] = Field(alias="credentialState")
+    health: (
+        ProviderDescriptorHealthVariant1
+        | ProviderDescriptorHealthVariant2
+        | ProviderDescriptorHealthVariant3
+        | ProviderDescriptorHealthVariant4
+        | ProviderDescriptorHealthVariant5
+    )
+    credential_state: Literal["not-required", "missing", "configured", "invalid"] = Field(
+        alias="credentialState"
+    )
     model_catalog_etag: str | None = Field(alias="modelCatalogEtag", default=cast(Any, None))
 
 
 class RunEventEventVariant1ModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class RunEventEventVariant1Model(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: RunEventEventVariant1ModelFallback = Field(default=cast(Any, None))
+
 
 class RunEventEventVariant1(StrictGeneratedModel):
     kind: Literal["run-started"]
     model: RunEventEventVariant1Model
-    resumed_from_checkpoint: str = Field(alias="resumedFromCheckpoint", min_length=1, max_length=512, default=cast(Any, None))
+    resumed_from_checkpoint: str = Field(
+        alias="resumedFromCheckpoint", min_length=1, max_length=512, default=cast(Any, None)
+    )
+
 
 class RunEventEventVariant2(StrictGeneratedModel):
     kind: Literal["message-started"]
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     role: Literal["assistant"]
+
 
 class RunEventEventVariant3(StrictGeneratedModel):
     kind: Literal["message-delta"]
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     delta: str = Field(min_length=1, max_length=1000000)
+
 
 class RunEventEventVariant4(StrictGeneratedModel):
     kind: Literal["message-completed"]
-    message_id: str = Field(alias="messageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    finish_reason: Literal["stop", "length", "tool-call", "cancelled", "error"] = Field(alias="finishReason")
+    message_id: str = Field(
+        alias="messageId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    finish_reason: Literal["stop", "length", "tool-call", "cancelled", "error"] = Field(
+        alias="finishReason"
+    )
+
 
 class RunEventEventVariant5PreflightResolvedResourcesItem(StrictGeneratedModel):
     id: str = Field(min_length=1, max_length=512)
-    kind: Literal["file", "directory", "repository", "artifact", "credential", "remote-origin", "process-sandbox"]
+    kind: Literal[
+        "file",
+        "directory",
+        "repository",
+        "artifact",
+        "credential",
+        "remote-origin",
+        "process-sandbox",
+    ]
     display_name: str = Field(alias="displayName", min_length=1, max_length=512)
     revision: str = Field(min_length=1, max_length=255, default=cast(Any, None))
+
 
 class RunEventEventVariant5PreflightDestinationsItem(StrictGeneratedModel):
     route: Literal["local", "provider", "mcp-server", "web-origin"]
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
     origin: str = Field(max_length=4096, default=cast(Any, None))
-    data_classes: Annotated[list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="dataClasses")
+    data_classes: Annotated[
+        list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="dataClasses")
+
 
 class RunEventEventVariant5PreflightLimits(StrictGeneratedModel):
     timeout_ms: int = Field(alias="timeoutMs", ge=0, le=9007199254740991)
     maximum_output_bytes: int = Field(alias="maximumOutputBytes", ge=0, le=9007199254740991)
-    maximum_memory_bytes: int = Field(alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None))
-    maximum_cpu_ms: int = Field(alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None))
+    maximum_memory_bytes: int = Field(
+        alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
+    maximum_cpu_ms: int = Field(
+        alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
     network: Literal["denied", "allowlisted", "unrestricted"]
+
 
 class RunEventEventVariant5PreflightApproval(StrictGeneratedModel):
     required: bool
     reason: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
-    allowed_scopes: Annotated[list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="allowedScopes")
+    allowed_scopes: Annotated[
+        list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})
+    ] = Field(alias="allowedScopes")
     fresh_approval_only: bool = Field(alias="freshApprovalOnly")
 
+
 class RunEventEventVariant5Preflight(StrictGeneratedModel):
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     normalized_arguments: dict[str, JsonValue] = Field(alias="normalizedArguments")
-    resolved_resources: Annotated[list[RunEventEventVariant5PreflightResolvedResourcesItem], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="resolvedResources")
-    effects: Annotated[list[Literal["read-local", "write-local", "delete-local", "network-read", "external-communication", "financial-transaction", "install-software", "system-change", "execute-sandboxed", "execute-unsandboxed"]], Field(json_schema_extra={"uniqueItems": True})] = Field(min_length=1)
+    resolved_resources: Annotated[
+        list[RunEventEventVariant5PreflightResolvedResourcesItem],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="resolvedResources")
+    effects: Annotated[
+        list[
+            Literal[
+                "read-local",
+                "write-local",
+                "delete-local",
+                "network-read",
+                "external-communication",
+                "financial-transaction",
+                "install-software",
+                "system-change",
+                "execute-sandboxed",
+                "execute-unsandboxed",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(min_length=1)
     risk: Literal["low", "moderate", "high", "critical"]
     destinations: list[RunEventEventVariant5PreflightDestinationsItem]
     limits: RunEventEventVariant5PreflightLimits
     approval: RunEventEventVariant5PreflightApproval
     approval_digest: str = Field(alias="approvalDigest", pattern="^[a-f0-9]{64}$")
-    prepared_at: str = Field(alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    expires_at: str = Field(alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    prepared_at: str = Field(
+        alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    expires_at: str = Field(
+        alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class RunEventEventVariant5(StrictGeneratedModel):
     kind: Literal["tool-preflight"]
     preflight: RunEventEventVariant5Preflight
 
+
 class RunEventEventVariant6(StrictGeneratedModel):
     kind: Literal["tool-started"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class RunEventEventVariant7ResultVariant1(StrictGeneratedModel):
     state: Literal["completed"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    finished_at: str = Field(alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    finished_at: str = Field(
+        alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     duration_ms: int = Field(alias="durationMs", ge=0, le=9007199254740991)
     output: JsonValue
     output_bytes: int = Field(alias="outputBytes", ge=0, le=9007199254740991)
-    generated_resource_ids: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="generatedResourceIds")
+    generated_resource_ids: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = (
+        Field(alias="generatedResourceIds")
+    )
     provenance: dict[str, JsonValue]
+
 
 class RunEventEventVariant7ResultVariant2(StrictGeneratedModel):
     state: Literal["failed"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    finished_at: str = Field(alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    finished_at: str = Field(
+        alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     duration_ms: int = Field(alias="durationMs", ge=0, le=9007199254740991)
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=4096)
     retryable: bool
     partial_output: JsonValue = Field(alias="partialOutput", default=cast(Any, None))
 
+
 class RunEventEventVariant7ResultVariant3(StrictGeneratedModel):
     state: Literal["denied"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    decided_at: str = Field(alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    decided_at: str = Field(
+        alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=2048)
+
 
 class RunEventEventVariant7ResultVariant4(StrictGeneratedModel):
     state: Literal["cancelled"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    cancelled_at: str = Field(alias="cancelledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    cancelled_at: str = Field(
+        alias="cancelledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
+
 
 class RunEventEventVariant7ResultVariant5(StrictGeneratedModel):
     state: Literal["expired"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    expired_at: str = Field(alias="expiredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    expired_at: str = Field(
+        alias="expiredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class RunEventEventVariant7(StrictGeneratedModel):
     kind: Literal["tool-completed"]
-    result: RunEventEventVariant7ResultVariant1 | RunEventEventVariant7ResultVariant2 | RunEventEventVariant7ResultVariant3 | RunEventEventVariant7ResultVariant4 | RunEventEventVariant7ResultVariant5
+    result: (
+        RunEventEventVariant7ResultVariant1
+        | RunEventEventVariant7ResultVariant2
+        | RunEventEventVariant7ResultVariant3
+        | RunEventEventVariant7ResultVariant4
+        | RunEventEventVariant7ResultVariant5
+    )
+
 
 class RunEventEventVariant8PreflightResolvedResourcesItem(StrictGeneratedModel):
     id: str = Field(min_length=1, max_length=512)
-    kind: Literal["file", "directory", "repository", "artifact", "credential", "remote-origin", "process-sandbox"]
+    kind: Literal[
+        "file",
+        "directory",
+        "repository",
+        "artifact",
+        "credential",
+        "remote-origin",
+        "process-sandbox",
+    ]
     display_name: str = Field(alias="displayName", min_length=1, max_length=512)
     revision: str = Field(min_length=1, max_length=255, default=cast(Any, None))
+
 
 class RunEventEventVariant8PreflightDestinationsItem(StrictGeneratedModel):
     route: Literal["local", "provider", "mcp-server", "web-origin"]
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
     origin: str = Field(max_length=4096, default=cast(Any, None))
-    data_classes: Annotated[list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="dataClasses")
+    data_classes: Annotated[
+        list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="dataClasses")
+
 
 class RunEventEventVariant8PreflightLimits(StrictGeneratedModel):
     timeout_ms: int = Field(alias="timeoutMs", ge=0, le=9007199254740991)
     maximum_output_bytes: int = Field(alias="maximumOutputBytes", ge=0, le=9007199254740991)
-    maximum_memory_bytes: int = Field(alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None))
-    maximum_cpu_ms: int = Field(alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None))
+    maximum_memory_bytes: int = Field(
+        alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
+    maximum_cpu_ms: int = Field(
+        alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
     network: Literal["denied", "allowlisted", "unrestricted"]
+
 
 class RunEventEventVariant8PreflightApproval(StrictGeneratedModel):
     required: bool
     reason: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
-    allowed_scopes: Annotated[list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="allowedScopes")
+    allowed_scopes: Annotated[
+        list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})
+    ] = Field(alias="allowedScopes")
     fresh_approval_only: bool = Field(alias="freshApprovalOnly")
 
+
 class RunEventEventVariant8Preflight(StrictGeneratedModel):
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     normalized_arguments: dict[str, JsonValue] = Field(alias="normalizedArguments")
-    resolved_resources: Annotated[list[RunEventEventVariant8PreflightResolvedResourcesItem], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="resolvedResources")
-    effects: Annotated[list[Literal["read-local", "write-local", "delete-local", "network-read", "external-communication", "financial-transaction", "install-software", "system-change", "execute-sandboxed", "execute-unsandboxed"]], Field(json_schema_extra={"uniqueItems": True})] = Field(min_length=1)
+    resolved_resources: Annotated[
+        list[RunEventEventVariant8PreflightResolvedResourcesItem],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="resolvedResources")
+    effects: Annotated[
+        list[
+            Literal[
+                "read-local",
+                "write-local",
+                "delete-local",
+                "network-read",
+                "external-communication",
+                "financial-transaction",
+                "install-software",
+                "system-change",
+                "execute-sandboxed",
+                "execute-unsandboxed",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(min_length=1)
     risk: Literal["low", "moderate", "high", "critical"]
     destinations: list[RunEventEventVariant8PreflightDestinationsItem]
     limits: RunEventEventVariant8PreflightLimits
     approval: RunEventEventVariant8PreflightApproval
     approval_digest: str = Field(alias="approvalDigest", pattern="^[a-f0-9]{64}$")
-    prepared_at: str = Field(alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    expires_at: str = Field(alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    prepared_at: str = Field(
+        alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    expires_at: str = Field(
+        alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class RunEventEventVariant8(StrictGeneratedModel):
     kind: Literal["approval-required"]
-    approval_id: str = Field(alias="approvalId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    approval_id: str = Field(
+        alias="approvalId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     preflight: RunEventEventVariant8Preflight
+
 
 class RunEventEventVariant9(StrictGeneratedModel):
     kind: Literal["approval-resolved"]
-    approval_id: str = Field(alias="approvalId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    approval_id: str = Field(
+        alias="approvalId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     decision: Literal["approved", "denied", "expired"]
+
 
 class RunEventEventVariant10(StrictGeneratedModel):
     kind: Literal["task-state"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    state: Literal["queued", "running", "waiting-for-approval", "waiting-for-input", "pausing", "paused", "cancelling", "cancelled", "failed", "completed"]
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    state: Literal[
+        "queued",
+        "running",
+        "waiting-for-approval",
+        "waiting-for-input",
+        "pausing",
+        "paused",
+        "cancelling",
+        "cancelled",
+        "failed",
+        "completed",
+    ]
     detail: str = Field(max_length=2048, default=cast(Any, None))
 
+
 class RunEventEventVariant11Subagent(StrictGeneratedModel):
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    parent_task_id: str = Field(alias="parentTaskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    parent_task_id: str = Field(
+        alias="parentTaskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     role: Literal["researcher", "coder", "reviewer", "document-analyst"]
-    state: Literal["queued", "running", "waiting-for-approval", "waiting-for-input", "pausing", "paused", "cancelling", "cancelled", "failed", "completed"]
+    state: Literal[
+        "queued",
+        "running",
+        "waiting-for-approval",
+        "waiting-for-input",
+        "pausing",
+        "paused",
+        "cancelling",
+        "cancelled",
+        "failed",
+        "completed",
+    ]
     model_budget_tokens: int = Field(alias="modelBudgetTokens", ge=0)
     tool_budget: int = Field(alias="toolBudget", ge=0)
     summary: str = Field(max_length=4096, default=cast(Any, None))
+
 
 class RunEventEventVariant11(StrictGeneratedModel):
     kind: Literal["subagent-state"]
     subagent: RunEventEventVariant11Subagent
 
+
 class RunEventEventVariant12(StrictGeneratedModel):
     kind: Literal["artifact-created"]
-    artifact_id: str = Field(alias="artifactId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    revision_id: str = Field(alias="revisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    artifact_id: str = Field(
+        alias="artifactId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    revision_id: str = Field(
+        alias="revisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     title: str = Field(min_length=1, max_length=512)
+
 
 class RunEventEventVariant13(StrictGeneratedModel):
     kind: Literal["artifact-revised"]
-    artifact_id: str = Field(alias="artifactId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    revision_id: str = Field(alias="revisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    parent_revision_id: str = Field(alias="parentRevisionId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    artifact_id: str = Field(
+        alias="artifactId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    revision_id: str = Field(
+        alias="revisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    parent_revision_id: str = Field(
+        alias="parentRevisionId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+
 
 class RunEventEventVariant14UsageModelFallback(StrictGeneratedModel):
     enabled: bool
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
     requires_boundary_confirmation: bool = Field(alias="requiresBoundaryConfirmation")
 
+
 class RunEventEventVariant14UsageModel(StrictGeneratedModel):
-    provider: Literal["openai", "anthropic", "gemini", "xai", "mistral", "cohere", "nvidia-nim", "openai-compatible", "cupcake-local", "ollama", "lm-studio", "vllm", "mock"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "mistral",
+        "cohere",
+        "nvidia-nim",
+        "openai-compatible",
+        "cupcake-local",
+        "ollama",
+        "lm-studio",
+        "vllm",
+        "mock",
+    ]
     model_id: str = Field(alias="modelId", min_length=1, max_length=255)
-    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(alias="reasoningLevel")
+    reasoning_level: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = Field(
+        alias="reasoningLevel"
+    )
     fallback: RunEventEventVariant14UsageModelFallback = Field(default=cast(Any, None))
+
 
 class RunEventEventVariant14Usage(StrictGeneratedModel):
     model: RunEventEventVariant14UsageModel
@@ -903,19 +1828,23 @@ class RunEventEventVariant14Usage(StrictGeneratedModel):
     currency: str = Field(pattern="^[A-Z]{3}$", default=cast(Any, None))
     latency_ms: int = Field(alias="latencyMs", ge=0, le=9007199254740991)
 
+
 class RunEventEventVariant14(StrictGeneratedModel):
     kind: Literal["usage"]
     usage: RunEventEventVariant14Usage
+
 
 class RunEventEventVariant15(StrictGeneratedModel):
     kind: Literal["checkpoint"]
     checkpoint_id: str = Field(alias="checkpointId", min_length=1, max_length=512)
     checkpoint_version: str = Field(alias="checkpointVersion", min_length=1, max_length=128)
 
+
 class RunEventEventVariant16(StrictGeneratedModel):
     kind: Literal["recovery"]
     state: Literal["detected", "resuming", "recovered", "incompatible"]
     detail: str = Field(max_length=2048, default=cast(Any, None))
+
 
 class RunEventEventVariant17(StrictGeneratedModel):
     kind: Literal["error"]
@@ -924,27 +1853,62 @@ class RunEventEventVariant17(StrictGeneratedModel):
     retryable: bool
     details: dict[str, JsonValue] = Field(default=cast(Any, None))
 
+
 class RunEventEventVariant18(StrictGeneratedModel):
     kind: Literal["run-completed"]
     outcome: Literal["completed", "cancelled", "failed"]
 
+
 class RunEvent(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    run_id: str = Field(alias="runId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    run_id: str = Field(
+        alias="runId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     task_id: str | None = Field(alias="taskId", default=cast(Any, None))
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    branch_id: str = Field(alias="branchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    branch_id: str = Field(
+        alias="branchId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     sequence: int = Field(ge=1, le=9007199254740991)
-    occurred_at: str = Field(alias="occurredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    occurred_at: str = Field(
+        alias="occurredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     visibility: Literal["user", "developer", "internal"]
-    event: RunEventEventVariant1 | RunEventEventVariant2 | RunEventEventVariant3 | RunEventEventVariant4 | RunEventEventVariant5 | RunEventEventVariant6 | RunEventEventVariant7 | RunEventEventVariant8 | RunEventEventVariant9 | RunEventEventVariant10 | RunEventEventVariant11 | RunEventEventVariant12 | RunEventEventVariant13 | RunEventEventVariant14 | RunEventEventVariant15 | RunEventEventVariant16 | RunEventEventVariant17 | RunEventEventVariant18
+    event: (
+        RunEventEventVariant1
+        | RunEventEventVariant2
+        | RunEventEventVariant3
+        | RunEventEventVariant4
+        | RunEventEventVariant5
+        | RunEventEventVariant6
+        | RunEventEventVariant7
+        | RunEventEventVariant8
+        | RunEventEventVariant9
+        | RunEventEventVariant10
+        | RunEventEventVariant11
+        | RunEventEventVariant12
+        | RunEventEventVariant13
+        | RunEventEventVariant14
+        | RunEventEventVariant15
+        | RunEventEventVariant16
+        | RunEventEventVariant17
+        | RunEventEventVariant18
+    )
 
 
 class SearchRequest(StrictGeneratedModel):
     query: str = Field(min_length=1, max_length=4096)
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
-    kinds: Annotated[list[Literal["conversation", "project", "file", "memory", "task", "artifact"]], Field(json_schema_extra={"uniqueItems": True})] = Field(min_length=1)
+    kinds: Annotated[
+        list[Literal["conversation", "project", "file", "memory", "task", "artifact"]],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(min_length=1)
     mode: Literal["lexical", "hybrid"]
     limit: int = Field(ge=1, le=100)
     cursor: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
@@ -958,7 +1922,9 @@ class SearchResult(StrictGeneratedModel):
     excerpt: str = Field(max_length=4096)
     lexical_score: float = Field(alias="lexicalScore", ge=0)
     semantic_score: float = Field(alias="semanticScore", ge=0, le=1, default=cast(Any, None))
-    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(
+        alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     locator: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
 
 
@@ -967,27 +1933,61 @@ class TaskRecordProgress(StrictGeneratedModel):
     total_units: int = Field(alias="totalUnits", ge=1, default=cast(Any, None))
     label: str = Field(max_length=512, default=cast(Any, None))
 
+
 class TaskRecordError(StrictGeneratedModel):
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=4096)
     retryable: bool
 
+
 class TaskRecord(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     parent_task_id: str | None = Field(alias="parentTaskId", default=cast(Any, None))
-    run_id: str = Field(alias="runId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    run_id: str = Field(
+        alias="runId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     project_id: str | None = Field(alias="projectId", default=cast(Any, None))
-    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    branch_id: str = Field(alias="branchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(
+        alias="conversationId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    branch_id: str = Field(
+        alias="branchId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     title: str = Field(min_length=1, max_length=512)
-    state: Literal["queued", "running", "waiting-for-approval", "waiting-for-input", "pausing", "paused", "cancelling", "cancelled", "failed", "completed"]
-    promotion_reason: Literal["explicit", "estimated-duration", "repository-indexing", "document-indexing", "code-execution", "artifact-generation", "multi-stage-tools"] = Field(alias="promotionReason")
+    state: Literal[
+        "queued",
+        "running",
+        "waiting-for-approval",
+        "waiting-for-input",
+        "pausing",
+        "paused",
+        "cancelling",
+        "cancelled",
+        "failed",
+        "completed",
+    ]
+    promotion_reason: Literal[
+        "explicit",
+        "estimated-duration",
+        "repository-indexing",
+        "document-indexing",
+        "code-execution",
+        "artifact-generation",
+        "multi-stage-tools",
+    ] = Field(alias="promotionReason")
     progress: TaskRecordProgress
     checkpoint_version: str = Field(alias="checkpointVersion", min_length=1, max_length=128)
-    checkpoint_id: str = Field(alias="checkpointId", min_length=1, max_length=512, default=cast(Any, None))
+    checkpoint_id: str = Field(
+        alias="checkpointId", min_length=1, max_length=512, default=cast(Any, None)
+    )
     attempt: int = Field(ge=1)
     maximum_attempts: int = Field(alias="maximumAttempts", ge=1)
-    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    created_at: str = Field(
+        alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     started_at: str | None = Field(alias="startedAt", default=cast(Any, None))
     finished_at: str | None = Field(alias="finishedAt", default=cast(Any, None))
     last_heartbeat_at: str | None = Field(alias="lastHeartbeatAt", default=cast(Any, None))
@@ -997,35 +1997,79 @@ class TaskRecord(StrictGeneratedModel):
 
 class TaskCommandVariant1(StrictGeneratedModel):
     command: Literal["pause"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class TaskCommandVariant2(StrictGeneratedModel):
     command: Literal["resume"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class TaskCommandVariant3(StrictGeneratedModel):
     command: Literal["cancel"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(max_length=2048, default=cast(Any, None))
+
 
 class TaskCommandVariant4(StrictGeneratedModel):
     command: Literal["retry"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+
 
 class TaskCommandVariant5(StrictGeneratedModel):
     command: Literal["steer"]
-    task_id: str = Field(alias="taskId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    task_id: str = Field(
+        alias="taskId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     message: str = Field(min_length=1, max_length=32768)
 
-class TaskCommand(RootModel[TaskCommandVariant1 | TaskCommandVariant2 | TaskCommandVariant3 | TaskCommandVariant4 | TaskCommandVariant5]):
+
+class TaskCommand(
+    RootModel[
+        TaskCommandVariant1
+        | TaskCommandVariant2
+        | TaskCommandVariant3
+        | TaskCommandVariant4
+        | TaskCommandVariant5
+    ]
+):
     """Generated root union for the TaskCommand contract."""
 
-    root: TaskCommandVariant1 | TaskCommandVariant2 | TaskCommandVariant3 | TaskCommandVariant4 | TaskCommandVariant5
+    root: (
+        TaskCommandVariant1
+        | TaskCommandVariant2
+        | TaskCommandVariant3
+        | TaskCommandVariant4
+        | TaskCommandVariant5
+    )
 
 
 class ThemeTokensColors(StrictGeneratedModel):
@@ -1036,10 +2080,12 @@ class ThemeTokensColors(StrictGeneratedModel):
     pistachio: str = Field(pattern="^#[0-9A-Fa-f]{6}$")
     blueberry: str = Field(pattern="^#[0-9A-Fa-f]{6}$")
 
+
 class ThemeTokensTypography(StrictGeneratedModel):
     display: str = Field(min_length=1, max_length=128)
     body: str = Field(min_length=1, max_length=128)
     mono: str = Field(min_length=1, max_length=128)
+
 
 class ThemeTokens(StrictGeneratedModel):
     id: Literal["cupcake-light", "cupcake-dark", "minimal", "classic"]
@@ -1057,7 +2103,23 @@ class ToolDescriptor(StrictGeneratedModel):
     source: Literal["native", "mcp", "custom"]
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")
     output_schema: dict[str, JsonValue] = Field(alias="outputSchema")
-    declared_effects: Annotated[list[Literal["read-local", "write-local", "delete-local", "network-read", "external-communication", "financial-transaction", "install-software", "system-change", "execute-sandboxed", "execute-unsandboxed"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="declaredEffects", min_length=1)
+    declared_effects: Annotated[
+        list[
+            Literal[
+                "read-local",
+                "write-local",
+                "delete-local",
+                "network-read",
+                "external-communication",
+                "financial-transaction",
+                "install-software",
+                "system-change",
+                "execute-sandboxed",
+                "execute-unsandboxed",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="declaredEffects", min_length=1)
     default_risk: Literal["low", "moderate", "high", "critical"] = Field(alias="defaultRisk")
     requires_project: bool = Field(alias="requiresProject")
     available: bool
@@ -1067,95 +2129,196 @@ class ToolIntent(StrictGeneratedModel):
     id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     descriptor_name: str = Field(alias="descriptorName", pattern="^[a-z][a-z0-9_.-]{1,127}$")
     descriptor_version: str = Field(alias="descriptorVersion", min_length=1, max_length=64)
-    project_id: str = Field(alias="projectId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", default=cast(Any, None))
+    project_id: str = Field(
+        alias="projectId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        default=cast(Any, None),
+    )
     arguments: dict[str, JsonValue]
     reason: str = Field(min_length=1, max_length=4096)
-    requested_at: str = Field(alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    requested_at: str = Field(
+        alias="requestedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
 
 class ToolPreflightResolvedResourcesItem(StrictGeneratedModel):
     id: str = Field(min_length=1, max_length=512)
-    kind: Literal["file", "directory", "repository", "artifact", "credential", "remote-origin", "process-sandbox"]
+    kind: Literal[
+        "file",
+        "directory",
+        "repository",
+        "artifact",
+        "credential",
+        "remote-origin",
+        "process-sandbox",
+    ]
     display_name: str = Field(alias="displayName", min_length=1, max_length=512)
     revision: str = Field(min_length=1, max_length=255, default=cast(Any, None))
+
 
 class ToolPreflightDestinationsItem(StrictGeneratedModel):
     route: Literal["local", "provider", "mcp-server", "web-origin"]
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
     origin: str = Field(max_length=4096, default=cast(Any, None))
-    data_classes: Annotated[list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="dataClasses")
+    data_classes: Annotated[
+        list[Literal["prompt", "file-content", "memory", "artifact", "usage-metadata"]],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(alias="dataClasses")
+
 
 class ToolPreflightLimits(StrictGeneratedModel):
     timeout_ms: int = Field(alias="timeoutMs", ge=0, le=9007199254740991)
     maximum_output_bytes: int = Field(alias="maximumOutputBytes", ge=0, le=9007199254740991)
-    maximum_memory_bytes: int = Field(alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None))
-    maximum_cpu_ms: int = Field(alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None))
+    maximum_memory_bytes: int = Field(
+        alias="maximumMemoryBytes", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
+    maximum_cpu_ms: int = Field(
+        alias="maximumCpuMs", ge=0, le=9007199254740991, default=cast(Any, None)
+    )
     network: Literal["denied", "allowlisted", "unrestricted"]
+
 
 class ToolPreflightApproval(StrictGeneratedModel):
     required: bool
     reason: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
-    allowed_scopes: Annotated[list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="allowedScopes")
+    allowed_scopes: Annotated[
+        list[Literal["once", "session", "project"]], Field(json_schema_extra={"uniqueItems": True})
+    ] = Field(alias="allowedScopes")
     fresh_approval_only: bool = Field(alias="freshApprovalOnly")
 
+
 class ToolPreflight(StrictGeneratedModel):
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
     normalized_arguments: dict[str, JsonValue] = Field(alias="normalizedArguments")
-    resolved_resources: Annotated[list[ToolPreflightResolvedResourcesItem], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="resolvedResources")
-    effects: Annotated[list[Literal["read-local", "write-local", "delete-local", "network-read", "external-communication", "financial-transaction", "install-software", "system-change", "execute-sandboxed", "execute-unsandboxed"]], Field(json_schema_extra={"uniqueItems": True})] = Field(min_length=1)
+    resolved_resources: Annotated[
+        list[ToolPreflightResolvedResourcesItem], Field(json_schema_extra={"uniqueItems": True})
+    ] = Field(alias="resolvedResources")
+    effects: Annotated[
+        list[
+            Literal[
+                "read-local",
+                "write-local",
+                "delete-local",
+                "network-read",
+                "external-communication",
+                "financial-transaction",
+                "install-software",
+                "system-change",
+                "execute-sandboxed",
+                "execute-unsandboxed",
+            ]
+        ],
+        Field(json_schema_extra={"uniqueItems": True}),
+    ] = Field(min_length=1)
     risk: Literal["low", "moderate", "high", "critical"]
     destinations: list[ToolPreflightDestinationsItem]
     limits: ToolPreflightLimits
     approval: ToolPreflightApproval
     approval_digest: str = Field(alias="approvalDigest", pattern="^[a-f0-9]{64}$")
-    prepared_at: str = Field(alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    expires_at: str = Field(alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    prepared_at: str = Field(
+        alias="preparedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    expires_at: str = Field(
+        alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
 
 class ToolResultVariant1(StrictGeneratedModel):
     state: Literal["completed"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    finished_at: str = Field(alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    finished_at: str = Field(
+        alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     duration_ms: int = Field(alias="durationMs", ge=0, le=9007199254740991)
     output: JsonValue
     output_bytes: int = Field(alias="outputBytes", ge=0, le=9007199254740991)
-    generated_resource_ids: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = Field(alias="generatedResourceIds")
+    generated_resource_ids: Annotated[list[str], Field(json_schema_extra={"uniqueItems": True})] = (
+        Field(alias="generatedResourceIds")
+    )
     provenance: dict[str, JsonValue]
+
 
 class ToolResultVariant2(StrictGeneratedModel):
     state: Literal["failed"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    started_at: str = Field(alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
-    finished_at: str = Field(alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    started_at: str = Field(
+        alias="startedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
+    finished_at: str = Field(
+        alias="finishedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     duration_ms: int = Field(alias="durationMs", ge=0, le=9007199254740991)
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=4096)
     retryable: bool
     partial_output: JsonValue = Field(alias="partialOutput", default=cast(Any, None))
 
+
 class ToolResultVariant3(StrictGeneratedModel):
     state: Literal["denied"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    decided_at: str = Field(alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    decided_at: str = Field(
+        alias="decidedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=2048)
+
 
 class ToolResultVariant4(StrictGeneratedModel):
     state: Literal["cancelled"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    cancelled_at: str = Field(alias="cancelledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    cancelled_at: str = Field(
+        alias="cancelledAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
     reason: str = Field(min_length=1, max_length=2048, default=cast(Any, None))
+
 
 class ToolResultVariant5(StrictGeneratedModel):
     state: Literal["expired"]
-    intent_id: str = Field(alias="intentId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    expired_at: str = Field(alias="expiredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    intent_id: str = Field(
+        alias="intentId",
+        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    expired_at: str = Field(
+        alias="expiredAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    )
 
-class ToolResult(RootModel[ToolResultVariant1 | ToolResultVariant2 | ToolResultVariant3 | ToolResultVariant4 | ToolResultVariant5]):
+
+class ToolResult(
+    RootModel[
+        ToolResultVariant1
+        | ToolResultVariant2
+        | ToolResultVariant3
+        | ToolResultVariant4
+        | ToolResultVariant5
+    ]
+):
     """Generated root union for the ToolResult contract."""
 
-    root: ToolResultVariant1 | ToolResultVariant2 | ToolResultVariant3 | ToolResultVariant4 | ToolResultVariant5
-
+    root: (
+        ToolResultVariant1
+        | ToolResultVariant2
+        | ToolResultVariant3
+        | ToolResultVariant4
+        | ToolResultVariant5
+    )
 
 
 __all__ = [
@@ -1189,4 +2352,3 @@ __all__ = [
     "ToolPreflight",
     "ToolResult",
 ]
-

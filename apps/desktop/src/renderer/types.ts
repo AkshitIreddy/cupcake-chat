@@ -33,6 +33,7 @@ export interface Task {
   status: 'working' | 'waiting' | 'complete' | 'failed';
   progress: number;
   project: string;
+  projectId?: string | null;
   elapsed: string;
   steps: { label: string; state: 'complete' | 'active' | 'queued' | 'failed' }[];
 }
@@ -46,6 +47,8 @@ export interface MemoryRecord {
   source: string;
   confidence: number;
   enabled: boolean;
+  projectId?: string | null;
+  conversationId?: string | null;
   pinned?: boolean;
   expires?: string;
 }

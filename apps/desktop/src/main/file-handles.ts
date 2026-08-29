@@ -8,7 +8,7 @@ export interface InternalFileGrant extends OpaqueFileHandle {
   createdAt: number;
 }
 
-const MAX_ACTIVE_HANDLES = 2_048;
+export const MAX_ACTIVE_FILE_HANDLES = 2_048;
 
 export class FileHandleRegistry {
   readonly #handles = new Map<string, InternalFileGrant>();
@@ -59,8 +59,23 @@ export class FileHandleRegistry {
     return this.#handles.get(handleId);
   }
 
-  release(handleId: string): void {
-    this.#handles.delete(handleId);
+  /**
+   * Resolve a renderer-supplied list of opaque attachment capabilities in one
+   * synchronous pass. Returning internal grants is deliberately main-only: the
+   * renderer continues to receive metadata without native paths.
+   */
+  resolveActiveAttachments(handleIds: readonly string[]): InternalFileGrant[] {
+    return handleIds.map((handleId) => {
+      const grant = this.#handles.get(handleId);
+      if (!grant || grant.kind !== 'file' || grant.writable) {
+        throw new TypeError('Attachment handle is unavailable');
+      }
+      return grant;
+    });
+  }
+
+  release(handleId: string): boolean {
+    return this.#handles.delete(handleId);
   }
 
   clear(): void {
@@ -68,9 +83,11 @@ export class FileHandleRegistry {
   }
 
   #register(grant: InternalFileGrant): OpaqueFileHandle {
-    if (this.#handles.size >= MAX_ACTIVE_HANDLES) {
-      const oldest = this.#handles.keys().next().value;
-      if (oldest) this.#handles.delete(oldest);
+    // Silent eviction leaves the broker holding a capability that the main
+    // process no longer considers active. Fail closed instead so every active
+    // broker grant always has a matching registry entry and explicit release.
+    if (this.#handles.size >= MAX_ACTIVE_FILE_HANDLES) {
+      throw new Error('Too many active file handles');
     }
     this.#handles.set(grant.id, grant);
     return this.toPublic(grant);

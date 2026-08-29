@@ -204,9 +204,7 @@ class LocalTestSubprocessTransport:
             creationflags=creation_flags,
         )
         try:
-            stdout, _stderr = process.communicate(
-                request_frame, timeout=spec.timeout_seconds
-            )
+            stdout, _stderr = process.communicate(request_frame, timeout=spec.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             process.kill()
             process.communicate()
@@ -251,9 +249,7 @@ class DoclingWorkerAdapter:
             stage_token = uuid.uuid4().hex
             output_name = f"{uuid.uuid4().hex}.json"
             stage.reserve_output(output_name)
-            deadline_ms = int(
-                (time.time() + self.limits.document_worker_timeout_seconds) * 1_000
-            )
+            deadline_ms = int((time.time() + self.limits.document_worker_timeout_seconds) * 1_000)
             request = WorkerParseRequest(
                 request_id=request_id,
                 stage_token=stage_token,
@@ -283,9 +279,7 @@ class DoclingWorkerAdapter:
                 stage.path / output_name,
                 staged_control=staged_control,
             )
-            returned_frame = self.transport.invoke(
-                spec, b"" if staged_control else request_frame
-            )
+            returned_frame = self.transport.invoke(spec, b"" if staged_control else request_frame)
             if staged_control and not returned_frame:
                 returned_frame = stage.read_control_response(
                     DOCUMENT_RESPONSE_FILE, max_bytes=spec.max_stdout_bytes
@@ -410,15 +404,10 @@ class _ImmutableStage:
             raise LimitExceededError(f"source exceeds {max_bytes} bytes: {source.name}")
         name = f"{uuid.uuid4().hex}.input"
         destination = self.path / name
-        source_flags = os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(
-            getattr(os, "O_NOFOLLOW", 0)
+        source_flags = (
+            os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0))
         )
-        output_flags = (
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | int(getattr(os, "O_BINARY", 0))
-        )
+        output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0))
         source_fd = os.open(source, source_flags)
         output_fd = os.open(destination, output_flags, stat.S_IRUSR | stat.S_IWUSR)
         digest = hashlib.sha256()
@@ -465,9 +454,7 @@ class _ImmutableStage:
             raise WorkerProtocolError("staged result path is unsafe")
         descriptor = os.open(
             path,
-            os.O_RDONLY
-            | int(getattr(os, "O_BINARY", 0))
-            | int(getattr(os, "O_NOFOLLOW", 0)),
+            os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0)),
         )
         try:
             info = os.fstat(descriptor)
@@ -494,10 +481,7 @@ class _ImmutableStage:
             raise WorkerProtocolError("staged output path is unsafe")
         descriptor = os.open(
             path,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | int(getattr(os, "O_BINARY", 0)),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0)),
             stat.S_IRUSR | stat.S_IWUSR,
         )
         os.close(descriptor)
@@ -518,9 +502,7 @@ class _ImmutableStage:
             raise WorkerProtocolError("control response size is outside the allowed range")
         descriptor = os.open(
             path,
-            os.O_RDONLY
-            | int(getattr(os, "O_BINARY", 0))
-            | int(getattr(os, "O_NOFOLLOW", 0)),
+            os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0)),
         )
         try:
             data = bytearray()

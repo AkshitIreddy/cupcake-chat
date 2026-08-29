@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Generator, Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
@@ -114,7 +114,7 @@ class EncryptedObjectStore:
         return self.root / object_id[:2] / object_id[2:4] / f"{object_id}.cupobj"
 
     @contextmanager
-    def open_plaintext(self, object_id: str) -> Iterator[bytes]:
+    def open_plaintext(self, object_id: str) -> Generator[bytes, None, None]:
         """Compatibility seam for consumers that require a scoped read."""
         plaintext = self.get(object_id)
         try:

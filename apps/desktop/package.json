@@ -11,8 +11,8 @@
     "build:web": "node ../../node_modules/vite/bin/vite.js build --config vite.renderer.config.ts",
     "make": "electron-forge make",
     "package": "electron-forge package",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.mts",
+    "test:watch": "node ../../node_modules/vitest/vitest.mjs --config vitest.config.mts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

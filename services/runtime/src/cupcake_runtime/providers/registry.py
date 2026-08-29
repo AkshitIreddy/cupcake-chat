@@ -44,8 +44,8 @@ DEFAULT_FACTORIES: dict[str, type[ProviderAdapter]] = {
 @dataclass(slots=True)
 class ProviderRegistry:
     catalog: ModelCatalog = field(default_factory=ModelCatalog.builtins)
-    _configs: dict[str, ProviderConfig] = field(default_factory=dict)
-    _model_configs: dict[str, ProviderConfig] = field(default_factory=dict)
+    _configs: dict[str, ProviderConfig] = field(default_factory=dict[str, ProviderConfig])
+    _model_configs: dict[str, ProviderConfig] = field(default_factory=dict[str, ProviderConfig])
     _factories: dict[str, type[ProviderAdapter]] = field(
         default_factory=lambda: dict(DEFAULT_FACTORIES)
     )
@@ -93,6 +93,43 @@ class ProviderRegistry:
 
         self.catalog.get(model_id)
         self._model_configs[model_id] = config
+
+    def compatible_runtime_route(self, selected_model_id: str) -> dict[str, str] | None:
+        """Return a broker-only route for an exact runtime-managed model.
+
+        Generic compatible endpoints deliberately do not qualify.  A route is
+        eligible only when the runtime itself registered the exact model with a
+        recognized local-runtime marker and a matching privacy boundary.  The
+        broker independently validates the returned origin before bypassing the
+        cloud credential vault.
+        """
+
+        try:
+            descriptor = self.catalog.get(selected_model_id)
+        except KeyError:
+            return None
+        if descriptor.provider != "openai-compatible":
+            return None
+        config = self._model_configs.get(descriptor.id)
+        if config is None or not config.base_url:
+            return None
+        runtime_kind = descriptor.metadata.get("runtime_kind")
+        if not isinstance(runtime_kind, str):
+            return None
+        expected_privacy = {
+            "cupcake_llama_cpp": "local",
+            "ollama": "local",
+            "lm_studio": "local",
+            "vllm": "self_hosted",
+        }.get(runtime_kind)
+        if expected_privacy is None or descriptor.privacy_route.value != expected_privacy:
+            return None
+        return {
+            "modelId": descriptor.id,
+            "baseUrl": config.base_url,
+            "runtimeKind": runtime_kind,
+            "privacyRoute": descriptor.privacy_route.value,
+        }
 
     def register_openai_compatible_endpoint(
         self,

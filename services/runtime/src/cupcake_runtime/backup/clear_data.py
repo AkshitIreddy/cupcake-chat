@@ -8,7 +8,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
+
+from pydantic import TypeAdapter
 
 from cupcake_runtime.backup.service import BackupInspection, BackupService
 from cupcake_runtime.domain.errors import IntegrityViolation
@@ -25,6 +27,7 @@ FORBIDDEN_SECURITY_TOKENS = (
     "secret",
     "vault",
 )
+_JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, Any])
 
 
 class ClearDataError(RuntimeError):
@@ -277,15 +280,13 @@ class LocalDataClearService:
         self._now = now or (lambda: datetime.now(UTC))
         self._quiesced_preparations: set[str] = set()
 
-    def inventory(
-        self, *, entity_counts: Mapping[str, int] | None = None
-    ) -> LocalDataInventory:
+    def inventory(self, *, entity_counts: Mapping[str, int] | None = None) -> LocalDataInventory:
         items = tuple(
             item
             for target in self.layout.targets()
             if (item := self._inventory_target(target)) is not None
         )
-        supplied_entities = (
+        supplied_entities: Mapping[str, int] = (
             entity_counts
             if entity_counts is not None
             else self.entity_counter()
@@ -293,7 +294,7 @@ class LocalDataClearService:
             else {}
         )
         entities = dict(sorted(supplied_entities.items()))
-        if any(not isinstance(value, int) or value < 0 for value in entities.values()):
+        if any(value < 0 for value in entities.values()):
             raise ValueError("entity counts must be non-negative integers")
         category_names = sorted({target.category for target in self.layout.targets()})
         categories = tuple(
@@ -341,13 +342,11 @@ class LocalDataClearService:
         lifecycle: ProfileLifecycle,
     ) -> ClearPreparation:
         self._reverify_backup(backup)
-        fallback_counts = self.entity_counter() if self.entity_counter else {}
+        fallback_counts: Mapping[str, int] = self.entity_counter() if self.entity_counter else {}
         try:
             lifecycle_counts = lifecycle.checkpoint_and_close()
             inventory = self.inventory(
-                entity_counts=lifecycle_counts
-                if lifecycle_counts is not None
-                else fallback_counts
+                entity_counts=lifecycle_counts if lifecycle_counts is not None else fallback_counts
             )
             now = self._now()
             preparation = ClearPreparation(
@@ -461,6 +460,7 @@ class LocalDataClearService:
         intent = marker.get("purge_intent")
         if not isinstance(intent, dict):
             raise FreshApprovalRequiredError("a fresh purge preflight is required")
+        intent = cast(dict[str, Any], intent)
         now = self._now()
         approved_at = _utc(authorization.approved_at)
         expires_at = _parse_time(intent["expires_at"])
@@ -576,9 +576,7 @@ class LocalDataClearService:
         if any(getattr(actual, name) != getattr(expected, name) for name in comparable):
             raise BackupVerificationError("backup changed after it was verified")
 
-    def _new_marker(
-        self, operation_id: str, preparation: ClearPreparation
-    ) -> dict[str, Any]:
+    def _new_marker(self, operation_id: str, preparation: ClearPreparation) -> dict[str, Any]:
         return {
             "format_version": 1,
             "operation_id": operation_id,
@@ -600,9 +598,7 @@ class LocalDataClearService:
             "fresh_targets": [],
         }
 
-    def _move_originals(
-        self, operation_dir: Path, marker: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _move_originals(self, operation_dir: Path, marker: dict[str, Any]) -> dict[str, Any]:
         for index, item in enumerate(marker["items"]):
             source = _resolved_target(self.layout.data_dir, item["relative_path"])
             destination = _resolved_target(operation_dir, item["quarantine_relative_path"])
@@ -648,9 +644,7 @@ class LocalDataClearService:
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(source, destination)
         for item in marker["items"]:
-            original = _resolved_target(
-                operation_dir, item["quarantine_relative_path"]
-            )
+            original = _resolved_target(operation_dir, item["quarantine_relative_path"])
             current = _resolved_target(self.layout.data_dir, item["relative_path"])
             if original.exists() and current.exists():
                 destination = _resolved_target(
@@ -664,8 +658,7 @@ class LocalDataClearService:
                 os.replace(current, destination)
             elif not original.exists() and not current.exists():
                 raise RecoveryConflictError(
-                    f"clear target is missing from profile and quarantine: "
-                    f"{item['relative_path']}"
+                    f"clear target is missing from profile and quarantine: {item['relative_path']}"
                 )
         self._restore_originals(operation_dir, marker)
         self._set_state(operation_dir, marker, "restored")
@@ -683,9 +676,7 @@ class LocalDataClearService:
             destination.parent.mkdir(parents=True, exist_ok=True)
             os.replace(source, destination)
 
-    def _restore_originals(
-        self, operation_dir: Path, marker: Mapping[str, Any]
-    ) -> None:
+    def _restore_originals(self, operation_dir: Path, marker: Mapping[str, Any]) -> None:
         for item in marker["items"]:
             source = _resolved_target(operation_dir, item["quarantine_relative_path"])
             destination = _resolved_target(self.layout.data_dir, item["relative_path"])
@@ -740,17 +731,15 @@ class LocalDataClearService:
         marker_path = operation_dir / MARKER_NAME
         if marker_path.is_symlink() or not marker_path.is_file():
             raise RecoveryConflictError("clear operation marker is missing or unsafe")
-        value = json.loads(marker_path.read_text(encoding="utf-8"))
-        if not isinstance(value, dict) or value.get("format_version") != 1:
+        value = _JSON_OBJECT_ADAPTER.validate_json(marker_path.read_text(encoding="utf-8"))
+        if value.get("format_version") != 1:
             raise RecoveryConflictError("clear operation marker is unsupported")
         return value
 
     def _write_marker(self, operation_dir: Path, marker: Mapping[str, Any]) -> None:
         _atomic_json(operation_dir / MARKER_NAME, marker)
 
-    def _set_state(
-        self, operation_dir: Path, marker: dict[str, Any], state: str
-    ) -> dict[str, Any]:
+    def _set_state(self, operation_dir: Path, marker: dict[str, Any], state: str) -> dict[str, Any]:
         marker["state"] = state
         marker["updated_at"] = _iso(self._now())
         self._write_marker(operation_dir, marker)

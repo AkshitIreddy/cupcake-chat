@@ -17,7 +17,7 @@ class AuditEvent:
     run_id: str | None = None
     task_id: str | None = None
     actor: str = "runtime"
-    details: Mapping[str, Any] = field(default_factory=dict)
+    details: Mapping[str, Any] = field(default_factory=dict[str, Any])
     occurred_at: datetime = field(default_factory=utc_now)
 
 

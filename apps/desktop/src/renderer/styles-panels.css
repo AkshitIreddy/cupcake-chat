@@ -2073,6 +2073,20 @@
   outline: 3px solid color-mix(in srgb, var(--berry), transparent 78%);
   border-color: var(--berry);
 }
+.provider-dialog > .checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 15px;
+}
+.provider-dialog > .checkbox-row input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-top: 0;
+  padding: 0;
+}
 .provider-dialog > footer {
   display: grid;
   grid-template-columns: auto 1fr auto auto;

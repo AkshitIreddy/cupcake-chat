@@ -6,11 +6,11 @@ import threading
 import time
 import unicodedata
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from .models import (
     Evidence,
@@ -84,7 +84,7 @@ class MemoryStore:
         else:
             # SQLCipher exposes the same DB-API surface through a distinct
             # connection class; preserve its driver-specific Row factory.
-            self._connection = cast(sqlite3.Connection, database)
+            self._connection = database
             self._owns_connection = False
         self._lock = threading.RLock()
         with self._transaction() as connection:
@@ -95,7 +95,7 @@ class MemoryStore:
             self._connection.close()
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(self) -> Generator[sqlite3.Connection, None, None]:
         with self._lock:
             try:
                 self._connection.execute("BEGIN IMMEDIATE")

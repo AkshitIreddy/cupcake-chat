@@ -28,7 +28,9 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import UsageLimits
 
+from cupcake_runtime.personality import BASE_SYSTEM_INSTRUCTION
 from cupcake_runtime.providers.base import EventBuilder
+from cupcake_runtime.providers.nvidia_nim import NVIDIA_NIM_PROVIDER
 from cupcake_runtime.providers.registry import ProviderRegistry
 from cupcake_runtime.providers.types import (
     ModelDescriptor,
@@ -85,7 +87,7 @@ class CupcakeAgentEngine:
             request.messages,
             context_token_budget=context_budget,
             max_output_tokens=output_tokens,
-            additional_instructions=personality_instructions,
+            additional_instructions=(*personality_instructions, BASE_SYSTEM_INSTRUCTION),
         )
         return plan
 
@@ -107,7 +109,7 @@ class CupcakeAgentEngine:
             request.messages,
             context_token_budget=context_budget,
             max_output_tokens=output_tokens,
-            additional_instructions=personality_instructions,
+            additional_instructions=(*personality_instructions, BASE_SYSTEM_INSTRUCTION),
         )
         run_id = str(request.metadata.get("run_id") or "") or None
         events = EventBuilder(descriptor, run_id)
@@ -286,7 +288,19 @@ class CupcakeAgentEngine:
                 raise ValueError("temperature must be between 0 and 2")
             settings["temperature"] = request.temperature
         effort = request.reasoning_effort or descriptor.default_reasoning_effort
-        if effort == ReasoningEffort.NONE:
+        if descriptor.provider == NVIDIA_NIM_PROVIDER:
+            # NVIDIA's hosted Nemotron-family chat templates can emit a raw
+            # reasoning trace inside ordinary `content` unless thinking is
+            # explicitly disabled. This setting is carried by the actual
+            # Pydantic/OpenAI request path rather than the adapter-only payload
+            # helper. An explicitly selected effort remains explicit as the
+            # OpenAI-compatible `reasoning_effort` field.
+            settings["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": False},
+            }
+            if effort is not ReasoningEffort.NONE:
+                settings["openai_reasoning_effort"] = effort.value
+        elif effort == ReasoningEffort.NONE:
             settings["thinking"] = False
         elif descriptor.provider == "anthropic":
             settings["anthropic_effort"] = effort.value
@@ -316,9 +330,7 @@ class CupcakeAgentEngine:
             if isinstance(part, TextPart) and part.content:
                 normalized.append(builder.make(StreamEventType.TEXT_DELTA, text=part.content))
             elif (
-                isinstance(part, ThinkingPart)
-                and part.content
-                and descriptor.provider == "openai"
+                isinstance(part, ThinkingPart) and part.content and descriptor.provider == "openai"
             ):
                 # OpenAI Responses maps its requested reasoning summary to a
                 # ThinkingPart. Anthropic/Google ThinkingParts may contain raw

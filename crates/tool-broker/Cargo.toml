@@ -27,7 +27,7 @@ rusqlite = { version = "0.37", features = ["backup", "bundled"] }
 ryu-js = "1.0"
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 sha2 = "0.10"
 subtle = "2.6"
 thiserror = "2.0"

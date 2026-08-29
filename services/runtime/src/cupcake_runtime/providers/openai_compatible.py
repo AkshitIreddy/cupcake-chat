@@ -13,6 +13,7 @@ from .base import (
     get_path,
     openai_messages,
     provider_error_event,
+    provider_items,
     require_event_field,
 )
 from .types import (
@@ -81,7 +82,7 @@ class OpenAICompatibleAdapter(ProviderAdapter):
                     reasoning = get_path(delta, "reasoning")
                 if reasoning is not None:
                     yield builder.make(StreamEventType.REASONING_SUMMARY_DELTA, text=reasoning)
-                for call in get_path(delta, "tool_calls", []) or []:
+                for call in provider_items(get_path(delta, "tool_calls", [])):
                     index = int(get_path(call, "index", 0) or 0)
                     name = get_path(call, "function.name")
                     if index not in tool_calls:
@@ -104,9 +105,8 @@ class OpenAICompatibleAdapter(ProviderAdapter):
                             name=stable_name,
                             arguments_delta=arguments,
                         )
-                for citation in (
-                    get_path(delta, "citations", []) or get_path(chunk, "citations", []) or []
-                ):
+                citations = get_path(delta, "citations", []) or get_path(chunk, "citations", [])
+                for citation in provider_items(citations):
                     yield builder.make(
                         StreamEventType.CITATION,
                         citation={

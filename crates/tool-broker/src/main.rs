@@ -1,6 +1,8 @@
 use chrono::{SecondsFormat, Utc};
 use cupcake_tool_broker::credential_prompt::prompt_api_key;
-use cupcake_tool_broker::framing::{read_frame, write_frame, DEFAULT_MAX_FRAME_BYTES};
+use cupcake_tool_broker::framing::{
+    read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES,
+};
 use cupcake_tool_broker::integration::BrokerIntegration;
 use cupcake_tool_broker::protocol::{
     decode_transport_secret, uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
@@ -12,7 +14,7 @@ use cupcake_tool_broker::vault::{select_platform_vault, SecretBytes, SelectedVau
 use cupcake_tool_broker::{BrokerError, Result, PROTOCOL_VERSION};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{stdin, stdout, BufReader, BufWriter, Write};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -63,7 +65,8 @@ fn run() -> Result<()> {
         let mut replay = ReplayGuard::default();
         loop {
             let result = (|| {
-                let envelope: ProtocolEnvelope = read_frame(&mut input, DEFAULT_MAX_FRAME_BYTES)?;
+                let envelope: ProtocolEnvelope =
+                    read_protocol_frame(&mut input, DEFAULT_MAX_FRAME_BYTES)?;
                 envelope.verify_auth(&reader_secret)?;
                 replay.accept(&envelope, Utc::now())?;
                 Ok(envelope)
@@ -141,6 +144,10 @@ fn run() -> Result<()> {
                         } else {
                             prepare_migration_request(&mut envelope.payload, &mut integration)
                                 .and_then(|cleanup_migration| {
+                                    prepare_chat_attachment_preflight(
+                                        &mut envelope.payload,
+                                        &mut integration,
+                                    )?;
                                     configure_selected_provider(
                                         &envelope.payload,
                                         &mut runtime,
@@ -380,38 +387,47 @@ fn prepare_chat_attachments(
         .get_mut("params")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| BrokerError::InvalidEnvelope("chat params are required".into()))?;
-    let attachments = match params.get("attachments").and_then(Value::as_array) {
-        Some(values) if !values.is_empty() => values.clone(),
-        _ => return Ok(()),
-    };
-    if attachments.len() > 32 {
-        return Err(BrokerError::InvalidConfig(
-            "a chat can attach at most 32 files".into(),
-        ));
+    let handle_ids = requested_attachment_handle_ids(params)?;
+    if handle_ids.is_empty() {
+        return Ok(());
     }
     let project_id = params
         .get("projectId")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    let mut product_attachments = Vec::with_capacity(attachments.len());
+    let conversation_id = params
+        .get("conversationId")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let mut product_attachments = Vec::with_capacity(handle_ids.len());
+    let mut attachment_bindings = Vec::with_capacity(handle_ids.len());
+    let mut staged_attachments = Vec::with_capacity(handle_ids.len());
     let mut staged_ids = Vec::new();
     let result = (|| -> Result<()> {
-        for attachment in attachments {
-            let attachment = attachment.as_object().ok_or_else(|| {
-                BrokerError::InvalidEnvelope("attachment must be an object".into())
-            })?;
-            let handle_id = attachment
-                .get("handleId")
-                .and_then(Value::as_str)
-                .ok_or(BrokerError::InvalidGrant)?;
+        for handle_id in &handle_ids {
             let staged = integration.stage_attachment(handle_id)?;
             staged_ids.push(staged.staging_id.clone());
-            let structured_document = integration.parse_staged_document(&staged)?;
+            attachment_bindings.push(staged_attachment_binding(&staged));
+            staged_attachments.push(staged);
+        }
+        attachment_bindings.sort_by(|left, right| {
+            left.get("handleId")
+                .and_then(Value::as_str)
+                .cmp(&right.get("handleId").and_then(Value::as_str))
+        });
+        validate_confirmed_attachment_bindings(params, &attachment_bindings)?;
+        for staged in &staged_attachments {
+            let structured_document = integration.parse_staged_document(staged)?;
+            // Parsing may be a long-running sandbox operation. Re-resolve the
+            // desktop grant and re-hash both source and staged copies after it
+            // completes, immediately before the private runtime request.
+            integration.revalidate_staged_attachment(staged)?;
             let request = object(json!({
                 "method": "ingestion.ingest.private",
                 "params": {
                     "projectId": project_id.clone(),
-                    "sourceHandle": handle_id,
+                    "conversationId": conversation_id.clone(),
+                    "sourceHandle": staged.source_handle_id,
                     "displayName": staged.display_name.clone(),
                     "stagedPath": staged.payload_path.to_string_lossy(),
                     "manifestPath": staged.manifest_path.to_string_lossy(),
@@ -436,17 +452,18 @@ fn prepare_chat_attachments(
                 ));
             }
             let ingested = response.get("result").cloned().unwrap_or(Value::Null);
-            product_attachments.push(json!({
-                "fileId": ingested.get("fileId").cloned().unwrap_or(Value::Null),
-                "sourceId": ingested.get("sourceId").cloned().unwrap_or(Value::Null),
-                "name": staged.display_name,
-                "destination": attachment.get("destination").cloned().unwrap_or(json!("local"))
-            }));
+            product_attachments.push(resolved_attachment_descriptor(&ingested, staged)?);
         }
         Ok(())
     })();
-    for staging_id in staged_ids {
-        let _ = integration.cleanup_staged_attachment(&staging_id);
+    let mut cleanup_error = None;
+    for staging_id in &staged_ids {
+        if let Err(error) = integration.cleanup_staged_attachment(staging_id) {
+            cleanup_error.get_or_insert(error);
+        }
+    }
+    if let Some(error) = cleanup_error {
+        return Err(error);
     }
     result?;
     params.insert(
@@ -455,15 +472,183 @@ fn prepare_chat_attachments(
     );
     params.insert(
         "attachmentHandles".into(),
-        Value::Array(
-            product_attachments
-                .iter()
-                .filter_map(|value| value.get("fileId").cloned())
-                .filter(|value| !value.is_null())
-                .collect(),
-        ),
+        Value::Array(handle_ids.into_iter().map(Value::String).collect()),
+    );
+    params.insert(
+        "attachmentBindings".into(),
+        Value::Array(attachment_bindings),
     );
     Ok(())
+}
+
+/// Resolve and hash attachment capabilities during cloud disclosure preflight.
+/// Only the opaque handle, byte count, and digest cross the broker boundary;
+/// neither the renderer nor the runtime confirmation record receives a path.
+fn prepare_chat_attachment_preflight(
+    payload: &mut Map<String, Value>,
+    integration: &mut BrokerIntegration,
+) -> Result<()> {
+    if payload.get("method").and_then(Value::as_str) != Some("chat.preflight") {
+        return Ok(());
+    }
+    let params = payload
+        .get_mut("params")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| BrokerError::InvalidEnvelope("chat params are required".into()))?;
+    let handle_ids = requested_attachment_handle_ids(params)?;
+    let mut bindings = Vec::with_capacity(handle_ids.len());
+    for handle_id in handle_ids {
+        let staged = integration.stage_attachment(&handle_id)?;
+        let staging_id = staged.staging_id.clone();
+        let result = integration
+            .revalidate_staged_attachment(&staged)
+            .map(|()| staged_attachment_binding(&staged));
+        let cleanup = integration.cleanup_staged_attachment(&staging_id);
+        bindings.push(result?);
+        cleanup?;
+    }
+    bindings.sort_by(|left, right| {
+        left.get("handleId")
+            .and_then(Value::as_str)
+            .cmp(&right.get("handleId").and_then(Value::as_str))
+    });
+    params.insert("attachmentBindings".into(), Value::Array(bindings));
+    Ok(())
+}
+
+fn staged_attachment_binding(staged: &cupcake_tool_broker::integration::StagedAttachment) -> Value {
+    json!({
+        "handleId": staged.source_handle_id,
+        "byteSize": staged.byte_size,
+        "sha256": staged.sha256,
+    })
+}
+
+fn validate_confirmed_attachment_bindings(
+    params: &Map<String, Value>,
+    actual: &[Value],
+) -> Result<()> {
+    let Some(intent) = params.get("outboundIntent") else {
+        return Ok(());
+    };
+    let expected = intent
+        .as_object()
+        .and_then(|value| value.get("attachmentBindings"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BrokerError::Integrity(
+                "confirmed outbound intent is missing attachment bindings".into(),
+            )
+        })?;
+    if expected.as_slice() != actual {
+        return Err(BrokerError::Integrity(
+            "attachment changed after outbound confirmation".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Accept both the renderer's compact `attachmentHandles` contract and its
+/// richer attachment records. When both are present they must identify the
+/// same ordered capabilities. Presentation metadata (including destination)
+/// is intentionally ignored.
+fn requested_attachment_handle_ids(params: &Map<String, Value>) -> Result<Vec<String>> {
+    let compact = match params.get("attachmentHandles") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| {
+                        BrokerError::InvalidEnvelope(
+                            "attachmentHandles must contain handle IDs".into(),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        Some(_) => {
+            return Err(BrokerError::InvalidEnvelope(
+                "attachmentHandles must be an array".into(),
+            ))
+        }
+    };
+    let structured = match params.get("attachments") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_object()
+                    .and_then(|attachment| attachment.get("handleId"))
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| {
+                        BrokerError::InvalidEnvelope("attachment must contain a handleId".into())
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        Some(_) => {
+            return Err(BrokerError::InvalidEnvelope(
+                "attachments must be an array".into(),
+            ))
+        }
+    };
+    if !compact.is_empty() && !structured.is_empty() && compact != structured {
+        return Err(BrokerError::InvalidEnvelope(
+            "attachment handle lists do not match".into(),
+        ));
+    }
+    let handles = if compact.is_empty() {
+        structured
+    } else {
+        compact
+    };
+    if handles.len() > 32 {
+        return Err(BrokerError::InvalidConfig(
+            "a chat can attach at most 32 files".into(),
+        ));
+    }
+    let mut unique = HashSet::with_capacity(handles.len());
+    if !handles.iter().all(|handle| unique.insert(handle.clone())) {
+        return Err(BrokerError::InvalidEnvelope(
+            "attachment handles must be unique".into(),
+        ));
+    }
+    Ok(handles)
+}
+
+fn resolved_attachment_descriptor(
+    ingested: &Value,
+    staged: &cupcake_tool_broker::integration::StagedAttachment,
+) -> Result<Value> {
+    let file_id = ingested
+        .get("file")
+        .and_then(Value::as_object)
+        .and_then(|file| file.get("id"))
+        .and_then(Value::as_str)
+        // Retain compatibility with recorded fixtures from the earliest 2.0
+        // runtime while preferring the current nested product file record.
+        .or_else(|| ingested.get("fileId").and_then(Value::as_str))
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| BrokerError::Integrity("ingested attachment file ID is missing".into()))?;
+    let source_id = ingested
+        .get("sourceId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| BrokerError::Integrity("ingested attachment source ID is missing".into()))?;
+    Ok(json!({
+        "fileId": file_id,
+        "sourceId": source_id,
+        "name": staged.display_name,
+        "sha256": staged.sha256,
+        "byteSize": staged.byte_size,
+        "mediaType": "application/octet-stream",
+        "brokerGrantId": staged.broker_grant_id
+    }))
 }
 
 fn require_handshake(payload: &Map<String, Value>) -> Result<()> {
@@ -557,7 +742,7 @@ fn write_outbound<W: Write>(
         payload,
     )
     .sign(secret)?;
-    write_frame(output, &response, DEFAULT_MAX_FRAME_BYTES)
+    write_protocol_frame(output, &response, DEFAULT_MAX_FRAME_BYTES)
 }
 
 fn ensure_runtime(runtime: &mut Option<RuntimeChild>) -> Result<&mut RuntimeChild> {
@@ -729,6 +914,9 @@ fn dispatch_secure_request(
                 success(json!({"provider": provider, "configured": false, "removed": removed})),
             )]))
         }
+        "broker.providers.resolve_compatible_route" => Err(BrokerError::PermissionDenied(
+            "runtime route resolution is private to the broker".into(),
+        )),
         _ => Ok(None),
     }
 }
@@ -751,6 +939,13 @@ fn configure_selected_provider(
     };
     let provider = model_id.split(':').next().unwrap_or_default();
     if provider == "openai-compatible" {
+        if resolve_runtime_compatible_route(model_id, runtime)?.is_some() {
+            // The exact model already owns its runtime-scoped configuration in
+            // Python.  It may include an ephemeral app-managed local bearer
+            // token, so copying it into the cloud credential vault would both
+            // weaken isolation and break local runtimes that need no user key.
+            return Ok(());
+        }
         let endpoint = load_openai_compatible_endpoint(vault)?.ok_or_else(|| {
             BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
         })?;
@@ -773,6 +968,121 @@ fn configure_selected_provider(
         .ok_or_else(|| BrokerError::PermissionDenied(format!("{provider} is not connected")))?;
     let _ = configure_provider(provider, secret.expose(), &Map::new(), runtime)?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RuntimeCompatibleRoute {
+    model_id: String,
+    base_url: String,
+    runtime_kind: String,
+    privacy_route: String,
+}
+
+fn resolve_runtime_compatible_route(
+    model_id: &str,
+    runtime: &mut Option<RuntimeChild>,
+) -> Result<Option<RuntimeCompatibleRoute>> {
+    let request = object(json!({
+        "method": "broker.providers.resolve_compatible_route",
+        "params": {"modelId": model_id}
+    }));
+    let messages = ensure_runtime(runtime)?.request(&request)?;
+    let response = messages
+        .last()
+        .map(|(_, payload)| payload)
+        .ok_or_else(|| BrokerError::InvalidEnvelope("runtime route response is missing".into()))?;
+    if response.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(BrokerError::PermissionDenied(
+            "runtime rejected compatible route resolution".into(),
+        ));
+    }
+    let Some(value) = response.get("result").filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    validate_runtime_compatible_route(model_id, value).map(Some)
+}
+
+fn validate_runtime_compatible_route(
+    selected_model_id: &str,
+    value: &Value,
+) -> Result<RuntimeCompatibleRoute> {
+    let route = value
+        .as_object()
+        .ok_or_else(|| BrokerError::Integrity("runtime route must be an object".into()))?;
+    let model_id = route
+        .get("modelId")
+        .and_then(Value::as_str)
+        .filter(|model_id| *model_id == selected_model_id)
+        .ok_or_else(|| BrokerError::Integrity("runtime route model identity mismatch".into()))?;
+    let base_url = route
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .ok_or_else(|| BrokerError::Integrity("runtime route base URL is missing".into()))?;
+    let runtime_kind = route
+        .get("runtimeKind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| BrokerError::Integrity("runtime route kind is missing".into()))?;
+    let privacy_route = route
+        .get("privacyRoute")
+        .and_then(Value::as_str)
+        .ok_or_else(|| BrokerError::Integrity("runtime route privacy is missing".into()))?;
+
+    let url = Url::parse(base_url)
+        .map_err(|_| BrokerError::Integrity("runtime route URL is invalid".into()))?;
+    if url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(BrokerError::Integrity(
+            "runtime route URL contains forbidden components".into(),
+        ));
+    }
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let loopback = host == "localhost"
+        || host
+            .parse::<IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false);
+    match runtime_kind {
+        "cupcake_llama_cpp" | "ollama" | "lm_studio" => {
+            if privacy_route != "local" || !loopback || !matches!(url.scheme(), "http" | "https") {
+                return Err(BrokerError::PermissionDenied(
+                    "local runtime route must use a loopback HTTP(S) origin".into(),
+                ));
+            }
+        }
+        "vllm" => {
+            if privacy_route != "self_hosted" {
+                return Err(BrokerError::PermissionDenied(
+                    "vLLM route must remain self-hosted".into(),
+                ));
+            }
+            if loopback {
+                if !matches!(url.scheme(), "http" | "https") {
+                    return Err(BrokerError::PermissionDenied(
+                        "loopback vLLM route must use HTTP(S)".into(),
+                    ));
+                }
+            } else {
+                // Remote compatible origins retain the same HTTPS, no-userinfo,
+                // public-address policy as user-configured generic endpoints.
+                validate_openai_compatible_endpoint(base_url)?;
+            }
+        }
+        _ => {
+            return Err(BrokerError::PermissionDenied(
+                "runtime route kind is not trusted".into(),
+            ))
+        }
+    }
+    Ok(RuntimeCompatibleRoute {
+        model_id: model_id.into(),
+        base_url: base_url.trim_end_matches('/').into(),
+        runtime_kind: runtime_kind.into(),
+        privacy_route: privacy_route.into(),
+    })
 }
 
 fn configure_provider(
@@ -974,6 +1284,7 @@ fn safe_error(error: &BrokerError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn compatible_endpoint_identity_is_stable_and_normalized() {
@@ -998,5 +1309,183 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn runtime_compatible_route_accepts_only_matching_trusted_boundaries() {
+        let local = json!({
+            "modelId": "openai-compatible:lm/local-model",
+            "baseUrl": "http://127.0.0.1:1234/v1",
+            "runtimeKind": "lm_studio",
+            "privacyRoute": "local"
+        });
+        assert!(
+            validate_runtime_compatible_route("openai-compatible:lm/local-model", &local).is_ok()
+        );
+
+        for rejected in [
+            json!({
+                "modelId": "openai-compatible:lm/different-model",
+                "baseUrl": "http://127.0.0.1:1234/v1",
+                "runtimeKind": "lm_studio",
+                "privacyRoute": "local"
+            }),
+            json!({
+                "modelId": "openai-compatible:lm/local-model",
+                "baseUrl": "https://models.example.test/v1",
+                "runtimeKind": "lm_studio",
+                "privacyRoute": "local"
+            }),
+            json!({
+                "modelId": "openai-compatible:lm/local-model",
+                "baseUrl": "http://127.0.0.1:1234/v1",
+                "runtimeKind": "lm_studio",
+                "privacyRoute": "self_hosted"
+            }),
+            json!({
+                "modelId": "openai-compatible:lm/local-model",
+                "baseUrl": "http://127.0.0.1:1234/v1",
+                "runtimeKind": "forged_runtime",
+                "privacyRoute": "local"
+            }),
+        ] {
+            assert!(validate_runtime_compatible_route(
+                "openai-compatible:lm/local-model",
+                &rejected
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn runtime_vllm_route_requires_https_when_not_loopback() {
+        let remote = json!({
+            "modelId": "openai-compatible:vllm/model",
+            "baseUrl": "https://models.example.test/v1",
+            "runtimeKind": "vllm",
+            "privacyRoute": "self_hosted"
+        });
+        assert!(validate_runtime_compatible_route("openai-compatible:vllm/model", &remote).is_ok());
+
+        let insecure_remote = json!({
+            "modelId": "openai-compatible:vllm/model",
+            "baseUrl": "http://models.example.test/v1",
+            "runtimeKind": "vllm",
+            "privacyRoute": "self_hosted"
+        });
+        assert!(validate_runtime_compatible_route(
+            "openai-compatible:vllm/model",
+            &insecure_remote
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn structured_attachments_resolve_only_handle_ids_and_ignore_destination() {
+        let params = object(json!({
+            "attachments": [{
+                "handleId": "018f1e2d-3c4b-7a69-8def-0123456789ab",
+                "name": "private.txt",
+                "destination": "renderer-chosen-cloud"
+            }]
+        }));
+        assert_eq!(
+            requested_attachment_handle_ids(&params).unwrap(),
+            vec!["018f1e2d-3c4b-7a69-8def-0123456789ab"]
+        );
+    }
+
+    #[test]
+    fn mismatched_or_duplicate_attachment_handles_are_rejected() {
+        let mismatch = object(json!({
+            "attachmentHandles": ["018f1e2d-3c4b-7a69-8def-0123456789ab"],
+            "attachments": [{"handleId":"018f1e2d-3c4b-7a69-8def-abcdefabcdef"}]
+        }));
+        assert!(requested_attachment_handle_ids(&mismatch).is_err());
+
+        let duplicate = object(json!({
+            "attachmentHandles": [
+                "018f1e2d-3c4b-7a69-8def-0123456789ab",
+                "018f1e2d-3c4b-7a69-8def-0123456789ab"
+            ]
+        }));
+        assert!(requested_attachment_handle_ids(&duplicate).is_err());
+    }
+
+    #[test]
+    fn preflight_hashes_opaque_attachment_and_send_rejects_changed_bytes() {
+        let data = tempdir().unwrap();
+        let selected = tempdir().unwrap();
+        let path = selected.path().join("source.txt");
+        std::fs::write(&path, "confirmed bytes").unwrap();
+        let mut integration = BrokerIntegration::open(data.path()).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        integration
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"file","name":"source.txt","absolutePath":path,"writable":false}})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut payload = object(json!({
+            "method": "chat.preflight",
+            "params": {
+                "attachmentHandles": [handle_id],
+                "attachments": [{"handleId": handle_id}]
+            }
+        }));
+        prepare_chat_attachment_preflight(&mut payload, &mut integration).unwrap();
+        let bindings = payload["params"]["attachmentBindings"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(bindings[0]["handleId"], handle_id);
+        assert_eq!(bindings[0]["byteSize"], 15);
+        assert_eq!(
+            bindings[0]["sha256"],
+            hex::encode(Sha256::digest(b"confirmed bytes"))
+        );
+        assert!(!Value::Object(payload.clone())
+            .to_string()
+            .contains(selected.path().to_str().unwrap()));
+
+        std::fs::write(&path, "different bytes").unwrap();
+        let changed = integration.stage_attachment(handle_id).unwrap();
+        integration.revalidate_staged_attachment(&changed).unwrap();
+        let changed_binding = staged_attachment_binding(&changed);
+        integration
+            .cleanup_staged_attachment(&changed.staging_id)
+            .unwrap();
+        let send_params = object(json!({
+            "outboundIntent": {"attachmentBindings": bindings}
+        }));
+        assert!(matches!(
+            validate_confirmed_attachment_bindings(&send_params, &[changed_binding]),
+            Err(BrokerError::Integrity(_))
+        ));
+    }
+
+    #[test]
+    fn nested_runtime_file_identity_becomes_a_path_free_private_descriptor() {
+        let staged = cupcake_tool_broker::integration::StagedAttachment {
+            staging_id: "018f1e2d-3c4b-7a69-8def-0123456789ab".into(),
+            payload_path: PathBuf::from("C:/private/payload.input"),
+            manifest_path: PathBuf::from("C:/private/manifest.json"),
+            byte_size: 7,
+            sha256: "ab".repeat(32),
+            display_name: "notes.txt".into(),
+            source_handle_id: "018f1e2d-3c4b-7a69-8def-abcdefabcdef".into(),
+            broker_grant_id: "grant_private".into(),
+        };
+        let descriptor = resolved_attachment_descriptor(
+            &json!({"file":{"id":"file-7"},"sourceId":"source-9"}),
+            &staged,
+        )
+        .unwrap();
+        assert_eq!(descriptor["fileId"], "file-7");
+        assert_eq!(descriptor["sourceId"], "source-9");
+        assert_eq!(descriptor["brokerGrantId"], "grant_private");
+        assert!(!descriptor.to_string().contains("C:/private"));
+        assert!(descriptor.get("destination").is_none());
     }
 }

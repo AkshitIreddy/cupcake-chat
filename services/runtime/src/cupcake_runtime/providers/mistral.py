@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any
+import importlib
+from collections.abc import AsyncIterator, Callable
+from typing import Any, cast
 
 from .base import (
     EventBuilder,
@@ -13,6 +14,7 @@ from .base import (
     get_path,
     openai_messages,
     provider_error_event,
+    provider_items,
     require_event_field,
 )
 from .types import (
@@ -31,10 +33,14 @@ class MistralAdapter(ProviderAdapter):
         if self._client is not None:
             return self._client
         try:
-            from mistralai import Mistral  # pyright: ignore[reportAttributeAccessIssue]
-        except ImportError as exc:
+            module = importlib.import_module("mistralai")
+            raw_constructor = vars(module).get("Mistral")
+            if raw_constructor is None:
+                raise AttributeError("mistralai.Mistral is unavailable")
+            constructor = cast(Callable[..., Any], raw_constructor)
+        except (AttributeError, ImportError) as exc:
             raise MissingProviderDependency(self.provider, "mistralai") from exc
-        self._client = Mistral(api_key=self.config.api_key, server_url=self.config.base_url)
+        self._client = constructor(api_key=self.config.api_key, server_url=self.config.base_url)
         return self._client
 
     def build_request(self, request: ModelRequest) -> dict[str, Any]:
@@ -67,7 +73,7 @@ class MistralAdapter(ProviderAdapter):
                 delta = get_path(choice, "delta") if choice else None
                 if get_path(delta, "content") is not None:
                     yield builder.make(StreamEventType.TEXT_DELTA, text=get_path(delta, "content"))
-                for call in get_path(delta, "tool_calls", []) or []:
+                for call in provider_items(get_path(delta, "tool_calls", [])):
                     index = int(get_path(call, "index", 0) or 0)
                     item_id = get_path(call, "id")
                     name = get_path(call, "function.name")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 MCP_BROKER_PROTOCOL_VERSION = 1
@@ -72,9 +72,7 @@ class MCPConnectionDescriptor:
         if self.connect_timeout_seconds < 1 or self.connect_timeout_seconds > 120:
             raise ValueError("MCP connection timeout is outside the safe range")
         if self.transport == MCPTransport.STDIO:
-            if not self.command or any(
-                not isinstance(part, str) or not part or "\x00" in part for part in self.command
-            ):
+            if not self.command or any(not part or "\x00" in part for part in self.command):
                 raise ValueError("stdio MCP requires a non-empty argument vector")
             if self.endpoint or self.allowed_origins or self.oauth or self.credential_ref:
                 raise ValueError("stdio MCP cannot include remote connection fields")
@@ -160,11 +158,12 @@ def _wire_request(request_type: str, payload: Mapping[str, Any]) -> dict[str, An
     }
 
 
-def _convert(value: Any) -> Any:
+def _convert(value: object) -> Any:
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, tuple | list):
-        return [_convert(item) for item in value]
+        return [_convert(item) for item in cast(tuple[object, ...] | list[object], value)]
     if isinstance(value, Mapping):
-        return {str(key): _convert(item) for key, item in value.items()}
+        mapping = cast(Mapping[object, object], value)
+        return {str(key): _convert(item) for key, item in mapping.items()}
     return value

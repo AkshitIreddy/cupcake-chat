@@ -9,10 +9,12 @@ import stat
 import tempfile
 import zipfile
 from contextlib import suppress
-from dataclasses import asdict
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from pydantic import TypeAdapter
 
 from .catalog import sha256_file
 from .types import (
@@ -21,6 +23,9 @@ from .types import (
     RuntimeCompanionArtifact,
     RuntimePackArtifact,
 )
+
+_JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, Any])
+_FILE_MANIFEST_ADAPTER = TypeAdapter(dict[str, str])
 
 
 class RuntimePackError(RuntimeError):
@@ -237,9 +242,11 @@ class RuntimePackStore:
             directory = Path(installed.directory).resolve(strict=True)
             if self.versions.resolve() not in directory.parents:
                 return False
-            metadata = json.loads((directory / self.METADATA_NAME).read_text(encoding="utf-8"))
-            files = metadata["files"]
-            if not isinstance(files, dict) or not files:
+            metadata = _JSON_OBJECT_ADAPTER.validate_json(
+                (directory / self.METADATA_NAME).read_text(encoding="utf-8")
+            )
+            files = _FILE_MANIFEST_ADAPTER.validate_python(metadata["files"])
+            if not files:
                 return False
             for relative, expected in files.items():
                 member = _safe_member(str(relative))
@@ -366,7 +373,9 @@ class RuntimePackStore:
         return files
 
     def _read_install(self, directory: Path) -> InstalledRuntimePack:
-        value = json.loads((directory / self.METADATA_NAME).read_text(encoding="utf-8"))
+        value = _JSON_OBJECT_ADAPTER.validate_json(
+            (directory / self.METADATA_NAME).read_text(encoding="utf-8")
+        )
         executable = directory.joinpath(*_safe_member(str(value["executable"])).parts)
         return InstalledRuntimePack(
             id=str(value["id"]),
@@ -383,14 +392,12 @@ class RuntimePackStore:
     def _with_active(self, installed: InstalledRuntimePack) -> InstalledRuntimePack:
         active_coordinate: tuple[str, RuntimeBackend] | None = None
         try:
-            value = json.loads(self.active_file.read_text(encoding="utf-8"))
+            value = _JSON_OBJECT_ADAPTER.validate_json(self.active_file.read_text(encoding="utf-8"))
             active_coordinate = (str(value["version"]), RuntimeBackend(str(value["backend"])))
         except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             pass
-        return InstalledRuntimePack(
-            **{
-                **asdict(installed),
-                "active": active_coordinate == (installed.version, installed.backend),
-                "integrity_verified": self.verify(installed),
-            }
+        return replace(
+            installed,
+            active=active_coordinate == (installed.version, installed.backend),
+            integrity_verified=self.verify(installed),
         )

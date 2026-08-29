@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Any, Never, Protocol
+from typing import Any, Never, Protocol, cast
 from urllib.parse import urlsplit
 
 from .models import (
@@ -373,9 +373,11 @@ def _parse_embeddings(
             retryable=False,
         )
     by_index: dict[int, tuple[float, ...]] = {}
-    for item in data:
-        if not isinstance(item, Mapping):
+    for raw_item in cast(Sequence[object], data):
+        item: Mapping[str, object]
+        if not isinstance(raw_item, Mapping):
             _malformed_embedding()
+        item = cast(Mapping[str, object], raw_item)
         index = item.get("index")
         raw = item.get("embedding")
         if (
@@ -385,10 +387,12 @@ def _parse_embeddings(
             or isinstance(raw, (str, bytes))
         ):
             _malformed_embedding()
-        try:
-            vector = tuple(float(value) for value in raw)
-        except (TypeError, ValueError):
-            _malformed_embedding()
+        vector_values: list[float] = []
+        for value in cast(Sequence[object], raw):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                _malformed_embedding()
+            vector_values.append(float(value))
+        vector = tuple(vector_values)
         if len(vector) != dimensions or not all(math.isfinite(value) for value in vector):
             _malformed_embedding()
         if index in by_index:
@@ -412,9 +416,10 @@ def _parse_rankings(response: Mapping[str, Any], expected: int) -> tuple[tuple[i
     if not isinstance(rankings, Sequence) or isinstance(rankings, (str, bytes)):
         return _malformed_rankings()
     parsed: dict[int, float] = {}
-    for item in rankings:
-        if not isinstance(item, Mapping):
+    for raw_item in cast(Sequence[object], rankings):
+        if not isinstance(raw_item, Mapping):
             return _malformed_rankings()
+        item = cast(Mapping[str, object], raw_item)
         index = item.get("index")
         logit = item.get("logit")
         if (

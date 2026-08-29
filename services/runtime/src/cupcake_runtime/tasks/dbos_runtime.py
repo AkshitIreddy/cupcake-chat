@@ -315,7 +315,7 @@ class DbosTaskRuntime:
         result = handle.get_result(polling_interval_sec=polling_interval_seconds)
         if not isinstance(result, Mapping):
             raise RuntimeError("DBOS task workflow returned a non-object result")
-        return result
+        return cast(Mapping[str, Any], result)
 
     def cancel(self, run_id: str, *, reason: str = "user_requested") -> RunRecord:
         self._ensure_open()

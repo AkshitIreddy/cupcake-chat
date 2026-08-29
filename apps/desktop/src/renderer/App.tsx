@@ -9,6 +9,11 @@ import {
 } from './data';
 import { Icon, type IconName } from './icons';
 import { RichMarkdown } from './RichMarkdown';
+import {
+  canonicalModelId,
+  modelSelectionParams,
+  requiresCompatibilityAcknowledgement,
+} from './model-selection';
 import type {
   Conversation,
   LiveChatMessage,
@@ -21,13 +26,16 @@ import type {
 } from './types';
 import {
   WorkspaceProvider,
+  scopedReferenceOptions,
   useWorkspace,
   type ArtifactRecord,
   type AttachmentRecord,
   type MessageRecord,
+  type OutboundIntent,
   type ReasoningEffort,
   type ReferenceRecord,
   type SearchRecord,
+  type StagedAttachmentRecord,
   type ToolActivity,
 } from './workspace';
 
@@ -529,6 +537,20 @@ function HomeView({
   );
 }
 
+interface ComposerSendInput {
+  content: string;
+  modelId: string;
+  attachments: StagedAttachmentRecord[];
+  references: ReferenceRecord[];
+  reasoningEffort: ReasoningEffort;
+  enabledToolIds: string[];
+  outboundConfirmationToken?: string;
+  outboundIntent?: OutboundIntent;
+  conversationId?: string;
+  branchId?: string;
+  projectId?: string | null;
+}
+
 function Composer({
   onSend,
   compact = false,
@@ -536,14 +558,7 @@ function Composer({
   selectedModel,
   offline,
 }: {
-  onSend: (input: {
-    content: string;
-    attachments: AttachmentRecord[];
-    references: ReferenceRecord[];
-    reasoningEffort: ReasoningEffort;
-    enabledToolIds: string[];
-    outboundConfirmationToken?: string;
-  }) => void;
+  onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
   compact?: boolean;
   onModel: () => void;
   selectedModel: ModelDescriptor;
@@ -561,29 +576,91 @@ function Composer({
   const [pendingDisclosure, setPendingDisclosure] = useState<null | {
     input: {
       content: string;
-      attachments: AttachmentRecord[];
+      modelId: string;
+      attachments: StagedAttachmentRecord[];
       references: ReferenceRecord[];
       reasoningEffort: ReasoningEffort;
       enabledToolIds: string[];
+      conversationId?: string;
+      branchId?: string;
+      projectId?: string | null;
     };
     confirmationToken: string;
+    outboundIntent: OutboundIntent;
     disclosure: { privacyRoute?: string; costClass?: string };
+    modelName: string;
+    providerName: string;
+    memoryLabels: string[];
+    toolLabels: string[];
   }>(null);
   const [disclosureError, setDisclosureError] = useState('');
-  const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
+  const [attachments, setAttachments] = useState<StagedAttachmentRecord[]>([]);
+  const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const send = () => {
+  const routeAtSend: AttachmentRecord['destination'] =
+    selectedModel.route === 'Cloud' && !offline ? 'cloud' : 'local';
+  const clearSuccessfulDraft = async (sentAttachments: StagedAttachmentRecord[]) => {
+    setValue('');
+    setAttachments([]);
+    setReferences([]);
+    setReference(false);
+    const desktop = window.cupcake;
+    if (desktop) {
+      await Promise.allSettled(
+        sentAttachments.map((item) => desktop.dialog.releaseHandle(item.handleId)),
+      );
+    }
+  };
+  const submit = async (input: ComposerSendInput) => {
+    setSending(true);
+    setDisclosureError('');
+    try {
+      const success = await onSend(input);
+      if (success) await clearSuccessfulDraft(input.attachments);
+      else setDisclosureError('Message not sent. Your draft and file access are still available.');
+      return success;
+    } catch (reason) {
+      setDisclosureError(reason instanceof Error ? reason.message : 'Message could not be sent');
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+  const send = async () => {
+    if (sending) return;
     const clean = value.trim();
     if (!clean && attachments.length === 0) return;
     if (offline && selectedModel.route === 'Cloud') return;
+    setSending(true);
+    const context =
+      workspace.activeConversationId && workspace.activeBranchId
+        ? {
+            conversationId: workspace.activeConversationId,
+            branchId: workspace.activeBranchId,
+            projectId: workspace.activeProjectId,
+          }
+        : attachments.length > 0
+          ? await workspace.createConversation('New conversation')
+          : {
+              conversationId: undefined,
+              branchId: undefined,
+              projectId: workspace.activeProjectId,
+            };
+    if (!context) {
+      setDisclosureError('A conversation could not be created. Your draft is still here.');
+      setSending(false);
+      return;
+    }
     const input = {
       content: clean || 'Please review the attached file.',
-      attachments,
+      modelId: canonicalModelId(selectedModel),
+      attachments: attachments.map((item) => ({ ...item, destination: routeAtSend })),
       references,
       reasoningEffort: supportedReasoning.includes(workspace.settings.reasoningEffort)
         ? workspace.settings.reasoningEffort
         : supportedReasoning[0]!,
       enabledToolIds: workspace.settings.enabledToolIds,
+      ...context,
     };
     const requiresDisclosure = selectedModel.route === 'Cloud';
     if (requiresDisclosure && !workspace.fixtureMode) {
@@ -591,23 +668,42 @@ function Composer({
       void workspace
         .preflightCloudDisclosure({
           content: input.content,
-          modelId: selectedModel.runtimeModelId ?? selectedModel.id,
+          modelId: input.modelId,
           attachments,
           references,
+          enabledToolIds: input.enabledToolIds,
+          conversationId: input.conversationId,
+          branchId: input.branchId,
+          projectId: input.projectId,
         })
-        .then((result) => setPendingDisclosure({ input, ...result }))
+        .then((result) => {
+          if (!result.confirmationToken) {
+            throw new Error('The provider did not return a cloud confirmation token.');
+          }
+          setPendingDisclosure({
+            input,
+            confirmationToken: result.confirmationToken,
+            outboundIntent: result.outboundIntent,
+            disclosure: result.disclosure,
+            modelName: selectedModel.name,
+            providerName: selectedModel.provider,
+            memoryLabels: workspace.memories
+              .filter((item) => result.outboundIntent.memoryIds.includes(item.id))
+              .map((item) => item.title),
+            toolLabels: workspace.tools
+              .filter((item) => result.outboundIntent.toolIds.includes(item.id))
+              .map((item) => item.name),
+          });
+        })
         .catch((reason) =>
           setDisclosureError(
             reason instanceof Error ? reason.message : 'Disclosure preflight failed',
           ),
-        );
+        )
+        .finally(() => setSending(false));
       return;
     }
-    onSend(input);
-    setValue('');
-    setAttachments([]);
-    setReferences([]);
-    setReference(false);
+    void submit(input);
   };
   const attach = async () => {
     const files = await window.cupcake?.dialog.openFiles({
@@ -617,20 +713,21 @@ function Composer({
     if (files?.length)
       setAttachments((current) => [
         ...current,
-        ...files.map((file): AttachmentRecord => ({
-          handleId: file.id,
-          name: file.name,
-          size: file.size,
-          extension: file.extension,
-          destination:
-            selectedModel.route === 'Cloud' && !offline ? ('cloud' as const) : ('local' as const),
-        })),
+        ...files
+          .filter((file) => !current.some((item) => item.handleId === file.id))
+          .map((file): StagedAttachmentRecord => ({
+            handleId: file.id,
+            name: file.name,
+            size: file.size,
+            extension: file.extension,
+            destination: routeAtSend,
+          })),
       ]);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      send();
+      void send();
     }
     if (event.key === '@') setReference(true);
   };
@@ -640,28 +737,22 @@ function Composer({
         { id: 'fixture-cupcake', type: 'project', label: 'Cupcake 2.0' },
         { id: 'fixture-task', type: 'task', label: 'Repository redesign' },
       ]
-    : [
-        ...workspace.projects.map((item) => ({
-          id: item.id,
-          type: 'project' as const,
-          label: item.name,
-        })),
-        ...workspace.tasks.map((item) => ({
-          id: item.id,
-          type: 'task' as const,
-          label: item.title,
-        })),
-        ...workspace.artifacts.map((item) => ({
-          id: item.id,
-          type: 'artifact' as const,
-          label: item.name,
-        })),
-        ...workspace.memories.map((item) => ({
-          id: item.id,
-          type: 'memory' as const,
-          label: item.title,
-        })),
-      ];
+    : scopedReferenceOptions({
+        projects: workspace.projects,
+        tasks: workspace.tasks,
+        artifacts: workspace.artifacts,
+        memories: workspace.memories,
+        activeProjectId: workspace.activeProjectId,
+        activeConversationId: workspace.activeConversationId,
+      });
+  const referenceScopeKey = referenceOptions.map((item) => `${item.type}:${item.id}`).join('|');
+  useEffect(() => {
+    const allowed = new Set(referenceScopeKey.split('|').filter(Boolean));
+    setReferences((current) => {
+      const next = current.filter((item) => allowed.has(`${item.type}:${item.id}`));
+      return next.length === current.length ? current : next;
+    });
+  }, [referenceScopeKey]);
   useEffect(() => {
     const focus = () => textRef.current?.focus();
     const requestAttach = () => void attach();
@@ -671,7 +762,7 @@ function Composer({
       window.removeEventListener('cupcake:focus-composer', focus);
       window.removeEventListener('cupcake:attach', requestAttach);
     };
-  }, []);
+  }, [routeAtSend]);
   return (
     <div className={cx('composer', compact && 'composer--compact')}>
       {reference && (
@@ -683,7 +774,9 @@ function Composer({
               onClick={() => {
                 setValue((v) => `${v}${item.label} `);
                 setReferences((current) =>
-                  current.some((entry) => entry.id === item.id) ? current : [...current, item],
+                  current.some((entry) => entry.id === item.id && entry.type === item.type)
+                    ? current
+                    : [...current, item],
                 );
                 setReference(false);
               }}
@@ -703,6 +796,11 @@ function Composer({
               <small>{cap(item.type)} · opaque ID</small>
             </button>
           ))}
+          {referenceOptions.length === 0 && (
+            <small className="reference-popover__empty">
+              No files, tasks, memories, or artifacts are available in this scope.
+            </small>
+          )}
         </div>
       )}
       {attachments.length > 0 && (
@@ -711,7 +809,7 @@ function Composer({
             <span key={file.handleId}>
               <Icon name="file" />
               {file.name}
-              <RouteBadge route={file.destination === 'cloud' ? 'Cloud' : 'Local'} />
+              <RouteBadge route={routeAtSend === 'cloud' ? 'Cloud' : 'Local'} />
               <button
                 aria-label={`Remove ${file.name}`}
                 onClick={() => {
@@ -720,6 +818,29 @@ function Composer({
                   );
                   void window.cupcake?.dialog.releaseHandle(file.handleId);
                 }}
+              >
+                <Icon name="x" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {references.length > 0 && (
+        <div className="composer-references" aria-label="Selected references">
+          {references.map((item) => (
+            <span key={`${item.type}:${item.id}`}>
+              <Icon
+                name={item.type === 'memory' ? 'memory' : item.type === 'task' ? 'task' : 'file'}
+              />
+              <b>@{item.label}</b>
+              <small>{cap(item.type)}</small>
+              <button
+                aria-label={`Remove reference ${item.label}`}
+                onClick={() =>
+                  setReferences((current) =>
+                    current.filter((entry) => entry.id !== item.id || entry.type !== item.type),
+                  )
+                }
               >
                 <Icon name="x" />
               </button>
@@ -793,10 +914,11 @@ function Composer({
           </button>
           <button
             className="send-button"
-            onClick={send}
+            onClick={() => void send()}
             disabled={
               (!value.trim() && attachments.length === 0) ||
-              (offline && selectedModel.route === 'Cloud')
+              (offline && selectedModel.route === 'Cloud') ||
+              sending
             }
             aria-label="Send message"
           >
@@ -838,14 +960,14 @@ function Composer({
             <header>
               <div>
                 <span className="eyebrow">Point-of-use confirmation</span>
-                <h2>Send this context to {selectedModel.provider}?</h2>
+                <h2>Send this context to {pendingDisclosure.providerName}?</h2>
               </div>
             </header>
             <div className="security-note">
               <Icon name="cloud" />
               <div>
                 <strong>
-                  {selectedModel.name} ·{' '}
+                  {pendingDisclosure.modelName} ·{' '}
                   {pendingDisclosure.disclosure.privacyRoute ?? 'Cloud privacy route'} ·{' '}
                   {pendingDisclosure.disclosure.costClass ?? selectedModel.cost}
                 </strong>
@@ -877,21 +999,11 @@ function Composer({
               </div>
               <div>
                 <dt>Memories</dt>
-                <dd>
-                  {workspace.memories
-                    .filter((item) => item.enabled)
-                    .map((item) => item.title)
-                    .join(', ') || 'None'}
-                </dd>
+                <dd>{pendingDisclosure.memoryLabels.join(', ') || 'None'}</dd>
               </div>
               <div>
                 <dt>Tools</dt>
-                <dd>
-                  {workspace.tools
-                    .filter((item) => pendingDisclosure.input.enabledToolIds.includes(item.id))
-                    .map((item) => item.name)
-                    .join(', ') || 'None'}
-                </dd>
+                <dd>{pendingDisclosure.toolLabels.join(', ') || 'None'}</dd>
               </div>
             </dl>
             <footer>
@@ -902,14 +1014,12 @@ function Composer({
               <button
                 className="button button--primary"
                 onClick={() => {
-                  onSend({
+                  setPendingDisclosure(null);
+                  void submit({
                     ...pendingDisclosure.input,
                     outboundConfirmationToken: pendingDisclosure.confirmationToken,
+                    outboundIntent: pendingDisclosure.outboundIntent,
                   });
-                  setPendingDisclosure(null);
-                  setValue('');
-                  setAttachments([]);
-                  setReferences([]);
                 }}
               >
                 Confirm one send
@@ -1053,9 +1163,11 @@ function MessageActions({
           <Icon name="retry" />
         </button>
       )}
-      <button title="Edit" onClick={onEdit} disabled={!onEdit}>
-        <Icon name="edit" />
-      </button>
+      {user && onEdit && (
+        <button title="Edit" onClick={onEdit}>
+          <Icon name="edit" />
+        </button>
+      )}
       <button title="Branch" onClick={onBranch} disabled={!onBranch}>
         <Icon name="branch" />
       </button>
@@ -1255,6 +1367,14 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
   const workspace = useWorkspace();
   const [windowEnd, setWindowEnd] = useState(workspace.messages.length);
   const [streamAnnouncement, setStreamAnnouncement] = useState('');
+  const [pendingAction, setPendingAction] = useState<null | {
+    message: MessageRecord;
+    mode: 'retry' | 'edit' | 'regenerate' | 'continue';
+    content: string;
+    confirmationToken: string;
+    outboundIntent: OutboundIntent;
+  }>(null);
+  const [actionError, setActionError] = useState('');
   const windowSize = 80;
   useEffect(() => setWindowEnd(workspace.messages.length), [workspace.messages.length]);
   useEffect(() => {
@@ -1272,25 +1392,60 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
   const outline = workspace.messages.filter(
     (_, index) => index % outlineStep === 0 || index === workspace.messages.length - 1,
   );
-  const runAction = (
+  const executeAction = (
+    message: MessageRecord,
+    mode: 'retry' | 'edit' | 'regenerate' | 'continue',
+    content: string,
+    confirmation?: { confirmationToken: string; outboundIntent: OutboundIntent },
+  ) => {
+    void workspace.sendMessage({
+      content,
+      modelId: confirmation?.outboundIntent.modelId ?? canonicalModelId(selectedModel),
+      attachments: [],
+      references: [],
+      reasoningEffort: workspace.settings.reasoningEffort,
+      enabledToolIds: workspace.settings.enabledToolIds,
+      mode,
+      messageId: message.id,
+      outboundConfirmationToken: confirmation?.confirmationToken,
+      outboundIntent: confirmation?.outboundIntent,
+    });
+  };
+  const runAction = async (
     message: MessageRecord,
     mode: 'retry' | 'edit' | 'regenerate' | 'continue',
   ) => {
-    let content = message.content;
+    let content = mode === 'continue' ? 'Continue from the previous response.' : message.content;
     if (mode === 'edit') {
       const edited = window.prompt('Edit message and create a sibling branch', content)?.trim();
       if (!edited) return;
       content = edited;
     }
-    void workspace.sendMessage({
-      content: mode === 'continue' ? 'Continue from the previous response.' : content,
-      modelId: selectedModel.runtimeModelId ?? selectedModel.id,
-      attachments: message.attachments ?? [],
-      reasoningEffort: workspace.settings.reasoningEffort,
-      enabledToolIds: workspace.settings.enabledToolIds,
-      mode,
-      messageId: message.id,
-    });
+    if (selectedModel.route !== 'Cloud' || workspace.fixtureMode) {
+      executeAction(message, mode, content);
+      return;
+    }
+    try {
+      setActionError('');
+      const result = await workspace.preflightCloudDisclosure({
+        content,
+        modelId: canonicalModelId(selectedModel),
+        attachments: [],
+        references: [],
+        enabledToolIds: workspace.settings.enabledToolIds,
+        messageId: message.id,
+      });
+      if (!result.confirmationToken) throw new Error('Cloud confirmation is unavailable.');
+      setPendingAction({
+        message,
+        mode,
+        content,
+        confirmationToken: result.confirmationToken,
+        outboundIntent: result.outboundIntent,
+      });
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Action preflight failed.');
+    }
   };
   if (!workspace.activeConversationId && workspace.messages.length === 0) {
     return (
@@ -1308,6 +1463,11 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
       <div className="markdown-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {streamAnnouncement}
       </div>
+      {actionError && (
+        <p className="field-error conversation-action-error" role="alert">
+          {actionError}
+        </p>
+      )}
       {workspace.branches.length > 1 && (
         <div className="branch-banner">
           <Icon name="branch" />
@@ -1385,18 +1545,44 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
             {message.role === 'user' ? (
               <div className="user-slip">
                 <p>{message.content}</p>
-                {message.attachments?.map((attachment) => (
-                  <div className="file-attachment" key={attachment.handleId}>
+                {message.attachments?.map((attachment, index) => (
+                  <div
+                    className="file-attachment"
+                    key={attachment.id ?? attachment.handleId ?? `${attachment.name}-${index}`}
+                  >
                     <span className="file-icon">
                       {attachment.extension?.toUpperCase() ?? 'FILE'}
                     </span>
                     <span>
                       <strong>{attachment.name}</strong>
-                      <small>Opaque desktop handle · raw path hidden</small>
+                      <small>
+                        {attachment.handleId
+                          ? 'Temporary desktop access · raw path hidden'
+                          : 'Safe attachment metadata · raw path not stored'}
+                      </small>
                     </span>
                     <RouteBadge route={attachment.destination === 'cloud' ? 'Cloud' : 'Local'} />
                   </div>
                 ))}
+                {message.references && message.references.length > 0 && (
+                  <div className="message-references" aria-label="Message references">
+                    {message.references.map((reference) => (
+                      <span key={`${reference.type}:${reference.id}`}>
+                        <Icon
+                          name={
+                            reference.type === 'memory'
+                              ? 'memory'
+                              : reference.type === 'task'
+                                ? 'task'
+                                : 'file'
+                          }
+                        />
+                        <b>@{reference.label}</b>
+                        <small>{cap(reference.type)}</small>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : message.role === 'assistant' ? (
               <div className={cx('rich-response', message.streaming && 'streaming-message')}>
@@ -1437,14 +1623,16 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
                 message={message}
                 onCopy={() => void workspace.copyMessage(message.id)}
                 onRetry={
-                  message.role === 'assistant' ? () => runAction(message, 'retry') : undefined
+                  message.role === 'assistant' ? () => void runAction(message, 'retry') : undefined
                 }
-                onEdit={() => runAction(message, 'edit')}
+                onEdit={message.role === 'user' ? () => void runAction(message, 'edit') : undefined}
                 onBranch={() =>
                   void workspace.branchConversation(message.id, `Branch from ${message.role}`)
                 }
                 onContinue={
-                  message.role === 'assistant' ? () => runAction(message, 'continue') : undefined
+                  message.role === 'assistant'
+                    ? () => void runAction(message, 'continue')
+                    : undefined
                 }
               />
               {message.usage && (
@@ -1489,6 +1677,53 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
           ))}
         </aside>
       )}
+      {pendingAction && (
+        <div className="popover-layer">
+          <section
+            className="provider-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm message action"
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Point-of-use confirmation</span>
+                <h2>
+                  {cap(pendingAction.mode)} with {pendingAction.outboundIntent.provider}?
+                </h2>
+              </div>
+            </header>
+            <div className="security-note">
+              <Icon name="cloud" />
+              <div>
+                <strong>{pendingAction.outboundIntent.modelId} · Cloud</strong>
+                <p>
+                  This action sends the selected message and its visible conversation context to the
+                  provider. No file grant is reused.
+                </p>
+              </div>
+            </div>
+            <footer>
+              <button className="button" onClick={() => setPendingAction(null)}>
+                Cancel
+              </button>
+              <span />
+              <button
+                className="button button--primary"
+                onClick={() => {
+                  executeAction(pendingAction.message, pendingAction.mode, pendingAction.content, {
+                    confirmationToken: pendingAction.confirmationToken,
+                    outboundIntent: pendingAction.outboundIntent,
+                  });
+                  setPendingAction(null);
+                }}
+              >
+                Confirm {pendingAction.mode}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1506,14 +1741,7 @@ function ChatView({
   selectedModel: ModelDescriptor;
   setModelOpen: () => void;
   offline: boolean;
-  onSend: (input: {
-    content: string;
-    attachments: AttachmentRecord[];
-    references: ReferenceRecord[];
-    reasoningEffort: ReasoningEffort;
-    enabledToolIds: string[];
-    outboundConfirmationToken?: string;
-  }) => void;
+  onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
 }) {
   const workspace = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
@@ -1953,12 +2181,15 @@ function ContextInspector({
         )}
       </ContextSection>
       <ContextSection icon="file" title="Attached files" count={String(activeAttachments.length)}>
-        {activeAttachments.map((attachment) => (
-          <div className="context-item" key={attachment.handleId}>
+        {activeAttachments.map((attachment, index) => (
+          <div
+            className="context-item"
+            key={attachment.id ?? attachment.handleId ?? `${attachment.name}-${index}`}
+          >
             <Icon name="file" />
             <span>
               <strong>{attachment.name}</strong>
-              <small>Opaque handle · {attachment.destination} destination</small>
+              <small>Safe message metadata · {attachment.destination} destination</small>
             </span>
           </div>
         ))}
@@ -3182,6 +3413,9 @@ function ModelsView({
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [pendingCompatibility, setPendingCompatibility] = useState<ModelDescriptor | null>(null);
+  const [compatibilityAcknowledged, setCompatibilityAcknowledged] = useState(false);
   const shown = models.filter(
     (m) =>
       (tab === 'all' || m.route.toLowerCase() === tab) &&
@@ -3189,24 +3423,29 @@ function ModelsView({
         .toLowerCase()
         .includes(modelQuery.toLowerCase()),
   );
-  const selectDefault = async (model: ModelDescriptor) => {
-    const compatibilityConfirmed =
-      model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown';
-    if (
-      compatibilityConfirmed &&
-      !window.confirm(
-        `${model.name} has unverified chat compatibility. NVIDIA did not declare this model as a chat endpoint. Continue only if you have checked its model page.`,
-      )
-    ) {
+  const performSelection = async (model: ModelDescriptor, acknowledged = false) => {
+    if (selectingId) return;
+    if (requiresCompatibilityAcknowledgement(model) && !acknowledged) {
+      setSelectionError(null);
+      setCompatibilityAcknowledged(false);
+      setPendingCompatibility(model);
       return;
     }
     setSelectionError(null);
+    setSelectingId(model.id);
     try {
-      await selectModel(model.id, { compatibilityConfirmed });
+      const params = modelSelectionParams(model, acknowledged);
+      await selectModel(params.modelId, {
+        compatibilityConfirmed: params.compatibilityConfirmed,
+      });
+      setPendingCompatibility(null);
+      setCompatibilityAcknowledged(false);
     } catch (reason) {
       setSelectionError(
         reason instanceof Error ? reason.message : 'Cupcake could not select this model.',
       );
+    } finally {
+      setSelectingId(null);
     }
   };
   return (
@@ -3217,10 +3456,20 @@ function ModelsView({
           <h2>Models</h2>
           <p>Cloud and local models share one workspace. Cupcake never routes automatically.</p>
         </div>
-        <button className="button button--primary" onClick={() => setProviderCatalog(true)}>
-          <Icon name="plus" />
-          Add provider
-        </button>
+        <div className="page-intro__actions">
+          <button
+            className="button"
+            disabled={workspace.busy}
+            onClick={() => void workspace.refresh()}
+          >
+            <Icon name="retry" />
+            {workspace.busy ? 'Refreshing…' : 'Refresh catalog'}
+          </button>
+          <button className="button button--primary" onClick={() => setProviderCatalog(true)}>
+            <Icon name="plus" />
+            Add provider
+          </button>
+        </div>
       </div>
       <section className="hardware-card">
         <div className="hardware-card__art">
@@ -3377,8 +3626,13 @@ function ModelsView({
                   Default model
                 </span>
               ) : model.status === 'ready' ? (
-                <button className="button" onClick={() => void selectDefault(model)}>
-                  Make default
+                <button
+                  className="button"
+                  disabled={selectingId !== null}
+                  aria-busy={selectingId === model.id}
+                  onClick={() => void performSelection(model)}
+                >
+                  {selectingId === model.id ? 'Selecting…' : 'Make default'}
                 </button>
               ) : model.status === 'download' ? (
                 <button
@@ -3467,10 +3721,7 @@ function ModelsView({
                   ['nvidia-nim', 'NVIDIA NIM'],
                 ] as const
               ).map(([id, name]) => (
-                <button
-                  key={id}
-                  onClick={() => void workspace.connectProvider(id).then(() => workspace.refresh())}
-                >
+                <button key={id} onClick={() => void workspace.connectProvider(id)}>
                   <span className="provider-logo">{name[0]}</span>
                   <span>
                     <strong>{name}</strong>
@@ -3619,7 +3870,100 @@ function ModelsView({
           </section>
         </div>
       )}
+      <ModelCompatibilityDialog
+        model={pendingCompatibility}
+        acknowledged={compatibilityAcknowledged}
+        setAcknowledged={setCompatibilityAcknowledged}
+        busy={selectingId !== null}
+        error={selectionError}
+        cancel={() => {
+          if (selectingId) return;
+          setPendingCompatibility(null);
+          setCompatibilityAcknowledged(false);
+        }}
+        confirm={() => {
+          if (pendingCompatibility) void performSelection(pendingCompatibility, true);
+        }}
+      />
     </main>
+  );
+}
+
+function ModelCompatibilityDialog({
+  model,
+  acknowledged,
+  setAcknowledged,
+  busy,
+  error,
+  cancel,
+  confirm,
+}: {
+  model: ModelDescriptor | null;
+  acknowledged: boolean;
+  setAcknowledged: (value: boolean) => void;
+  busy: boolean;
+  error: string | null;
+  cancel: () => void;
+  confirm: () => void;
+}) {
+  if (!model) return null;
+  return (
+    <div className="popover-layer">
+      <section
+        className="provider-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm unverified model compatibility"
+      >
+        <header>
+          <div>
+            <span className="eyebrow">Compatibility acknowledgement</span>
+            <h2>Confirm {model.name}</h2>
+          </div>
+          <button className="icon-button" onClick={cancel} disabled={busy} aria-label="Cancel">
+            <Icon name="x" />
+          </button>
+        </header>
+        <div className="security-note">
+          <Icon name="info" />
+          <div>
+            <strong>NVIDIA did not declare this model as a chat endpoint.</strong>
+            <p>
+              It may reject chat requests or return an unexpected format. CUPCAKEAGI will remember
+              this acknowledgement for this exact model only.
+            </p>
+          </div>
+        </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            disabled={busy}
+            onChange={(event) => setAcknowledged(event.target.checked)}
+          />
+          <span>I checked the model information and accept the unverified compatibility.</span>
+        </label>
+        {error && (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        )}
+        <footer>
+          <button className="button" onClick={cancel} disabled={busy}>
+            Cancel
+          </button>
+          <span />
+          <button
+            className="button button--primary"
+            disabled={!acknowledged || busy}
+            aria-busy={busy}
+            onClick={confirm}
+          >
+            {busy ? 'Selecting…' : 'Confirm and select'}
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -5054,29 +5398,31 @@ function ModelPicker({
   const [query, setQuery] = useState('');
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [pendingCompatibility, setPendingCompatibility] = useState<ModelDescriptor | null>(null);
+  const [compatibilityAcknowledged, setCompatibilityAcknowledged] = useState(false);
   if (!open) return null;
   const shown = models.filter(
     (m) =>
       m.name.toLowerCase().includes(query.toLowerCase()) ||
       m.provider.toLowerCase().includes(query.toLowerCase()),
   );
-  const selectFromPicker = async (model: ModelDescriptor) => {
-    if (
-      model.provider === 'NVIDIA NIM' &&
-      model.chatCompatibility === 'unknown' &&
-      !window.confirm(
-        `${model.name} has unverified chat compatibility. NVIDIA did not declare this model as a chat endpoint. Continue only if you have checked its model page.`,
-      )
-    ) {
+  const selectFromPicker = async (model: ModelDescriptor, acknowledged = false) => {
+    if (selectingId) return;
+    if (requiresCompatibilityAcknowledgement(model) && !acknowledged) {
+      setSelectionError(null);
+      setCompatibilityAcknowledged(false);
+      setPendingCompatibility(model);
       return;
     }
     setSelectionError(null);
     setSelectingId(model.id);
     try {
-      await select(model.id, {
-        compatibilityConfirmed:
-          model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown',
+      const params = modelSelectionParams(model, acknowledged);
+      await select(params.modelId, {
+        compatibilityConfirmed: params.compatibilityConfirmed,
       });
+      setPendingCompatibility(null);
+      setCompatibilityAcknowledged(false);
       close();
     } catch (reason) {
       setSelectionError(
@@ -5086,6 +5432,23 @@ function ModelPicker({
       setSelectingId(null);
     }
   };
+  if (pendingCompatibility) {
+    return (
+      <ModelCompatibilityDialog
+        model={pendingCompatibility}
+        acknowledged={compatibilityAcknowledged}
+        setAcknowledged={setCompatibilityAcknowledged}
+        busy={selectingId !== null}
+        error={selectionError}
+        cancel={() => {
+          if (selectingId) return;
+          setPendingCompatibility(null);
+          setCompatibilityAcknowledged(false);
+        }}
+        confirm={() => void selectFromPicker(pendingCompatibility, true)}
+      />
+    );
+  }
   return (
     <div
       className="popover-layer"
@@ -5141,7 +5504,11 @@ function ModelPicker({
                 </span>
               </span>
               <RouteBadge route={m.route} />
-              {m.selected && <Icon name="check" />}
+              {selectingId === m.id ? (
+                <small>Selecting…</small>
+              ) : (
+                m.selected && <Icon name="check" />
+              )}
               {m.status !== 'ready' && (
                 <small className="unavailable">
                   {m.status === 'setup'
@@ -5438,11 +5805,11 @@ function LegacyFixtureApp() {
     options?: { compatibilityConfirmed?: boolean },
   ): Promise<void> => {
     const model = models.find((m) => m.id === id);
-    if (model?.runtimeModelId) {
+    if (model) {
       const response = await window.cupcake?.runtime.request({
         method: 'models.select',
         params: {
-          modelId: model.runtimeModelId,
+          modelId: canonicalModelId(model),
           compatibilityConfirmed: options?.compatibilityConfirmed === true,
         },
       });
@@ -5680,6 +6047,7 @@ function LegacyFixtureApp() {
       onSend={(input) => {
         navigate('chat');
         sendChat(input.content);
+        return true;
       }}
       onModel={() => setModelOpen(true)}
       selectedModel={selectedModel}
@@ -5704,7 +6072,7 @@ function LegacyFixtureApp() {
     void window.cupcake.runtime
       .request<{ runId?: string; content?: string; conversationId?: string }>({
         method: 'chat.send',
-        params: { content, modelId: selectedModel.runtimeModelId ?? 'mock:cupcake-deterministic' },
+        params: { content, modelId: canonicalModelId(selectedModel) },
         timeoutMs: 120000,
       })
       .then((response) => {
@@ -5767,7 +6135,10 @@ function LegacyFixtureApp() {
         selectedModel={selectedModel}
         setModelOpen={() => setModelOpen(true)}
         offline={offline}
-        onSend={(input) => sendChat(input.content)}
+        onSend={(input) => {
+          sendChat(input.content);
+          return true;
+        }}
       />
     );
   else if (view === 'projects') content = <ProjectsView openChat={() => navigate('chat')} />;
@@ -6016,19 +6387,7 @@ function LiveApp() {
   const startNewChat = () => {
     void workspace.createConversation().then(() => navigate('chat'));
   };
-  const sendChat = (input: {
-    content: string;
-    attachments: AttachmentRecord[];
-    references: ReferenceRecord[];
-    reasoningEffort: ReasoningEffort;
-    enabledToolIds: string[];
-    outboundConfirmationToken?: string;
-  }) => {
-    void workspace.sendMessage({
-      ...input,
-      modelId: selectedModel.runtimeModelId ?? selectedModel.id,
-    });
-  };
+  const sendChat = (input: ComposerSendInput) => workspace.sendMessage(input);
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       const meta = event.ctrlKey || event.metaKey;
@@ -6115,9 +6474,10 @@ function LiveApp() {
 
   const homeComposer = (
     <Composer
-      onSend={(input) => {
-        navigate('chat');
-        sendChat(input);
+      onSend={async (input) => {
+        const sent = await sendChat(input);
+        if (sent) navigate('chat');
+        return sent;
       }}
       onModel={() => setModelOpen(true)}
       selectedModel={selectedModel}

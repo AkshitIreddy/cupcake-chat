@@ -58,7 +58,7 @@ export function verifyEnvelope(envelope: WireEnvelope, secret: Buffer): boolean 
 }
 
 export function encodeFrame(value: unknown, maxFrameBytes = DEFAULT_MAX_FRAME_BYTES): Buffer {
-  const body = Buffer.from(JSON.stringify(value), 'utf8');
+  const body = Buffer.from(canonicalJson(value), 'utf8');
   if (body.byteLength === 0 || body.byteLength > maxFrameBytes) {
     throw new RangeError(`Frame length ${body.byteLength} exceeds the allowed range`);
   }
@@ -92,7 +92,15 @@ export class JsonFrameDecoder extends Transform {
         if (this.#buffer.length < length + 4) break;
         const body = this.#buffer.subarray(4, length + 4);
         this.#buffer = this.#buffer.subarray(length + 4);
-        this.push(JSON.parse(body.toString('utf8')));
+        const text = body.toString('utf8');
+        if (!Buffer.from(text, 'utf8').equals(body)) {
+          throw new SyntaxError('Sidecar frame body is not valid UTF-8');
+        }
+        const value: unknown = JSON.parse(text);
+        if (canonicalJson(value) !== text) {
+          throw new SyntaxError('Sidecar frame body is not canonical JSON');
+        }
+        this.push(value);
       }
       callback();
     } catch (error) {

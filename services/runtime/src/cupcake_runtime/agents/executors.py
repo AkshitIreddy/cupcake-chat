@@ -49,11 +49,11 @@ class DelegateExecutor(Protocol):
 
 @dataclass
 class DeterministicDelegateExecutor:
-    responses: Mapping[str, str] = field(default_factory=dict)
+    responses: Mapping[str, str] = field(default_factory=dict[str, str])
     usage: BudgetUsage = field(
         default_factory=lambda: BudgetUsage(input_tokens=100, output_tokens=50)
     )
-    calls: list[str] = field(default_factory=list)
+    calls: list[str] = field(default_factory=list[str])
 
     def execute(
         self,

@@ -211,6 +211,33 @@ class ProductRepository:
         ).fetchall()
         return tuple(self._project_file(row) for row in rows)
 
+    def get_project_file_for_source(
+        self,
+        project_id: str,
+        *,
+        file_id: str | None = None,
+        source_id: str | None = None,
+    ) -> ProjectFile:
+        """Resolve an indexed file only within its authoritative project scope."""
+        if not project_id.strip() or (not file_id and not source_id):
+            raise ValueError("project_id and a file or source ID are required")
+        clauses = ["project_id = ?"]
+        arguments: list[object] = [project_id]
+        if file_id:
+            clauses.append("id = ?")
+            arguments.append(file_id)
+        if source_id:
+            clauses.append("grant_token = ?")
+            arguments.append(source_id)
+        row = self.database.connection.execute(
+            "SELECT * FROM project_files WHERE " + " AND ".join(clauses), arguments
+        ).fetchone()
+        if row is None:
+            # Deliberately do not disclose whether either identifier exists in a
+            # different project.
+            raise NotFoundError("project file is unavailable in this context")
+        return self._project_file(row)
+
     # Conversations and immutable messages --------------------------------------
     def create_conversation(
         self, title: str = "New conversation", *, project_id: str | None = None

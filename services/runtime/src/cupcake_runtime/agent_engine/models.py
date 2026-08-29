@@ -27,12 +27,15 @@ class AgentLimits:
     max_tool_calls: int = 16
 
     def __post_init__(self) -> None:
-        if min(
-            self.max_context_tokens,
-            self.default_max_output_tokens,
-            self.max_model_requests,
-            self.max_tool_calls,
-        ) <= 0:
+        if (
+            min(
+                self.max_context_tokens,
+                self.default_max_output_tokens,
+                self.max_model_requests,
+                self.max_tool_calls,
+            )
+            <= 0
+        ):
             raise ValueError("agent limits must be positive")
 
 
@@ -46,4 +49,3 @@ class PreparedAgentRequest:
     dropped_history_messages: int
     estimated_context_tokens: int
     max_output_tokens: int
-

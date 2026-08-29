@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .models import ToolDescriptor
@@ -67,9 +67,9 @@ class ToolRegistry:
                 raise ValueError(f"argument {key!r} must be {expected}")
 
 
-def _matches_type(value: Any, expected: str | list[str]) -> bool:
+def _matches_type(value: object, expected: str | list[str]) -> bool:
     allowed = [expected] if isinstance(expected, str) else expected
-    checks = {
+    checks: dict[str, Callable[[object], bool]] = {
         "null": lambda item: item is None,
         "boolean": lambda item: isinstance(item, bool),
         "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),

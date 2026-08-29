@@ -513,8 +513,7 @@ class IngestionService:
                             timestamp_end_ms=locator.timestamp_end_ms,
                             metadata={
                                 **locator.metadata,
-                                "character_offset": offset
-                                * self.limits.max_chunk_characters,
+                                "character_offset": offset * self.limits.max_chunk_characters,
                             },
                         ),
                         ordinal,

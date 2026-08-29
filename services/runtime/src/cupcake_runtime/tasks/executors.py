@@ -33,9 +33,9 @@ class DeterministicFakeExecutor:
     """Predictable executor with injectable operations and call accounting."""
 
     operations: Mapping[str, Callable[[TaskStep, StepContext, str], Mapping[str, Any]]] = field(
-        default_factory=dict
+        default_factory=dict[str, Callable[[TaskStep, StepContext, str], Mapping[str, Any]]]
     )
-    calls: list[tuple[str, str]] = field(default_factory=list)
+    calls: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
 
     def execute(
         self,

@@ -12,6 +12,9 @@ import type { FileHandleRegistry } from './file-handles';
 import { assertTrustedIpcSender } from './security';
 import type { SidecarSupervisor } from './sidecar-supervisor';
 
+const MAX_ATTACHMENTS_PER_REQUEST = 32;
+const ATTACHMENT_RUNTIME_METHODS = new Set(['chat.preflight', 'chat.send']);
+
 export const IPC_CHANNELS = {
   appInfo: 'cupcake:app:info',
   windowMinimize: 'cupcake:window:minimize',
@@ -68,6 +71,7 @@ const ALLOWED_RUNTIME_METHODS = new Set([
   'local_models.ollama.remove',
   'local_models.lm_studio.list',
   'local_models.lm_studio.load',
+  'local_models.lm_studio.unload',
   'providers.configure',
   'providers.compatible.configure',
   'providers.connectInteractive',
@@ -93,6 +97,7 @@ const ALLOWED_RUNTIME_METHODS = new Set([
   'chat.preflight',
   'chat.disclosure.preflight',
   'chat.send',
+  'chat.continue',
   'chat.edit',
   'chat.regenerate',
   'search.query',
@@ -159,6 +164,7 @@ interface IpcDependencies {
 export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   const { handles, runtime, commands, developmentServerUrl } = dependencies;
   const registrations: string[] = [];
+  const durableAttachmentSends = new Map<string, 'pending' | 'confirmed'>();
 
   const register = <T extends unknown[], R>(
     channel: string,
@@ -242,8 +248,15 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   register(IPC_CHANNELS.dialogReleaseHandle, (_event, handleId: unknown) => {
     const id = validId(handleId);
     if (!id) return;
-    handles.release(id);
-    runtime.releaseFileGrant(id);
+    const send = durableAttachmentSends.get(id);
+    if (send === 'pending') {
+      throw new Error('Attachment access cannot be released while its durable send is pending');
+    }
+    durableAttachmentSends.delete(id);
+    // Only an active main-owned handle can revoke the corresponding broker
+    // capability. This prevents a forged renderer ID from affecting unrelated
+    // grants while retaining ordinary discard/tool-target release behavior.
+    if (handles.release(id)) runtime.releaseFileGrant(id);
   });
 
   register(IPC_CHANNELS.commandExecute, (event, command: unknown) => {
@@ -253,9 +266,48 @@ export function registerIpcHandlers(dependencies: IpcDependencies): () => void {
   });
 
   register(IPC_CHANNELS.runtimeStatus, () => runtime.status());
-  register(IPC_CHANNELS.runtimeRequest, (_event, request: unknown) =>
-    runtime.request(validateRuntimeRequest(request)),
-  );
+  register(IPC_CHANNELS.runtimeRequest, async (_event, request: unknown) => {
+    const validated = validateRuntimeRequest(request);
+    const attachmentGrants = validateAttachmentGrants(validated, handles);
+
+    // Broker state is intentionally disposable. Re-register only the exact,
+    // still-active capabilities referenced by this request immediately before
+    // the request frame; pipe ordering guarantees the grants arrive first.
+    for (const grant of attachmentGrants) runtime.registerFileGrant(grant);
+
+    const isDurableAttachmentSend = validated.method === 'chat.send' && attachmentGrants.length > 0;
+    if (isDurableAttachmentSend) {
+      for (const grant of attachmentGrants) {
+        if (durableAttachmentSends.get(grant.id) === 'pending') {
+          throw new Error('Attachment is already part of a pending durable send');
+        }
+      }
+      for (const grant of attachmentGrants) {
+        durableAttachmentSends.set(grant.id, 'pending');
+      }
+    }
+
+    try {
+      const response = await runtime.request(validated);
+      if (isDurableAttachmentSend) {
+        for (const grant of attachmentGrants) {
+          if (response.ok) {
+            durableAttachmentSends.set(grant.id, 'confirmed');
+          } else {
+            // The renderer retains its draft and may explicitly discard or
+            // retry the still-active capability after a failed send.
+            durableAttachmentSends.delete(grant.id);
+          }
+        }
+      }
+      return response;
+    } catch (error) {
+      if (isDurableAttachmentSend) {
+        for (const grant of attachmentGrants) durableAttachmentSends.delete(grant.id);
+      }
+      throw error;
+    }
+  });
   register(IPC_CHANNELS.runtimeCancel, (_event, targetId: unknown) => {
     const id = validId(targetId);
     return id ? runtime.cancel(id) : false;
@@ -323,7 +375,7 @@ function validId(value: unknown): string | null {
   return typeof value === 'string' && /^[a-z0-9-]{1,128}$/i.test(value) ? value : null;
 }
 
-function validateRuntimeRequest(value: unknown): RuntimeRequest {
+export function validateRuntimeRequest(value: unknown): RuntimeRequest {
   if (!value || typeof value !== 'object') throw new TypeError('Runtime request must be an object');
   const request = value as Record<string, unknown>;
   if (typeof request.method !== 'string') throw new TypeError('Runtime request method is required');
@@ -338,4 +390,68 @@ function validateRuntimeRequest(value: unknown): RuntimeRequest {
     params: request.params,
     timeoutMs: typeof request.timeoutMs === 'number' ? request.timeoutMs : undefined,
   };
+}
+
+/** Validate the renderer's path-free attachment contract and resolve it to
+ * main-only grants. Generic tool/save/migration handle fields are deliberately
+ * untouched and continue through their existing broker policy paths. */
+export function validateAttachmentGrants(
+  request: RuntimeRequest,
+  handles: FileHandleRegistry,
+): ReturnType<FileHandleRegistry['resolveActiveAttachments']> {
+  if (!request.params || typeof request.params !== 'object' || Array.isArray(request.params)) {
+    return [];
+  }
+  const params = request.params as Record<string, unknown>;
+  const hasStructured = Object.hasOwn(params, 'attachments');
+  const hasCompact = Object.hasOwn(params, 'attachmentHandles');
+  if (!hasStructured && !hasCompact) return [];
+  if (!ATTACHMENT_RUNTIME_METHODS.has(request.method)) {
+    throw new TypeError('Attachments are not accepted by this runtime method');
+  }
+
+  const structured = hasStructured ? parseStructuredAttachmentIds(params.attachments) : undefined;
+  const compact = hasCompact ? parseCompactAttachmentIds(params.attachmentHandles) : undefined;
+  if (structured && compact && !sameOrderedIds(structured, compact)) {
+    throw new TypeError('Attachment handle lists do not match');
+  }
+  const ids = structured ?? compact ?? [];
+  if (ids.length > MAX_ATTACHMENTS_PER_REQUEST) {
+    throw new TypeError(`A message can attach at most ${MAX_ATTACHMENTS_PER_REQUEST} files`);
+  }
+  if (new Set(ids).size !== ids.length) {
+    throw new TypeError('Attachment handles must be unique');
+  }
+  return handles.resolveActiveAttachments(ids);
+}
+
+function parseStructuredAttachmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new TypeError('Attachments must be an array');
+  return value.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new TypeError('Attachment must be an opaque handle object');
+    }
+    const attachment = entry as Record<string, unknown>;
+    if (
+      Object.keys(attachment).length !== 1 ||
+      !Object.hasOwn(attachment, 'handleId') ||
+      !validId(attachment.handleId)
+    ) {
+      throw new TypeError('Attachment must contain only an opaque handleId');
+    }
+    return attachment.handleId as string;
+  });
+}
+
+function parseCompactAttachmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new TypeError('Attachment handles must be an array');
+  return value.map((handleId) => {
+    const id = validId(handleId);
+    if (!id) throw new TypeError('Attachment handle is invalid');
+    return id;
+  });
+}
+
+function sameOrderedIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }

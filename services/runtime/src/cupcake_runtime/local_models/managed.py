@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -402,18 +402,16 @@ class CupcakeLocalManager:
             self._supervisor = None
             self._runtime_id = None
             raise
-        return RuntimeEndpoint(
-            **{
-                **asdict(endpoint),
-                "version": runtime.version,
-                "models": (model.id,),
-                "metadata": {
-                    **endpoint.metadata,
-                    "backend": runtime.backend.value,
-                    "runtimeId": runtime.id,
-                    "modelPathPrivate": True,
-                },
-            }
+        return replace(
+            endpoint,
+            version=runtime.version,
+            models=(model.id,),
+            metadata={
+                **endpoint.metadata,
+                "backend": runtime.backend.value,
+                "runtimeId": runtime.id,
+                "modelPathPrivate": True,
+            },
         )
 
     async def unload(self) -> RuntimeEndpoint:

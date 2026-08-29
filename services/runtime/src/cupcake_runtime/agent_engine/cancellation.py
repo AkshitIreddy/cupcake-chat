@@ -23,4 +23,3 @@ class AgentCancellation:
         """Internal Pydantic token; application callers should use :meth:`cancel`."""
 
         return self._token
-

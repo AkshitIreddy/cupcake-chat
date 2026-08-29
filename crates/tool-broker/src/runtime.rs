@@ -1,6 +1,6 @@
 //! Supervision and authenticated proxying for the packaged Python runtime.
 
-use crate::framing::{read_frame, write_frame, DEFAULT_MAX_FRAME_BYTES};
+use crate::framing::{read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES};
 use crate::protocol::{uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard};
 use crate::vault::{select_platform_vault, SecretBytes};
 use crate::{BrokerError, Result, PROTOCOL_VERSION};
@@ -233,7 +233,8 @@ impl RuntimeChild {
         F: FnMut(Map<String, Value>) -> Result<()>,
     {
         loop {
-            let envelope: ProtocolEnvelope = read_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
+            let envelope: ProtocolEnvelope =
+                read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
             envelope.verify_auth(self.secret.as_slice())?;
             self.replay.accept(&envelope, Utc::now())?;
             if envelope.correlation_id != correlation {
@@ -265,7 +266,8 @@ impl RuntimeChild {
     ) -> Result<Vec<(MessageType, Map<String, Value>)>> {
         let mut messages = Vec::new();
         loop {
-            let envelope: ProtocolEnvelope = read_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
+            let envelope: ProtocolEnvelope =
+                read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
             envelope.verify_auth(self.secret.as_slice())?;
             self.replay.accept(&envelope, Utc::now())?;
             if envelope.correlation_id != correlation {
@@ -344,7 +346,7 @@ impl RuntimeControl {
             .output
             .lock()
             .map_err(|_| BrokerError::InvalidConfig("runtime output lock failed".into()))?;
-        write_frame(&mut *output, &envelope, DEFAULT_MAX_FRAME_BYTES)
+        write_protocol_frame(&mut *output, &envelope, DEFAULT_MAX_FRAME_BYTES)
     }
 }
 

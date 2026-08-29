@@ -60,7 +60,7 @@ class Evidence:
     source_kind: str
     source_id: str
     excerpt: str | None = None
-    locator: Mapping[str, Any] = field(default_factory=dict)
+    locator: Mapping[str, Any] = field(default_factory=dict[str, Any])
     captured_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -83,7 +83,7 @@ class MemoryRecord:
     updated_at: datetime
     expires_at: datetime | None
     forgotten_at: datetime | None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

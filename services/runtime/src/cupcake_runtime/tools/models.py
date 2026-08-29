@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 PROTOCOL_VERSION = 1
 
@@ -294,7 +294,7 @@ def _broker_wire(request_type: str, payload: Mapping[str, Any]) -> dict[str, Any
     }
 
 
-def _wire(value: Any) -> Any:
+def _wire(value: object) -> Any:
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -302,11 +302,12 @@ def _wire(value: Any) -> Any:
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, frozenset | set):
-        return sorted(_wire(item) for item in value)
+        return sorted(_wire(item) for item in cast(frozenset[object] | set[object], value))
     if isinstance(value, tuple | list):
-        return [_wire(item) for item in value]
+        return [_wire(item) for item in cast(tuple[object, ...] | list[object], value)]
     if isinstance(value, Mapping):
-        return {str(key): _wire(item) for key, item in value.items()}
+        mapping = cast(Mapping[object, object], value)
+        return {str(key): _wire(item) for key, item in mapping.items()}
     if hasattr(value, "__dataclass_fields__"):
-        return _wire(asdict(value))
+        return _wire(asdict(cast(Any, value)))
     return value

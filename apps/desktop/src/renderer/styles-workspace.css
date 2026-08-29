@@ -192,6 +192,8 @@
 .user-slip p {
   margin: 0;
   line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .message-actions {
   display: flex;
@@ -357,6 +359,36 @@
 }
 .file-attachment small {
   color: var(--muted);
+}
+.message-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.message-references > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--blueberry), transparent 68%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blueberry), transparent 92%);
+  color: var(--blueberry);
+  font-size: 11px;
+}
+.message-references b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-references small {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.conversation-action-error {
+  margin: 10px 18px;
 }
 .task-inline,
 .artifact-inline {

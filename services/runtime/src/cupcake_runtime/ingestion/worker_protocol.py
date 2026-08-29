@@ -7,7 +7,7 @@ import struct
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, BinaryIO, Final
+from typing import Any, BinaryIO, Final, cast
 
 from .models import SourceLocator
 
@@ -195,17 +195,13 @@ def parse_request(payload: Mapping[str, object]) -> WorkerParseRequest:
     )
     limits = WorkerLimits(
         max_input_bytes=_positive_integer(limits_payload["max_input_bytes"], "max_input_bytes"),
-        max_output_bytes=_positive_integer(
-            limits_payload["max_output_bytes"], "max_output_bytes"
-        ),
+        max_output_bytes=_positive_integer(limits_payload["max_output_bytes"], "max_output_bytes"),
         max_text_characters=_positive_integer(
             limits_payload["max_text_characters"], "max_text_characters"
         ),
         max_pages=_positive_integer(limits_payload["max_pages"], "max_pages"),
         max_entries=_positive_integer(limits_payload["max_entries"], "max_entries"),
-        deadline_unix_ms=_positive_integer(
-            limits_payload["deadline_unix_ms"], "deadline_unix_ms"
-        ),
+        deadline_unix_ms=_positive_integer(limits_payload["deadline_unix_ms"], "deadline_unix_ms"),
     )
     return WorkerParseRequest(
         request_id=request_id,
@@ -358,9 +354,7 @@ def _decode_locator(value: object, field: str) -> SourceLocator:
         page=_optional_positive_integer(locator["page"], f"{field}.page"),
         sheet=_optional_string(locator["sheet"], f"{field}.sheet", 255),
         cell_range=_optional_string(locator["cell_range"], f"{field}.cell_range", 64),
-        archive_member=_optional_string(
-            locator["archive_member"], f"{field}.archive_member", 1024
-        ),
+        archive_member=_optional_string(locator["archive_member"], f"{field}.archive_member", 1024),
         timestamp_start_ms=_optional_nonnegative_integer(
             locator["timestamp_start_ms"], f"{field}.timestamp_start_ms"
         ),
@@ -418,15 +412,18 @@ def _require_exact_keys(value: Mapping[str, object], expected: set[str]) -> None
 
 
 def _object(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+    if not isinstance(value, Mapping):
         raise WorkerProtocolError(f"{field} must be a JSON object")
-    return value
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise WorkerProtocolError(f"{field} must be a JSON object")
+    return cast(Mapping[str, object], mapping)
 
 
 def _array(value: object, field: str) -> list[object]:
     if not isinstance(value, list):
         raise WorkerProtocolError(f"{field} must be a JSON array")
-    return value
+    return cast(list[object], value)
 
 
 def _integer(value: object, field: str) -> int:

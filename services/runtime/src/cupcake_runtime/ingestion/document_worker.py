@@ -105,18 +105,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_info = output_path.stat(follow_symlinks=False)
         pages = {entry.locator.page for entry in document.entries if entry.locator.page}
         response = {
-                "version": PROTOCOL_VERSION,
-                "kind": WorkerResponseKind.COMPLETE,
-                "request_id": request.request_id,
-                "stage_token": request.stage_token,
-                "result": {
-                    "output_name": request.output_name,
-                    "output_size": output_info.st_size,
-                    "output_sha256": sha256_hex(encoded),
-                    "entry_count": len(document.entries),
-                    "page_count": len(pages),
-                },
-            }
+            "version": PROTOCOL_VERSION,
+            "kind": WorkerResponseKind.COMPLETE,
+            "request_id": request.request_id,
+            "stage_token": request.stage_token,
+            "result": {
+                "output_name": request.output_name,
+                "output_size": output_info.st_size,
+                "output_sha256": sha256_hex(encoded),
+                "entry_count": len(document.entries),
+                "page_count": len(pages),
+            },
+        }
         _write_control_response(stage, arguments.worker_transport, response)
         return 0
     except BaseException as exc:
@@ -130,9 +130,7 @@ def _parse_staged_document(stage: Path, request: WorkerParseRequest) -> WorkerDo
     input_path = _stage_child(stage, request.input_name, must_exist=True)
     descriptor = os.open(
         input_path,
-        os.O_RDONLY
-        | int(getattr(os, "O_BINARY", 0))
-        | int(getattr(os, "O_NOFOLLOW", 0)),
+        os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0)),
     )
     try:
         info = os.fstat(descriptor)
@@ -284,9 +282,7 @@ def _parse_docling(data: bytes, request: WorkerParseRequest) -> WorkerDocument:
     )
 
 
-def _validate_zip_members(
-    infos: Sequence[zipfile.ZipInfo], request: WorkerParseRequest
-) -> None:
+def _validate_zip_members(infos: Sequence[zipfile.ZipInfo], request: WorkerParseRequest) -> None:
     if len(infos) > request.limits.max_entries:
         raise WorkerLimitError("document container has too many entries")
     total = 0
@@ -336,8 +332,11 @@ def _write_immutable_output(stage: Path, name: str, data: bytes) -> Path:
     destination = _stage_child(stage, name, must_exist=False)
     if destination.is_symlink():
         raise WorkerProtocolError("staged output cannot be a symbolic link")
-    flags = os.O_WRONLY | os.O_TRUNC | int(getattr(os, "O_BINARY", 0)) | int(
-        getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_WRONLY
+        | os.O_TRUNC
+        | int(getattr(os, "O_BINARY", 0))
+        | int(getattr(os, "O_NOFOLLOW", 0))
     )
     descriptor = os.open(destination, flags)
     try:
@@ -408,21 +407,19 @@ def _write_failure(
     code, message = _public_error(error)
     with contextlib.suppress(BaseException):
         payload = {
-                "version": PROTOCOL_VERSION,
-                "kind": WorkerResponseKind.FAILED,
-                "request_id": request_id,
-                "stage_token": stage_token,
-                "error": {"code": code, "message": message},
-            }
+            "version": PROTOCOL_VERSION,
+            "kind": WorkerResponseKind.FAILED,
+            "request_id": request_id,
+            "stage_token": stage_token,
+            "error": {"code": code, "message": message},
+        }
         if stage is None:
             write_frame(sys.stdout.buffer, payload)
         else:
             _write_control_response(stage, transport, payload)
 
 
-def _write_control_response(
-    stage: Path, transport: str, payload: Mapping[str, object]
-) -> None:
+def _write_control_response(stage: Path, transport: str, payload: Mapping[str, object]) -> None:
     if transport == "stdio":
         write_frame(sys.stdout.buffer, payload)
         return
@@ -450,9 +447,7 @@ def _read_path_bounded(path: Path, max_bytes: int) -> bytes:
         raise WorkerProtocolError("control request cannot be a symbolic link")
     descriptor = os.open(
         path,
-        os.O_RDONLY
-        | int(getattr(os, "O_BINARY", 0))
-        | int(getattr(os, "O_NOFOLLOW", 0)),
+        os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0)),
     )
     try:
         info = os.fstat(descriptor)

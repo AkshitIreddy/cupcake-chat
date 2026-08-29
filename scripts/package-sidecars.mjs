@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { copyFile, cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { promoteDirectory } from './lib/atomic-directory.mjs';
 import {
   commandExists,
   ensureDir,
@@ -36,17 +37,26 @@ if (!verifyOnly && (targetPlatform !== process.platform || targetArch !== proces
 }
 
 const descriptorPath = join(repoRoot, 'packaging', 'sidecars.json');
-const outputDir = resolve(
+const finalOutputDir = resolve(
   parseArgValue(
     args,
     '--out-dir',
     join(repoRoot, 'out', 'sidecars', `${targetPlatform}-${targetArch}`, 'sidecars'),
   ),
 );
-const relativeOutput = relative(join(repoRoot, 'out'), outputDir);
-if (!relativeOutput || relativeOutput.startsWith('..') || isAbsolute(relativeOutput)) {
+const relativeFinalOutput = relative(join(repoRoot, 'out'), finalOutputDir);
+if (
+  !relativeFinalOutput ||
+  relativeFinalOutput.startsWith('..') ||
+  isAbsolute(relativeFinalOutput)
+) {
   throw new Error('Sidecar output must be a child of the repository out/ directory.');
 }
+const stagingOutputDir = join(
+  dirname(finalOutputDir),
+  `.${basename(finalOutputDir)}.staging-${String(process.pid)}`,
+);
+const outputDir = verifyOnly ? finalOutputDir : stagingOutputDir;
 const manifestPath = join(outputDir, 'sidecars.manifest.json');
 const binarySuffix = '.exe';
 const descriptor = await readJson(descriptorPath);
@@ -82,37 +92,58 @@ async function findRuntimeEntry() {
 async function buildRuntime() {
   const python = await pythonCommand();
   run(python, ['-c', 'import sqlcipher3']);
-  const entry = await findRuntimeEntry();
+  const sourceRoot = join(repoRoot, 'services', 'runtime', 'src');
+  const sourceEntry = await findRuntimeEntry();
   const buildRoot = join(repoRoot, 'out', 'pyinstaller', `${targetPlatform}-${targetArch}`);
   const distRoot = join(buildRoot, 'dist');
+  const snapshotRoot = join(buildRoot, 'source-snapshot');
   await rm(buildRoot, { recursive: true, force: true });
   await mkdir(distRoot, { recursive: true });
-  run(python, [
-    '-m',
-    'PyInstaller',
-    '--noconfirm',
-    '--clean',
-    '--onefile',
-    '--name',
-    'cupcake-runtime',
-    '--paths',
-    join(repoRoot, 'services', 'runtime', 'src'),
-    '--hidden-import',
-    'sqlcipher3',
-    '--copy-metadata',
-    'dbos',
-    '--copy-metadata',
-    'cohere',
-    '--copy-metadata',
-    'latex2mathml',
-    '--distpath',
-    distRoot,
-    '--workpath',
-    join(buildRoot, 'work'),
-    '--specpath',
-    join(buildRoot, 'spec'),
-    entry,
-  ]);
+  // PyInstaller analysis can take many minutes. Build from one immutable
+  // source snapshot so edits made during that window cannot produce a frozen
+  // runtime containing modules from different workspace revisions. Generated
+  // bytecode is deliberately excluded; PyInstaller compiles the snapshotted
+  // source itself.
+  await cp(sourceRoot, snapshotRoot, {
+    recursive: true,
+    filter: (source) => !source.split(/[\\/]/u).includes('__pycache__') && !source.endsWith('.pyc'),
+  });
+  const entry = join(snapshotRoot, relative(sourceRoot, sourceEntry));
+  run(
+    python,
+    [
+      '-m',
+      'PyInstaller',
+      '--noconfirm',
+      '--clean',
+      '--onefile',
+      '--name',
+      'cupcake-runtime',
+      '--paths',
+      snapshotRoot,
+      '--hidden-import',
+      'sqlcipher3',
+      '--copy-metadata',
+      'dbos',
+      '--copy-metadata',
+      'cohere',
+      '--copy-metadata',
+      'latex2mathml',
+      '--distpath',
+      distRoot,
+      '--workpath',
+      join(buildRoot, 'work'),
+      '--specpath',
+      join(buildRoot, 'spec'),
+      entry,
+    ],
+    {
+      env: {
+        PYTHONDONTWRITEBYTECODE: '1',
+        PYTHONPATH: snapshotRoot,
+      },
+    },
+  );
   const built = join(distRoot, outputName('runtime'));
   if (!(await exists(built))) throw new Error(`PyInstaller did not create ${built}`);
   run(built, ['--help']);
@@ -257,7 +288,10 @@ if (verifyOnly) {
   if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
   await verifyManifest();
 } else {
-  if (clean) await rm(outputDir, { recursive: true, force: true });
+  await rm(stagingOutputDir, { recursive: true, force: true });
+  if ((!clean || reuseNative) && (await exists(finalOutputDir))) {
+    await cp(finalOutputDir, stagingOutputDir, { recursive: true });
+  }
   await ensureDir(outputDir);
   if (!skipRuntime && !reuseNative) await buildRuntime();
   if (!skipBroker && !reuseNative) await buildBroker();
@@ -265,4 +299,6 @@ if (verifyOnly) {
   await copyFile(join(repoRoot, 'LICENSE'), join(outputDir, 'LICENSE.txt'));
   await createManifest();
   await verifyManifest();
+  await promoteDirectory(stagingOutputDir, finalOutputDir);
+  process.stdout.write(`Promoted verified sidecars to ${relativeFinalOutput}.\n`);
 }
