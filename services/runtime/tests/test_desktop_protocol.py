@@ -8,8 +8,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from cupcake_runtime.application import RuntimeService
 from cupcake_runtime.desktop_protocol import (
+    DesktopProtocolError,
     DesktopRuntimeServer,
     _canonical,
     _read_frame,
@@ -23,7 +26,20 @@ from cupcake_runtime.providers.types import NormalizedStreamEvent, StreamEventTy
 def test_canonical_float_preserves_wire_precision_for_cross_language_hmac() -> None:
     assert _canonical(31.62752914428711) == "31.62752914428711"
     assert _canonical(1.0) == "1"
+    assert _canonical(1e-6) == "0.000001"
+    assert _canonical(2.5e-6) == "0.0000025"
     assert _canonical(1e-7) == "1e-7"
+    assert _canonical(1e20) == "100000000000000000000"
+    assert _canonical(1e21) == "1e+21"
+
+
+def test_canonical_object_keys_follow_utf16_ordering() -> None:
+    assert _canonical({"\ue000": 1, "😀": 2}) == '{"😀":2,"\ue000":1}'
+
+
+def test_canonical_json_rejects_non_string_object_keys() -> None:
+    with pytest.raises(DesktopProtocolError, match="keys must be strings"):
+        _canonical({1: "would collide with a string key"})
 
 
 def envelope(

@@ -15,7 +15,7 @@ import sys
 import threading
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from uuid import UUID
 
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
@@ -39,33 +39,63 @@ def _canonical(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        if not math.isfinite(value):
-            raise DesktopProtocolError("non-finite JSON number")
-        if value == 0:
-            return "0"
-        if value.is_integer() and abs(value) < 1e21:
-            return str(int(value))
-        # Use Python's shortest round-tripping representation rather than a
-        # precision-truncating format. Rust's ryu_js formatter signs the exact
-        # JSON number received on the wire; truncating here breaks the HMAC on
-        # hardware metrics such as 31.62752914428711.
-        rendered = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-        if "e" in rendered:
-            mantissa, exponent = rendered.split("e", 1)
-            sign = "+" if exponent.startswith("+") else "-" if exponent.startswith("-") else ""
-            digits = exponent.lstrip("+-").lstrip("0") or "0"
-            rendered = f"{mantissa}e{sign}{digits}"
-        return rendered
+        return _canonical_float(value)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, list):
-        return "[" + ",".join(_canonical(item) for item in value) + "]"
+        array_value = cast(list[Any], value)
+        return "[" + ",".join(_canonical(item) for item in array_value) + "]"
     if isinstance(value, dict):
-        parts = []
-        for key in sorted(value):
-            parts.append(f"{_canonical(str(key))}:{_canonical(value[key])}")
+        object_value = cast(dict[object, Any], value)
+        keys: list[str] = []
+        for key in object_value:
+            if not isinstance(key, str):
+                raise DesktopProtocolError("JSON object keys must be strings")
+            keys.append(key)
+        parts: list[str] = []
+        # ECMAScript (and Rust's ryu_js/JCS implementation) orders object keys
+        # by UTF-16 code units, not Python Unicode code points.
+        for key in sorted(keys, key=lambda item: item.encode("utf-16-be")):
+            parts.append(f"{_canonical(key)}:{_canonical(object_value[key])}")
         return "{" + ",".join(parts) + "}"
     raise DesktopProtocolError(f"unsupported JSON value: {type(value).__name__}")
+
+
+def _canonical_float(value: float) -> str:
+    """Render one finite double with ECMAScript JSON number thresholds.
+
+    Rust signs parsed values through ``ryu_js`` and TypeScript through
+    ``JSON.stringify``. Python's ordinary ``repr`` has the same shortest
+    round-trip digits but chooses scientific notation at a different boundary
+    (notably ``1e-6``), so expand only the range JavaScript renders as decimal.
+    """
+    if not math.isfinite(value):
+        raise DesktopProtocolError("non-finite JSON number")
+    if value == 0:
+        return "0"
+    rendered = repr(value).lower()
+    magnitude = abs(value)
+    if "e" not in rendered:
+        return rendered[:-2] if rendered.endswith(".0") else rendered
+    mantissa, raw_exponent = rendered.split("e", 1)
+    exponent = int(raw_exponent)
+    if 1e-6 <= magnitude < 1e21:
+        return _expand_scientific_decimal(mantissa, exponent)
+    sign = "+" if exponent >= 0 else "-"
+    return f"{mantissa}e{sign}{abs(exponent)}"
+
+
+def _expand_scientific_decimal(mantissa: str, exponent: int) -> str:
+    negative = mantissa.startswith("-")
+    digits = mantissa.removeprefix("-").replace(".", "")
+    point = 1 + exponent
+    if point <= 0:
+        result = "0." + ("0" * -point) + digits
+    elif point >= len(digits):
+        result = digits + ("0" * (point - len(digits)))
+    else:
+        result = digits[:point] + "." + digits[point:]
+    return "-" + result if negative else result
 
 
 def _unsigned(envelope: dict[str, Any]) -> dict[str, Any]:
@@ -99,7 +129,7 @@ def _read_frame(stream: BinaryIO) -> dict[str, Any] | None:
     value = json.loads(body)
     if not isinstance(value, dict):
         raise DesktopProtocolError("frame body must be an object")
-    return value
+    return cast(dict[str, Any], value)
 
 
 def _write_frame(stream: BinaryIO, envelope: dict[str, Any]) -> None:
@@ -242,8 +272,6 @@ class DesktopRuntimeServer:
                     self._send(target, "pong", correlation_id, session_id, {})
                     continue
                 if message_type == "shutdown":
-                    self._cancel_all_pending()
-                    self._finish_pending(timeout=5)
                     self._send(
                         target,
                         "response",
@@ -275,7 +303,7 @@ class DesktopRuntimeServer:
                     continue
                 if message_type != "request":
                     raise DesktopProtocolError(f"unsupported message type: {message_type}")
-                request = envelope["payload"]
+                request = cast(dict[str, Any], envelope["payload"])
                 method = request.get("method")
                 params = request.get("params")
                 if not isinstance(method, str) or (
@@ -289,6 +317,7 @@ class DesktopRuntimeServer:
                         "Request method and params are invalid",
                     )
                     continue
+                typed_params = None if params is None else cast(dict[str, Any], params)
                 cancellation = threading.Event()
                 future = asyncio.run_coroutine_threadsafe(
                     self._handle_request(
@@ -296,7 +325,7 @@ class DesktopRuntimeServer:
                         correlation_id,
                         session_id,
                         method,
-                        params,
+                        typed_params,
                         cancellation,
                     ),
                     loop,
@@ -311,8 +340,21 @@ class DesktopRuntimeServer:
             self._finish_pending(timeout=5)
             loop.call_soon_threadsafe(loop.stop)
             loop_thread.join(timeout=5)
-            loop.close()
-            self.service.close()
+            if loop_thread.is_alive():
+                print(
+                    json.dumps(
+                        {
+                            "level": "warning",
+                            "component": "runtime",
+                            "event": "event_loop_shutdown_timeout",
+                        }
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                loop.close()
+                self.service.close()
 
     async def _handle_request(
         self,
@@ -325,9 +367,10 @@ class DesktopRuntimeServer:
     ) -> None:
         async def emit(event: dict[str, Any]) -> None:
             payload = event.get("payload")
-            if isinstance(payload, dict) and isinstance(payload.get("runId"), str):
+            payload_map = cast(dict[str, Any], payload) if isinstance(payload, dict) else None
+            if payload_map and isinstance(payload_map.get("runId"), str):
                 with self._pending_lock:
-                    self._run_correlations[payload["runId"]] = correlation_id
+                    self._run_correlations[payload_map["runId"]] = correlation_id
             self._send(target, "event", correlation_id, session_id, event)
 
         try:

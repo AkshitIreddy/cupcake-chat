@@ -36,6 +36,12 @@ describe('framed protocol', () => {
     expect(canonicalJson({ z: 1, a: { y: 2, b: 3 } })).toBe('{"a":{"b":3,"y":2},"z":1}');
   });
 
+  it('uses ECMAScript number thresholds and UTF-16 key ordering', () => {
+    expect(canonicalJson({ value: 1e-6 })).toBe('{"value":0.000001}');
+    expect(canonicalJson({ value: 1e-7 })).toBe('{"value":1e-7}');
+    expect(canonicalJson({ '\ue000': 1, '😀': 2 })).toBe('{"😀":2,"\ue000":1}');
+  });
+
   it('verifies the HMAC and rejects payload tampering', () => {
     const secret = randomBytes(32);
     const message = signEnvelope(

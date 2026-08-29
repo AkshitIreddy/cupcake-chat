@@ -424,6 +424,22 @@ mod tests {
     }
 
     #[test]
+    fn canonical_json_uses_ecmascript_boundaries_and_utf16_keys() {
+        assert_eq!(
+            canonical_json(&serde_json::json!({"value": 1e-6})).unwrap(),
+            r#"{"value":0.000001}"#
+        );
+        assert_eq!(
+            canonical_json(&serde_json::json!({"value": 1e-7})).unwrap(),
+            r#"{"value":1e-7}"#
+        );
+        assert_eq!(
+            canonical_json(&serde_json::json!({"\u{e000}": 1, "😀": 2})).unwrap(),
+            "{\"😀\":2,\"\u{e000}\":1}"
+        );
+    }
+
+    #[test]
     fn replay_guard_binds_session_and_orders_each_correlation() {
         let now = Utc::now();
         let first = envelope(1);
