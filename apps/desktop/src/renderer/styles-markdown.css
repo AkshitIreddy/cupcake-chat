@@ -1,0 +1,526 @@
+.rich-markdown {
+  --markdown-code: color-mix(in srgb, var(--cocoa), var(--blueberry) 10%);
+  --markdown-code-bg: color-mix(in srgb, var(--paper), var(--soft) 48%);
+  --markdown-rule: color-mix(in srgb, var(--line), transparent 8%);
+  color: var(--cocoa);
+  font-size: 15px;
+  line-height: 1.68;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rich-markdown > :first-child,
+.rich-markdown > :first-child > :first-child {
+  margin-top: 0;
+}
+
+.rich-markdown > :last-child,
+.rich-markdown > :last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-markdown p,
+.rich-markdown ul,
+.rich-markdown ol,
+.rich-markdown blockquote,
+.rich-markdown .markdown-table-wrap,
+.rich-markdown .markdown-code-block,
+.rich-markdown .katex-display {
+  margin-block: 0.82em;
+}
+
+.rich-markdown h1,
+.rich-markdown h2,
+.rich-markdown h3,
+.rich-markdown h4,
+.rich-markdown h5,
+.rich-markdown h6 {
+  color: var(--cocoa);
+  font-family: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
+  font-variation-settings: 'wdth' 88;
+  letter-spacing: -0.018em;
+  line-height: 1.24;
+  margin: 1.35em 0 0.48em;
+  scroll-margin-top: 88px;
+}
+
+.rich-markdown h1 {
+  font-size: clamp(1.55rem, 3vw, 1.85rem);
+}
+.rich-markdown h2 {
+  font-size: clamp(1.3rem, 2.5vw, 1.55rem);
+}
+.rich-markdown h3 {
+  font-size: 1.19rem;
+}
+.rich-markdown h4 {
+  font-size: 1.05rem;
+}
+.rich-markdown h5,
+.rich-markdown h6 {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.markdown-heading-link {
+  color: var(--muted);
+  display: inline-flex;
+  margin-inline-start: 0.4em;
+  opacity: 0;
+  text-decoration: none;
+  transform: translateX(-3px);
+  transition:
+    opacity 140ms var(--ease),
+    transform 140ms var(--ease);
+}
+
+.rich-markdown :is(h1, h2, h3, h4, h5, h6):hover .markdown-heading-link,
+.markdown-heading-link:focus-visible {
+  opacity: 0.72;
+  transform: none;
+}
+
+.rich-markdown a:not(.markdown-heading-link) {
+  color: var(--berry-dark);
+  text-decoration-color: color-mix(in srgb, var(--berry), transparent 50%);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+.rich-markdown a[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
+.markdown-external-mark {
+  font-size: 0.72em;
+  margin-inline-start: 0.16em;
+  vertical-align: 0.25em;
+}
+
+.markdown-link--blocked {
+  text-decoration: line-through dotted var(--danger);
+}
+
+.rich-markdown strong {
+  font-weight: 720;
+}
+.rich-markdown em {
+  color: color-mix(in srgb, var(--cocoa), var(--berry) 14%);
+}
+.rich-markdown del {
+  color: var(--muted);
+}
+
+.rich-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--markdown-rule);
+  margin: 1.55em 0;
+}
+
+.rich-markdown ul,
+.rich-markdown ol {
+  padding-inline-start: 1.5em;
+}
+
+.rich-markdown li {
+  margin-block: 0.28em;
+  padding-inline-start: 0.12em;
+}
+.rich-markdown li::marker {
+  color: var(--berry);
+  font-weight: 650;
+}
+.rich-markdown li > :first-child {
+  margin-top: 0;
+}
+.rich-markdown li > :last-child {
+  margin-bottom: 0;
+}
+.rich-markdown .contains-task-list {
+  list-style: none;
+  padding-inline-start: 0.3em;
+}
+.rich-markdown .task-list-item {
+  align-items: baseline;
+  display: flex;
+  gap: 0.58em;
+}
+
+.rich-markdown input[type='checkbox'] {
+  accent-color: var(--pistachio);
+  flex: 0 0 auto;
+  height: 1em;
+  margin: 0;
+  transform: translateY(0.1em);
+  width: 1em;
+}
+
+.rich-markdown blockquote {
+  background: color-mix(in srgb, var(--berry-soft), transparent 55%);
+  border-inline-start: 3px solid color-mix(in srgb, var(--berry), transparent 12%);
+  border-radius: 0 10px 10px 0;
+  color: color-mix(in srgb, var(--cocoa), var(--muted) 32%);
+  margin-inline: 0;
+  padding: 0.65em 1em;
+}
+
+.rich-markdown :not(pre) > code {
+  background: var(--markdown-code-bg);
+  border: 1px solid color-mix(in srgb, var(--line), transparent 18%);
+  border-radius: 5px;
+  color: var(--markdown-code);
+  font:
+    500 0.88em/1.4 'IBM Plex Mono',
+    monospace;
+  padding: 0.12em 0.34em;
+}
+
+.markdown-code-block {
+  background: #211d1d;
+  border: 1px solid color-mix(in srgb, var(--line), transparent 14%);
+  border-radius: 12px;
+  box-shadow: 0 5px 17px rgba(44, 31, 27, 0.09);
+  color: #eee8e1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.markdown-code-block figcaption {
+  align-items: center;
+  background: #2a2525;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #bdb3ae;
+  display: flex;
+  font:
+    500 11px/1 'IBM Plex Mono',
+    monospace;
+  justify-content: space-between;
+  letter-spacing: 0.035em;
+  min-height: 34px;
+  padding: 0.42rem 0.55rem 0.42rem 0.85rem;
+  text-transform: uppercase;
+}
+
+.markdown-code-block figcaption button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #ddd4cf;
+  font:
+    500 11px/1 'Atkinson Hyperlegible Next Variable',
+    sans-serif;
+  min-width: 58px;
+  padding: 6px 9px;
+  text-transform: none;
+}
+
+.markdown-code-block figcaption button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.markdown-code-block figcaption button:focus-visible {
+  outline-color: #dc84a6;
+}
+
+.markdown-code-block pre {
+  color: inherit;
+  font:
+    400 12.5px/1.64 'IBM Plex Mono',
+    monospace;
+  margin: 0;
+  max-height: min(58vh, 640px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem 1.15rem;
+  scrollbar-color: #5d5150 transparent;
+  tab-size: 2;
+}
+
+.markdown-code-block code {
+  font: inherit;
+  white-space: pre;
+}
+.markdown-code-block .hljs-comment,
+.markdown-code-block .hljs-quote {
+  color: #a89c95;
+  font-style: italic;
+}
+.markdown-code-block .hljs-keyword,
+.markdown-code-block .hljs-selector-tag,
+.markdown-code-block .hljs-literal {
+  color: #e99aba;
+}
+.markdown-code-block .hljs-string,
+.markdown-code-block .hljs-regexp,
+.markdown-code-block .hljs-addition {
+  color: #b9d6a6;
+}
+.markdown-code-block .hljs-number,
+.markdown-code-block .hljs-built_in,
+.markdown-code-block .hljs-variable {
+  color: #e7c078;
+}
+.markdown-code-block .hljs-title,
+.markdown-code-block .hljs-function,
+.markdown-code-block .hljs-attr {
+  color: #b9c7ef;
+}
+.markdown-code-block .hljs-meta,
+.markdown-code-block .hljs-symbol {
+  color: #d4b4e8;
+}
+.markdown-code-block .hljs-deletion {
+  color: #f2a39f;
+}
+
+.markdown-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.markdown-table-wrap table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+  min-width: 100%;
+  width: max-content;
+}
+
+.markdown-table-wrap th,
+.markdown-table-wrap td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.62em 0.8em;
+  text-align: start;
+  vertical-align: top;
+}
+
+.markdown-table-wrap th {
+  background: color-mix(in srgb, var(--soft), var(--paper) 35%);
+  color: var(--cocoa);
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.markdown-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+.markdown-table-wrap tbody tr:hover {
+  background: color-mix(in srgb, var(--berry-soft), transparent 76%);
+}
+
+.rich-markdown .katex-display {
+  max-width: 100%;
+  overflow: auto hidden;
+  padding: 0.42em 0.15em;
+}
+
+.rich-markdown .katex {
+  font-size: 1.04em;
+}
+
+.markdown-citation {
+  align-items: center;
+  background: color-mix(in srgb, var(--blueberry-soft), var(--paper) 16%);
+  border: 1px solid color-mix(in srgb, var(--blueberry), transparent 47%);
+  border-radius: 99px;
+  color: var(--blueberry);
+  display: inline-flex;
+  font:
+    700 0.68em/1 'IBM Plex Mono',
+    monospace;
+  height: 1.72em;
+  justify-content: center;
+  margin-inline: 0.16em;
+  min-width: 1.72em;
+  padding-inline: 0.38em;
+  transform: translateY(-0.22em);
+}
+
+.markdown-citation:hover {
+  background: var(--blueberry-soft);
+  transform: translateY(-0.28em);
+}
+.markdown-citation--missing {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.markdown-sources {
+  border-top: 1px solid var(--line);
+  margin-top: 1.35rem;
+  padding-top: 0.78rem;
+}
+
+.markdown-sources h2 {
+  color: var(--muted);
+  font:
+    700 10px/1 'IBM Plex Mono',
+    monospace !important;
+  letter-spacing: 0.1em;
+  margin: 0 0 0.6rem;
+  text-transform: uppercase;
+}
+
+.markdown-sources ol {
+  display: grid;
+  gap: 0.42rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.markdown-sources li {
+  margin: 0;
+  padding: 0;
+}
+
+.markdown-source {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--cocoa);
+  display: flex;
+  gap: 0.68rem;
+  padding: 0.5rem;
+  text-align: start;
+  width: 100%;
+}
+
+.markdown-source:hover {
+  background: color-mix(in srgb, var(--soft), transparent 38%);
+}
+.markdown-source__index {
+  align-items: center;
+  background: var(--blueberry-soft);
+  border-radius: 99px;
+  color: var(--blueberry);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font:
+    700 10px/1 'IBM Plex Mono',
+    monospace;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.markdown-source__body {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.markdown-source__body strong {
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+.markdown-source__body small {
+  color: var(--muted);
+  font:
+    500 10px/1.35 'IBM Plex Mono',
+    monospace;
+}
+.markdown-source__body > span {
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.42;
+}
+
+.markdown-image-placeholder {
+  align-items: center;
+  background: color-mix(in srgb, var(--soft), transparent 36%);
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.86em;
+  gap: 0.38em;
+  padding: 0.35em 0.55em;
+}
+
+.markdown-remote-image {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: block;
+  height: auto;
+  margin-block: 0.8em;
+  max-height: 560px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.rich-markdown--streaming::after {
+  background: var(--berry);
+  border-radius: 99px;
+  content: '';
+  display: inline-block;
+  height: 0.72em;
+  margin-inline-start: 0.24em;
+  opacity: 0.68;
+  vertical-align: -0.05em;
+  width: 0.14em;
+  animation: markdown-cursor 1.05s steps(2, jump-none) infinite;
+}
+
+.markdown-sr-only {
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  height: 1px !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  position: absolute !important;
+  white-space: nowrap !important;
+  width: 1px !important;
+}
+
+@keyframes markdown-cursor {
+  0%,
+  45% {
+    opacity: 0.68;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .rich-markdown {
+    font-size: 14.5px;
+  }
+  .markdown-code-block {
+    border-radius: 9px;
+    margin-inline: -0.35rem;
+  }
+  .markdown-code-block pre {
+    font-size: 11.5px;
+    padding-inline: 0.85rem;
+  }
+  .markdown-table-wrap {
+    border-radius: 8px;
+    margin-inline: -0.35rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-heading-link,
+  .markdown-citation {
+    transition: none;
+  }
+  .rich-markdown--streaming::after {
+    animation: none;
+    opacity: 0.62;
+  }
+}
+
+html[data-reduced-motion='true'] .markdown-copy,
+html[data-reduced-motion='true'] .markdown-stream-cursor {
+  transition: none !important;
+  animation: none !important;
+}

@@ -1,0 +1,16 @@
+CUPCAKEAGI bundled font notices
+
+Atkinson Hyperlegible Next
+Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors
+https://github.com/googlefonts/atkinson-hyperlegible-next
+
+Bricolage Grotesque
+Copyright 2022 The Bricolage Grotesque Project Authors
+https://github.com/ateliertriay/bricolage
+
+IBM Plex Mono
+Copyright 2017 IBM Corp. All rights reserved.
+https://github.com/IBM/plex
+
+Each bundled font is licensed under the SIL Open Font License, Version 1.1.
+The complete license text is packaged beside this notice as OFL-1.1.txt.
