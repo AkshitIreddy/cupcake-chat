@@ -1,151 +1,214 @@
-# CUPCAKEAGI 🧁🍰🎉🤖🧠🍩🍪
+# CUPCAKEAGI 2.0
 
-Hey there cupcake lovers🧁❤️! I am excited to introduce you to my latest project, CupcakeAGI!
+![CUPCAKEAGI mark](apps/desktop/public/brand/cupcake-mark.svg)
 
-You can find the documentation here:
-https://akshitireddy.github.io/CUPCAKEAGI/
+CUPCAKEAGI is a text-first, local desktop workspace for chatting with AI, giving it files and tools,
+and letting substantial work continue in the background. The conversation stays at the center:
+choose a model, add the context you want, see where data is going, and keep chatting while Cupcake
+works.
 
-# 🚀 Features
+The personality is still here. The sugar rush is not.
 
-- 🌐 Access to internet
-- 🐶 Upload Images
-- 🎵 Upload Audio
-- 📹 Upload Video
-- 💾 Persistent Memory
-- ❤️ Emotions
-- 💭 Random Thoughts
-- 😴 Dreams
-- 🛠️ Pre-defined Abilities
-- 🧱 Modular approach for adding new Abilities
-- 📝 Assign & schedule Tasks
-- 📝 Asynchronous Task Processing 
-- 🗣️ Talk while Tasks are being processed in Background
-- 🧑‍💻 Create & Run Python Code
-- 🧠 GPT-3.5 as the brain
+> **Local release-candidate work.** Version 2.0 is being assembled and tested for Windows 10/11 x64
+> on the `feat/cupcakeagi-2.0` branch. It has not been published, pushed as a 2.0 release, connected
+> to a production update feed, or approved for general installation. The
+> [implementation checklist](docs/architecture/IMPLEMENTATION_CHECKLIST.md) is the source of truth
+> for current completion.
 
-# ✨ Demo
+## What 2.0 is
 
-https://user-images.githubusercontent.com/90443032/233522184-d59becf3-18e1-4ebd-86ae-09c882ba2104.mp4
+- **Text first.** There is no voice surface in the 2.0 release candidate.
+- **Model explicit.** You choose the provider and model for a message. CUPCAKEAGI does not silently
+  route requests.
+- **Local by default, clear at the boundary.** Local data remains local unless a selected cloud
+  model or connected tool needs it; the destination is shown before data leaves the machine.
+- **One conversation, small or substantial.** A quick answer stays a chat turn. Longer work can
+  become a durable task without forcing a separate mode.
+- **Project aware.** Projects group chats, files, instructions, memories, tasks, artifacts, and
+  permissions without leaking context into unrelated work.
+- **Inspectable, not noisy.** Tool calls collapse into concise cards. Context, permissions, costs,
+  task events, and redacted runtime details are available when needed.
 
-# 🚨 Requirements
+## Release-candidate feature map
 
-Open up a terminal and go to backend/Multi-Sensory Virtual AAGI (you need to have conda installed)
-```sh
-npm install next
-conda env create -f environment.yml
+| Area               | 2.0 contract                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Chat               | Streaming Markdown, code, tables, equations, citations, message actions, and non-destructive branches                                                        |
+| Models             | Direct OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, and NVIDIA NIM adapters; generic OpenAI-compatible endpoints; explicit model and reasoning selection |
+| Local models       | CUPCAKEAGI-managed llama.cpp plus Ollama and LM Studio discovery/management and external vLLM connections; model weights are never bundled                   |
+| Projects and files | Optional project boundaries, rich attachments, live read-only repositories, structured parsing, stable citations, and search                                 |
+| Memory             | Typed and scoped memories with source, confidence, revision, expiry, disable, and delete controls                                                            |
+| Tasks              | Durable background work, approvals, checkpoints, recovery, queued follow-ups, and bounded specialist subagents                                               |
+| Tools              | Scoped file/repository, web, Git, Python, model, and artifact tools plus local/remote MCP and an out-of-process custom-tool SDK                              |
+| Artifacts          | Documents, code, tables, images, diagrams, webpages, and reports with preview, editing, revisions, and export                                                |
+| Interface          | Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, Settings, and optional Developer Mode                                                |
+| Themes             | Cupcake Light, Cupcake Dark, Minimal, and Classic, with reduced-motion and keyboard support                                                                  |
+| Proactive features | Quiet Thoughts and Dreams suggestions, disabled by default                                                                                                   |
+
+See the [user guide](docs/user-guide.md) for how these parts fit together and
+[known issues](docs/known-issues.md) for the current release-candidate boundaries.
+
+## Try it before upgrading
+
+You do not need to begin with a large paid plan. These are the official developer offers CUPCAKEAGI
+users can currently experiment with; limits, regions, and eligibility can change.
+
+| Route             | Free-access status                                                                                                         | Good first step                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini            | Ongoing free API tier for selected models                                                                                  | Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey)                                                              |
+| Mistral           | Free plan currently includes $10/month in API credits                                                                      | Start in [Mistral Studio](https://console.mistral.ai/)                                                                                  |
+| Cohere            | Free, rate-limited evaluation key; not for production or commercial use                                                    | Create a [trial key](https://dashboard.cohere.com/api-keys)                                                                             |
+| NVIDIA NIM        | Free NVIDIA-hosted API Catalog access for individual prototyping, development, and testing; not a production entitlement   | Join the [NVIDIA Developer Program](https://developer.nvidia.com/nim) and get one key from the [API Catalog](https://build.nvidia.com/) |
+| OpenAI            | A first test request or account-specific grants may be available; no published recurring free tier for current chat models | Check the [API quickstart](https://platform.openai.com/docs/quickstart) before adding credits                                           |
+| Anthropic         | General API access is prepaid/pay-as-you-go; no general free tier is published                                             | Open the [Claude Console](https://console.anthropic.com/) only if you want to fund testing                                              |
+| xAI               | General API access uses prepaid credits or approved invoicing; promotions are account-specific                             | Check the [xAI Console](https://console.x.ai/) for any current credit                                                                   |
+| OpenAI-compatible | Groq, selected OpenRouter models, and Cloudflare Workers AI publish limited free developer access                          | Use an explicit model through CUPCAKEAGI's compatible-endpoint setup                                                                    |
+| Local             | CUPCAKEAGI Local/llama.cpp, Ollama, and LM Studio have no provider API charge                                              | Download a model whose license and hardware needs fit your use                                                                          |
+
+The detailed [free-tier guide](docs/free-tier-guide.md) has current limits, official signup links,
+compatible endpoint notes, and privacy/cost cautions. It was last checked on **2026-08-29**; verify
+the provider dashboard before relying on any allowance.
+
+## Screenshot
+
+![CUPCAKEAGI chat workbench](apps/desktop/public/screenshots/cupcake-chat-workbench.png)
+
+The screenshot uses deterministic local fixtures so the interface can be reviewed without exposing
+credentials, private conversations, or provider data.
+
+## Architecture at a glance
+
+```text
+React + TypeScript renderer
+          │ narrow, typed preload API
+Electron main process
+          │ authenticated framed messages over private pipes
+          ├──────── Python runtime
+          │         providers, tasks, memory, retrieval, persistence
+          │
+          └──────── Rust ToolBroker
+                    credentials, policy, grants, MCP, sandboxing, audit
 ```
 
-# 🔌 How to use
+The renderer has no Node.js access and never receives credentials, arbitrary process APIs, or raw
+filesystem paths. Product-owned, versioned contracts keep provider SDK objects and framework
+checkpoints out of durable application state. Conversations and artifacts are immutable revision
+graphs; SQLite FTS5 provides the search baseline; encrypted content-addressed objects hold files and
+artifact revisions.
 
-Open up a terminal and go to backend/Multi-Sensory Virtual AAGI
-```sh
-conda activate aagi
-uvicorn inference:app
+The runtime uses Pydantic AI Core for provider-neutral agent mechanics and DBOS for recoverable
+work. These are implementation details behind CUPCAKEAGI contracts, not the product database or UI
+protocol. The architecture is documented under [`docs/architecture`](docs/architecture/).
+
+## Privacy and permissions
+
+CUPCAKEAGI is a local, single-user application with no Cupcake account or cloud sync.
+
+- Provider keys are protected per Windows user with DPAPI, not stored in project files or logs.
+- Files and repositories are represented by opaque grants. Repositories are read-only until an exact
+  write is approved.
+- Cloud models and remote tools receive only the context required for that request, with a visible
+  Local/Cloud destination.
+- Generated code runs in a staged, bounded sandbox with no credentials or network by default.
+- Deletion, external communication, financial actions, installation, system changes, and unsandboxed
+  execution always require fresh approval.
+- Developer Mode exposes redacted events and provenance, never private chain-of-thought.
+
+Read [Privacy, destinations, and approvals](docs/user-guide.md#privacy-destinations-and-approvals)
+before using a cloud provider with sensitive data.
+
+## Run from source
+
+The eventual supported end-user path will be a signed Windows 10/11 x64 installer. The current
+private candidate is intentionally unsigned and must not be distributed. Until the owner approves
+it, development runs and the local test package are the only supported ways to try 2.0. macOS,
+Linux, Windows on Arm, and 32-bit Windows are not release-candidate targets.
+
+Requirements:
+
+- Node.js 20.19 or newer
+- pnpm 10.15.1 or newer through Corepack
+- Rust stable for the ToolBroker
+- Python 3.12 for runtime development
+
+From the repository root:
+
+```powershell
+corepack enable
+corepack prepare pnpm@10.15.1 --activate
+pnpm install --frozen-lockfile
+pnpm --filter @cupcakeagi/desktop dev
 ```
 
-Open up another terminal and go to frontend/assistant (you need to have node installed)
-```sh
-npm run dev
+The desktop can run against clearly labeled deterministic fixtures while cloud credentials and local
+model runtimes are absent. Do not place API keys in the repository or a `.env` file. Configure
+credentials only through the in-app provider setup; the packaged Rust broker protects them with
+per-user Windows DPAPI before the Python runtime receives a memory-only credential lease.
+
+For the complete toolchain, runtime setup, and packaging commands, use the
+[development guide](docs/development.md). For an evidence-oriented release-candidate pass, use
+[local testing](docs/local-testing.md).
+
+## Common checks
+
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+cargo test --manifest-path crates/tool-broker/Cargo.toml
 ```
-Enter your API keys in .env file, You'll need an OPENAI API key, SERPER API key
 
-# ✨ About
+`pnpm check` runs the JavaScript/TypeScript lint, type, and unit-test checks together. After
+installing the documented Python and Rust toolchains, `node scripts/verify.mjs --lane all` runs
+contract drift, JavaScript/TypeScript, Python, and Rust validation. Runtime setup is detailed in
+[development.md](docs/development.md).
 
-![00 (2)](https://user-images.githubusercontent.com/90443032/233525427-b49592f8-f469-467d-a2d2-df08095c09cb.png)
+No build result is a visual acceptance test. User-interface work also requires Playwright
+interaction checks, captured screenshots at the required themes and viewports, and human inspection
+of those screenshots.
 
+## Documentation
 
-CupcakeAGI is an agent that aims to mimic human-like behavior and cognitive abilities to assist users in performing various tasks. It's equipped with some sweet🍬 features, including the ability to dream😴, have random thoughts, and perform mental simulations on how to complete a task. Just like how we humans have thoughts floating around our heads, CupcakeAGI has a thought bubble💭 with abstract words.
+- [User guide](docs/user-guide.md)
+- [Development guide](docs/development.md)
+- [Local release-candidate testing](docs/local-testing.md)
+- [Known issues and release boundaries](docs/known-issues.md)
+- [Architecture decisions and implementation ledger](docs/architecture/)
+- [Product contracts](packages/contracts/README.md)
 
-To make CupcakeAGI more expressive, I've added emotion parameters. This will allow it to interact with users in a more personal way❤️.
+## Roadmap
 
-One of CupcakeAGI's most impressive features is its ability to accept various forms of sensory data, such as images🐶, videos📹, and audio🎵. Although I haven't implemented smell👃, touch✋ and taste👅 yet, it should be similar to what I did for image, video, and audio. You'll need a function to convert the sensory data to text and then it will get added as a file description for the file which will be used while prompting the model.
+The 2.0 release-candidate gate is deliberately broad: the desktop shell, provider adapters,
+local-model manager, projects/files/search, memory, artifacts, native and MCP tools, durable tasks,
+Developer Mode, migration, accessibility, security verification, and native packaging must work
+together before approval.
 
-CupcakeAGI provides two main features for user interaction: talk and task. The talk feature allows for immediate responses to user queries using tools like search engines, calculators, and translators, making it a real-time problem solver. And who doesn't love a good problem solver🧠, especially when it comes to baking cupcakes🧁?
+After that gate, likely work includes production signing and update infrastructure, more MCP
+connection recipes, additional Windows acceleration packs, and optional secondary capabilities.
+macOS/Linux parity, voice, and automatic model routing are not part of the 2.0 contract.
 
-The task feature is used for completing tasks at a start time or by a deadline. Both Task & Talk features allows for chaining multiple tools together using a natural language task function that converts the output of one tool into the input of another, making different tools compatible with each other. So, whether you need to bake some cupcakes for a birthday party or a cupcake contest, CupcakeAGI is here to help you out!
+## From the original CUPCAKEAGI
 
-Some abilities like search, calculator, wikipedia search are predefined, these abilities are defined as python functions which the agent can use by creating a python script and importing these functions followed by running the final script and saving the output to a text file which it can access. More abilities can be defined and existing ones can be modified in a modular fashion, all one needs to do is to drop the python script in ability functions and then mention it's name, description and directions to use in abilities.json in state_of_mind directory and just like that the agent will have a new ability. The agent can chain these abilities to do more complex tasks and to ensure compatibility it can use the natural_task_function.
+![Original CUPCAKEAGI mascot](apps/desktop/public/brand/cupcake-classic.png)
 
-Overall, I hope you find CupcakeAGI to be a sweet addition to your life. This project was a lot of fun to create, and I'm excited to see where it goes. Thanks for reading, and happy baking!✨
+CUPCAKEAGI began in 2023 as an experimental multisensory assistant built around GPT-3.5, a Next.js
+frontend, a Python/FastAPI backend, persistent flat-file state, scheduled tasks, modular
+“Abilities,” emotions, random thoughts, dreams, and a very enthusiastic rainbow cupcake mascot.
 
-# ✨ Why?
+2.0 keeps the ideas that made the project distinctive—memory, tools, background work, proactive
+reflection, personality, and the mascot—while replacing the architecture and presentation.
+“Abilities” become permissioned native and MCP tools. Talk and Task become one continuous chat that
+can promote substantial work into a durable task. Thoughts and Dreams become quiet, opt-in memory
+suggestions. The original glossy mascot remains in About and the Classic theme; the everyday
+interface uses the calmer CUPCAKEAGI 2.0 mark.
 
-- Our brain processes and integrates these sensory inputs to form a coherent perception of the world around us. Similarly, in the realm of artificial intelligence, the ability to process and integrate multisensory data is crucial for building intelligent agents that can interact with humans in a more natural and effective way.
+The original source remains recoverable in Git history and at the `v1.0.0` tag. Legacy data is
+imported once through a constrained importer; old API keys are never imported. The project remains
+licensed under the [Unlicense](LICENSE).
 
-- In recent years, large language models (LLMs) such as ChatGPT and GPT-4 have demonstrated remarkable abilities in generating human-like text based on vast amounts of training data. However, these models are typically limited to working with text and image data and lack the ability to process other types of sensory inputs.
+## Release policy
 
-- Beyond the ability to process multisensory data, the LLM agent also exhibits several cognitive abilities that are typically associated with humans. For instance, the agent is equipped with the ability to dream and have random thoughts, which are thought to play important roles in human creativity, memory consolidation, and problem-solving. By incorporating these features into the LLM agent, we aim to create an agent that can assist users in performing tasks in a more natural and effective way and make these agents more human-like.
-
-# ✨ Multisensory Data
-
-- 🧁 Welcome back to the world of cupcakes and baking! We all know that human experience is much more than just text-based interactions. It's not just about reading, but also about experiencing the world with all our senses, including sight 👀, sound 🔊, smell 👃, taste 👅, and touch 👐. Similarly, an LLM agent that can work with multisensory data can open up a new world of possibilities for machine learning.
-
-- Instead of missing out on the rich and varied data available through other sensory modalities, we can use neural network architectures that convert various forms of sensory data into text data that the LLM can work with.
-
-- For instance, we can use image captioning models like vit-gpt2 and blip to convert images into text data, which the LLM agent can then process. Similarly, for audio data, audio-to-text models like OpenAI's Whisper can be used to convert audio signals into text data.📷🎤
-
-- Now, I know what you're thinking: what about videos 🎥, smell 👃, taste 👅, and touch 👐? Don't worry, we got you covered! To save computation, we can use one frame per second of video data and use image captioning models to convert each frame into text. The audio track from the video can be separated and transcribed using audio-to-text models, providing the LLM agent with both visual and auditory data.
-
-- As for smell 👃, taste 👅, and touch 👐, we can use electronic noses and tongues to capture different types of chemical and taste data and convert them into text data that the LLM can process. Haptic sensors can capture pressure, temperature, and other physical sensations and convert them into text data using a neural network or anything else.
-
-- Remember, these models should be used as modular components that can be easily switched out as new models emerge. Think of them as lego blocks or react components that we can assemble to create a more comprehensive system.
-
-- So, let's get baking with CupcakeAGI and incorporate multisensory data into an LLM agent to create a more natural and effective human-machine interaction. With the availability of different sensory data, the LLM agent can process and understand various types of data, leading to a more human-like agent that can assist us in different tasks.🧁💻
-
-# ✨ Human Like Behavior and Persistent Memory
-
-🧁👋 Welcome to CupcakeAGI, where we bake up some sweet and creamy AI goodness! 🍰🤖
-
-Here are some of the key features of our LLM agent that make it more human-like and effective:
-
-- 🧠 Human-like behavior: Our LLM agent is equipped with several features that mimic human behavior, including the ability to dream, have random thoughts, and perform mental simulations of how to complete a task. These features allow the agent to better understand and respond to user queries.
-
-- 🤖 Persistent memory: Our LLM agent has a state of mind where all files relating to its personality, emotions, thoughts, conversations, and tasks are stored. Even if the agent has stopped running, all relevant information is still stored in this location. This allows the agent to provide a more personalized and effective experience.
-
-- 😃 Emotion parameters: We use emotion parameters such as happiness, sadness, anger, fear, curiosity, and creativity to make the LLM agent more expressive and better understand the user's needs and preferences.
-
-- 💭 Thought bubble: Our LLM agent also has a thought bubble, which is essentially a list of lists that corresponds to different topics. This allows the agent to more effectively process and integrate its thoughts with the user's queries and tasks.
-
-- 🗣️ Conversation storage: The LLM agent stores the conversation it has had so far and the list of tasks it needs to perform. It breaks the conversation into chunks and summarizes it to maintain coherence and relevance. This allows the agent to maintain a coherent and relevant conversation with the user.
-
-With these features, our LLM agent is better equipped to assist users in performing tasks in a natural and effective way. We hope you enjoy our sweet and creamy AI goodness! 🧁🍰🤖
-
-# ✨ Talk & Task
-
-🧁👋 Welcome to CupcakeAGI! Here are some sweet deets about the LLM agent that will make your tasks a cakewalk:
-
-- 🗣️ Talk and Task modes make it easy for users to communicate with the LLM and get things done seamlessly.
-- 📁 The LLM converts files like images, videos, and audio to text, making them easy to store and retrieve.
-- 🔍 With access to various tools like search engines, wikis, and translators, the LLM can provide users with the necessary information for their queries.
-- 🧰 Natural language task functions allow users to chain together different tools, making them compatible with each other.
-- 🕰️ The Task mode is particularly useful for lengthy tasks and can be set to start at a specific time, allowing users to focus on other things while the LLM takes care of the task.
-- 💭 The LLM experiences random thoughts and dreams, just like humans, making it more relatable and human-like.
-- 🧑‍💻 The LLM can even use Python packages like Hugging Face models to complete tasks, making it a highly versatile agent.
-So go ahead and give CupcakeAGI a try! With its modular approach, you can easily add new tools and features as needed. Who knew cupcakes and AI could go so well together? 🧁🤖
-
-# ✨ Limitations
-
-Welcome to CupcakeAGI! 🧁🍰🍩🍪
-
-Let's talk about some important things you need to know about this sweet project:
-
-- Complex tasks: While CupcakeAGI is as human-like as possible, it may not be able to solve complex tasks that require significant back and forth. We're talking about tasks that involve negotiating with multiple parties to reach a solution. CupcakeAGI is intended to assist individuals on a personal level, but it may not be suitable for solving highly intricate problems. Don't worry, though, CupcakeAGI is still your go-to for all your cupcake baking needs! 🧁👩‍🍳
-
-- Accuracy of sensory data conversion: The effectiveness of CupcakeAGI relies heavily on the accuracy of the neural network architectures used to convert sensory data into text. If these models are not accurate, CupcakeAGI may misunderstand the user's input, leading to incorrect or ineffective responses. But don't fret, we're constantly working on improving CupcakeAGI's accuracy to ensure you get the best experience possible! 🤖🎂
-
-- Ethics and Privacy: CupcakeAGI has the potential to collect and process a large amount of personal data from the users. Thus, there is a risk that sensitive data may be compromised, leading to privacy concerns. CupCakeAGI will do it's best to keep your cupcake secrets safe! 🔒🤫
-
-Thanks for checking out CupcakeAGI, and remember, with CupcakeAGI by your side, you'll always have the perfect cupcake recipe! 🧁💻
-
-# ✨ Conclusion
-
-Welcome to the conclusion of our multisensory LLM agent project! 🎉🧁🤖🧠
-
-Here are the key takeaways from our project 🤪🧁
-
-- Our LLM agent is like a cupcake, made with many different ingredients - it can work with multisensory data, dream, have random thoughts, and show emotions 🧁💭😍
-- By incorporating multisensory data, our agent can understand different types of information, just like a baker uses different ingredients to make a delicious cupcake 🍰👀
-- With its cognitive abilities and persistent memory, our agent can assist users in a more human-like way, just like a friendly baker who helps you choose the perfect cupcake flavor 🤝🧁
-- This project represents a small but important step towards building more natural and effective AI assistants, just like a small cupcake can bring a smile to someone's face and brighten their day 🌞🧁
-- We hope our project has inspired you to think about the possibilities of multisensory LLM agents and how they can improve human-machine interaction. Thank you for taking the time to check out our project - it was made with lots of love and cupcakes! ❤️🧁
-
+Do not publish packages, push a 2.0 release, create a GitHub release, enable a production updater,
+or distribute an installer from this branch before explicit owner approval. A locally packaged
+application is a test artifact, not a release.

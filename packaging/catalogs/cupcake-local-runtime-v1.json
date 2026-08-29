@@ -1,0 +1,212 @@
+{
+  "key_id": "cupcake-local-rc-2026-08",
+  "payload": {
+    "version": 1,
+    "generated_at": "2026-08-28T21:36:43Z",
+    "provenance": {
+      "environment": "local-release-candidate",
+      "production_signing": false,
+      "upstream_repository": "https://github.com/ggml-org/llama.cpp",
+      "upstream_release": "https://github.com/ggml-org/llama.cpp/releases/tag/b10679",
+      "upstream_release_id": 378714505,
+      "upstream_asset_id": 534248039,
+      "upstream_published_at": "2026-08-28T19:23:12Z",
+      "upstream_digest": "sha256:c0dec4dfb52919e17f0a108a94bfbe877c67d77825145079e7703fc84f63986e",
+      "optional_acceleration_assets": [
+        {
+          "asset_id": 534248638,
+          "name": "llama-b10679-bin-win-vulkan-x64.zip",
+          "digest": "sha256:d288a375a324f650a587d3b876afe692ca3586110f20b863fadbe91dd3b93469"
+        },
+        {
+          "asset_id": 534248085,
+          "name": "llama-b10679-bin-win-cuda-12.4-x64.zip",
+          "digest": "sha256:46e8c7f80b540befb10625f20c54b54777857e6c2df51c349312ccfb4a0a83fb"
+        },
+        {
+          "asset_id": 534247294,
+          "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "digest": "sha256:8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+        }
+      ],
+      "verified_https_download_at": "2026-08-28T21:36:43Z"
+    },
+    "runtimes": [
+      {
+        "id": "llama.cpp:b10679:windows-x64-cpu",
+        "version": "b10679",
+        "backend": "cpu",
+        "platform": "windows",
+        "architecture": "x64",
+        "size_bytes": 18130542,
+        "sha256": "c0dec4dfb52919e17f0a108a94bfbe877c67d77825145079e7703fc84f63986e",
+        "urls": [
+          "https://github.com/ggml-org/llama.cpp/releases/download/b10679/llama-b10679-bin-win-cpu-x64.zip"
+        ],
+        "filename": "llama-b10679-bin-win-cpu-x64.zip",
+        "executable": "llama-server.exe",
+        "source_revision": "50f068ffffc3e0e4c9c2e4139281c6075224f429",
+        "license": "MIT",
+        "license_url": "https://github.com/ggml-org/llama.cpp/blob/50f068ffffc3e0e4c9c2e4139281c6075224f429/LICENSE",
+        "bundled_by_default": true,
+        "hardware_compatibility": {
+          "kind": "cpu",
+          "estimated_installed_bytes": 48590000
+        },
+        "prerequisites": [
+          "Windows 10 or 11 x64"
+        ],
+        "files": {
+          "LICENSE-LLVM-OpenMP": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+          "ggml-base.dll": "d73ab8762be7124a5e4d0acb7512d3b8d0268c367d87f9198ce42d8294bcd5de",
+          "ggml-cpu-alderlake.dll": "bde851c2f039212c5b2fb83b87bde95fc5a756f05b0cf5a633d9d9959bbe0efb",
+          "ggml-cpu-cannonlake.dll": "51425fca50c45c9f0e51b4de282081b5fc84f91fd43ac4b5719fa62f23bc44f2",
+          "ggml-cpu-cascadelake.dll": "883baafffa6b8f447392d7df57fb69d61791fcf1889e83bf1c1397e01511f37c",
+          "ggml-cpu-cooperlake.dll": "bdad4aa6fdc84d43457704fdd3d4f334a0cdc620c7a1ea5799c4196c8453b771",
+          "ggml-cpu-haswell.dll": "719419f53cd2f3b34c48a13d5ac13e942880795ccb11773008a23f5485e6eefd",
+          "ggml-cpu-icelake.dll": "fea2758aa1210564cb929816274c55de0b76af36fcce6801f9cc0d405ec40562",
+          "ggml-cpu-ivybridge.dll": "a8b1f4ec0f814eeb43748864129c0ebd648e7a410f6111cabb5647fbc8231b1a",
+          "ggml-cpu-piledriver.dll": "fc03f51f8bff8f33ab6e7a04cfa6bebfcfd1a90053962a5380b955ecdd5a8338",
+          "ggml-cpu-sandybridge.dll": "c39564d587d92267116e12c35def46cff7584a833b804d9578ed26d3ede57607",
+          "ggml-cpu-sapphirerapids.dll": "808e5ca4447a8344dded1decc6b02b712f149a4599ebc866ca40ebcdd9e58d64",
+          "ggml-cpu-skylakex.dll": "7f7bfee9aadbcf48946d1a9150dd05c4b409cfccb278d153e273fffb316d9854",
+          "ggml-cpu-sse42.dll": "d5f3ce0b4d66f2619fbd87b84a0cd8ded71c271be00486ea81fa89bc355464be",
+          "ggml-cpu-x64.dll": "f44449894f1ca94da5965efd9344bf37217c6c459411bffc12e917e92f27d505",
+          "ggml-cpu-zen4.dll": "92b9941464c876b35aa123fa9c4f151c6ecc068ec9994acda76148b539d2bdf4",
+          "ggml-rpc-server.exe": "86feeefb1f7eedf2052d117932595a20ea1ac20043d7a23336312c52d0683c8b",
+          "ggml-rpc.dll": "d0585ba0259beda7be9ef9983ea38337618fedcaab17517c8e18fc7c4d49d65a",
+          "ggml.dll": "4b84e63f08c4ff09248b06952964a82c0550af5c55cdf6c33c8fba1b5fde612a",
+          "libomp.dll": "a12116ba72d1d6820407cf30be23da04ce79d6bb8a71a5ee71759c5a1faa6f1c",
+          "llama-batched-bench-impl.dll": "7bf04f29363aa188051269bae3db6821055db9beb6b504251b7077a7a0876260",
+          "llama-batched-bench.exe": "cc6803a78f25e83b643dc000f54174e6f34fd84a308cd77f182c218d9d7f3495",
+          "llama-bench-impl.dll": "4371c1161d80e7432bdded02d976fbb9173af0966a0e5f9ea9c2509d4b766da0",
+          "llama-bench.exe": "cf16e3def2db5cb3273238a73e080e4d25c438e44f539aee3d2ba662896d9a11",
+          "llama-cli-impl.dll": "ac51bbda25b23ae533bf055c586cf7564ea2f03d4e8fdd5cdbebccab5a15da61",
+          "llama-cli.exe": "25bae44e226f27ea54d7ab7b55f55a01dfa6954637350e8f67dc8bda695a8d24",
+          "llama-common.dll": "4a7f70f023aeedde110e83585fb3fee306921f3d9f8a46947fafa8b00e87e947",
+          "llama-completion-impl.dll": "580b8a92781a76a1d502bbcf7533691128e31b1830b325d46995a782f31f9e0b",
+          "llama-completion.exe": "97b97fc65e7eeeea7205ac02c4da5a06c7cbdbe9a4db6d15e31e12db9c28044b",
+          "llama-fit-params-impl.dll": "d45fe23331e02ab2eb2140b27b3f041082df437aeeedc7ab2c9d36aa846ac9fe",
+          "llama-fit-params.exe": "57c0cfd3c1ac72cf2ac549c40bc7a163d0518cd6ac19b3cb2c30636ffc57bb66",
+          "llama-gemma3-cli.exe": "9e1a484e3c57bee057f6ee0c0d60d29b5d6b979b95a4d237a93d314aceeec343",
+          "llama-gguf-split.exe": "ea4bdfef4237b3f1b9cfc1fe5dc5d59dfd8b1041eea26ee0564302d4d61136f6",
+          "llama-imatrix.exe": "b0cf3b81d4fc4fb33b14c13d4b9af6d31ca22cf6ede9366951cada48a4363cf7",
+          "llama-llava-cli.exe": "194219644285722f88bc128e07e351ba8b8d5fb1ef724c45675d1e552d7e130e",
+          "llama-minicpmv-cli.exe": "9e1a484e3c57bee057f6ee0c0d60d29b5d6b979b95a4d237a93d314aceeec343",
+          "llama-mtmd-cli.exe": "080784ca1cb6a716aba65be27aafa75f555a3d21bffbc9814fd46ced9d9b9efa",
+          "llama-mtmd-debug.exe": "a0eeaa40f31225ac92e48d59967582311868567743eaa13ae6dc933bf474f64c",
+          "llama-perplexity-impl.dll": "1a148d92aba8f3291776368e7d29e764d0a5edccec1556cef7a53ef380753c63",
+          "llama-perplexity.exe": "67a749782629df45039577d7dec076878e99f8db5f2a58875457144d3efe1098",
+          "llama-quantize-impl.dll": "9f78dc0c74433cb645952893589e3f2b382aa92f30120c5f4a17967d9cbebe75",
+          "llama-quantize.exe": "f2ac5ac409fcb7a62ffe0f28d16941e4ee0468987c6b2bca4c54b6f34e35b25a",
+          "llama-qwen2vl-cli.exe": "9e1a484e3c57bee057f6ee0c0d60d29b5d6b979b95a4d237a93d314aceeec343",
+          "llama-results.exe": "dab475dac58150bad1d0b41b9c4b1f0b08c873adcf5dd2b02081ed36d6824b5d",
+          "llama-server-impl.dll": "b1455a6090d05180501ffb1276adb0be27e814b4ee968e36c8d5d00157955a62",
+          "llama-server.exe": "dd67a47dd66d12dc4dede08e0c24ed4029a698609ea35cc74f100280f6b22a5c",
+          "llama-tokenize.exe": "699ae62315adb2f00e2d5fbf4f1c57dd14dd6b38be6318dc51fcad40acd408e2",
+          "llama-tts.exe": "69e5e107e203b7d52e063fce538a10b6b66f8e094acecf5221e019c537038de3",
+          "llama.dll": "8c0f874b8401d457282270341e86aca0d60c51435d3d90503dfd31499e3fc4bf",
+          "llama.exe": "36800839c34b7524514e24a4433cbfc7b67d4adbe7f24ebc58651745e8ae0d34",
+          "mtmd.dll": "ac6e3bc29b510803de7e62256b998d08cfc9e71585190b72e87115838e718b79"
+        }
+      },
+      {
+        "id": "llama.cpp:b10679:windows-x64-vulkan",
+        "version": "b10679",
+        "backend": "vulkan",
+        "platform": "windows",
+        "architecture": "x64",
+        "size_bytes": 34914877,
+        "sha256": "d288a375a324f650a587d3b876afe692ca3586110f20b863fadbe91dd3b93469",
+        "urls": [
+          "https://github.com/ggml-org/llama.cpp/releases/download/b10679/llama-b10679-bin-win-vulkan-x64.zip"
+        ],
+        "filename": "llama-b10679-bin-win-vulkan-x64.zip",
+        "executable": "llama-server.exe",
+        "source_revision": "50f068ffffc3e0e4c9c2e4139281c6075224f429",
+        "license": "MIT",
+        "license_url": "https://github.com/ggml-org/llama.cpp/blob/50f068ffffc3e0e4c9c2e4139281c6075224f429/LICENSE",
+        "bundled_by_default": false,
+        "inherits_files_from": "llama.cpp:b10679:windows-x64-cpu",
+        "hardware_compatibility": {
+          "kind": "gpu",
+          "api": "vulkan",
+          "gpu_vendors": [
+            "NVIDIA",
+            "AMD",
+            "Intel"
+          ],
+          "device_probe": "llama-server.exe --list-devices",
+          "estimated_installed_bytes": 101423389
+        },
+        "prerequisites": [
+          "Windows 10 or 11 x64",
+          "A Vulkan-capable GPU or integrated GPU",
+          "A current vendor graphics driver exposing a working Vulkan device",
+          "Successful llama-server.exe --list-devices verification before activation"
+        ],
+        "files": {
+          "ggml-vulkan.dll": "a89d354b5f1d623d9638f074f7430905516abf02f832115f2c12263124900964"
+        }
+      },
+      {
+        "id": "llama.cpp:b10679:windows-x64-cuda-12.4",
+        "version": "b10679",
+        "backend": "cuda-12",
+        "platform": "windows",
+        "architecture": "x64",
+        "size_bytes": 250538105,
+        "sha256": "46e8c7f80b540befb10625f20c54b54777857e6c2df51c349312ccfb4a0a83fb",
+        "urls": [
+          "https://github.com/ggml-org/llama.cpp/releases/download/b10679/llama-b10679-bin-win-cuda-12.4-x64.zip"
+        ],
+        "filename": "llama-b10679-bin-win-cuda-12.4-x64.zip",
+        "executable": "llama-server.exe",
+        "source_revision": "50f068ffffc3e0e4c9c2e4139281c6075224f429",
+        "license": "MIT",
+        "license_url": "https://github.com/ggml-org/llama.cpp/blob/50f068ffffc3e0e4c9c2e4139281c6075224f429/LICENSE",
+        "bundled_by_default": false,
+        "inherits_files_from": "llama.cpp:b10679:windows-x64-cpu",
+        "hardware_compatibility": {
+          "kind": "gpu",
+          "api": "cuda",
+          "cuda_runtime": "12.4",
+          "gpu_vendor": "NVIDIA",
+          "minimum_windows_driver": "551.61",
+          "device_probe": "llama-server.exe --list-devices",
+          "estimated_installed_bytes": 1158573341
+        },
+        "prerequisites": [
+          "Windows 10 or 11 x64",
+          "A supported NVIDIA GPU",
+          "NVIDIA Windows driver 551.61 or newer for the bundled CUDA 12.4 runtime",
+          "Acceptance of the NVIDIA CUDA Toolkit EULA for the companion runtime DLLs",
+          "Successful llama-server.exe --list-devices verification before activation"
+        ],
+        "companions": [
+          {
+            "id": "nvidia:cudart:12.4:windows-x64",
+            "size_bytes": 391443627,
+            "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+            "urls": [
+              "https://github.com/ggml-org/llama.cpp/releases/download/b10679/cudart-llama-bin-win-cuda-12.4-x64.zip"
+            ],
+            "filename": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+            "license": "NVIDIA CUDA Toolkit EULA",
+            "license_url": "https://docs.nvidia.com/cuda/eula/index.html",
+            "license_requires_acceptance": true,
+            "files": {
+              "cublas64_12.dll": "e40202fe4223c1cd2d2dce7beec59e1ed61c7801bd827309183be9b50e358f4c",
+              "cublasLt64_12.dll": "2a896460bef60ed57ef32b0875812f355a6984e671d638bb632f5e8c1d7a831f",
+              "cudart64_12.dll": "d28e42265da7462162a54da6b7a99ea4fa2caf8139d862bb500db875d0b32dfc"
+            }
+          }
+        ],
+        "files": {
+          "ggml-cuda.dll": "db435d962aaf8a71cb4beca56772d5853c4dbe5586ac2f5d77d9b3789d6e9b03"
+        }
+      }
+    ]
+  },
+  "signature": "1OjY1fUB939Ckacpu/hpBJsYx7JKS4xOl3jdt4Ib6thz5LID7AONSCn7G9RGmcnMAQOyhl46ClH7GT/ydsxWAA=="
+}

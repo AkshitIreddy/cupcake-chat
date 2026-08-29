@@ -1,0 +1,268 @@
+#!/usr/bin/env node
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import {
+  commandExists,
+  ensureDir,
+  exists,
+  fileSize,
+  isWindows,
+  parseArgValue,
+  readJson,
+  repoRoot,
+  run,
+  sha256File,
+} from './lib/process.mjs';
+
+const args = process.argv.slice(2);
+const targetPlatform = parseArgValue(args, '--platform', process.platform);
+const targetArch = parseArgValue(args, '--arch', process.arch);
+const verifyOnly = args.includes('--verify-only');
+const clean = !args.includes('--no-clean');
+const skipRuntime = args.includes('--skip-runtime');
+const skipBroker = args.includes('--skip-broker');
+const skipCupcakeLocal = args.includes('--skip-cupcake-local');
+const reuseNative = args.includes('--reuse-native');
+
+if (targetPlatform !== 'win32' || targetArch !== 'x64') {
+  throw new Error(
+    `CUPCAKEAGI 2.0 sidecars support Windows x64 only (received ${targetPlatform}-${targetArch}).`,
+  );
+}
+if (!verifyOnly && (targetPlatform !== process.platform || targetArch !== process.arch)) {
+  throw new Error(
+    `Sidecars are native builds. Run this script on ${targetPlatform}/${targetArch}; the current host is ${process.platform}/${process.arch}.`,
+  );
+}
+
+const descriptorPath = join(repoRoot, 'packaging', 'sidecars.json');
+const outputDir = resolve(
+  parseArgValue(
+    args,
+    '--out-dir',
+    join(repoRoot, 'out', 'sidecars', `${targetPlatform}-${targetArch}`, 'sidecars'),
+  ),
+);
+const relativeOutput = relative(join(repoRoot, 'out'), outputDir);
+if (!relativeOutput || relativeOutput.startsWith('..') || isAbsolute(relativeOutput)) {
+  throw new Error('Sidecar output must be a child of the repository out/ directory.');
+}
+const manifestPath = join(outputDir, 'sidecars.manifest.json');
+const binarySuffix = '.exe';
+const descriptor = await readJson(descriptorPath);
+
+async function pythonCommand() {
+  const localVenv = join(repoRoot, 'services', 'runtime', '.venv', 'Scripts', 'python.exe');
+  if (isWindows && (await exists(localVenv))) return localVenv;
+  const python = isWindows ? 'python' : commandExists('python3') ? 'python3' : 'python';
+  if (!commandExists(python))
+    throw new Error('Python 3.12 or newer is required to package the runtime.');
+  return python;
+}
+
+function outputName(id) {
+  const item = descriptor.sidecars.find((sidecar) => sidecar.id === id);
+  if (!item) throw new Error(`Missing ${id} in ${relative(repoRoot, descriptorPath)}`);
+  return `${item.baseName}${binarySuffix}`;
+}
+
+async function findRuntimeEntry() {
+  const candidates = [
+    'services/runtime/src/cupcake_runtime/__main__.py',
+    'services/runtime/src/cupcake_runtime/main.py',
+    'services/runtime/main.py',
+  ];
+  for (const candidate of candidates) {
+    const absolute = join(repoRoot, candidate);
+    if (await exists(absolute)) return absolute;
+  }
+  throw new Error(`No Python runtime entry point found. Checked: ${candidates.join(', ')}`);
+}
+
+async function buildRuntime() {
+  const python = await pythonCommand();
+  run(python, ['-c', 'import sqlcipher3']);
+  const entry = await findRuntimeEntry();
+  const buildRoot = join(repoRoot, 'out', 'pyinstaller', `${targetPlatform}-${targetArch}`);
+  const distRoot = join(buildRoot, 'dist');
+  await rm(buildRoot, { recursive: true, force: true });
+  await mkdir(distRoot, { recursive: true });
+  run(python, [
+    '-m',
+    'PyInstaller',
+    '--noconfirm',
+    '--clean',
+    '--onefile',
+    '--name',
+    'cupcake-runtime',
+    '--paths',
+    join(repoRoot, 'services', 'runtime', 'src'),
+    '--hidden-import',
+    'sqlcipher3',
+    '--copy-metadata',
+    'dbos',
+    '--copy-metadata',
+    'cohere',
+    '--copy-metadata',
+    'latex2mathml',
+    '--distpath',
+    distRoot,
+    '--workpath',
+    join(buildRoot, 'work'),
+    '--specpath',
+    join(buildRoot, 'spec'),
+    entry,
+  ]);
+  const built = join(distRoot, outputName('runtime'));
+  if (!(await exists(built))) throw new Error(`PyInstaller did not create ${built}`);
+  run(built, ['--help']);
+  await copyFile(built, join(outputDir, outputName('runtime')));
+}
+
+async function stageCupcakeLocal({ verify = false } = {}) {
+  const command = await pythonCommand();
+  const localOutput = join(outputDir, 'cupcake-local');
+  const localArgs = [join(repoRoot, 'scripts', 'stage-cupcake-local.py'), '--out-dir', localOutput];
+  if (verify) localArgs.push('--verify-only');
+  run(command, localArgs);
+}
+
+async function buildBroker() {
+  if (!commandExists('cargo'))
+    throw new Error('The stable Rust toolchain is required to package the broker.');
+  const manifest = join(repoRoot, 'crates', 'tool-broker', 'Cargo.toml');
+  const targetDir = join(repoRoot, 'out', 'cargo', `${targetPlatform}-${targetArch}`);
+  run('cargo', [
+    'build',
+    '--locked',
+    '--release',
+    '--manifest-path',
+    manifest,
+    '--target-dir',
+    targetDir,
+  ]);
+  const built = join(targetDir, 'release', outputName('tool-broker'));
+  if (!(await exists(built))) throw new Error(`Cargo did not create ${built}`);
+  await copyFile(built, join(outputDir, outputName('tool-broker')));
+}
+
+async function createManifest() {
+  const binaries = [];
+  for (const sidecar of descriptor.sidecars) {
+    if ((sidecar.id === 'runtime' && skipRuntime) || (sidecar.id === 'tool-broker' && skipBroker))
+      continue;
+    const file = join(outputDir, outputName(sidecar.id));
+    if (!(await exists(file))) throw new Error(`Missing packaged sidecar: ${file}`);
+    binaries.push({
+      id: sidecar.id,
+      file: basename(file),
+      bytes: await fileSize(file),
+      sha256: await sha256File(file),
+      transport: sidecar.transport,
+    });
+  }
+  const manifest = {
+    schemaVersion: descriptor.schemaVersion,
+    protocolVersion: descriptor.protocolVersion,
+    platform: targetPlatform,
+    architecture: targetArch,
+    generatedAt: new Date().toISOString(),
+    binaries,
+    resources: skipCupcakeLocal
+      ? []
+      : [
+          {
+            id: 'cupcake-local-cpu-baseline',
+            directory: 'cupcake-local',
+            manifest: 'cupcake-local/cupcake-local.manifest.json',
+            sha256: await sha256File(
+              join(outputDir, 'cupcake-local', 'cupcake-local.manifest.json'),
+            ),
+          },
+        ],
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  return manifest;
+}
+
+async function verifyManifest() {
+  if (!(await exists(manifestPath))) throw new Error(`Sidecar manifest not found: ${manifestPath}`);
+  const manifest = await readJson(manifestPath);
+  if (
+    manifest.schemaVersion !== descriptor.schemaVersion ||
+    manifest.protocolVersion !== descriptor.protocolVersion
+  ) {
+    throw new Error('Sidecar manifest version does not match packaging/sidecars.json');
+  }
+  if (manifest.platform !== targetPlatform || manifest.architecture !== targetArch) {
+    throw new Error('Sidecar manifest target does not match the requested platform/architecture');
+  }
+  const expected = descriptor.sidecars.filter(
+    (sidecar) =>
+      !((sidecar.id === 'runtime' && skipRuntime) || (sidecar.id === 'tool-broker' && skipBroker)),
+  );
+  if (!Array.isArray(manifest.binaries) || manifest.binaries.length !== expected.length) {
+    throw new Error(`Sidecar manifest must contain exactly ${expected.length} binary record(s)`);
+  }
+  const seen = new Set();
+  for (const binary of manifest.binaries) {
+    const sidecar = expected.find((item) => item.id === binary.id);
+    if (!sidecar || seen.has(binary.id))
+      throw new Error(`Unexpected or duplicate sidecar: ${binary.id}`);
+    seen.add(binary.id);
+    if (binary.file !== outputName(binary.id) || binary.file !== basename(binary.file)) {
+      throw new Error(`Unsafe or unexpected filename for ${binary.id}`);
+    }
+    if (binary.transport !== sidecar.transport)
+      throw new Error(`Transport mismatch for ${binary.id}`);
+    if (!Number.isSafeInteger(binary.bytes) || binary.bytes <= 0) {
+      throw new Error(`Invalid byte length for ${binary.id}`);
+    }
+    if (!/^[a-f0-9]{64}$/.test(binary.sha256)) throw new Error(`Invalid SHA-256 for ${binary.id}`);
+    const file = join(outputDir, binary.file);
+    if (!(await exists(file))) throw new Error(`Manifest references missing file: ${binary.file}`);
+    if ((await fileSize(file)) !== binary.bytes)
+      throw new Error(`Size mismatch for ${binary.file}`);
+    if ((await sha256File(file)) !== binary.sha256)
+      throw new Error(`SHA-256 mismatch for ${binary.file}`);
+  }
+  const expectedResources = skipCupcakeLocal ? 0 : 1;
+  if (!Array.isArray(manifest.resources) || manifest.resources.length !== expectedResources) {
+    throw new Error(
+      `Sidecar manifest must contain exactly ${expectedResources} resource record(s)`,
+    );
+  }
+  if (!skipCupcakeLocal) {
+    const resource = manifest.resources[0];
+    if (
+      resource.id !== 'cupcake-local-cpu-baseline' ||
+      resource.directory !== 'cupcake-local' ||
+      resource.manifest !== 'cupcake-local/cupcake-local.manifest.json' ||
+      !/^[a-f0-9]{64}$/.test(resource.sha256)
+    ) {
+      throw new Error('Cupcake Local sidecar resource record is invalid');
+    }
+    const resourceManifest = join(outputDir, resource.manifest);
+    if (!(await exists(resourceManifest)))
+      throw new Error(`Cupcake Local manifest is missing: ${resourceManifest}`);
+    if ((await sha256File(resourceManifest)) !== resource.sha256)
+      throw new Error('Cupcake Local resource manifest checksum mismatch');
+  }
+  process.stdout.write(
+    `Verified ${manifest.binaries.length} sidecar(s) in ${relative(repoRoot, outputDir)}.\n`,
+  );
+}
+
+if (verifyOnly) {
+  if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
+  await verifyManifest();
+} else {
+  if (clean) await rm(outputDir, { recursive: true, force: true });
+  await ensureDir(outputDir);
+  if (!skipRuntime && !reuseNative) await buildRuntime();
+  if (!skipBroker && !reuseNative) await buildBroker();
+  if (!skipCupcakeLocal) await stageCupcakeLocal();
+  await copyFile(join(repoRoot, 'LICENSE'), join(outputDir, 'LICENSE.txt'));
+  await createManifest();
+  await verifyManifest();
+}

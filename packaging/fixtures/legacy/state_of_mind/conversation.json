@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "Please remember that project notes stay local."
+  },
+  {
+    "role": "assistant",
+    "content": "Understood."
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "sidecars": [
+    {
+      "id": "runtime",
+      "displayName": "CUPCAKEAGI Runtime",
+      "baseName": "cupcake-runtime",
+      "source": "services/runtime",
+      "transport": "authenticated-length-prefixed-json"
+    },
+    {
+      "id": "tool-broker",
+      "displayName": "CUPCAKEAGI Tool Broker",
+      "baseName": "cupcake-tool-broker",
+      "source": "crates/tool-broker",
+      "transport": "authenticated-length-prefixed-json"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "environment": "local-release-candidate",
+  "productionTrustRoot": false,
+  "keys": {
+    "cupcake-local-rc-2026-08": "6c/QgG+PEaippse3zlEU+IacPfxSqDgqOsO12bP+B0Y="
+  }
+}
