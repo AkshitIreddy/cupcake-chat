@@ -110,16 +110,20 @@ export class SidecarSupervisor extends EventEmitter {
     this.#mock = undefined;
 
     const child = this.#child;
-    this.#child = undefined;
     if (child && child.exitCode === null) {
-      child.stdin.end();
-      child.kill('SIGTERM');
-      await Promise.race([
-        new Promise<void>((resolve) => child.once('exit', () => resolve())),
-        new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
-      ]);
+      // Ask the broker to checkpoint/cancel its Python runtime first. Closing
+      // stdin alone makes the broker drop its child, bypassing DBOS recovery
+      // and provider cleanup during an ordinary desktop quit.
+      if (this.#status.state === 'ready') this.#write('shutdown', {});
+      await waitForChildExit(child, 20_000);
+      if (child.exitCode === null) {
+        child.stdin.end();
+        child.kill('SIGTERM');
+        await waitForChildExit(child, 2_000);
+      }
       if (child.exitCode === null) child.kill('SIGKILL');
     }
+    this.#child = undefined;
     this.#secret.fill(0);
     this.#updateStatus({ state: 'stopped', mode: 'disabled', restartCount: this.#restartCount });
   }
@@ -210,6 +214,9 @@ export class SidecarSupervisor extends EventEmitter {
       env: {
         PATH: process.env.PATH,
         SYSTEMROOT: process.env.SYSTEMROOT,
+        LOCALAPPDATA: process.env.LOCALAPPDATA,
+        APPDATA: process.env.APPDATA,
+        USERPROFILE: process.env.USERPROFILE,
         TMP: process.env.TMP,
         TEMP: process.env.TEMP,
         CUPCAKE_BROKER_AUTH: this.#secret.toString('base64url'),
@@ -405,7 +412,10 @@ function validateRequest(request: RuntimeRequest): { code: string; message: stri
 }
 
 function clampTimeout(timeoutMs?: number): number {
-  if (!Number.isFinite(timeoutMs)) return 30_000;
+  // One-file runtime extraction plus SQLCipher/DBOS startup can legitimately
+  // exceed thirty seconds on a cold Windows profile. Keep requests bounded,
+  // but give the first real runtime call a startup-sized default window.
+  if (!Number.isFinite(timeoutMs)) return 120_000;
   return Math.max(1_000, Math.min(5 * 60_000, Math.trunc(timeoutMs!)));
 }
 
@@ -470,6 +480,17 @@ function normalizeResponse(payload: unknown): RuntimeResponse {
 
 function failure<T>(code: string, message: string, retryable: boolean): RuntimeResponse<T> {
   return { ok: false, error: { code, message, retryable } };
+}
+
+async function waitForChildExit(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<void> {
+  if (child.exitCode !== null) return;
+  await Promise.race([
+    new Promise<void>((resolve) => child.once('exit', () => resolve())),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
 }
 
 function normalizePayload(payload: unknown): Record<string, unknown> {

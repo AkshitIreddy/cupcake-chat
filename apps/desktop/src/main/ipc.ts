@@ -72,6 +72,8 @@ const ALLOWED_RUNTIME_METHODS = new Set([
   'providers.compatible.configure',
   'providers.connectInteractive',
   'providers.disconnect',
+  'providers.status',
+  'providers.catalog.refresh',
   'projects.list',
   'projects.get',
   'projects.create',

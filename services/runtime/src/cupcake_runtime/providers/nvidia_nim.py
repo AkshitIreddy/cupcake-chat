@@ -42,6 +42,8 @@ MAX_DISCOVERED_MODELS = 512
 MAX_MODEL_ID_LENGTH = 220
 MAX_CATALOG_BYTES = 2 * 1024 * 1024
 DEFAULT_CATALOG_TTL_SECONDS = 15 * 60
+UNKNOWN_CONTEXT_WINDOW_FALLBACK = 8_192
+UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK = 1_024
 
 _SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+/@-]*$")
 _CHAT_MARKERS = frozenset(
@@ -113,6 +115,18 @@ class NvidiaNimCatalogDiscovery:
     max_catalog_bytes: int = MAX_CATALOG_BYTES
     _cached: NvidiaNimCatalogResult | None = field(default=None, init=False, repr=False)
     _cached_at: float = field(default=0.0, init=False, repr=False)
+
+    def invalidate(self) -> None:
+        """Forget normalized metadata after a credential change.
+
+        Catalog data itself is never secret, but a newly connected account can
+        have a different accessible model set. Reconfiguration therefore
+        starts a new bounded discovery cycle while ordinary chat requests keep
+        using the short-lived cache.
+        """
+
+        self._cached = None
+        self._cached_at = 0.0
 
     async def discover(
         self,
@@ -329,10 +343,13 @@ def _descriptor_from_record(
         model=model_id,
         display_name=display,
         family=f"{NVIDIA_NIM_PROVIDER}:{model_id}",
-        # The product contract requires a positive value.  One is a sentinel;
-        # UI clients must consult context_window_known before displaying it.
-        context_window=context or 1,
-        max_output_tokens=output,
+        # The catalog often omits limits for hosted models. Unknown does not
+        # mean zero: after explicit compatibility confirmation, use a small
+        # safe envelope for planning while retaining the unknown disclosure in
+        # metadata/UI. A context sentinel of one makes every real chat fail
+        # before the provider is reached.
+        context_window=context or UNKNOWN_CONTEXT_WINDOW_FALLBACK,
+        max_output_tokens=output or UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK,
         capabilities=ModelCapabilities(
             streaming=verified_chat,
             tools=tools,
@@ -356,6 +373,13 @@ def _descriptor_from_record(
             "compatibility_evidence": evidence,
             "requires_compatibility_confirmation": not verified_chat,
             "context_window_known": context is not None,
+            "max_output_tokens_known": output is not None,
+            "conservative_context_window": (
+                None if context is not None else UNKNOWN_CONTEXT_WINDOW_FALLBACK
+            ),
+            "conservative_max_output_tokens": (
+                None if output is not None else UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK
+            ),
             "pricing_provenance": "NVIDIA API Catalog and the selected model terms",
             "privacy_route_label": "NVIDIA-hosted API Catalog",
         },

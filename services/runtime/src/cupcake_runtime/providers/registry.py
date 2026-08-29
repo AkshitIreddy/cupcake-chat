@@ -60,6 +60,8 @@ class ProviderRegistry:
     def configure(self, provider: str, config: ProviderConfig) -> None:
         if provider == NVIDIA_NIM_PROVIDER:
             config = replace(config, base_url=NVIDIA_NIM_BASE_URL)
+            if self._configs.get(provider) != config:
+                self._nvidia_nim_catalog.invalidate()
         self._configs[provider] = config
 
     async def refresh_nvidia_nim_models(

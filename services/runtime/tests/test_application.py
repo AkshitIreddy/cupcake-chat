@@ -10,7 +10,13 @@ from typing import Any
 import pytest
 
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
-from cupcake_runtime.providers.types import NormalizedStreamEvent, StreamEventType
+from cupcake_runtime.providers.types import (
+    ModelCapabilities,
+    ModelDescriptor,
+    NormalizedStreamEvent,
+    PrivacyRoute,
+    StreamEventType,
+)
 
 
 def service(tmp_path: Path) -> RuntimeService:
@@ -242,6 +248,39 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
             },
         )
     assert tampered.value.code == "OUTBOUND_CONFIRMATION_REQUIRED"
+    runtime.close()
+
+
+def test_unverified_nim_model_requires_explicit_persisted_confirmation(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    descriptor = ModelDescriptor(
+        id="nvidia-nim:vendor/unverified-chat",
+        provider="nvidia-nim",
+        model="vendor/unverified-chat",
+        display_name="Unverified NIM chat",
+        family="nvidia-nim:vendor/unverified-chat",
+        context_window=8192,
+        max_output_tokens=1024,
+        capabilities=ModelCapabilities(streaming=False, tools=False),
+        privacy_route=PrivacyRoute.CLOUD,
+        metadata={"requires_compatibility_confirmation": True},
+    )
+    runtime.providers.catalog.register(descriptor)
+
+    with pytest.raises(RuntimeCommandError) as missing_confirmation:
+        runtime.handle("models.select", {"modelId": descriptor.id})
+    assert missing_confirmation.value.code == "MODEL_COMPATIBILITY_CONFIRMATION_REQUIRED"
+
+    selected, _ = runtime.handle(
+        "models.select", {"modelId": descriptor.id, "compatibilityConfirmed": True}
+    )
+    assert selected["id"] == descriptor.id
+    runtime.handle("models.select", {"modelId": descriptor.id})
+    assert runtime.repository.get_setting("models.default") == descriptor.id
+
+    with pytest.raises(RuntimeCommandError) as settings_bypass:
+        runtime.handle("settings.set", {"key": "models.default", "value": descriptor.id})
+    assert settings_bypass.value.code == "MODEL_COMPATIBILITY_CONFIRMATION_REQUIRED"
     runtime.close()
 
 

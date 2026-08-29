@@ -44,6 +44,20 @@ try {
   assert(handshake.type === 'handshake', 'broker handshake response missing');
   assert(verify(handshake), 'broker handshake response authentication failed');
 
+  // The broker handshake is intentionally cheap; the frozen Python process is
+  // extracted only on its first proxied request. Match the desktop's safe
+  // startup path by warming that process with an idempotent health request
+  // before asserting the richer bootstrap surface.
+  const healthId = uuidV7();
+  send('request', healthId, { method: 'runtime.health', params: {} });
+  let health;
+  while (!health) {
+    const frame = await nextFrame(120_000);
+    assert(verify(frame), 'runtime health response authentication failed');
+    if (frame.correlationId === healthId && frame.type === 'response') health = frame;
+  }
+  assert(health.payload?.ok === true, `runtime health failed: ${JSON.stringify(health.payload)}`);
+
   const bootstrapId = uuidV7();
   send('request', bootstrapId, { method: 'app.bootstrap', params: {} });
   let response;

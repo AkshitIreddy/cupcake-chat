@@ -10,6 +10,8 @@ from cupcake_runtime.providers.base import ProviderConfig, ProviderError
 from cupcake_runtime.providers.nvidia_nim import (
     MAX_MODEL_ID_LENGTH,
     NVIDIA_NIM_BASE_URL,
+    UNKNOWN_CONTEXT_WINDOW_FALLBACK,
+    UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK,
     NvidiaNimAdapter,
     NvidiaNimCatalogDiscovery,
 )
@@ -60,6 +62,10 @@ def test_discovery_filters_non_chat_and_does_not_invent_unknown_capabilities() -
     assert chat.metadata["chat_compatibility"] == "chat"
     assert unknown.metadata["chat_compatibility"] == "unknown"
     assert unknown.metadata["requires_compatibility_confirmation"] is True
+    assert unknown.context_window == UNKNOWN_CONTEXT_WINDOW_FALLBACK
+    assert unknown.max_output_tokens == UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK
+    assert unknown.metadata["context_window_known"] is False
+    assert unknown.metadata["max_output_tokens_known"] is False
     assert unknown.capabilities.tools is False
     assert unknown.capabilities.reasoning is False
     assert "unverified" in unknown.display_name
@@ -75,6 +81,20 @@ def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:
     assert first.cached is False
     assert second.cached is True
     assert client.models.calls == 1
+
+
+def test_registry_invalidates_discovery_only_when_nim_credentials_change() -> None:
+    client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
+    registry = ProviderRegistry()
+    registry.configure("nvidia-nim", ProviderConfig(api_key="nvapi-first"))
+    asyncio.run(registry.refresh_nvidia_nim_models(client=client))
+    registry.configure("nvidia-nim", ProviderConfig(api_key="nvapi-first"))
+    asyncio.run(registry.refresh_nvidia_nim_models(client=client))
+    assert client.models.calls == 1
+
+    registry.configure("nvidia-nim", ProviderConfig(api_key="nvapi-second"))
+    asyncio.run(registry.refresh_nvidia_nim_models(client=client))
+    assert client.models.calls == 2
 
 
 def test_oversized_or_malformed_catalog_fails_closed() -> None:

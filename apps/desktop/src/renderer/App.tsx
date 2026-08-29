@@ -3171,7 +3171,7 @@ function ModelsView({
   selectModel,
 }: {
   models: ModelDescriptor[];
-  selectModel: (id: string) => void;
+  selectModel: (id: string, options?: { compatibilityConfirmed?: boolean }) => Promise<void>;
 }) {
   const workspace = useWorkspace();
   const [tab, setTab] = useState<'all' | 'cloud' | 'local'>('all');
@@ -3181,6 +3181,7 @@ function ModelsView({
   const [compatible, setCompatible] = useState({ name: '', baseUrl: '', modelId: '' });
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const shown = models.filter(
     (m) =>
       (tab === 'all' || m.route.toLowerCase() === tab) &&
@@ -3188,6 +3189,26 @@ function ModelsView({
         .toLowerCase()
         .includes(modelQuery.toLowerCase()),
   );
+  const selectDefault = async (model: ModelDescriptor) => {
+    const compatibilityConfirmed =
+      model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown';
+    if (
+      compatibilityConfirmed &&
+      !window.confirm(
+        `${model.name} has unverified chat compatibility. NVIDIA did not declare this model as a chat endpoint. Continue only if you have checked its model page.`,
+      )
+    ) {
+      return;
+    }
+    setSelectionError(null);
+    try {
+      await selectModel(model.id, { compatibilityConfirmed });
+    } catch (reason) {
+      setSelectionError(
+        reason instanceof Error ? reason.message : 'Cupcake could not select this model.',
+      );
+    }
+  };
   return (
     <main className="page">
       <div className="page-intro">
@@ -3356,7 +3377,7 @@ function ModelsView({
                   Default model
                 </span>
               ) : model.status === 'ready' ? (
-                <button className="button" onClick={() => selectModel(model.id)}>
+                <button className="button" onClick={() => void selectDefault(model)}>
                   Make default
                 </button>
               ) : model.status === 'download' ? (
@@ -3403,6 +3424,11 @@ function ModelsView({
           </article>
         ))}
       </div>
+      {selectionError && (
+        <p className="field-error" role="alert">
+          {selectionError}
+        </p>
+      )}
       {providerCatalog && (
         <div
           className="popover-layer"
@@ -5023,15 +5049,43 @@ function ModelPicker({
   open: boolean;
   close: () => void;
   models: ModelDescriptor[];
-  select: (id: string) => void;
+  select: (id: string, options?: { compatibilityConfirmed?: boolean }) => Promise<void>;
 }) {
   const [query, setQuery] = useState('');
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   if (!open) return null;
   const shown = models.filter(
     (m) =>
       m.name.toLowerCase().includes(query.toLowerCase()) ||
       m.provider.toLowerCase().includes(query.toLowerCase()),
   );
+  const selectFromPicker = async (model: ModelDescriptor) => {
+    if (
+      model.provider === 'NVIDIA NIM' &&
+      model.chatCompatibility === 'unknown' &&
+      !window.confirm(
+        `${model.name} has unverified chat compatibility. NVIDIA did not declare this model as a chat endpoint. Continue only if you have checked its model page.`,
+      )
+    ) {
+      return;
+    }
+    setSelectionError(null);
+    setSelectingId(model.id);
+    try {
+      await select(model.id, {
+        compatibilityConfirmed:
+          model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown',
+      });
+      close();
+    } catch (reason) {
+      setSelectionError(
+        reason instanceof Error ? reason.message : 'Cupcake could not select this model.',
+      );
+    } finally {
+      setSelectingId(null);
+    }
+  };
   return (
     <div
       className="popover-layer"
@@ -5067,13 +5121,11 @@ function ModelPicker({
             <button
               className={m.selected ? 'is-active' : ''}
               disabled={
+                selectingId !== null ||
                 m.status !== 'ready' ||
-                (m.provider === 'NVIDIA NIM' && m.chatCompatibility !== 'chat')
+                (m.provider === 'NVIDIA NIM' && m.chatCompatibility === 'non_chat')
               }
-              onClick={() => {
-                select(m.id);
-                close();
-              }}
+              onClick={() => void selectFromPicker(m)}
               key={m.id}
             >
               <span className="provider-logo">{m.provider.charAt(0)}</span>
@@ -5105,6 +5157,11 @@ function ModelPicker({
             </button>
           ))}
         </div>
+        {selectionError && (
+          <p className="field-error" role="alert">
+            {selectionError}
+          </p>
+        )}
         <footer>
           <button className="text-button">
             Manage models <Icon name="chevron" />
@@ -5376,15 +5433,24 @@ function LegacyFixtureApp() {
     () => models.find((m) => m.selected) ?? initialModels[0]!,
     [models],
   );
-  const selectModel = (id: string) => {
+  const selectModel = async (
+    id: string,
+    options?: { compatibilityConfirmed?: boolean },
+  ): Promise<void> => {
     const model = models.find((m) => m.id === id);
+    if (model?.runtimeModelId) {
+      const response = await window.cupcake?.runtime.request({
+        method: 'models.select',
+        params: {
+          modelId: model.runtimeModelId,
+          compatibilityConfirmed: options?.compatibilityConfirmed === true,
+        },
+      });
+      if (response && !response.ok)
+        throw new Error(response.error?.message ?? 'Cupcake could not select this model.');
+    }
     setModels((list) => list.map((m) => ({ ...m, selected: m.id === id })));
     setToast(`Model changed to ${model?.name}`);
-    if (model?.runtimeModelId)
-      void window.cupcake?.runtime.request({
-        method: 'models.select',
-        params: { modelId: model.runtimeModelId },
-      });
   };
   const navigate = (next: View) => {
     setView(next);
@@ -6130,8 +6196,8 @@ function LiveApp() {
     content = (
       <ModelsView
         models={workspace.models}
-        selectModel={(id) => {
-          void workspace.selectModel(id);
+        selectModel={async (id, options) => {
+          await workspace.selectModel(id, options);
           setToast('Default model updated');
         }}
       />
@@ -6240,7 +6306,7 @@ function LiveApp() {
         open={modelOpen}
         close={() => setModelOpen(false)}
         models={workspace.models}
-        select={(id) => void workspace.selectModel(id)}
+        select={(id, options) => workspace.selectModel(id, options)}
       />
       <ProviderDialog
         provider={providerDialog}

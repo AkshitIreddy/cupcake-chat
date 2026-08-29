@@ -28,7 +28,7 @@ from enum import Enum
 from importlib import metadata
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel
 
@@ -582,8 +582,35 @@ class RuntimeService:
     def _models_select(self, params: Mapping[str, Any]) -> Any:
         model_id = _required_string(params, "modelId")
         descriptor = self.providers.catalog.select(model_id)
+        if _requires_model_compatibility_confirmation(descriptor):
+            explicitly_confirmed = params.get("compatibilityConfirmed") is True
+            if not explicitly_confirmed and not self._model_compatibility_confirmed(model_id):
+                raise RuntimeCommandError(
+                    "MODEL_COMPATIBILITY_CONFIRMATION_REQUIRED",
+                    "This NVIDIA NIM model has unverified chat compatibility. "
+                    "Confirm it before selecting it.",
+                )
+            if explicitly_confirmed:
+                self.repository.set_setting(
+                    Setting(
+                        key=_model_compatibility_confirmation_key(model_id),
+                        value={
+                            "modelId": model_id,
+                            "confirmedAt": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
         self.repository.set_setting(Setting(key="models.default", value=model_id))
         return _jsonable(descriptor)
+
+    def _model_compatibility_confirmed(self, model_id: str) -> bool:
+        record = self.repository.get_setting(
+            _model_compatibility_confirmation_key(model_id), default=None
+        )
+        if not isinstance(record, Mapping):
+            return False
+        confirmation = cast(Mapping[str, Any], record)
+        return confirmation.get("modelId") == model_id
 
     def _models_fallback_preflight(self, params: Mapping[str, Any]) -> dict[str, Any]:
         primary_id = _required_string(params, "primaryModelId")
@@ -952,7 +979,11 @@ class RuntimeService:
             "persisted": False,
         }
         if provider == "nvidia-nim":
-            catalog = asyncio.run(self.providers.refresh_nvidia_nim_models(force=True))
+            catalog = asyncio.run(
+                self.providers.refresh_nvidia_nim_models(
+                    force=params.get("forceCatalogRefresh") is True
+                )
+            )
             response["catalog"] = {
                 "models": _jsonable(catalog.models),
                 "filteredNonChat": catalog.filtered_non_chat,
@@ -1836,6 +1867,15 @@ class RuntimeService:
         self, model_id: str, params: Mapping[str, Any], *, content: str
     ) -> None:
         descriptor = self.providers.catalog.select(model_id)
+        if (
+            _requires_model_compatibility_confirmation(descriptor)
+            and not self._model_compatibility_confirmed(model_id)
+        ):
+            raise RuntimeCommandError(
+                "MODEL_COMPATIBILITY_CONFIRMATION_REQUIRED",
+                "This NVIDIA NIM model must be explicitly confirmed before it can be used "
+                "for chat.",
+            )
         offline = (
             bool(params.get("offline"))
             or self.repository.get_setting("privacy.default_mode", default="direct") == "offline"
@@ -3019,6 +3059,18 @@ def _selected_model(repository: ProductRepository, params: Mapping[str, Any]) ->
     )
 
 
+def _requires_model_compatibility_confirmation(descriptor: ModelDescriptor) -> bool:
+    return (
+        descriptor.provider == "nvidia-nim"
+        and descriptor.metadata.get("requires_compatibility_confirmation") is True
+    )
+
+
+def _model_compatibility_confirmation_key(model_id: str) -> str:
+    digest = hashlib.sha256(model_id.encode("utf-8")).hexdigest()
+    return f"models.nvidia_nim.compatibility.{digest}"
+
+
 def _enabled_fallback(params: Mapping[str, Any]) -> str | None:
     return _optional_string(params, "fallbackModelId") if params.get("fallbackEnabled") else None
 
@@ -3145,7 +3197,13 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
     if key == "models.default":
         if not isinstance(value, str):
             raise RuntimeCommandError("INVALID_SETTING", "Default model must be a model ID")
-        providers.catalog.select(value)
+        descriptor = providers.catalog.select(value)
+        if _requires_model_compatibility_confirmation(descriptor):
+            raise RuntimeCommandError(
+                "MODEL_COMPATIBILITY_CONFIRMATION_REQUIRED",
+                "Select this NVIDIA NIM model through the model picker and confirm its "
+                "compatibility first.",
+            )
         return value
     if key == "models.reasoning_effort":
         try:

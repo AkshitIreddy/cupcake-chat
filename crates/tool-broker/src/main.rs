@@ -610,6 +610,31 @@ fn dispatch_secure_request(
                 })),
             )]))
         }
+        "providers.catalog.refresh" => {
+            let params = payload
+                .get("params")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    BrokerError::InvalidEnvelope("catalog params are required".into())
+                })?;
+            let provider = params
+                .get("provider")
+                .and_then(Value::as_str)
+                .filter(|value| *value == "nvidia-nim")
+                .ok_or_else(|| BrokerError::InvalidConfig("unsupported catalog provider".into()))?;
+            let secret = vault
+                .inner()
+                .load(&provider_account(provider))?
+                .ok_or_else(|| {
+                    BrokerError::PermissionDenied("NVIDIA NIM is not connected".into())
+                })?;
+            let mut options = Map::new();
+            if params.get("force").and_then(Value::as_bool) == Some(true) {
+                options.insert("forceCatalogRefresh".into(), Value::Bool(true));
+            }
+            let result = configure_provider(provider, secret.expose(), &options, runtime)?;
+            Ok(Some(vec![(MessageType::Response, success(result))]))
+        }
         "providers.connect" | "providers.connectInteractive" => {
             let interactive = method == "providers.connectInteractive";
             let params = payload
@@ -666,16 +691,17 @@ fn dispatch_secure_request(
                 vault.inner().store(&provider_account(&provider), &secret)?;
                 None
             };
-            configure_provider(&provider, secret.expose(), params, runtime)?;
-            Ok(Some(vec![(
-                MessageType::Response,
-                success(json!({
-                    "provider": provider,
-                    "configured": true,
-                    "endpointId": endpoint_id,
-                    "persistent": vault.inner().is_persistent()
-                })),
-            )]))
+            let runtime_result = configure_provider(&provider, secret.expose(), params, runtime)?;
+            let mut response = json!({
+                "provider": provider,
+                "configured": true,
+                "endpointId": endpoint_id,
+                "persistent": vault.inner().is_persistent()
+            });
+            if let Some(catalog) = runtime_result.get("catalog") {
+                response["catalog"] = catalog.clone();
+            }
+            Ok(Some(vec![(MessageType::Response, success(response))]))
         }
         "providers.disconnect" => {
             let provider = payload
@@ -735,7 +761,8 @@ fn configure_selected_provider(
                 BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
             })?;
         let options = object(json!({"baseUrl": endpoint.base_url}));
-        return configure_provider(provider, secret.expose(), &options, runtime);
+        let _ = configure_provider(provider, secret.expose(), &options, runtime)?;
+        return Ok(());
     }
     if !provider_names().contains(&provider) {
         return Ok(());
@@ -744,7 +771,8 @@ fn configure_selected_provider(
         .inner()
         .load(&provider_account(provider))?
         .ok_or_else(|| BrokerError::PermissionDenied(format!("{provider} is not connected")))?;
-    configure_provider(provider, secret.expose(), &Map::new(), runtime)
+    let _ = configure_provider(provider, secret.expose(), &Map::new(), runtime)?;
+    Ok(())
 }
 
 fn configure_provider(
@@ -752,7 +780,7 @@ fn configure_provider(
     secret: &[u8],
     options: &Map<String, Value>,
     runtime: &mut Option<RuntimeChild>,
-) -> Result<()> {
+) -> Result<Value> {
     let credential = std::str::from_utf8(secret)
         .map_err(|_| BrokerError::InvalidConfig("provider secret is not UTF-8".into()))?;
     let mut params = Map::new();
@@ -764,18 +792,23 @@ fn configure_provider(
     if let Some(value) = options.get("organization") {
         params.insert("organization".into(), value.clone());
     }
+    if let Some(value) = options
+        .get("forceCatalogRefresh")
+        .filter(|value| value.is_boolean())
+    {
+        params.insert("forceCatalogRefresh".into(), value.clone());
+    }
     let request = object(json!({"method": "providers.configure", "params": params}));
     let messages = ensure_runtime(runtime)?.request(&request)?;
-    let result = messages
-        .last()
-        .and_then(|(_, payload)| payload.get("ok"))
-        .and_then(Value::as_bool);
-    if result != Some(true) {
+    let response = messages.last().map(|(_, payload)| payload).ok_or_else(|| {
+        BrokerError::InvalidEnvelope("runtime provider response is missing".into())
+    })?;
+    if response.get("ok").and_then(Value::as_bool) != Some(true) {
         return Err(BrokerError::PermissionDenied(
             "runtime rejected provider configuration".into(),
         ));
     }
-    Ok(())
+    Ok(response.get("result").cloned().unwrap_or(Value::Null))
 }
 
 fn provider_names() -> &'static [&'static str] {

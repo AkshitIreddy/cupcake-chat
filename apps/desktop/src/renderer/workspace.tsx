@@ -220,12 +220,13 @@ interface RuntimeModel {
   privacy_route?: string;
   context_window?: number;
   max_output_tokens?: number;
-  capabilities?: string[];
+  capabilities?: string[] | Record<string, boolean>;
   reasoning_presets?: string[];
   pricing?: { input?: string; output?: string; provenance?: string };
-  chat_compatibility?: 'chat' | 'unknown';
+  chat_compatibility?: 'chat' | 'unknown' | 'non_chat';
   pricing_provenance?: string;
   privacy_route_label?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface RuntimeTool {
@@ -328,7 +329,7 @@ interface WorkspaceContextValue {
   reviseArtifact(artifact: ArtifactRecord, content: string): Promise<void>;
   exportArtifact(artifact: ArtifactRecord): Promise<void>;
   querySearch(query: string, globalScope?: boolean): Promise<void>;
-  selectModel(id: string): Promise<void>;
+  selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
   runModelAction(
     action:
       | 'download'
@@ -479,14 +480,35 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
     cohere: 'Cohere',
     'nvidia-nim': 'NVIDIA NIM',
   };
+  const capabilityTags = Array.isArray(item.capabilities)
+    ? item.capabilities
+    : item.capabilities && typeof item.capabilities === 'object'
+      ? Object.entries(item.capabilities)
+          .filter(([, enabled]) => enabled)
+          .map(([name]) => name)
+      : [];
+  const metadata = item.metadata ?? {};
+  const metadataChatCompatibility = metadata.chat_compatibility;
+  const chatCompatibility =
+    item.chat_compatibility ??
+    (metadataChatCompatibility === 'chat' ||
+    metadataChatCompatibility === 'unknown' ||
+    metadataChatCompatibility === 'non_chat'
+      ? metadataChatCompatibility
+      : undefined);
+  const contextWindowKnown = metadata.context_window_known !== false;
   return {
     id,
     runtimeModelId: id,
     provider: providerNames[item.provider] ?? cap(item.provider),
     name: item.display_name ?? item.model ?? id.split(':').at(-1) ?? id,
     route: local || item.privacy_route === 'local' ? 'Local' : 'Cloud',
-    tags: item.capabilities?.slice(0, 4) ?? [],
-    context: item.context_window ? item.context_window.toLocaleString() : 'Unknown',
+    tags: capabilityTags.slice(0, 4),
+    context: item.context_window
+      ? contextWindowKnown
+        ? item.context_window.toLocaleString()
+        : `Unknown · safe ${item.context_window.toLocaleString()} cap`
+      : 'Unknown',
     cost: local ? 'Local' : item.pricing?.input ? `From ${item.pricing.input}` : 'Provider pricing',
     status: local ? 'offline' : 'setup',
     description: item.reasoning_presets?.length
@@ -496,9 +518,14 @@ function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
     reasoningPresets: item.reasoning_presets?.filter((preset): preset is ReasoningEffort =>
       ['none', 'low', 'medium', 'high'].includes(preset),
     ),
-    chatCompatibility: item.chat_compatibility,
-    privacyLabel: item.privacy_route_label,
-    pricingProvenance: item.pricing_provenance ?? item.pricing?.provenance,
+    chatCompatibility,
+    privacyLabel:
+      item.privacy_route_label ??
+      (typeof metadata.privacy_route_label === 'string' ? metadata.privacy_route_label : undefined),
+    pricingProvenance:
+      item.pricing_provenance ??
+      item.pricing?.provenance ??
+      (typeof metadata.pricing_provenance === 'string' ? metadata.pricing_provenance : undefined),
   };
 }
 
@@ -605,6 +632,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const bootstrapped = useRef(false);
+  const nvidiaCatalogRefresh = useRef<Promise<void> | null>(null);
 
   const request = useCallback(
     async <T,>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
@@ -661,7 +689,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (fixtureMode) return;
     await guard(async () => {
-      const bootstrap = await request<{
+      // The broker handshake completes before its one-file Python runtime has
+      // necessarily been extracted and opened its encrypted stores. Warm that
+      // sidecar with an idempotent health check before the first product query.
+      // Retrying this read-only operation is safe and prevents a cold launch
+      // race from stranding the renderer on its opening screen.
+      let healthFailure: Error | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await request('runtime.health', {}, 120_000);
+          healthFailure = null;
+          break;
+        } catch (reason) {
+          healthFailure =
+            reason instanceof Error ? reason : new Error('The local runtime health check failed.');
+          if (attempt < 2)
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+        }
+      }
+      if (healthFailure) throw healthFailure;
+      type RuntimeBootstrap = {
         selectedModelId?: string;
         projects?: RuntimeProject[];
         conversations?: RuntimeConversation[];
@@ -670,7 +717,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         hardware?: HardwareRecord;
         localRuntimes?: Array<string | LocalRuntimeRecord>;
         suggestionsEnabled?: boolean;
-      }>('app.bootstrap');
+      };
+      let bootstrap: RuntimeBootstrap | null = null;
+      let bootstrapFailure: Error | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          bootstrap = await request<RuntimeBootstrap>('app.bootstrap');
+          bootstrapFailure = null;
+          break;
+        } catch (reason) {
+          bootstrapFailure =
+            reason instanceof Error ? reason : new Error('The local workspace could not open.');
+          if (attempt < 2)
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+        }
+      }
+      if (!bootstrap) throw bootstrapFailure ?? new Error('The local workspace could not open.');
       const projectRecords = (bootstrap.projects ?? []).map((item) => ({
         id: item.id,
         name: item.name,
@@ -699,10 +761,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const [taskResult, memoryResult, providerResult, runtimeSettings, migration] =
         await Promise.all([
           request<RuntimeTask[]>('tasks.list'),
-          request<RuntimeMemory[]>('memory.list', { states: ['active', 'candidate', 'disabled'] }),
-          request<{ providers: Array<{ provider: string; configured: boolean }> }>(
-            'providers.status',
-          ),
+          request<RuntimeMemory[]>('memory.list', {
+            states: ['active', 'candidate', 'superseded', 'expired'],
+          }),
+          request<{
+            providers: Array<{
+              provider: string;
+              configured: boolean;
+              catalog?: { models?: Array<Record<string, unknown>> };
+            }>;
+          }>('providers.status'),
           request<Record<string, unknown>>('settings.list'),
           request<LegacyMigrationState>('migration.detect'),
         ]);
@@ -716,8 +784,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const configuredProviders = Object.fromEntries(
         providerResult.providers.map((item) => [item.provider, item.configured]),
       );
+      const discoveredModels = providerResult.providers.flatMap(
+        (item) => item.catalog?.models ?? [],
+      );
+      const allRuntimeModels: RuntimeModel[] = [
+        ...(bootstrap.models ?? []),
+        ...discoveredModels,
+      ].map((item) => item as unknown as RuntimeModel);
       setModels(
-        (bootstrap.models ?? []).map((item) => ({
+        allRuntimeModels.map((item) => ({
           ...mapModel(item, bootstrap.selectedModelId),
           status: ['local', 'ollama', 'lm-studio', 'vllm', 'cupcake-local', 'mock'].includes(
             item.provider,
@@ -730,6 +805,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : 'setup',
         })),
       );
+      if (configuredProviders['nvidia-nim']) {
+        if (!nvidiaCatalogRefresh.current) {
+          const selectedModelId = bootstrap.selectedModelId;
+          const refreshCatalog = request<Record<string, unknown>>(
+            'providers.catalog.refresh',
+            { provider: 'nvidia-nim' },
+            120_000,
+          )
+            .then((result) => {
+              const catalog = result.catalog;
+              const catalogModels =
+                catalog &&
+                typeof catalog === 'object' &&
+                Array.isArray((catalog as Record<string, unknown>).models)
+                  ? ((catalog as Record<string, unknown>).models as Array<Record<string, unknown>>)
+                  : [];
+              if (!catalogModels.length) return;
+              setModels((current) => {
+                const incoming = catalogModels.map((item) => ({
+                  ...mapModel(item as unknown as RuntimeModel, selectedModelId),
+                  status: 'ready' as const,
+                }));
+                const ids = new Set(incoming.map((item) => item.id));
+                return [...current.filter((item) => !ids.has(item.id)), ...incoming];
+              });
+            })
+            .catch((reason) => {
+              setError(
+                reason instanceof Error
+                  ? `NVIDIA NIM catalog is unavailable: ${reason.message}`
+                  : 'NVIDIA NIM catalog is unavailable. Reopen Models to retry.',
+              );
+            })
+            .finally(() => {
+              nvidiaCatalogRefresh.current = null;
+            });
+          nvidiaCatalogRefresh.current = refreshCatalog;
+          void refreshCatalog;
+        }
+      }
       setLegacyMigration(
         migration.available && !['declined', 'completed'].includes(migration.state)
           ? migration
@@ -889,7 +1004,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         void loadArtifacts(activeProjectId).catch(() => undefined);
       } else if (event.type.startsWith('memory.')) {
         void request<RuntimeMemory[]>('memory.list', {
-          states: ['active', 'candidate', 'disabled'],
+          states: ['active', 'candidate', 'superseded', 'expired'],
         })
           .then((items) => setMemories(items.map((item) => mapMemory(item, projects))))
           .catch(() => undefined);
@@ -978,7 +1093,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             request<RuntimeMemory[]>('memory.list', {
               projectId,
               includeGlobal: true,
-              states: ['active', 'candidate', 'disabled'],
+              states: ['active', 'candidate', 'superseded', 'expired'],
             }),
           ]);
           setConversations(conversationItems.map((item) => mapConversation(item, projects)));
@@ -1462,8 +1577,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const selectModel = useCallback(
-    async (id: string) => {
-      if (!fixtureMode) await request('models.select', { modelId: id });
+    async (id: string, options?: { compatibilityConfirmed?: boolean }) => {
+      if (!fixtureMode)
+        await request('models.select', {
+          modelId: id,
+          compatibilityConfirmed: options?.compatibilityConfirmed === true,
+        });
       setModels((items) => items.map((item) => ({ ...item, selected: item.id === id })));
     },
     [fixtureMode, request],
@@ -1580,7 +1699,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const connectProvider = useCallback(
     async (provider: string) => {
       try {
-        await request('providers.connectInteractive', { provider }, 120_000);
+        const result = await request<Record<string, unknown>>(
+          'providers.connectInteractive',
+          { provider },
+          120_000,
+        );
+        const catalog = result.catalog;
+        const catalogModels =
+          catalog &&
+          typeof catalog === 'object' &&
+          Array.isArray((catalog as Record<string, unknown>).models)
+            ? ((catalog as Record<string, unknown>).models as Array<Record<string, unknown>>)
+            : [];
+        if (catalogModels.length) {
+          setModels((current) => {
+            const selectedModelId = current.find((item) => item.selected)?.id;
+            const incoming = catalogModels.map((item) => ({
+              ...mapModel(item as unknown as RuntimeModel, selectedModelId),
+              status: 'ready' as const,
+            }));
+            const ids = new Set(incoming.map((item) => item.id));
+            return [...current.filter((item) => !ids.has(item.id)), ...incoming];
+          });
+        }
         setProviders((items) => ({ ...items, [provider]: true }));
         return true;
       } catch (reason) {

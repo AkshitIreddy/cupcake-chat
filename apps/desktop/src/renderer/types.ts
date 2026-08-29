@@ -72,7 +72,7 @@ export interface ModelDescriptor {
     diskState?: string;
     state: string;
   };
-  chatCompatibility?: 'chat' | 'unknown';
+  chatCompatibility?: 'chat' | 'unknown' | 'non_chat';
   privacyLabel?: string;
   pricingProvenance?: string;
 }

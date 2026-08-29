@@ -280,3 +280,147 @@ test('live workspace windows long history and switches immutable branches', asyn
     await page.evaluate(() => (window as unknown as { __runtimeCalls: string[] }).__runtimeCalls),
   ).toContain('chat.edit');
 });
+
+test('configured NIM catalog enables an explicitly confirmed model', async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ method: string; params?: unknown }> = [];
+    Object.assign(window, { __nimRuntimeCalls: calls });
+    Object.defineProperty(window, 'cupcake', {
+      value: {
+        apiVersion: 1,
+        platform: 'win32',
+        app: {
+          getInfo: async () => {
+            await Promise.resolve();
+            return {
+              apiVersion: 1,
+              appVersion: 'test',
+              platform: 'win32',
+              packaged: false,
+              runtime: 'ready',
+            };
+          },
+        },
+        window: {
+          minimize: async () => {
+            await Promise.resolve();
+          },
+          toggleMaximize: async () => {
+            await Promise.resolve();
+            return false;
+          },
+          close: async () => {
+            await Promise.resolve();
+          },
+          isMaximized: async () => {
+            await Promise.resolve();
+            return false;
+          },
+        },
+        dialog: {
+          openFiles: async () => {
+            await Promise.resolve();
+            return [];
+          },
+          openDirectory: async () => {
+            await Promise.resolve();
+            return null;
+          },
+          chooseSaveTarget: async () => {
+            await Promise.resolve();
+            return null;
+          },
+          releaseHandle: async () => {
+            await Promise.resolve();
+          },
+        },
+        commands: { execute: async () => {}, onCommand: () => () => {} },
+        runtime: {
+          status: async () => {
+            await Promise.resolve();
+            return { state: 'ready', mode: 'broker', restartCount: 0 };
+          },
+          cancel: async () => {
+            await Promise.resolve();
+            return true;
+          },
+          onEvent: () => () => {},
+          onStatus: () => () => {},
+          request: async ({ method, params }: { method: string; params?: unknown }) => {
+            await Promise.resolve();
+            calls.push({ method, params });
+            const result: Record<string, unknown> = {
+              'app.bootstrap': {
+                selectedModelId: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+                projects: [],
+                conversations: [],
+                models: [
+                  {
+                    id: 'mock:cupcake-deterministic',
+                    provider: 'mock',
+                    model: 'cupcake-deterministic',
+                    display_name: 'Deterministic local',
+                    privacy_route: 'local',
+                    capabilities: ['chat'],
+                  },
+                ],
+                tools: [],
+                hardware: {},
+                localRuntimes: [],
+                suggestionsEnabled: false,
+              },
+              'tasks.list': [],
+              'memory.list': [],
+              'providers.status': {
+                providers: [{ provider: 'nvidia-nim', configured: true }],
+              },
+              'providers.catalog.refresh': {
+                catalog: {
+                  models: [
+                    {
+                      id: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+                      provider: 'nvidia-nim',
+                      model: 'nvidia/nemotron-3-nano-30b-a3b',
+                      display_name: 'Nemotron 3 Nano',
+                      privacy_route: 'cloud',
+                      capabilities: { streaming: true },
+                      metadata: { chat_compatibility: 'unknown' },
+                    },
+                  ],
+                },
+              },
+              'settings.list': {},
+              'migration.detect': { state: 'not_found', available: false },
+              'models.select': {},
+            };
+            return { ok: true, result: result[method] };
+          },
+        },
+      },
+    });
+  });
+
+  await page.goto('/');
+  await page.keyboard.press('Control+M');
+  const picker = page.getByRole('dialog', { name: 'Choose model' });
+  const nim = picker.getByRole('button', { name: /NVIDIA NIM/ });
+  await expect(nim).toBeEnabled();
+  await expect(nim).toHaveClass(/is-active/);
+  page.once('dialog', (dialog) => dialog.accept());
+  await nim.click();
+  await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeHidden();
+  const calls = await page.evaluate(
+    () =>
+      (window as unknown as { __nimRuntimeCalls: Array<{ method: string; params?: unknown }> })
+        .__nimRuntimeCalls,
+  );
+  expect(calls).toContainEqual({
+    method: 'models.select',
+    params: {
+      modelId: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+      compatibilityConfirmed: true,
+    },
+  });
+  const memoryList = calls.find((item) => item.method === 'memory.list');
+  expect(memoryList?.params).not.toMatchObject({ states: expect.arrayContaining(['disabled']) });
+});
