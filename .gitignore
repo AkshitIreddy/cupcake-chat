@@ -19,8 +19,10 @@ __pycache__/
 
 # Rust
 target/
+target*/
 
 # Local application data and secrets
+.secrets/
 .env
 .env.*
 !.env.example
@@ -31,7 +33,7 @@ target/
 *.sqlite3
 app-data/
 runtime-data/
-models/
+/models/
 
 # Editors and operating systems
 .DS_Store

@@ -1,0 +1,60 @@
+name: Desktop package smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/desktop-builds.yml'
+      - 'apps/desktop/**'
+      - 'crates/tool-broker/**'
+      - 'services/runtime/**'
+      - 'packaging/**'
+      - 'scripts/**'
+      - 'pnpm-lock.yaml'
+  push:
+    branches: [main, master, 'feat/**']
+    paths:
+      - '.github/workflows/desktop-builds.yml'
+      - 'apps/desktop/**'
+      - 'crates/tool-broker/**'
+      - 'services/runtime/**'
+      - 'packaging/**'
+      - 'scripts/**'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64-package:
+    name: Windows x64 installer build smoke
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/runtime/pyproject.toml
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - run: node scripts/ci/install-js.mjs
+      - run: >-
+          python -m pip install --disable-pip-version-check -e
+          "services/runtime[documents,durability,providers,sqlcipher]" pyinstaller==6.22.2
+      - run: node scripts/package-sidecars.mjs
+      - run: pnpm --filter @cupcakeagi/desktop make
+      - run: node scripts/smoke-package.mjs --platform win32 --mode make
+      - run: node scripts/release-candidate-audit.mjs --require-artifacts

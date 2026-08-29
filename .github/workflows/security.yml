@@ -1,0 +1,80 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, 'feat/**']
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Current-tree secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Scan the release-candidate tree with Gitleaks
+        run: >-
+          docker run --rm -v "$PWD:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+          dir /repo --redact=100 --no-banner
+
+  javascript-dependencies:
+    name: JavaScript production dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: node scripts/ci/install-js.mjs
+      - run: pnpm audit --prod --audit-level high
+
+  python-dependencies:
+    name: Python production dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/runtime/pyproject.toml
+      - run: >-
+          python -m pip install --disable-pip-version-check -e
+          "services/runtime[documents,durability,providers,sqlcipher]" pip-audit
+      - run: python -m pip_audit --local --skip-editable
+
+  rust-dependencies:
+    name: Rust dependency advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit --file crates/tool-broker/Cargo.lock
+
+  release-policy:
+    name: No-publish release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - run: node scripts/release-candidate-audit.mjs
