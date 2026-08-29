@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/memory-record.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "scope",
+    "content",
+    "status",
+    "sensitivity",
+    "confidence",
+    "explicit",
+    "revisionId",
+    "evidence",
+    "provenance",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "const": "preference",
+          "type": "string"
+        },
+        {
+          "const": "fact",
+          "type": "string"
+        },
+        {
+          "const": "instruction",
+          "type": "string"
+        },
+        {
+          "const": "decision",
+          "type": "string"
+        },
+        {
+          "const": "event",
+          "type": "string"
+        },
+        {
+          "const": "task-state",
+          "type": "string"
+        },
+        {
+          "const": "temporary-context",
+          "type": "string"
+        }
+      ]
+    },
+    "scope": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "global",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "projectId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "projectId": {
+              "description": "Lowercase RFC 9562 UUID version 7.",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "conversationId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "conversation",
+              "type": "string"
+            },
+            "conversationId": {
+              "description": "Lowercase RFC 9562 UUID version 7.",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "content": {
+      "minLength": 1,
+      "maxLength": 32768,
+      "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "const": "active",
+          "type": "string"
+        },
+        {
+          "const": "candidate",
+          "type": "string"
+        },
+        {
+          "const": "superseded",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "type": "string"
+        },
+        {
+          "const": "tombstoned",
+          "type": "string"
+        }
+      ]
+    },
+    "sensitivity": {
+      "anyOf": [
+        {
+          "const": "ordinary",
+          "type": "string"
+        },
+        {
+          "const": "personal",
+          "type": "string"
+        },
+        {
+          "const": "sensitive",
+          "type": "string"
+        }
+      ]
+    },
+    "confidence": {
+      "minimum": 0,
+      "maximum": 1,
+      "type": "number"
+    },
+    "explicit": {
+      "type": "boolean"
+    },
+    "revisionId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "supersedesRevisionId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "excerpt",
+          "observedAt"
+        ],
+        "properties": {
+          "conversationId": {
+            "description": "Lowercase RFC 9562 UUID version 7.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "messageId": {
+            "description": "Lowercase RFC 9562 UUID version 7.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "excerpt": {
+            "minLength": 1,
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "observedAt": {
+            "description": "UTC RFC 3339 timestamp with a trailing Z.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "createdAt"
+      ],
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "const": "user",
+              "type": "string"
+            },
+            {
+              "const": "assistant",
+              "type": "string"
+            },
+            {
+              "const": "tool",
+              "type": "string"
+            },
+            {
+              "const": "import",
+              "type": "string"
+            },
+            {
+              "const": "system",
+              "type": "string"
+            }
+          ]
+        },
+        "sourceId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sourceLabel": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "createdAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    },
+    "createdAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tombstonedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

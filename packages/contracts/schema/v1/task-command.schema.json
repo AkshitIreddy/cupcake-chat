@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/task-command.schema.json",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "command",
+        "taskId",
+        "requestedAt"
+      ],
+      "properties": {
+        "command": {
+          "const": "pause",
+          "type": "string"
+        },
+        "taskId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "command",
+        "taskId",
+        "requestedAt"
+      ],
+      "properties": {
+        "command": {
+          "const": "resume",
+          "type": "string"
+        },
+        "taskId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "command",
+        "taskId",
+        "requestedAt"
+      ],
+      "properties": {
+        "command": {
+          "const": "cancel",
+          "type": "string"
+        },
+        "taskId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 2048,
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "command",
+        "taskId",
+        "requestedAt"
+      ],
+      "properties": {
+        "command": {
+          "const": "retry",
+          "type": "string"
+        },
+        "taskId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "command",
+        "taskId",
+        "requestedAt",
+        "message"
+      ],
+      "properties": {
+        "command": {
+          "const": "steer",
+          "type": "string"
+        },
+        "taskId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 32768,
+          "type": "string"
+        }
+      }
+    }
+  ]
+}

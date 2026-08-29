@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/conversation-branch.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "conversationId",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "conversationId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "parentBranchId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "forkedFromMessageId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "headMessageId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "label": {
+      "minLength": 1,
+      "maxLength": 255,
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    }
+  }
+}

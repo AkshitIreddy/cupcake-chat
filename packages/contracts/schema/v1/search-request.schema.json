@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/search-request.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "query",
+    "kinds",
+    "mode",
+    "limit"
+  ],
+  "properties": {
+    "query": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kinds": {
+      "minItems": 1,
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "const": "conversation",
+            "type": "string"
+          },
+          {
+            "const": "project",
+            "type": "string"
+          },
+          {
+            "const": "file",
+            "type": "string"
+          },
+          {
+            "const": "memory",
+            "type": "string"
+          },
+          {
+            "const": "task",
+            "type": "string"
+          },
+          {
+            "const": "artifact",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "mode": {
+      "anyOf": [
+        {
+          "const": "lexical",
+          "type": "string"
+        },
+        {
+          "const": "hybrid",
+          "type": "string"
+        }
+      ]
+    },
+    "limit": {
+      "minimum": 1,
+      "maximum": 100,
+      "type": "integer"
+    },
+    "cursor": {
+      "minLength": 1,
+      "maxLength": 2048,
+      "type": "string"
+    }
+  }
+}

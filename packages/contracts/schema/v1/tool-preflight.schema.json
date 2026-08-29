@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/tool-preflight.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "intentId",
+    "normalizedArguments",
+    "resolvedResources",
+    "effects",
+    "risk",
+    "destinations",
+    "limits",
+    "approval",
+    "approvalDigest",
+    "preparedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "intentId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "normalizedArguments": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "resolvedResources": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "displayName"
+        ],
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "file",
+                "type": "string"
+              },
+              {
+                "const": "directory",
+                "type": "string"
+              },
+              {
+                "const": "repository",
+                "type": "string"
+              },
+              {
+                "const": "artifact",
+                "type": "string"
+              },
+              {
+                "const": "credential",
+                "type": "string"
+              },
+              {
+                "const": "remote-origin",
+                "type": "string"
+              },
+              {
+                "const": "process-sandbox",
+                "type": "string"
+              }
+            ]
+          },
+          "displayName": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "maxLength": 255,
+            "type": "string"
+          }
+        }
+      }
+    },
+    "effects": {
+      "minItems": 1,
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "const": "read-local",
+            "type": "string"
+          },
+          {
+            "const": "write-local",
+            "type": "string"
+          },
+          {
+            "const": "delete-local",
+            "type": "string"
+          },
+          {
+            "const": "network-read",
+            "type": "string"
+          },
+          {
+            "const": "external-communication",
+            "type": "string"
+          },
+          {
+            "const": "financial-transaction",
+            "type": "string"
+          },
+          {
+            "const": "install-software",
+            "type": "string"
+          },
+          {
+            "const": "system-change",
+            "type": "string"
+          },
+          {
+            "const": "execute-sandboxed",
+            "type": "string"
+          },
+          {
+            "const": "execute-unsandboxed",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "risk": {
+      "anyOf": [
+        {
+          "const": "low",
+          "type": "string"
+        },
+        {
+          "const": "moderate",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "type": "string"
+        },
+        {
+          "const": "critical",
+          "type": "string"
+        }
+      ]
+    },
+    "destinations": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "route",
+          "displayName",
+          "dataClasses"
+        ],
+        "properties": {
+          "route": {
+            "anyOf": [
+              {
+                "const": "local",
+                "type": "string"
+              },
+              {
+                "const": "provider",
+                "type": "string"
+              },
+              {
+                "const": "mcp-server",
+                "type": "string"
+              },
+              {
+                "const": "web-origin",
+                "type": "string"
+              }
+            ]
+          },
+          "displayName": {
+            "minLength": 1,
+            "maxLength": 255,
+            "type": "string"
+          },
+          "origin": {
+            "format": "uri",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "dataClasses": {
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "const": "prompt",
+                  "type": "string"
+                },
+                {
+                  "const": "file-content",
+                  "type": "string"
+                },
+                {
+                  "const": "memory",
+                  "type": "string"
+                },
+                {
+                  "const": "artifact",
+                  "type": "string"
+                },
+                {
+                  "const": "usage-metadata",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "limits": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "timeoutMs",
+        "maximumOutputBytes",
+        "network"
+      ],
+      "properties": {
+        "timeoutMs": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "maximumOutputBytes": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "maximumMemoryBytes": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "maximumCpuMs": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "network": {
+          "anyOf": [
+            {
+              "const": "denied",
+              "type": "string"
+            },
+            {
+              "const": "allowlisted",
+              "type": "string"
+            },
+            {
+              "const": "unrestricted",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "approval": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "required",
+        "allowedScopes",
+        "freshApprovalOnly"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "reason": {
+          "minLength": 1,
+          "maxLength": 2048,
+          "type": "string"
+        },
+        "allowedScopes": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "const": "once",
+                "type": "string"
+              },
+              {
+                "const": "session",
+                "type": "string"
+              },
+              {
+                "const": "project",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "freshApprovalOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "approvalDigest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "preparedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    }
+  }
+}

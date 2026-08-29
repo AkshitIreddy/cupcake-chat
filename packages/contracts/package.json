@@ -1,0 +1,36 @@
+{
+  "name": "@cupcakeagi/contracts",
+  "version": "2.0.0-rc.1",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema/v1/*": "./schema/v1/*"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:schemas": "tsc -p tsconfig.build.json && node scripts/generate-schemas.mjs --check",
+    "generate:schemas": "tsc -p tsconfig.build.json && node scripts/generate-schemas.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.11"
+  }
+}

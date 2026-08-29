@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/context-snapshot.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "conversationId",
+    "model",
+    "items",
+    "totalTokens",
+    "maximumTokens",
+    "outboundDestination",
+    "compiledAt"
+  ],
+  "properties": {
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conversationId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "model": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "provider",
+        "modelId",
+        "reasoningLevel"
+      ],
+      "properties": {
+        "provider": {
+          "anyOf": [
+            {
+              "const": "openai",
+              "type": "string"
+            },
+            {
+              "const": "anthropic",
+              "type": "string"
+            },
+            {
+              "const": "gemini",
+              "type": "string"
+            },
+            {
+              "const": "xai",
+              "type": "string"
+            },
+            {
+              "const": "mistral",
+              "type": "string"
+            },
+            {
+              "const": "cohere",
+              "type": "string"
+            },
+            {
+              "const": "nvidia-nim",
+              "type": "string"
+            },
+            {
+              "const": "openai-compatible",
+              "type": "string"
+            },
+            {
+              "const": "cupcake-local",
+              "type": "string"
+            },
+            {
+              "const": "ollama",
+              "type": "string"
+            },
+            {
+              "const": "lm-studio",
+              "type": "string"
+            },
+            {
+              "const": "vllm",
+              "type": "string"
+            },
+            {
+              "const": "mock",
+              "type": "string"
+            }
+          ]
+        },
+        "modelId": {
+          "minLength": 1,
+          "maxLength": 255,
+          "type": "string"
+        },
+        "reasoningLevel": {
+          "anyOf": [
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "const": "minimal",
+              "type": "string"
+            },
+            {
+              "const": "low",
+              "type": "string"
+            },
+            {
+              "const": "medium",
+              "type": "string"
+            },
+            {
+              "const": "high",
+              "type": "string"
+            },
+            {
+              "const": "xhigh",
+              "type": "string"
+            }
+          ]
+        },
+        "fallback": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "enabled",
+            "provider",
+            "modelId",
+            "requiresBoundaryConfirmation"
+          ],
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "const": "openai",
+                  "type": "string"
+                },
+                {
+                  "const": "anthropic",
+                  "type": "string"
+                },
+                {
+                  "const": "gemini",
+                  "type": "string"
+                },
+                {
+                  "const": "xai",
+                  "type": "string"
+                },
+                {
+                  "const": "mistral",
+                  "type": "string"
+                },
+                {
+                  "const": "cohere",
+                  "type": "string"
+                },
+                {
+                  "const": "nvidia-nim",
+                  "type": "string"
+                },
+                {
+                  "const": "openai-compatible",
+                  "type": "string"
+                },
+                {
+                  "const": "cupcake-local",
+                  "type": "string"
+                },
+                {
+                  "const": "ollama",
+                  "type": "string"
+                },
+                {
+                  "const": "lm-studio",
+                  "type": "string"
+                },
+                {
+                  "const": "vllm",
+                  "type": "string"
+                },
+                {
+                  "const": "mock",
+                  "type": "string"
+                }
+              ]
+            },
+            "modelId": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            },
+            "requiresBoundaryConfirmation": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "items": {
+      "maxItems": 10000,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "label",
+              "tokenCount"
+            ],
+            "properties": {
+              "kind": {
+                "const": "instruction",
+                "type": "string"
+              },
+              "id": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "tokenCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "label",
+              "tokenCount"
+            ],
+            "properties": {
+              "kind": {
+                "const": "file",
+                "type": "string"
+              },
+              "id": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "tokenCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "label",
+              "tokenCount",
+              "confidence"
+            ],
+            "properties": {
+              "kind": {
+                "const": "memory",
+                "type": "string"
+              },
+              "id": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "tokenCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "confidence": {
+                "minimum": 0,
+                "maximum": 1,
+                "type": "number"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "label",
+              "tokenCount"
+            ],
+            "properties": {
+              "kind": {
+                "const": "tool",
+                "type": "string"
+              },
+              "id": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "label": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string"
+              },
+              "tokenCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "totalTokens": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "maximumTokens": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "outboundDestination": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "route"
+          ],
+          "properties": {
+            "route": {
+              "const": "local",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "route",
+            "provider",
+            "displayName"
+          ],
+          "properties": {
+            "route": {
+              "const": "cloud",
+              "type": "string"
+            },
+            "provider": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            },
+            "displayName": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "compiledAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    }
+  }
+}

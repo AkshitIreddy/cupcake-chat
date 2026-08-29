@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/task-record.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "runId",
+    "conversationId",
+    "branchId",
+    "title",
+    "state",
+    "promotionReason",
+    "progress",
+    "checkpointVersion",
+    "attempt",
+    "maximumAttempts",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "parentTaskId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conversationId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "branchId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "queued",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "type": "string"
+        },
+        {
+          "const": "waiting-for-approval",
+          "type": "string"
+        },
+        {
+          "const": "waiting-for-input",
+          "type": "string"
+        },
+        {
+          "const": "pausing",
+          "type": "string"
+        },
+        {
+          "const": "paused",
+          "type": "string"
+        },
+        {
+          "const": "cancelling",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "type": "string"
+        },
+        {
+          "const": "completed",
+          "type": "string"
+        }
+      ]
+    },
+    "promotionReason": {
+      "anyOf": [
+        {
+          "const": "explicit",
+          "type": "string"
+        },
+        {
+          "const": "estimated-duration",
+          "type": "string"
+        },
+        {
+          "const": "repository-indexing",
+          "type": "string"
+        },
+        {
+          "const": "document-indexing",
+          "type": "string"
+        },
+        {
+          "const": "code-execution",
+          "type": "string"
+        },
+        {
+          "const": "artifact-generation",
+          "type": "string"
+        },
+        {
+          "const": "multi-stage-tools",
+          "type": "string"
+        }
+      ]
+    },
+    "progress": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "completedUnits"
+      ],
+      "properties": {
+        "completedUnits": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalUnits": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "label": {
+          "maxLength": 512,
+          "type": "string"
+        }
+      }
+    },
+    "checkpointVersion": {
+      "minLength": 1,
+      "maxLength": 128,
+      "type": "string"
+    },
+    "checkpointId": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "maximumAttempts": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "createdAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "startedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "finishedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastHeartbeatAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

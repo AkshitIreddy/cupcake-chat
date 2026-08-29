@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/tool-descriptor.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "stableName",
+    "version",
+    "displayName",
+    "description",
+    "source",
+    "inputSchema",
+    "outputSchema",
+    "declaredEffects",
+    "defaultRisk",
+    "requiresProject",
+    "available"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "stableName": {
+      "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$",
+      "type": "string"
+    },
+    "displayName": {
+      "minLength": 1,
+      "maxLength": 128,
+      "type": "string"
+    },
+    "description": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "const": "native",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "type": "string"
+        },
+        {
+          "const": "custom",
+          "type": "string"
+        }
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "declaredEffects": {
+      "minItems": 1,
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "const": "read-local",
+            "type": "string"
+          },
+          {
+            "const": "write-local",
+            "type": "string"
+          },
+          {
+            "const": "delete-local",
+            "type": "string"
+          },
+          {
+            "const": "network-read",
+            "type": "string"
+          },
+          {
+            "const": "external-communication",
+            "type": "string"
+          },
+          {
+            "const": "financial-transaction",
+            "type": "string"
+          },
+          {
+            "const": "install-software",
+            "type": "string"
+          },
+          {
+            "const": "system-change",
+            "type": "string"
+          },
+          {
+            "const": "execute-sandboxed",
+            "type": "string"
+          },
+          {
+            "const": "execute-unsandboxed",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "defaultRisk": {
+      "anyOf": [
+        {
+          "const": "low",
+          "type": "string"
+        },
+        {
+          "const": "moderate",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "type": "string"
+        },
+        {
+          "const": "critical",
+          "type": "string"
+        }
+      ]
+    },
+    "requiresProject": {
+      "type": "boolean"
+    },
+    "available": {
+      "type": "boolean"
+    }
+  }
+}

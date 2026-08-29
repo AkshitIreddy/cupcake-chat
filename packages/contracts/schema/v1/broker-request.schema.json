@@ -1,0 +1,1215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/broker-request.schema.json",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "request_type",
+        "payload"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "request_type": {
+          "const": "tool.preflight",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "intent",
+            "descriptor"
+          ],
+          "properties": {
+            "intent": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "invocation_id",
+                "run_id",
+                "tool_name",
+                "tool_version",
+                "arguments",
+                "project_id",
+                "task_id",
+                "requested_at"
+              ],
+              "properties": {
+                "invocation_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "run_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "tool_name": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "tool_version": {
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "$id": "T0",
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "T0"
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "$ref": "T0"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "project_id": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "task_id": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                }
+              }
+            },
+            "descriptor": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "name",
+                "version",
+                "display_name",
+                "description",
+                "input_schema",
+                "output_schema",
+                "effects",
+                "required_grants",
+                "default_data_flows",
+                "timeout_seconds",
+                "cancellable",
+                "category"
+              ],
+              "properties": {
+                "name": {
+                  "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                  "type": "string"
+                },
+                "version": {
+                  "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$",
+                  "type": "string"
+                },
+                "display_name": {
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "description": {
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "input_schema": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "$id": "T0",
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "T0"
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "$ref": "T0"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "output_schema": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "$id": "T0",
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "T0"
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "$ref": "T0"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "effects": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "read_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "write_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "network",
+                        "type": "string"
+                      },
+                      {
+                        "const": "execute_code",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delete",
+                        "type": "string"
+                      },
+                      {
+                        "const": "external_communication",
+                        "type": "string"
+                      },
+                      {
+                        "const": "money",
+                        "type": "string"
+                      },
+                      {
+                        "const": "install",
+                        "type": "string"
+                      },
+                      {
+                        "const": "system_change",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unsandboxed_execution",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required_grants": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "type": "string"
+                  }
+                },
+                "default_data_flows": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "destination",
+                      "destination_label",
+                      "categories",
+                      "purpose",
+                      "contains_user_content"
+                    ],
+                    "properties": {
+                      "destination": {
+                        "anyOf": [
+                          {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          {
+                            "const": "provider",
+                            "type": "string"
+                          },
+                          {
+                            "const": "mcp_server",
+                            "type": "string"
+                          },
+                          {
+                            "const": "public_web",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "destination_label": {
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "type": "string"
+                      },
+                      "categories": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "purpose": {
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "contains_user_content": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "timeout_seconds": {
+                  "minimum": 1,
+                  "maximum": 86400,
+                  "type": "integer"
+                },
+                "cancellable": {
+                  "type": "boolean"
+                },
+                "category": {
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "request_type",
+        "payload"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "request_type": {
+          "const": "tool.approval.verify",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "preflight",
+            "approval"
+          ],
+          "properties": {
+            "preflight": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "invocation_id",
+                "descriptor_identity",
+                "schema_digest",
+                "resolved_resources",
+                "effects",
+                "disclosures",
+                "decision",
+                "requires_fresh_approval",
+                "intent_digest",
+                "created_at"
+              ],
+              "properties": {
+                "invocation_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "descriptor_identity": {
+                  "minLength": 3,
+                  "maxLength": 384,
+                  "type": "string"
+                },
+                "schema_digest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "resolved_resources": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "effects": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "read_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "write_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "network",
+                        "type": "string"
+                      },
+                      {
+                        "const": "execute_code",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delete",
+                        "type": "string"
+                      },
+                      {
+                        "const": "external_communication",
+                        "type": "string"
+                      },
+                      {
+                        "const": "money",
+                        "type": "string"
+                      },
+                      {
+                        "const": "install",
+                        "type": "string"
+                      },
+                      {
+                        "const": "system_change",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unsandboxed_execution",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "disclosures": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "destination",
+                      "destination_label",
+                      "categories",
+                      "purpose",
+                      "contains_user_content"
+                    ],
+                    "properties": {
+                      "destination": {
+                        "anyOf": [
+                          {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          {
+                            "const": "provider",
+                            "type": "string"
+                          },
+                          {
+                            "const": "mcp_server",
+                            "type": "string"
+                          },
+                          {
+                            "const": "public_web",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "destination_label": {
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "type": "string"
+                      },
+                      "categories": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "purpose": {
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "contains_user_content": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "decision": {
+                  "anyOf": [
+                    {
+                      "const": "allow",
+                      "type": "string"
+                    },
+                    {
+                      "const": "ask",
+                      "type": "string"
+                    },
+                    {
+                      "const": "deny",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "requires_fresh_approval": {
+                  "type": "boolean"
+                },
+                "intent_digest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                }
+              }
+            },
+            "approval": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "approval_id",
+                "invocation_id",
+                "intent_digest",
+                "approved_effects",
+                "approved_resources",
+                "issued_at",
+                "expires_at",
+                "nonce",
+                "signature"
+              ],
+              "properties": {
+                "approval_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "invocation_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "intent_digest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "approved_effects": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "read_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "write_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "network",
+                        "type": "string"
+                      },
+                      {
+                        "const": "execute_code",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delete",
+                        "type": "string"
+                      },
+                      {
+                        "const": "external_communication",
+                        "type": "string"
+                      },
+                      {
+                        "const": "money",
+                        "type": "string"
+                      },
+                      {
+                        "const": "install",
+                        "type": "string"
+                      },
+                      {
+                        "const": "system_change",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unsandboxed_execution",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "approved_resources": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "issued_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "expires_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "nonce": {
+                  "minLength": 16,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "signature": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "request_type",
+        "payload"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "request_type": {
+          "const": "tool.execute",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "intent",
+            "preflight",
+            "approval"
+          ],
+          "properties": {
+            "intent": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "invocation_id",
+                "run_id",
+                "tool_name",
+                "tool_version",
+                "arguments",
+                "project_id",
+                "task_id",
+                "requested_at"
+              ],
+              "properties": {
+                "invocation_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "run_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "tool_name": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "tool_version": {
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "$id": "T0",
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "$ref": "T0"
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "$ref": "T0"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "project_id": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "task_id": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                }
+              }
+            },
+            "preflight": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "invocation_id",
+                "descriptor_identity",
+                "schema_digest",
+                "resolved_resources",
+                "effects",
+                "disclosures",
+                "decision",
+                "requires_fresh_approval",
+                "intent_digest",
+                "created_at"
+              ],
+              "properties": {
+                "invocation_id": {
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "descriptor_identity": {
+                  "minLength": 3,
+                  "maxLength": 384,
+                  "type": "string"
+                },
+                "schema_digest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "resolved_resources": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "effects": {
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "read_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "write_files",
+                        "type": "string"
+                      },
+                      {
+                        "const": "network",
+                        "type": "string"
+                      },
+                      {
+                        "const": "execute_code",
+                        "type": "string"
+                      },
+                      {
+                        "const": "delete",
+                        "type": "string"
+                      },
+                      {
+                        "const": "external_communication",
+                        "type": "string"
+                      },
+                      {
+                        "const": "money",
+                        "type": "string"
+                      },
+                      {
+                        "const": "install",
+                        "type": "string"
+                      },
+                      {
+                        "const": "system_change",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unsandboxed_execution",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "disclosures": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "destination",
+                      "destination_label",
+                      "categories",
+                      "purpose",
+                      "contains_user_content"
+                    ],
+                    "properties": {
+                      "destination": {
+                        "anyOf": [
+                          {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          {
+                            "const": "provider",
+                            "type": "string"
+                          },
+                          {
+                            "const": "mcp_server",
+                            "type": "string"
+                          },
+                          {
+                            "const": "public_web",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "destination_label": {
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "type": "string"
+                      },
+                      "categories": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "purpose": {
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "contains_user_content": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "decision": {
+                  "anyOf": [
+                    {
+                      "const": "allow",
+                      "type": "string"
+                    },
+                    {
+                      "const": "ask",
+                      "type": "string"
+                    },
+                    {
+                      "const": "deny",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "requires_fresh_approval": {
+                  "type": "boolean"
+                },
+                "intent_digest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                }
+              }
+            },
+            "approval": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "approval_id",
+                    "invocation_id",
+                    "intent_digest",
+                    "approved_effects",
+                    "approved_resources",
+                    "issued_at",
+                    "expires_at",
+                    "nonce",
+                    "signature"
+                  ],
+                  "properties": {
+                    "approval_id": {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    "invocation_id": {
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    "intent_digest": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "approved_effects": {
+                      "uniqueItems": true,
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "const": "read_files",
+                            "type": "string"
+                          },
+                          {
+                            "const": "write_files",
+                            "type": "string"
+                          },
+                          {
+                            "const": "network",
+                            "type": "string"
+                          },
+                          {
+                            "const": "execute_code",
+                            "type": "string"
+                          },
+                          {
+                            "const": "delete",
+                            "type": "string"
+                          },
+                          {
+                            "const": "external_communication",
+                            "type": "string"
+                          },
+                          {
+                            "const": "money",
+                            "type": "string"
+                          },
+                          {
+                            "const": "install",
+                            "type": "string"
+                          },
+                          {
+                            "const": "system_change",
+                            "type": "string"
+                          },
+                          {
+                            "const": "unsandboxed_execution",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "approved_resources": {
+                      "uniqueItems": true,
+                      "type": "array",
+                      "items": {
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "type": "string"
+                      }
+                    },
+                    "issued_at": {
+                      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                      "type": "string"
+                    },
+                    "nonce": {
+                      "minLength": 16,
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    "signature": {
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "request_type",
+        "payload"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "request_type": {
+          "const": "tool.cancel",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "invocation_id",
+            "reason"
+          ],
+          "properties": {
+            "invocation_id": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            },
+            "reason": {
+              "minLength": 1,
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "request_type",
+        "payload"
+      ],
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "number"
+        },
+        "request_type": {
+          "anyOf": [
+            {
+              "const": "mcp.connect",
+              "type": "string"
+            },
+            {
+              "const": "mcp.tools.list",
+              "type": "string"
+            },
+            {
+              "const": "mcp.tool.call",
+              "type": "string"
+            },
+            {
+              "const": "mcp.disconnect",
+              "type": "string"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "$id": "T0",
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "T0"
+                  }
+                },
+                {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "$ref": "T0"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

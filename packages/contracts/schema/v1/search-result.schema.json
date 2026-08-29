@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/search-result.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "kind",
+    "id",
+    "title",
+    "excerpt",
+    "lexicalScore",
+    "updatedAt"
+  ],
+  "properties": {
+    "kind": {
+      "anyOf": [
+        {
+          "const": "conversation",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "type": "string"
+        },
+        {
+          "const": "file",
+          "type": "string"
+        },
+        {
+          "const": "memory",
+          "type": "string"
+        },
+        {
+          "const": "task",
+          "type": "string"
+        },
+        {
+          "const": "artifact",
+          "type": "string"
+        }
+      ]
+    },
+    "id": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      ]
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "excerpt": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "lexicalScore": {
+      "minimum": 0,
+      "type": "number"
+    },
+    "semanticScore": {
+      "minimum": 0,
+      "maximum": 1,
+      "type": "number"
+    },
+    "updatedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "locator": {
+      "minLength": 1,
+      "maxLength": 2048,
+      "type": "string"
+    }
+  }
+}

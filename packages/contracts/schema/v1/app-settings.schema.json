@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/app-settings.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "theme",
+    "followSystemTheme",
+    "reducedMotion",
+    "textScale",
+    "defaultModel",
+    "developerMode",
+    "thoughtsAndDreams",
+    "proactiveSuggestions",
+    "sendShortcut",
+    "telemetry",
+    "developerEventRetentionMs",
+    "personality",
+    "executionPolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "type": "number"
+    },
+    "theme": {
+      "anyOf": [
+        {
+          "const": "cupcake-light",
+          "type": "string"
+        },
+        {
+          "const": "cupcake-dark",
+          "type": "string"
+        },
+        {
+          "const": "minimal",
+          "type": "string"
+        },
+        {
+          "const": "classic",
+          "type": "string"
+        }
+      ]
+    },
+    "followSystemTheme": {
+      "type": "boolean"
+    },
+    "reducedMotion": {
+      "anyOf": [
+        {
+          "const": "system",
+          "type": "string"
+        },
+        {
+          "const": "always",
+          "type": "string"
+        },
+        {
+          "const": "never",
+          "type": "string"
+        }
+      ]
+    },
+    "textScale": {
+      "minimum": 0.8,
+      "maximum": 2,
+      "type": "number"
+    },
+    "defaultModel": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "provider",
+        "modelId",
+        "reasoningLevel"
+      ],
+      "properties": {
+        "provider": {
+          "anyOf": [
+            {
+              "const": "openai",
+              "type": "string"
+            },
+            {
+              "const": "anthropic",
+              "type": "string"
+            },
+            {
+              "const": "gemini",
+              "type": "string"
+            },
+            {
+              "const": "xai",
+              "type": "string"
+            },
+            {
+              "const": "mistral",
+              "type": "string"
+            },
+            {
+              "const": "cohere",
+              "type": "string"
+            },
+            {
+              "const": "nvidia-nim",
+              "type": "string"
+            },
+            {
+              "const": "openai-compatible",
+              "type": "string"
+            },
+            {
+              "const": "cupcake-local",
+              "type": "string"
+            },
+            {
+              "const": "ollama",
+              "type": "string"
+            },
+            {
+              "const": "lm-studio",
+              "type": "string"
+            },
+            {
+              "const": "vllm",
+              "type": "string"
+            },
+            {
+              "const": "mock",
+              "type": "string"
+            }
+          ]
+        },
+        "modelId": {
+          "minLength": 1,
+          "maxLength": 255,
+          "type": "string"
+        },
+        "reasoningLevel": {
+          "anyOf": [
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "const": "minimal",
+              "type": "string"
+            },
+            {
+              "const": "low",
+              "type": "string"
+            },
+            {
+              "const": "medium",
+              "type": "string"
+            },
+            {
+              "const": "high",
+              "type": "string"
+            },
+            {
+              "const": "xhigh",
+              "type": "string"
+            }
+          ]
+        },
+        "fallback": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "enabled",
+            "provider",
+            "modelId",
+            "requiresBoundaryConfirmation"
+          ],
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "const": "openai",
+                  "type": "string"
+                },
+                {
+                  "const": "anthropic",
+                  "type": "string"
+                },
+                {
+                  "const": "gemini",
+                  "type": "string"
+                },
+                {
+                  "const": "xai",
+                  "type": "string"
+                },
+                {
+                  "const": "mistral",
+                  "type": "string"
+                },
+                {
+                  "const": "cohere",
+                  "type": "string"
+                },
+                {
+                  "const": "nvidia-nim",
+                  "type": "string"
+                },
+                {
+                  "const": "openai-compatible",
+                  "type": "string"
+                },
+                {
+                  "const": "cupcake-local",
+                  "type": "string"
+                },
+                {
+                  "const": "ollama",
+                  "type": "string"
+                },
+                {
+                  "const": "lm-studio",
+                  "type": "string"
+                },
+                {
+                  "const": "vllm",
+                  "type": "string"
+                },
+                {
+                  "const": "mock",
+                  "type": "string"
+                }
+              ]
+            },
+            "modelId": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            },
+            "requiresBoundaryConfirmation": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "developerMode": {
+      "type": "boolean"
+    },
+    "thoughtsAndDreams": {
+      "default": false,
+      "type": "boolean"
+    },
+    "proactiveSuggestions": {
+      "default": false,
+      "type": "boolean"
+    },
+    "sendShortcut": {
+      "anyOf": [
+        {
+          "const": "enter",
+          "type": "string"
+        },
+        {
+          "const": "ctrl-enter",
+          "type": "string"
+        }
+      ]
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "const": "off",
+          "type": "string"
+        },
+        {
+          "const": "local-only",
+          "type": "string"
+        }
+      ]
+    },
+    "developerEventRetentionMs": {
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "personality": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "preset",
+        "warmth",
+        "verbosity",
+        "initiative",
+        "playfulness"
+      ],
+      "properties": {
+        "preset": {
+          "anyOf": [
+            {
+              "const": "balanced",
+              "type": "string"
+            },
+            {
+              "const": "concise",
+              "type": "string"
+            },
+            {
+              "const": "warm",
+              "type": "string"
+            },
+            {
+              "const": "analytical",
+              "type": "string"
+            },
+            {
+              "const": "custom",
+              "type": "string"
+            }
+          ]
+        },
+        "warmth": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "verbosity": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "initiative": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "playfulness": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        }
+      }
+    },
+    "executionPolicy": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sandboxedCodeEnabled",
+        "unsandboxedCodeEnabled",
+        "networkDefault",
+        "automaticTaskThresholdMs"
+      ],
+      "properties": {
+        "sandboxedCodeEnabled": {
+          "type": "boolean"
+        },
+        "unsandboxedCodeEnabled": {
+          "const": false,
+          "type": "boolean"
+        },
+        "networkDefault": {
+          "const": "denied",
+          "type": "string"
+        },
+        "automaticTaskThresholdMs": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

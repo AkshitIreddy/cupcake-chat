@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/theme-tokens.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "colors",
+    "typography",
+    "mascotStyle"
+  ],
+  "properties": {
+    "id": {
+      "anyOf": [
+        {
+          "const": "cupcake-light",
+          "type": "string"
+        },
+        {
+          "const": "cupcake-dark",
+          "type": "string"
+        },
+        {
+          "const": "minimal",
+          "type": "string"
+        },
+        {
+          "const": "classic",
+          "type": "string"
+        }
+      ]
+    },
+    "colors": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "crumb",
+        "paper",
+        "cocoa",
+        "berry",
+        "pistachio",
+        "blueberry"
+      ],
+      "properties": {
+        "crumb": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "paper": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "cocoa": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "berry": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "pistachio": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "blueberry": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        }
+      }
+    },
+    "typography": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "display",
+        "body",
+        "mono"
+      ],
+      "properties": {
+        "display": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "body": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "mono": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        }
+      }
+    },
+    "mascotStyle": {
+      "anyOf": [
+        {
+          "const": "flat",
+          "type": "string"
+        },
+        {
+          "const": "classic-glossy",
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

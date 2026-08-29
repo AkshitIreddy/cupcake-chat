@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/conversation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "activeBranchId",
+    "createdAt",
+    "updatedAt",
+    "model"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "activeBranchId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "archivedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pinnedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "provider",
+        "modelId",
+        "reasoningLevel"
+      ],
+      "properties": {
+        "provider": {
+          "anyOf": [
+            {
+              "const": "openai",
+              "type": "string"
+            },
+            {
+              "const": "anthropic",
+              "type": "string"
+            },
+            {
+              "const": "gemini",
+              "type": "string"
+            },
+            {
+              "const": "xai",
+              "type": "string"
+            },
+            {
+              "const": "mistral",
+              "type": "string"
+            },
+            {
+              "const": "cohere",
+              "type": "string"
+            },
+            {
+              "const": "nvidia-nim",
+              "type": "string"
+            },
+            {
+              "const": "openai-compatible",
+              "type": "string"
+            },
+            {
+              "const": "cupcake-local",
+              "type": "string"
+            },
+            {
+              "const": "ollama",
+              "type": "string"
+            },
+            {
+              "const": "lm-studio",
+              "type": "string"
+            },
+            {
+              "const": "vllm",
+              "type": "string"
+            },
+            {
+              "const": "mock",
+              "type": "string"
+            }
+          ]
+        },
+        "modelId": {
+          "minLength": 1,
+          "maxLength": 255,
+          "type": "string"
+        },
+        "reasoningLevel": {
+          "anyOf": [
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "const": "minimal",
+              "type": "string"
+            },
+            {
+              "const": "low",
+              "type": "string"
+            },
+            {
+              "const": "medium",
+              "type": "string"
+            },
+            {
+              "const": "high",
+              "type": "string"
+            },
+            {
+              "const": "xhigh",
+              "type": "string"
+            }
+          ]
+        },
+        "fallback": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "enabled",
+            "provider",
+            "modelId",
+            "requiresBoundaryConfirmation"
+          ],
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "const": "openai",
+                  "type": "string"
+                },
+                {
+                  "const": "anthropic",
+                  "type": "string"
+                },
+                {
+                  "const": "gemini",
+                  "type": "string"
+                },
+                {
+                  "const": "xai",
+                  "type": "string"
+                },
+                {
+                  "const": "mistral",
+                  "type": "string"
+                },
+                {
+                  "const": "cohere",
+                  "type": "string"
+                },
+                {
+                  "const": "nvidia-nim",
+                  "type": "string"
+                },
+                {
+                  "const": "openai-compatible",
+                  "type": "string"
+                },
+                {
+                  "const": "cupcake-local",
+                  "type": "string"
+                },
+                {
+                  "const": "ollama",
+                  "type": "string"
+                },
+                {
+                  "const": "lm-studio",
+                  "type": "string"
+                },
+                {
+                  "const": "vllm",
+                  "type": "string"
+                },
+                {
+                  "const": "mock",
+                  "type": "string"
+                }
+              ]
+            },
+            "modelId": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            },
+            "requiresBoundaryConfirmation": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

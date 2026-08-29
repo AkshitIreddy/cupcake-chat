@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/model-descriptor.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "provider",
+    "family",
+    "displayName",
+    "capabilities",
+    "reasoningLevels",
+    "contextWindowTokens",
+    "maximumOutputTokens",
+    "privacyRoute",
+    "speedClass",
+    "costClass",
+    "lifecycle"
+  ],
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "maxLength": 255,
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "const": "openai",
+          "type": "string"
+        },
+        {
+          "const": "anthropic",
+          "type": "string"
+        },
+        {
+          "const": "gemini",
+          "type": "string"
+        },
+        {
+          "const": "xai",
+          "type": "string"
+        },
+        {
+          "const": "mistral",
+          "type": "string"
+        },
+        {
+          "const": "cohere",
+          "type": "string"
+        },
+        {
+          "const": "nvidia-nim",
+          "type": "string"
+        },
+        {
+          "const": "openai-compatible",
+          "type": "string"
+        },
+        {
+          "const": "cupcake-local",
+          "type": "string"
+        },
+        {
+          "const": "ollama",
+          "type": "string"
+        },
+        {
+          "const": "lm-studio",
+          "type": "string"
+        },
+        {
+          "const": "vllm",
+          "type": "string"
+        },
+        {
+          "const": "mock",
+          "type": "string"
+        }
+      ]
+    },
+    "family": {
+      "minLength": 1,
+      "maxLength": 255,
+      "type": "string"
+    },
+    "displayName": {
+      "minLength": 1,
+      "maxLength": 255,
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 2048,
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "streaming",
+        "toolCalling",
+        "structuredOutput",
+        "imageInput",
+        "documentInput",
+        "webSearch",
+        "citations",
+        "reasoning",
+        "embeddings"
+      ],
+      "properties": {
+        "streaming": {
+          "type": "boolean"
+        },
+        "toolCalling": {
+          "type": "boolean"
+        },
+        "structuredOutput": {
+          "type": "boolean"
+        },
+        "imageInput": {
+          "type": "boolean"
+        },
+        "documentInput": {
+          "type": "boolean"
+        },
+        "webSearch": {
+          "type": "boolean"
+        },
+        "citations": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "embeddings": {
+          "type": "boolean"
+        }
+      }
+    },
+    "reasoningLevels": {
+      "uniqueItems": true,
+      "maxItems": 6,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "const": "none",
+            "type": "string"
+          },
+          {
+            "const": "minimal",
+            "type": "string"
+          },
+          {
+            "const": "low",
+            "type": "string"
+          },
+          {
+            "const": "medium",
+            "type": "string"
+          },
+          {
+            "const": "high",
+            "type": "string"
+          },
+          {
+            "const": "xhigh",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "contextWindowTokens": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "maximumOutputTokens": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "privacyRoute": {
+      "anyOf": [
+        {
+          "const": "local",
+          "type": "string"
+        },
+        {
+          "const": "direct-cloud",
+          "type": "string"
+        },
+        {
+          "const": "custom-endpoint",
+          "type": "string"
+        }
+      ]
+    },
+    "speedClass": {
+      "anyOf": [
+        {
+          "const": "fast",
+          "type": "string"
+        },
+        {
+          "const": "balanced",
+          "type": "string"
+        },
+        {
+          "const": "deep",
+          "type": "string"
+        }
+      ]
+    },
+    "costClass": {
+      "anyOf": [
+        {
+          "const": "free",
+          "type": "string"
+        },
+        {
+          "const": "low",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "type": "string"
+        }
+      ]
+    },
+    "pricing": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "currency",
+        "inputPerMillion",
+        "outputPerMillion",
+        "checkedAt"
+      ],
+      "properties": {
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "inputPerMillion": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "cachedInputPerMillion": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "outputPerMillion": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "provenanceUrl": {
+          "format": "uri",
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "checkedAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    },
+    "lifecycle": {
+      "anyOf": [
+        {
+          "const": "available",
+          "type": "string"
+        },
+        {
+          "const": "preview",
+          "type": "string"
+        },
+        {
+          "const": "deprecated",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "type": "string"
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "$id": "T0",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "T0"
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "$ref": "T0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "contractVersion": 1,
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "schemas": [
+    {
+      "name": "app-settings",
+      "file": "app-settings.schema.json",
+      "sha256": "7114658f42cf0e6318f621bd2545f5ed56ec67219dc5b32eb6ec9eb3ae5ba2b3"
+    },
+    {
+      "name": "artifact",
+      "file": "artifact.schema.json",
+      "sha256": "6c9b8719e1b4a46f067fef6d882d79f5eb6e639edd28d1c072fbd2508b13a66d"
+    },
+    {
+      "name": "artifact-revision",
+      "file": "artifact-revision.schema.json",
+      "sha256": "2872fa9a5ddb41f97ff52dba27030919ca2e781850bac0a1015197de0d889945"
+    },
+    {
+      "name": "broker-request",
+      "file": "broker-request.schema.json",
+      "sha256": "b205339a3ac87973c3b3c56ee8d4afbdfb500cec7c1cac96223b8cbeb4161bf3"
+    },
+    {
+      "name": "broker-tool-result",
+      "file": "broker-tool-result.schema.json",
+      "sha256": "ed44ff839fafc99a122ff5aa614c6740fe97993282553d61e30658d425f8bce4"
+    },
+    {
+      "name": "context",
+      "file": "context.schema.json",
+      "sha256": "64afa1572bb094a20df85b99dca33da766a242c32981b22e36421e86715d917e"
+    },
+    {
+      "name": "conversation",
+      "file": "conversation.schema.json",
+      "sha256": "b76539dfab2e149a7b4a644583c9ea27ab6a4b2c196e3c27801b96ecc1dbc286"
+    },
+    {
+      "name": "conversation-branch",
+      "file": "conversation-branch.schema.json",
+      "sha256": "40855798409038ed6728fb8ad0e43f6d904d34b8bb9c824a28a1dfefdd9871cd"
+    },
+    {
+      "name": "file",
+      "file": "file.schema.json",
+      "sha256": "daad7cfaa06b99096a786fa0b7ce405a89414616c1d479dfa454e3fcf64c7eb0"
+    },
+    {
+      "name": "memory",
+      "file": "memory.schema.json",
+      "sha256": "150d6aee7b288afc7907d81b17464c7e74f651a846af7724bd39c951dac5d668"
+    },
+    {
+      "name": "memory-mutation",
+      "file": "memory-mutation.schema.json",
+      "sha256": "9c7fc3a2f5e6226f12dd783de452507ffc552c173b8efc6db5b487d2e5cb3802"
+    },
+    {
+      "name": "message",
+      "file": "message.schema.json",
+      "sha256": "46a061c2102dc054982eab752a7202413d296f959715895accd9ccbadfe379cf"
+    },
+    {
+      "name": "model",
+      "file": "model.schema.json",
+      "sha256": "1cb0c0ab1dd375478cd913917895024fcbd463e7beda3dada2a75f7abf2b8b1a"
+    },
+    {
+      "name": "project",
+      "file": "project.schema.json",
+      "sha256": "b05c31513b2ec2cf7d2b76ecf0173951be3c7cdd3315fd2a8486d1bf5d5034cd"
+    },
+    {
+      "name": "protocol",
+      "file": "protocol.schema.json",
+      "sha256": "4776c4f239e1971c9bcb0a6735b4db901ce86a5edcce205cce3ed1f3689c816f"
+    },
+    {
+      "name": "provider",
+      "file": "provider.schema.json",
+      "sha256": "ad21f0ce01e9a7fc3b4c98e2dbfe98b572df13b9a1cd02b75a777b757bcff652"
+    },
+    {
+      "name": "run-event",
+      "file": "run-event.schema.json",
+      "sha256": "b630395f526ca346d7a938fc076997575b3cacfff4b4b5c6bc154bcc84ddde02"
+    },
+    {
+      "name": "search-request",
+      "file": "search-request.schema.json",
+      "sha256": "5f6b61464204001d4f7a5640a2f0b581e0e935e1612e9893510b9323b0430a29"
+    },
+    {
+      "name": "search-result",
+      "file": "search-result.schema.json",
+      "sha256": "fb30a180cda7634dea798bd9b279cc203531cefe676373b7f20fdaa2f67823fd"
+    },
+    {
+      "name": "task",
+      "file": "task.schema.json",
+      "sha256": "35bc55a7b262b64cfe753a7ef53cd64f0d7600cc7dcb7abf4d4da40fc0575268"
+    },
+    {
+      "name": "task-command",
+      "file": "task-command.schema.json",
+      "sha256": "399f8f27210e2496cd228d559bb44ec0d07aa8fa9191026b5a6e0bb3fe0a64b6"
+    },
+    {
+      "name": "theme",
+      "file": "theme.schema.json",
+      "sha256": "ffc4576ddfa31d063dfe43f763e814832507ae9b2da1e0ffafb25a4f21592531"
+    },
+    {
+      "name": "tool",
+      "file": "tool.schema.json",
+      "sha256": "8907996b584dab075f9c6b5c105410086b3183b917507e5986302e2389d8d509"
+    },
+    {
+      "name": "tool-intent",
+      "file": "tool-intent.schema.json",
+      "sha256": "a62779742e2c0361068b2235b2397dc1597a5d8f16bf1b941891687f1b7bbea9"
+    },
+    {
+      "name": "tool-preflight",
+      "file": "tool-preflight.schema.json",
+      "sha256": "f87d5b8f79764f7fe273d7eab8f44bdcd3777dc98c5c6f74bd7cfc26e57f5799"
+    },
+    {
+      "name": "tool-result",
+      "file": "tool-result.schema.json",
+      "sha256": "3426db883f0e04440b6e6fa0d2266ca78c8cc6eb69db30658e53d24f0bcf42f4"
+    }
+  ]
+}

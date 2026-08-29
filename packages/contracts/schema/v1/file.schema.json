@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/file-record.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "displayName",
+    "sourceHandle",
+    "mimeType",
+    "byteSize",
+    "contentSha256",
+    "modifiedAt",
+    "destination",
+    "ingestion",
+    "provenance"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "projectId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "displayName": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "sourceHandle": {
+      "minLength": 1,
+      "maxLength": 512,
+      "type": "string"
+    },
+    "mimeType": {
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[^/\\s]+/[^/\\s]+$",
+      "type": "string"
+    },
+    "byteSize": {
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "contentSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "modifiedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "destination": {
+      "anyOf": [
+        {
+          "const": "local",
+          "type": "string"
+        },
+        {
+          "const": "cloud",
+          "type": "string"
+        }
+      ]
+    },
+    "ingestion": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "const": "pending",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "state",
+            "progress"
+          ],
+          "properties": {
+            "state": {
+              "const": "parsing",
+              "type": "string"
+            },
+            "progress": {
+              "minimum": 0,
+              "maximum": 1,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "state",
+            "indexedAt",
+            "chunkCount"
+          ],
+          "properties": {
+            "state": {
+              "const": "indexed",
+              "type": "string"
+            },
+            "indexedAt": {
+              "description": "UTC RFC 3339 timestamp with a trailing Z.",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "chunkCount": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "state",
+            "reason"
+          ],
+          "properties": {
+            "state": {
+              "const": "unsupported",
+              "type": "string"
+            },
+            "reason": {
+              "minLength": 1,
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "state",
+            "reason",
+            "retryable"
+          ],
+          "properties": {
+            "state": {
+              "const": "failed",
+              "type": "string"
+            },
+            "reason": {
+              "minLength": 1,
+              "maxLength": 2048,
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "createdAt"
+      ],
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "const": "user",
+              "type": "string"
+            },
+            {
+              "const": "assistant",
+              "type": "string"
+            },
+            {
+              "const": "tool",
+              "type": "string"
+            },
+            {
+              "const": "import",
+              "type": "string"
+            },
+            {
+              "const": "system",
+              "type": "string"
+            }
+          ]
+        },
+        "sourceId": {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sourceLabel": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "createdAt": {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
