@@ -43,6 +43,16 @@ cover ordinary development and CI, but cannot prove current account permissions,
 availability, regional behavior, or billing. Configure low test budgets and never commit
 credentials.
 
+### Strict Python type-check debt
+
+The runtime's declared strict Pyright configuration currently reports existing type debt across the
+runtime and its tests. The release verification script now resolves that configuration explicitly
+instead of accidentally running Pyright's weaker default mode from the repository root. This is a
+release gate: do not describe the candidate as fully approved until the strict run is clean or the
+owner explicitly accepts a documented, bounded remediation plan. Runtime lint, tests, the focused
+changed protocol module check, and the packaged smoke checks remain separate evidence; they do not
+make the strict gate pass.
+
 ### Local model weights
 
 No model weights are bundled. Initial local use requires a compatible runtime/model and sufficient

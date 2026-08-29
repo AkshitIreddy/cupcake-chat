@@ -92,6 +92,17 @@ node scripts/verify.mjs --lane python
 node scripts/verify.mjs --lane rust
 ```
 
+The Python lane intentionally resolves `services/runtime/pyproject.toml` in strict mode. At the
+current checkpoint it reports the documented strict-type debt and is therefore a release blocker; do
+not substitute a repository-root positional Pyright command, because that silently uses weaker
+defaults. Reproduce the strict gate directly with:
+
+```powershell
+Push-Location services\runtime
+.\.venv\Scripts\python.exe -m pyright .
+Pop-Location
+```
+
 If the Python package metadata or `test` extra is missing, stop the runtime portion and record that
 as a release blocker. Do not use the 1.x Conda environment as a substitute.
 

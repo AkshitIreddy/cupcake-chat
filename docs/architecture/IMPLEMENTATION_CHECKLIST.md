@@ -4,10 +4,10 @@ This is the live completion ledger for the local 2.0 release candidate. An item 
 when its implementation and its relevant verification both exist. The release candidate is not
 published or pushed before the owner's explicit approval.
 
-The implementation and automated/local evidence below are complete for the Windows x64 candidate;
-owner acceptance of the unpacked app and unsigned installer is still required before this becomes a
-release. Web search remains an explicit endpoint opt-in, and voice/automatic routing remain omitted
-by contract.
+The implementation and automated/local evidence below are complete for the Windows x64 candidate
+except for the separately documented strict Python type-check gate. Owner acceptance of the unpacked
+app and unsigned installer is still required before this becomes a release. Web search remains an
+explicit endpoint opt-in, and voice/automatic routing remain omitted by contract.
 
 ## 1. Repository and decisions
 
@@ -91,6 +91,8 @@ by contract.
       platform/architecture targets.
 - [x] Unit, integration, provider, local-model, durability, security, accessibility, performance,
       and end-to-end tests.
+- [ ] Strict Python type checking. The explicit project configuration exposes existing runtime/test
+      debt; see [known issues](../known-issues.md#strict-python-type-check-debt).
 - [x] Playwright interaction checks plus inspected full-frame and close-up screenshots for required
       viewports and themes.
 - [x] Local release-candidate summary and exact owner testing instructions.

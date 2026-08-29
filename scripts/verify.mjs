@@ -41,7 +41,10 @@ async function verifyPython() {
   const python = isWindows ? 'python' : commandExists('python3') ? 'python3' : 'python';
   requireCommand(python, 'Install Python 3.12 or newer.');
   run(python, ['-m', 'ruff', 'check', 'services/runtime']);
-  run(python, ['-m', 'pyright', 'services/runtime']);
+  // Resolve the runtime's strict Pyright configuration explicitly. A bare
+  // positional path from the repository root skips services/runtime/pyproject.toml
+  // and silently downgrades this release gate to Pyright's default mode.
+  run(python, ['-m', 'pyright', '--project', 'services/runtime', 'services/runtime']);
   run(python, ['-m', 'pytest', 'services/runtime']);
 }
 
