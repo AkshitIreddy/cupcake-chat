@@ -1,6 +1,6 @@
-# CUPCAKEAGI 2.0 resumed handoff
+# CUPCAKEAGI 2.0 paused handoff
 
-**Resumed and packaged:** 2026-08-29 UTC
+**Paused again:** 2026-08-29 UTC
 
 **Branch:** `feat/cupcakeagi-2.0`
 
@@ -13,6 +13,23 @@
 This is the post-resumption ledger. The implementation remains in the working tree until the green
 slices are committed atomically. Do not discard, reset, or overwrite uncommitted files. The original
 implementation remains recoverable through Git history and the `v1.0.0` tag.
+
+## Current pause checkpoint
+
+- All costly/UI work was stopped at the owner's request. No CUPCAKEAGI process, CDP probe,
+  PyInstaller build, local-model workload, or API smoke remains active.
+- The GPU coordination file is `C:\Users\akshi\Desktop\Code Palace\gpu use.txt` with value `no`. No
+  AI model was loaded on the GPU.
+- The live packaged UI probe reached an encrypted DPAPI-backed runtime and successfully returned
+  `runtime.health`, `providers.status`, and a live NVIDIA NIM catalog. The picker displayed NIM
+  models, but the selected model button was still disabled and the actual chat send was not
+  completed.
+- The current uncommitted live-path edits are in `apps/desktop/src/main/ipc.ts`,
+  `apps/desktop/src/main/sidecar-supervisor.ts`, `apps/desktop/src/renderer/App.tsx`,
+  `apps/desktop/src/renderer/types.ts`, `apps/desktop/src/renderer/workspace.tsx`, and
+  `crates/tool-broker/src/main.rs`. Preserve them; do not reset.
+- The current private commits through the last clean checkpoint are `9508216`, `ef7e848`, `2ed44d9`,
+  `983b9da`, `c72df77`, and `0047b7a` (latest first in the ordinary log is `9508216`).
 
 ## Pause shutdown evidence
 
