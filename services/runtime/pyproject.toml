@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cupcake-runtime"
+version = "2.0.0rc1"
+description = "Local CUPCAKEAGI runtime, product contracts, and authoritative storage"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Unlicense" }
+dependencies = [
+  "cryptography>=43.0,<46",
+  "pydantic>=2.10,<3",
+  "psutil>=7.0,<8",
+  "pypdf>=6.0,<7",
+]
+
+[project.optional-dependencies]
+sqlcipher = ["sqlcipher3-wheels>=0.5.7,<1; platform_python_implementation == 'CPython'"]
+providers = [
+  "pydantic-ai-slim[anthropic,cohere,google,mistral,openai]==2.35.3",
+]
+durability = ["dbos==2.31.0"]
+documents = ["docling==2.123.1"]
+packaging = ["pyinstaller>=6.22.2,<7"]
+test = [
+  "mypy>=1.18,<2",
+  "pyright>=1.1.400,<2",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "pytest-cov>=6,<7",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cupcake_runtime"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config --import-mode=importlib"
+testpaths = ["tests"]
+markers = [
+  "performance: opt-in hardware performance budget (set CUPCAKE_RUN_PERF=1)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["cupcake_runtime"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"

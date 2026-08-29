@@ -1,0 +1,372 @@
+"""NVIDIA-hosted NIM text models through the OpenAI-compatible API.
+
+The hosted API catalog covers more than chat models.  Discovery therefore
+keeps upstream capability claims separate from conservative product
+capabilities and visibly marks models whose chat compatibility is unknown.
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import re
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from enum import StrEnum
+from typing import Any
+
+from .base import (
+    MissingProviderCredential,
+    MissingProviderDependency,
+    ProviderConfig,
+    ProviderError,
+    classify_provider_error,
+    coerce_mapping,
+)
+from .openai_compatible import OpenAICompatibleAdapter
+from .types import (
+    CostClass,
+    ModelCapabilities,
+    ModelDescriptor,
+    ModelPricing,
+    ModelRequest,
+    PrivacyRoute,
+    ReasoningEffort,
+    SpeedClass,
+)
+
+NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_NIM_PROVIDER = "nvidia-nim"
+MAX_DISCOVERED_MODELS = 512
+MAX_MODEL_ID_LENGTH = 220
+MAX_CATALOG_BYTES = 2 * 1024 * 1024
+DEFAULT_CATALOG_TTL_SECONDS = 15 * 60
+
+_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+/@-]*$")
+_CHAT_MARKERS = frozenset(
+    {
+        "chat",
+        "chat-completion",
+        "chat-completions",
+        "completion",
+        "completions",
+        "conversation",
+        "instruction-following",
+        "llm",
+        "text-generation",
+    }
+)
+_NON_CHAT_MARKERS = frozenset(
+    {
+        "audio",
+        "classification",
+        "detector",
+        "diffusion",
+        "embed",
+        "embedding",
+        "embeddings",
+        "guard",
+        "image",
+        "multimodal",
+        "object-detection",
+        "reward",
+        "rerank",
+        "reranking",
+        "retrieval",
+        "safety",
+        "speech",
+        "text-to-image",
+        "translate",
+        "video",
+        "vision",
+        "vlm",
+    }
+)
+
+
+class ChatCompatibility(StrEnum):
+    CHAT = "chat"
+    NON_CHAT = "non_chat"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class NvidiaNimCatalogResult:
+    models: tuple[ModelDescriptor, ...]
+    filtered_non_chat: int
+    unknown_chat_compatibility: int
+    fetched_at_ms: int
+    cached: bool = False
+
+
+@dataclass(slots=True)
+class NvidiaNimCatalogDiscovery:
+    """Fetch and bound one NVIDIA ``/models`` response.
+
+    The API key and raw response never enter the cache.  Only normalized,
+    product-owned descriptors are retained for a short period.
+    """
+
+    ttl_seconds: float = DEFAULT_CATALOG_TTL_SECONDS
+    max_models: int = MAX_DISCOVERED_MODELS
+    max_catalog_bytes: int = MAX_CATALOG_BYTES
+    _cached: NvidiaNimCatalogResult | None = field(default=None, init=False, repr=False)
+    _cached_at: float = field(default=0.0, init=False, repr=False)
+
+    async def discover(
+        self,
+        config: ProviderConfig,
+        *,
+        client: Any = None,
+        force: bool = False,
+    ) -> NvidiaNimCatalogResult:
+        now = time.monotonic()
+        if not force and self._cached is not None and now - self._cached_at < self.ttl_seconds:
+            return replace(self._cached, cached=True)
+        if not config.api_key:
+            raise MissingProviderCredential(NVIDIA_NIM_PROVIDER, "NVIDIA NIM API key")
+
+        resolved_client = client or self._create_client(config)
+        try:
+            response = resolved_client.models.list()
+            if inspect.isawaitable(response):
+                response = await response
+        except Exception as exc:
+            classified = classify_provider_error(exc)
+            raise ProviderError(
+                classified.message,
+                code=classified.code,
+                retryable=classified.retryable,
+            ) from exc
+        result = self._parse_response(response)
+        self._cached = result
+        self._cached_at = now
+        return result
+
+    @staticmethod
+    def _create_client(config: ProviderConfig) -> Any:
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise MissingProviderDependency(NVIDIA_NIM_PROVIDER, "openai") from exc
+        return AsyncOpenAI(
+            api_key=config.api_key,
+            base_url=NVIDIA_NIM_BASE_URL,
+            timeout=config.timeout_seconds,
+            default_headers=dict(config.headers or {}),
+        )
+
+    def _parse_response(self, response: Any) -> NvidiaNimCatalogResult:
+        response_map = coerce_mapping(response)
+        raw_models = response_map.get("data", getattr(response, "data", None))
+        if not isinstance(raw_models, Sequence) or isinstance(raw_models, (str, bytes, bytearray)):
+            raise ProviderError(
+                "NVIDIA NIM returned an invalid model catalog.",
+                code="invalid_model_catalog",
+            )
+        if len(raw_models) > self.max_models:
+            raise ProviderError(
+                "NVIDIA NIM returned more models than the safety limit.",
+                code="oversized_model_catalog",
+            )
+
+        descriptors: list[ModelDescriptor] = []
+        filtered = 0
+        unknown = 0
+        seen: set[str] = set()
+        total_bytes = 0
+        for raw in raw_models:
+            record = coerce_mapping(raw)
+            try:
+                encoded = json.dumps(record, default=str, separators=(",", ":")).encode("utf-8")
+            except (TypeError, ValueError) as exc:
+                raise ProviderError(
+                    "NVIDIA NIM returned an invalid model catalog entry.",
+                    code="invalid_model_catalog",
+                ) from exc
+            total_bytes += len(encoded)
+            if total_bytes > self.max_catalog_bytes:
+                raise ProviderError(
+                    "NVIDIA NIM returned a model catalog larger than the safety limit.",
+                    code="oversized_model_catalog",
+                )
+
+            model_id = record.get("id")
+            if not isinstance(model_id, str):
+                continue
+            model_id = model_id.strip()
+            if (
+                not model_id
+                or len(model_id) > MAX_MODEL_ID_LENGTH
+                or not _SAFE_MODEL_ID.fullmatch(model_id)
+                or model_id in seen
+            ):
+                continue
+            seen.add(model_id)
+            compatibility, evidence, declared = _classify_chat_compatibility(record, model_id)
+            if compatibility is ChatCompatibility.NON_CHAT:
+                filtered += 1
+                continue
+            if compatibility is ChatCompatibility.UNKNOWN:
+                unknown += 1
+            descriptors.append(
+                _descriptor_from_record(model_id, record, compatibility, evidence, declared)
+            )
+
+        result = NvidiaNimCatalogResult(
+            models=tuple(sorted(descriptors, key=lambda item: item.display_name.casefold())),
+            filtered_non_chat=filtered,
+            unknown_chat_compatibility=unknown,
+            fetched_at_ms=int(time.time() * 1000),
+        )
+        return result
+
+
+class NvidiaNimAdapter(OpenAICompatibleAdapter):
+    provider = NVIDIA_NIM_PROVIDER
+
+    def __init__(
+        self,
+        descriptor: ModelDescriptor,
+        config: ProviderConfig,
+        *,
+        client: Any = None,
+    ) -> None:
+        # A first-class hosted provider must not inherit a renderer-supplied
+        # endpoint.  Self-hosted NIM belongs in the generic compatible flow.
+        super().__init__(
+            descriptor,
+            replace(config, base_url=NVIDIA_NIM_BASE_URL),
+            client=client,
+        )
+
+    def build_request(self, request: ModelRequest) -> dict[str, Any]:
+        payload = super().build_request(request)
+        effort = self.effort(request)
+        if effort is not ReasoningEffort.NONE:
+            payload["reasoning_effort"] = effort.value
+        return payload
+
+
+def build_pydantic_model(model_name: str, *, api_key: str | None = None) -> Any:
+    try:
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+    except ImportError as exc:
+        raise MissingProviderDependency(NVIDIA_NIM_PROVIDER, "pydantic-ai-slim[openai]") from exc
+    return OpenAIChatModel(
+        model_name,
+        provider=OpenAIProvider(api_key=api_key, base_url=NVIDIA_NIM_BASE_URL),
+    )
+
+
+def _classify_chat_compatibility(
+    record: Mapping[str, Any], model_id: str
+) -> tuple[ChatCompatibility, str, frozenset[str]]:
+    markers = _declared_markers(record)
+    if markers & _CHAT_MARKERS:
+        return ChatCompatibility.CHAT, "provider-declared task/capability", markers
+    if markers & _NON_CHAT_MARKERS:
+        return ChatCompatibility.NON_CHAT, "provider-declared non-chat task/capability", markers
+
+    # Identifiers are only used to exclude unmistakable non-text surfaces.  An
+    # identifier is never enough to claim that a model supports chat.
+    identifier_tokens = frozenset(re.split(r"[/:_.+-]+", model_id.casefold()))
+    if identifier_tokens & _NON_CHAT_MARKERS:
+        return ChatCompatibility.NON_CHAT, "identifier indicates a non-chat surface", markers
+    return ChatCompatibility.UNKNOWN, "NVIDIA catalog did not declare chat compatibility", markers
+
+
+def _declared_markers(record: Mapping[str, Any]) -> frozenset[str]:
+    values: list[str] = []
+    for key in ("task", "type", "model_type", "pipeline_tag", "category"):
+        value = record.get(key)
+        if isinstance(value, str):
+            values.append(value)
+    capabilities = record.get("capabilities")
+    if isinstance(capabilities, Mapping):
+        values.extend(str(key) for key, enabled in capabilities.items() if enabled is True)
+    elif isinstance(capabilities, Sequence) and not isinstance(
+        capabilities, (str, bytes, bytearray)
+    ):
+        values.extend(item for item in capabilities if isinstance(item, str))
+    tokens: set[str] = set()
+    for value in values:
+        normalized = value.casefold().strip().replace("_", "-")
+        if normalized:
+            tokens.add(normalized)
+            tokens.update(part for part in re.split(r"[/:, ]+", normalized) if part)
+    return frozenset(tokens)
+
+
+def _descriptor_from_record(
+    model_id: str,
+    record: Mapping[str, Any],
+    compatibility: ChatCompatibility,
+    evidence: str,
+    declared: frozenset[str],
+) -> ModelDescriptor:
+    context = _bounded_positive_integer(
+        record.get("context_window") or record.get("context_length") or record.get("max_model_len")
+    )
+    output = _bounded_positive_integer(
+        record.get("max_output_tokens") or record.get("max_tokens"), maximum=10_000_000
+    )
+    reasoning = "reasoning" in declared or "reasoning-effort" in declared
+    tools = bool(declared & {"tools", "tool-calling", "function-calling"})
+    structured = bool(declared & {"structured-output", "json-schema", "json-mode"})
+    verified_chat = compatibility is ChatCompatibility.CHAT
+    display = model_id if verified_chat else f"{model_id} · compatibility unverified"
+    reasoning_efforts = (
+        (ReasoningEffort.NONE, ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH)
+        if reasoning
+        else ()
+    )
+    return ModelDescriptor(
+        id=f"{NVIDIA_NIM_PROVIDER}:{model_id}",
+        provider=NVIDIA_NIM_PROVIDER,
+        model=model_id,
+        display_name=display,
+        family=f"{NVIDIA_NIM_PROVIDER}:{model_id}",
+        # The product contract requires a positive value.  One is a sentinel;
+        # UI clients must consult context_window_known before displaying it.
+        context_window=context or 1,
+        max_output_tokens=output,
+        capabilities=ModelCapabilities(
+            streaming=verified_chat,
+            tools=tools,
+            images=False,
+            documents=False,
+            citations=False,
+            reasoning=reasoning,
+            structured_output=structured,
+        ),
+        reasoning_efforts=reasoning_efforts,
+        default_reasoning_effort=ReasoningEffort.NONE,
+        privacy_route=PrivacyRoute.CLOUD,
+        speed_class=SpeedClass.BALANCED,
+        cost_class=CostClass.UNKNOWN,
+        pricing=ModelPricing(source="NVIDIA API Catalog; model terms and pricing vary"),
+        metadata={
+            "catalog": "NVIDIA API Catalog",
+            "catalog_url": "https://build.nvidia.com/",
+            "api_base": NVIDIA_NIM_BASE_URL,
+            "chat_compatibility": compatibility.value,
+            "compatibility_evidence": evidence,
+            "requires_compatibility_confirmation": not verified_chat,
+            "context_window_known": context is not None,
+            "pricing_provenance": "NVIDIA API Catalog and the selected model terms",
+            "privacy_route_label": "NVIDIA-hosted API Catalog",
+        },
+    )
+
+
+def _bounded_positive_integer(value: Any, *, maximum: int = 100_000_000) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return result if 0 < result <= maximum else None

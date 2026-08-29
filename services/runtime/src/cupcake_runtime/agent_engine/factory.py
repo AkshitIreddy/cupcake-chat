@@ -1,0 +1,88 @@
+"""Construct Pydantic AI models from an explicit product model selection."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any, ClassVar, Protocol
+
+from cupcake_runtime.providers import anthropic, cohere, gemini, mistral, nvidia_nim, openai, xai
+from cupcake_runtime.providers.base import MissingProviderDependency, ProviderConfig
+from cupcake_runtime.providers.types import ModelDescriptor, ModelRequest
+
+
+class AgentModelFactory(Protocol):
+    def build(
+        self,
+        descriptor: ModelDescriptor,
+        config: ProviderConfig,
+        request: ModelRequest,
+    ) -> Any: ...
+
+
+Builder = Callable[..., Any]
+
+
+class PydanticModelFactory:
+    """Use direct provider builders plus first-class and generic compatible routes."""
+
+    _builders: ClassVar[dict[str, Builder]] = {
+        "openai": openai.build_pydantic_model,
+        "anthropic": anthropic.build_pydantic_model,
+        "google": gemini.build_pydantic_model,
+        "xai": xai.build_pydantic_model,
+        "mistral": mistral.build_pydantic_model,
+        "cohere": cohere.build_pydantic_model,
+        "nvidia-nim": nvidia_nim.build_pydantic_model,
+    }
+
+    def build(
+        self,
+        descriptor: ModelDescriptor,
+        config: ProviderConfig,
+        request: ModelRequest,
+    ) -> Any:
+        if descriptor.provider == "mock":
+            try:
+                from pydantic_ai.models.test import TestModel
+            except ImportError as exc:  # pragma: no cover - providers extra is bundled
+                raise MissingProviderDependency("mock", "pydantic-ai-slim") from exc
+            prompt = next(
+                (
+                    message.content
+                    for message in reversed(request.messages)
+                    if message.role == "user"
+                ),
+                "",
+            )
+            response = str(request.metadata.get("mock_response") or f"Cupcake received: {prompt}")
+            return TestModel(custom_output_text=response, model_name=descriptor.model)
+        if descriptor.provider == "openai-compatible":
+            return self._openai_compatible(descriptor, config)
+        try:
+            builder = self._builders[descriptor.provider]
+        except KeyError as exc:
+            raise ValueError(f"no Pydantic model builder for {descriptor.provider!r}") from exc
+        if descriptor.provider == "xai":
+            return builder(
+                descriptor.model,
+                api_key=config.api_key,
+                base_url=config.base_url or "https://api.x.ai/v1",
+            )
+        return builder(descriptor.model, api_key=config.api_key)
+
+    @staticmethod
+    def _openai_compatible(descriptor: ModelDescriptor, config: ProviderConfig) -> Any:
+        if not config.base_url:
+            raise ValueError("an OpenAI-compatible endpoint requires an explicit base URL")
+        try:
+            from pydantic_ai.models.openai import OpenAIChatModel
+            from pydantic_ai.providers.openai import OpenAIProvider
+        except ImportError as exc:
+            raise MissingProviderDependency(
+                "openai-compatible", "pydantic-ai-slim[openai]"
+            ) from exc
+        provider = OpenAIProvider(
+            api_key=config.api_key or "not-required",
+            base_url=config.base_url,
+        )
+        return OpenAIChatModel(descriptor.model, provider=provider)

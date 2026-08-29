@@ -1,0 +1,50 @@
+{
+  "openai": [
+    {"type": "response.created", "response": {"id": "resp_recorded"}},
+    {"type": "response.reasoning_summary_text.delta", "item_id": "reason_1", "delta": "Checked sources. "},
+    {"type": "response.output_text.delta", "item_id": "message_1", "delta": "Cupcakes are ready."},
+    {"type": "response.output_text.annotation.added", "item_id": "message_1", "annotation": {"url": "https://example.test/openai", "title": "OpenAI source", "start_index": 0, "end_index": 9}},
+    {"type": "response.output_item.added", "item": {"type": "function_call", "id": "function_1", "call_id": "call_1", "name": "get_recipe"}},
+    {"type": "response.function_call_arguments.delta", "item_id": "function_1", "delta": "{\"flavor\":"},
+    {"type": "response.function_call_arguments.done", "item_id": "function_1", "arguments": "{\"flavor\":\"berry\"}"},
+    {"type": "response.completed", "response": {"id": "resp_recorded", "usage": {"input_tokens": 120, "output_tokens": 40, "input_tokens_details": {"cached_tokens": 20}, "output_tokens_details": {"reasoning_tokens": 8}}}}
+  ],
+  "anthropic": [
+    {"type": "message_start", "message": {"id": "msg_recorded", "usage": {"input_tokens": 90}}},
+    {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Checked constraints. "}},
+    {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Cupcakes are ready."}},
+    {"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "get_recipe"}},
+    {"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": "{\"flavor\":\"berry\"}"}},
+    {"type": "content_block_stop", "index": 2},
+    {"type": "content_block_stop", "index": 1},
+    {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 35}}
+  ],
+  "google": [
+    {"response_id": "gemini_recorded", "candidates": [{"content": {"parts": [{"thought": true, "text": "Checked sources. "}, {"text": "Cupcakes are ready."}, {"function_call": {"id": "gemini_tool_1", "name": "get_recipe", "args": {"flavor": "berry"}}}]}, "grounding_metadata": {"grounding_chunks": [{"web": {"uri": "https://example.test/gemini", "title": "Gemini source"}}]}}]},
+    {"response_id": "gemini_recorded", "candidates": [{"finish_reason": "STOP", "content": {"parts": []}}], "usage_metadata": {"prompt_token_count": 80, "candidates_token_count": 30, "cached_content_token_count": 10, "thoughts_token_count": 6}}
+  ],
+  "xai": [
+    {"id": "xai_recorded", "choices": [{"delta": {"reasoning_content": "Checked sources. ", "content": "Cupcakes are ready.", "tool_calls": [{"index": 0, "id": "xai_tool_1", "function": {"name": "get_recipe", "arguments": "{\"flavor\":"}}]}, "finish_reason": null}]},
+    {"id": "xai_recorded", "choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"berry\"}"}}], "citations": [{"url": "https://example.test/xai", "title": "xAI source"}]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 70, "completion_tokens": 28, "prompt_tokens_details": {"cached_tokens": 7}, "completion_tokens_details": {"reasoning_tokens": 5}}}
+  ],
+  "mistral": [
+    {"data": {"id": "mistral_recorded", "choices": [{"delta": {"content": "Cupcakes are ready.", "tool_calls": [{"index": 0, "id": "mistral_tool_1", "function": {"name": "get_recipe", "arguments": "{\"flavor\":"}}]}, "finish_reason": null}]}},
+    {"data": {"id": "mistral_recorded", "choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"berry\"}"}}]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 60, "completion_tokens": 25}}}
+  ],
+  "cohere": [
+    {"type": "content-delta", "delta": {"message": {"content": {"text": "Cupcakes are ready."}}}},
+    {"type": "tool-call-start", "delta": {"message": {"tool_calls": {"id": "cohere_tool_1", "function": {"name": "get_recipe"}}}}},
+    {"type": "tool-call-delta", "delta": {"message": {"tool_calls": {"id": "cohere_tool_1", "function": {"arguments": "{\"flavor\":\"berry\"}"}}}}},
+    {"type": "citation-start", "delta": {"message": {"citations": {"start": 0, "end": 9, "sources": [{"type": "document", "id": "doc_1"}]}}}},
+    {"type": "tool-call-end", "delta": {"message": {"tool_calls": {"id": "cohere_tool_1"}}}},
+    {"type": "message-end", "delta": {"id": "cohere_recorded", "finish_reason": "COMPLETE", "usage": {"tokens": {"input_tokens": 55, "output_tokens": 22}}}}
+  ],
+  "nvidia-nim": [
+    {"id": "nim_recorded", "choices": [{"delta": {"reasoning_content": "Checked sources. ", "content": "Cupcakes are ready.", "tool_calls": [{"index": 0, "id": "nim_tool_1", "function": {"name": "get_recipe", "arguments": "{\"flavor\":"}}]}, "finish_reason": null}]},
+    {"id": "nim_recorded", "choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"berry\"}"}}], "citations": [{"url": "https://docs.api.nvidia.com/nim/", "title": "NVIDIA NIM source"}]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 64, "completion_tokens": 26, "prompt_tokens_details": {"cached_tokens": 4}, "completion_tokens_details": {"reasoning_tokens": 5}}}
+  ],
+  "openai-compatible": [
+    {"id": "generic_recorded", "choices": [{"delta": {"reasoning_content": "Checked sources. ", "content": "Cupcakes are ready.", "tool_calls": [{"index": 0, "id": "generic_tool_1", "function": {"name": "get_recipe", "arguments": "{\"flavor\":"}}]}, "finish_reason": null}]},
+    {"id": "generic_recorded", "choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"berry\"}"}}], "citations": [{"url": "https://example.test/generic", "title": "Generic source"}]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 50, "completion_tokens": 20, "prompt_tokens_details": {"cached_tokens": 5}, "completion_tokens_details": {"reasoning_tokens": 4}}}
+  ]
+}

@@ -1,0 +1,604 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import io
+import json
+import subprocess
+import zipfile
+from pathlib import Path
+from typing import Any
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from cupcake_runtime.local_models.catalog import SignedRuntimeCatalog, canonical_json
+from cupcake_runtime.local_models.downloads import ModelDownload
+from cupcake_runtime.local_models.managed import (
+    CupcakeLocalManager,
+    LicenseAcceptanceRequired,
+)
+from cupcake_runtime.local_models.manager import LlamaCppSupervisor, LlamaServerConfig
+from cupcake_runtime.local_models.model_store import InstalledModelStore, ModelInUseError
+from cupcake_runtime.local_models.recommendations import rank_runtime_packs
+from cupcake_runtime.local_models.runtime_packs import (
+    RuntimePackIntegrityError,
+    RuntimePackStore,
+)
+from cupcake_runtime.local_models.types import (
+    DownloadState,
+    HardwareProfile,
+    ModelArtifact,
+    RuntimeBackend,
+    RuntimeCompanionArtifact,
+    RuntimeEndpoint,
+    RuntimeKind,
+    RuntimePackArtifact,
+    RuntimeState,
+)
+
+
+def _runtime_artifact(archive: Path, files: dict[str, bytes]) -> RuntimePackArtifact:
+    return RuntimePackArtifact(
+        id="llama-b10672-cpu",
+        version="b10672",
+        backend=RuntimeBackend.CPU,
+        platform="windows",
+        architecture="x64",
+        size_bytes=archive.stat().st_size,
+        sha256=_digest(archive.read_bytes()),
+        urls=("https://example.invalid/llama-b10672-bin-win-cpu-x64.zip",),
+        filename="llama-b10672-bin-win-cpu-x64.zip",
+        executable="llama-server.exe",
+        files={name: _digest(content) for name, content in files.items()},
+        source_revision="511f9c1",
+    )
+
+
+def _zip(path: Path, files: dict[str, bytes]) -> None:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for name, content in files.items():
+            bundle.writestr(name, content)
+
+
+def _digest(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _model_artifact(data: bytes) -> ModelArtifact:
+    return ModelArtifact(
+        "qwen:8b-q4",
+        "Qwen 8B",
+        "qwen",
+        8,
+        "Q4_K_M",
+        len(data),
+        _digest(data),
+        ("https://example.invalid/qwen.gguf",),
+        "qwen.gguf",
+        "Apache-2.0",
+        "https://example.invalid/license",
+        32768,
+    )
+
+
+def test_signed_runtime_catalog_accepts_only_windows_x64_manifest() -> None:
+    payload = {
+        "version": 1,
+        "generated_at": "2026-08-28T00:00:00Z",
+        "runtimes": [
+            {
+                "id": "llama-b10672-cpu",
+                "version": "b10672",
+                "backend": "cpu",
+                "platform": "windows",
+                "architecture": "x64",
+                "size_bytes": 10,
+                "sha256": "1" * 64,
+                "urls": ["https://github.com/ggml-org/llama.cpp/releases/download/b10672/a.zip"],
+                "filename": "a.zip",
+                "executable": "llama-server.exe",
+                "files": {"llama-server.exe": "2" * 64},
+                "source_revision": "511f9c1",
+            }
+        ],
+    }
+    private = Ed25519PrivateKey.generate()
+    document = {
+        "key_id": "release-1",
+        "payload": payload,
+        "signature": base64.b64encode(private.sign(canonical_json(payload))).decode(),
+    }
+    catalog = SignedRuntimeCatalog.verify_and_load(
+        document, {"release-1": private.public_key().public_bytes_raw()}
+    )
+    assert catalog.get("llama-b10672-cpu").backend == RuntimeBackend.CPU
+
+    payload["runtimes"][0]["architecture"] = "arm64"
+    document["signature"] = base64.b64encode(private.sign(canonical_json(payload))).decode()
+    with pytest.raises(ValueError, match="Windows x64"):
+        SignedRuntimeCatalog.verify_and_load(
+            document, {"release-1": private.public_key().public_bytes_raw()}
+        )
+
+    payload["runtimes"][0]["architecture"] = "x64"
+    payload["runtimes"][0]["executable"] = "..\\llama-server.exe"
+    payload["runtimes"][0]["files"] = {"..\\llama-server.exe": "2" * 64}
+    document["signature"] = base64.b64encode(private.sign(canonical_json(payload))).decode()
+    with pytest.raises(ValueError, match="unsafe runtime executable"):
+        SignedRuntimeCatalog.verify_and_load(
+            document, {"release-1": private.public_key().public_bytes_raw()}
+        )
+
+
+def test_committed_local_rc_runtime_catalog_signature_and_provenance() -> None:
+    root = Path(__file__).resolve().parents[4]
+    document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-runtime-v1.json").read_text(encoding="utf-8")
+    )
+    key_document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-public-keys.json").read_text(encoding="utf-8")
+    )
+    keys = {key_id: base64.b64decode(encoded) for key_id, encoded in key_document["keys"].items()}
+    catalog = SignedRuntimeCatalog.verify_and_load(document, keys)
+    runtime = catalog.get("llama.cpp:b10679:windows-x64-cpu")
+    assert runtime.sha256 == "c0dec4dfb52919e17f0a108a94bfbe877c67d77825145079e7703fc84f63986e"
+    assert runtime.source_revision == "50f068ffffc3e0e4c9c2e4139281c6075224f429"
+    assert len(runtime.files) == 51
+    assert runtime.bundled_by_default is True
+    assert len(catalog.runtimes) == 3
+    vulkan = catalog.get("llama.cpp:b10679:windows-x64-vulkan")
+    cuda = catalog.get("llama.cpp:b10679:windows-x64-cuda-12.4")
+    assert vulkan.bundled_by_default is False
+    assert vulkan.hardware_compatibility["api"] == "vulkan"
+    assert cuda.total_download_bytes == 641981732
+    assert cuda.companions[0].license == "NVIDIA CUDA Toolkit EULA"
+    assert cuda.hardware_compatibility["minimum_windows_driver"] == "551.61"
+    assert key_document["productionTrustRoot"] is False
+    assert document["payload"]["provenance"]["production_signing"] is False
+
+
+def test_runtime_pack_install_activate_verify_and_detect_tampering(tmp_path: Path) -> None:
+    files = {
+        "llama-server.exe": b"signed executable",
+        "ggml.dll": b"signed dependency",
+        "LICENSE": b"MIT",
+    }
+    archive = tmp_path / "runtime.zip"
+    _zip(archive, files)
+    artifact = _runtime_artifact(archive, files)
+    store = RuntimePackStore(tmp_path / "runtime")
+
+    installed = store.install(artifact, archive)
+    assert installed.integrity_verified is True
+    assert installed.active is False
+    active = store.activate(artifact.version, artifact.backend)
+    assert active.active is True
+    assert store.active() is not None
+
+    Path(active.executable).write_bytes(b"tampered")
+    assert store.verify(active) is False
+    with pytest.raises(RuntimePackIntegrityError, match="corrupt"):
+        store.activate(artifact.version, artifact.backend)
+
+
+def test_acceleration_pack_companion_install_and_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cpu_files = {"llama-server.exe": b"server-cpu", "ggml.dll": b"common-cpu"}
+    cpu_archive = tmp_path / "cpu.zip"
+    _zip(cpu_archive, cpu_files)
+    cpu = _runtime_artifact(cpu_archive, cpu_files)
+
+    cuda_files = {"llama-server.exe": b"server-cuda", "ggml-cuda.dll": b"cuda"}
+    cuda_archive = tmp_path / "cuda.zip"
+    _zip(cuda_archive, cuda_files)
+    companion_files = {"cudart64_12.dll": b"cudart"}
+    companion_archive = tmp_path / "cudart.zip"
+    _zip(companion_archive, companion_files)
+    companion = RuntimeCompanionArtifact(
+        "nvidia:cudart:test",
+        companion_archive.stat().st_size,
+        _digest(companion_archive.read_bytes()),
+        ("https://example.invalid/cudart.zip",),
+        "cudart.zip",
+        {name: _digest(content) for name, content in companion_files.items()},
+        "NVIDIA CUDA Toolkit EULA",
+        "https://docs.nvidia.com/cuda/eula/index.html",
+    )
+    cuda = RuntimePackArtifact(
+        "llama-b10672-cuda",
+        "b10672",
+        RuntimeBackend.CUDA_12,
+        "windows",
+        "x64",
+        cuda_archive.stat().st_size,
+        _digest(cuda_archive.read_bytes()),
+        ("https://example.invalid/cuda.zip",),
+        "cuda.zip",
+        "llama-server.exe",
+        {name: _digest(content) for name, content in cuda_files.items()},
+        "511f9c1",
+        companions=(companion,),
+        hardware_compatibility={
+            "api": "cuda",
+            "minimum_windows_driver": "551.61",
+        },
+        prerequisites=("NVIDIA driver 551.61 or newer",),
+    )
+    monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
+    manager = CupcakeLocalManager(tmp_path / "profile")
+    manager.install_runtime(cpu, cpu_archive)
+    with pytest.raises(RuntimePackIntegrityError, match="companion archive set"):
+        manager.install_runtime(cuda, cuda_archive)
+    active = manager.runtimes.active()
+    assert active is not None
+    assert active.backend == RuntimeBackend.CPU
+
+    accelerated = manager.install_runtime(
+        cuda,
+        cuda_archive,
+        companion_archives={companion.id: companion_archive},
+    )
+    assert accelerated.backend == RuntimeBackend.CUDA_12
+    assert accelerated.integrity_verified is True
+    assert Path(accelerated.directory, "cudart64_12.dll").is_file()
+    rolled_back = manager.rollback_runtime()
+    assert rolled_back.backend == RuntimeBackend.CPU
+
+
+def test_runtime_pack_selection_respects_driver_and_falls_back() -> None:
+    root = Path(__file__).resolve().parents[4]
+    document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-runtime-v1.json").read_text(encoding="utf-8")
+    )
+    key_document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-public-keys.json").read_text(encoding="utf-8")
+    )
+    keys = {key_id: base64.b64decode(encoded) for key_id, encoded in key_document["keys"].items()}
+    runtimes = SignedRuntimeCatalog.verify_and_load(document, keys).runtimes
+
+    modern_nvidia = HardwareProfile(
+        32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda", "vulkan"), 100, "551.61"
+    )
+    ranked = rank_runtime_packs(runtimes, modern_nvidia)
+    assert ranked[0].runtime_id.endswith("cuda-12.4")
+    assert ranked[0].recommended is True
+
+    old_driver = HardwareProfile(
+        32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda", "vulkan"), 100, "546.12"
+    )
+    ranked = rank_runtime_packs(runtimes, old_driver)
+    assert ranked[0].runtime_id.endswith("vulkan")
+    cuda = next(item for item in ranked if item.runtime_id.endswith("cuda-12.4"))
+    assert cuda.compatible is False
+    assert "551.61" in " ".join(cuda.reasons)
+
+    cpu_only = HardwareProfile(16, 12, None, None, 8, (), 100)
+    ranked = rank_runtime_packs(runtimes, cpu_only)
+    assert ranked[0].runtime_id.endswith("cpu")
+
+
+def test_cuda_companion_license_requires_explicit_acceptance(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[4]
+    document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-runtime-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    key_document = json.loads(
+        (root / "packaging/catalogs/cupcake-local-public-keys.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    keys = {
+        key_id: base64.b64decode(encoded)
+        for key_id, encoded in key_document["keys"].items()
+    }
+    catalog = SignedRuntimeCatalog.verify_and_load(document, keys)
+    cuda = catalog.get("llama.cpp:b10679:windows-x64-cuda-12.4")
+    manager = CupcakeLocalManager(tmp_path)
+    with pytest.raises(LicenseAcceptanceRequired) as required:
+        manager.begin_runtime_download(cuda)
+    assert required.value.license_urls == ("https://docs.nvidia.com/cuda/eula/index.html",)
+    download = manager.begin_runtime_download(
+        cuda, accepted_license_urls=required.value.license_urls
+    )
+    assert download.snapshot.state == DownloadState.QUEUED
+
+
+def test_runtime_pack_rejects_unsigned_and_traversal_members(tmp_path: Path) -> None:
+    files = {"llama-server.exe": b"server"}
+    archive = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("llama-server.exe", files["llama-server.exe"])
+        bundle.writestr("../escape.dll", b"escape")
+    artifact = _runtime_artifact(archive, files)
+    with pytest.raises(RuntimePackIntegrityError, match="unsafe archive member"):
+        RuntimePackStore(tmp_path / "runtime").install(artifact, archive)
+    assert not (tmp_path / "escape.dll").exists()
+
+
+def test_installed_model_store_rechecks_checksum_and_blocks_active_removal(tmp_path: Path) -> None:
+    data = b"small deterministic GGUF fixture"
+    artifact = _model_artifact(data)
+    store = InstalledModelStore(tmp_path / "models")
+    destination = artifact.target(store.root)
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(data)
+    store.register(artifact, destination)
+    assert store.get(artifact.id).integrity_verified is True
+    with pytest.raises(ModelInUseError):
+        store.remove(artifact.id, active_model_id=artifact.id)
+    destination.write_bytes(b"tampered")
+    assert store.get(artifact.id).integrity_verified is False
+
+
+def test_interrupted_download_recovers_as_paused(tmp_path: Path) -> None:
+    data = b"complete model bytes"
+    artifact = _model_artifact(data)
+    destination = tmp_path / artifact.filename
+    first = ModelDownload(artifact, destination)
+    first.partial.write_bytes(data[:5])
+    first._transition(DownloadState.RESOLVING)
+    first._transition(DownloadState.DOWNLOADING, bytes_downloaded=5)
+
+    recovered = ModelDownload(artifact, destination)
+    assert recovered.snapshot.state == DownloadState.PAUSED
+    assert recovered.snapshot.bytes_downloaded == 5
+
+
+def test_download_uses_mirror_after_integrity_failure(tmp_path: Path) -> None:
+    valid = tmp_path / "valid.gguf"
+    corrupt = tmp_path / "corrupt.gguf"
+    valid.write_bytes(b"model")
+    corrupt.write_bytes(b"wrong")
+    artifact = ModelArtifact(
+        "mirror-model",
+        "Mirror model",
+        "test",
+        1,
+        "Q4_K_M",
+        valid.stat().st_size,
+        _digest(valid.read_bytes()),
+        (corrupt.as_uri(), valid.as_uri()),
+        "installed.gguf",
+        "Apache-2.0",
+        "https://example.invalid/license",
+        4096,
+    )
+    result = asyncio.run(ModelDownload(artifact, tmp_path / artifact.filename).run())
+    assert result.state == DownloadState.COMPLETED
+    assert (tmp_path / artifact.filename).read_bytes() == valid.read_bytes()
+    assert result.attempt == 2
+
+
+class _FakeProcess:
+    def __init__(self, args: list[str], **kwargs: Any):
+        self.args = args
+        self.kwargs = kwargs
+        self.pid = 4321
+        self.returncode: int | None = None
+        self.stderr = io.BytesIO()
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.returncode = 0
+
+    def kill(self) -> None:
+        self.returncode = -9
+
+    def wait(self, _timeout: float | None = None) -> int:
+        self.returncode = 0
+        return 0
+
+
+def test_supervisor_uses_current_safe_server_flags_and_scrubbed_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "llama-server.exe"
+    model = tmp_path / "model.gguf"
+    executable.write_bytes(b"exe")
+    model.write_bytes(b"gguf")
+    captured: list[_FakeProcess] = []
+
+    def spawn(args: list[str], **kwargs: Any) -> _FakeProcess:
+        process = _FakeProcess(args, **kwargs)
+        captured.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leak")
+    supervisor = LlamaCppSupervisor(executable, port=8123, log_directory=tmp_path / "logs")
+    supervisor.start(model, context_size=8192, gpu_layers="auto", device=None, parallel=1)
+
+    process = captured[0]
+    assert supervisor.state == RuntimeState.STARTING
+    assert "--no-ui" in process.args
+    assert "--jinja" in process.args
+    assert "--n-gpu-layers" in process.args
+    assert "auto" in process.args
+    assert "--api-key" not in process.args
+    assert "LLAMA_API_KEY" in process.kwargs["env"]
+    assert process.kwargs["env"]["LLAMA_ARG_API_PREFIX"].startswith("/cupcake-")
+    assert "OPENAI_API_KEY" not in process.kwargs["env"]
+    asyncio.run(supervisor.stop())
+    assert supervisor.state == RuntimeState.STOPPED
+
+
+def test_server_configuration_bounds_are_explicit() -> None:
+    LlamaServerConfig(gpu_layers="auto", device=None).validate()
+    LlamaServerConfig(gpu_layers="all", device=None).validate()
+    with pytest.raises(ValueError, match="gpu_layers"):
+        LlamaServerConfig(gpu_layers="magic").validate()
+    with pytest.raises(ValueError, match="context_size"):
+        LlamaServerConfig(context_size=128).validate()
+
+
+class _FakeSupervisor:
+    def __init__(self, executable: Path, **_kwargs: Any):
+        self.executable = executable
+        self.state = RuntimeState.STOPPED
+        self.active_model: Path | None = None
+
+    def version(self) -> str:
+        return "llama.cpp version: 10672 (511f9c1)"
+
+    def start(self, model: Path, **_kwargs: Any) -> int:
+        self.active_model = model
+        self.state = RuntimeState.STARTING
+        return 1234
+
+    async def wait_until_ready(self, **_kwargs: Any) -> RuntimeEndpoint:
+        self.state = RuntimeState.READY
+        return self.endpoint()
+
+    def endpoint(self) -> RuntimeEndpoint:
+        return RuntimeEndpoint(
+            id="cupcake_llama_cpp:fake",
+            kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
+            base_url="http://127.0.0.1:49152",
+            state=self.state,
+            managed=True,
+        )
+
+    async def stop(self) -> None:
+        self.state = RuntimeState.STOPPED
+        self.active_model = None
+
+
+def test_cupcake_local_installs_loads_unloads_and_removes_without_bundled_weights(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = {"llama-server.exe": b"server", "ggml.dll": b"dll"}
+    archive = tmp_path / "runtime.zip"
+    _zip(archive, files)
+    runtime_artifact = _runtime_artifact(archive, files)
+    model_data = b"verified model"
+    model_artifact = _model_artifact(model_data)
+
+    monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
+    manager = CupcakeLocalManager(tmp_path / "cupcake-local")
+    runtime = manager.install_runtime(runtime_artifact, archive)
+    assert runtime.active is True
+    assert manager.status()["modelWeightsBundled"] is False
+
+    model_path = model_artifact.target(manager.models.root)
+    model_path.parent.mkdir(parents=True)
+    model_path.write_bytes(model_data)
+    manager.register_model(model_artifact, model_path)
+    endpoint = asyncio.run(manager.load(model_artifact.id))
+    assert endpoint.state == RuntimeState.READY
+    assert manager.status()["activeModelId"] == model_artifact.id
+    with pytest.raises(ModelInUseError):
+        manager.remove_model(model_artifact.id)
+
+    asyncio.run(manager.unload())
+    manager.remove_model(model_artifact.id)
+    assert manager.models.list() == ()
+
+
+def test_cupcake_local_download_lifecycle_can_cancel_and_reset(tmp_path: Path) -> None:
+    manager = CupcakeLocalManager(tmp_path / "cupcake-local")
+    artifact = _model_artifact(b"model")
+    queued = manager.begin_model_download(artifact)
+    assert queued.state == DownloadState.QUEUED
+    cancelled = manager.cancel_download(artifact.id)
+    assert cancelled.state == DownloadState.CANCELLED
+    assert manager.download_status(artifact.id).state == DownloadState.CANCELLED
+    manager.reset_download(artifact.id)
+    assert manager.download_snapshots() == ()
+    assert manager.begin_model_download(artifact).state == DownloadState.QUEUED
+
+
+def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempotently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = tmp_path / "baseline"
+    archive_directory = baseline / "archive"
+    archive_directory.mkdir(parents=True)
+    files = {"llama-server.exe": b"server", "ggml.dll": b"dll"}
+    archive = archive_directory / "llama-b10672-bin-win-cpu-x64.zip"
+    _zip(archive, files)
+    artifact = _runtime_artifact(archive, files)
+    payload = {
+        "version": 1,
+        "generated_at": "2026-08-28T00:00:00Z",
+        "provenance": {
+            "environment": "local-release-candidate",
+            "production_signing": False,
+        },
+        "runtimes": [
+            {
+                "id": artifact.id,
+                "version": artifact.version,
+                "backend": artifact.backend.value,
+                "platform": artifact.platform,
+                "architecture": artifact.architecture,
+                "size_bytes": artifact.size_bytes,
+                "sha256": artifact.sha256,
+                "urls": list(artifact.urls),
+                "filename": artifact.filename,
+                "executable": artifact.executable,
+                "files": dict(artifact.files),
+                "source_revision": artifact.source_revision,
+            }
+        ],
+    }
+    private = Ed25519PrivateKey.generate()
+    public = private.public_key().public_bytes_raw()
+    (baseline / "cupcake-local-runtime-v1.json").write_text(
+        json.dumps(
+            {
+                "key_id": "local-test",
+                "payload": payload,
+                "signature": base64.b64encode(private.sign(canonical_json(payload))).decode(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (baseline / "cupcake-local-public-keys.json").write_text(
+        json.dumps(
+            {
+                "environment": "local-release-candidate",
+                "productionTrustRoot": False,
+                "keys": {"local-test": base64.b64encode(public).decode()},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
+    manager = CupcakeLocalManager(tmp_path / "profile")
+    installed = manager.seed_packaged_baseline(baseline)
+    assert installed is not None
+    assert installed.active is True
+    installed_again = manager.seed_packaged_baseline(baseline)
+    assert installed_again is not None
+    assert installed_again.id == installed.id
+    assert manager.seed_packaged_baseline(tmp_path / "missing") is None
+
+
+def test_download_state_file_does_not_resume_another_artifact(tmp_path: Path) -> None:
+    artifact = _model_artifact(b"first")
+    destination = tmp_path / "model.gguf"
+    state = destination.with_suffix(".gguf.download.json")
+    state.write_text(
+        json.dumps(
+            {
+                "model_id": "different",
+                "state": "paused",
+                "destination": str(destination),
+                "bytes_downloaded": 4,
+                "bytes_total": 5,
+                "source_url": None,
+                "error_code": None,
+                "error_detail": None,
+                "attempt": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert ModelDownload(artifact, destination).snapshot.state == DownloadState.QUEUED
