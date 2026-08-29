@@ -1,0 +1,269 @@
+use base64::prelude::*;
+use chrono::{SecondsFormat, Utc};
+use cupcake_tool_broker::framing::{read_frame, write_frame, DEFAULT_MAX_FRAME_BYTES};
+use cupcake_tool_broker::protocol::{
+    uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
+};
+use cupcake_tool_broker::PROTOCOL_VERSION;
+use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+use std::io::{BufReader, BufWriter};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::time::{Duration, Instant};
+use tempfile::TempDir;
+use uuid::Uuid;
+
+struct BrokerProcess {
+    child: Child,
+    input: BufReader<ChildStdout>,
+    output: BufWriter<ChildStdin>,
+    secret: Vec<u8>,
+    session_id: Uuid,
+    sequences: HashMap<Uuid, u64>,
+    replay: ReplayGuard,
+    _data: TempDir,
+}
+
+impl BrokerProcess {
+    fn launch() -> Self {
+        let data = tempfile::tempdir().unwrap();
+        let secret = vec![42_u8; 32];
+        let mut child = Command::new(env!("CARGO_BIN_EXE_cupcake-tool-broker"))
+            .arg("--stdio")
+            .env(
+                "CUPCAKE_BROKER_AUTH",
+                BASE64_URL_SAFE_NO_PAD.encode(&secret),
+            )
+            .env("CUPCAKE_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
+            .env("CUPCAKE_DATA_DIR", data.path())
+            .env(
+                "CUPCAKE_RUNTIME_PATH",
+                env!("CARGO_BIN_EXE_cupcake-fake-runtime"),
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = BufWriter::new(child.stdin.take().unwrap());
+        let input = BufReader::new(child.stdout.take().unwrap());
+        let mut process = Self {
+            child,
+            input,
+            output,
+            secret,
+            session_id: uuid_v7(),
+            sequences: HashMap::new(),
+            replay: ReplayGuard::default(),
+            _data: data,
+        };
+        let correlation = uuid_v7();
+        process.send(
+            correlation,
+            MessageType::Handshake,
+            object(json!({"product":"CUPCAKEAGI","protocolVersion":PROTOCOL_VERSION})),
+        );
+        let response = process.read();
+        assert_eq!(response.message_type, MessageType::Handshake);
+        process
+    }
+
+    fn send(&mut self, correlation: Uuid, message_type: MessageType, payload: Map<String, Value>) {
+        let sequence = self
+            .sequences
+            .entry(correlation)
+            .and_modify(|value| *value += 1)
+            .or_insert(1);
+        let envelope = ProtocolEnvelope::unsigned(
+            uuid_v7(),
+            correlation,
+            self.session_id,
+            *sequence,
+            (Utc::now() + chrono::Duration::seconds(30))
+                .to_rfc3339_opts(SecondsFormat::Millis, true),
+            ProtocolLineage::default(),
+            message_type,
+            payload,
+        )
+        .sign(&self.secret)
+        .unwrap();
+        write_frame(&mut self.output, &envelope, DEFAULT_MAX_FRAME_BYTES).unwrap();
+    }
+
+    fn read(&mut self) -> ProtocolEnvelope {
+        let envelope: ProtocolEnvelope =
+            read_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES).unwrap();
+        envelope.verify_auth(&self.secret).unwrap();
+        self.replay.accept(&envelope, Utc::now()).unwrap();
+        envelope
+    }
+}
+
+impl Drop for BrokerProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn authenticated_file_events_are_acknowledged_and_do_not_terminate_broker() {
+    let selected = tempfile::tempdir().unwrap();
+    let file = selected.path().join("note.txt");
+    std::fs::write(&file, "cupcake").unwrap();
+    let mut broker = BrokerProcess::launch();
+    let event_correlation = uuid_v7();
+    broker.send(
+        event_correlation,
+        MessageType::Event,
+        object(json!({
+            "type":"files.granted",
+            "handle":{
+                "id":"018f1e2d-3c4b-7a69-8def-0123456789ab",
+                "kind":"file",
+                "name":"note.txt",
+                "absolutePath":file,
+                "writable":false
+            }
+        })),
+    );
+    let acknowledgement = broker.read();
+    assert_eq!(acknowledgement.message_type, MessageType::Response);
+    assert_eq!(acknowledgement.payload["ok"], true);
+    assert!(!Value::Object(acknowledgement.payload.clone())
+        .to_string()
+        .contains(selected.path().to_str().unwrap()));
+
+    let ping_correlation = uuid_v7();
+    broker.send(ping_correlation, MessageType::Ping, Map::new());
+    assert_eq!(broker.read().message_type, MessageType::Pong);
+}
+
+#[test]
+fn broker_dispatch_preflights_and_executes_a_bounded_file_read() {
+    let selected = tempfile::tempdir().unwrap();
+    let file = selected.path().join("note.txt");
+    std::fs::write(&file, "frosting thread").unwrap();
+    let mut broker = BrokerProcess::launch();
+    let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+    let grant_correlation = uuid_v7();
+    broker.send(
+        grant_correlation,
+        MessageType::Event,
+        object(json!({"type":"files.granted","handle":{
+            "id":handle_id,"kind":"file","name":"note.txt","absolutePath":file,"writable":false
+        }})),
+    );
+    assert_eq!(broker.read().payload["ok"], true);
+
+    let intent = json!({
+        "invocation_id":"invoke-process-1","run_id":"run-process-1","tool_name":"files.read","tool_version":"1.0.0",
+        "arguments":{"grant_id":handle_id,"relative_path":"note.txt","max_bytes":1024},
+        "project_id":null,"task_id":null,"requested_at":"2026-08-28T12:00:00Z"
+    });
+    let preflight_correlation = uuid_v7();
+    broker.send(
+        preflight_correlation,
+        MessageType::Request,
+        object(json!({"method":"broker.dispatch","params":{
+            "protocol_version":1,"request_type":"tool.preflight","payload":{
+                "intent":intent,
+                "descriptor":{
+                    "name":"files.read","version":"1.0.0","display_name":"Read file","description":"Read approved text",
+                    "input_schema":{"type":"object"},"output_schema":{"type":"object"},"effects":["read_files"],
+                    "required_grants":["filesystem.read"],"default_data_flows":[],"timeout_seconds":60,
+                    "cancellable":true,"category":"native"
+                }
+            }
+        }})),
+    );
+    let preflight_response = broker.read();
+    assert_eq!(preflight_response.payload["ok"], true);
+    assert_eq!(
+        preflight_response.payload["result"]["preflight"]["decision"],
+        "allow"
+    );
+    assert!(!Value::Object(preflight_response.payload.clone())
+        .to_string()
+        .contains(selected.path().to_str().unwrap()));
+
+    let execute_correlation = uuid_v7();
+    broker.send(
+        execute_correlation,
+        MessageType::Request,
+        object(json!({"method":"broker.dispatch","params":{
+            "protocol_version":1,"request_type":"tool.execute","payload":{
+                "intent":intent,
+                "preflight":preflight_response.payload["result"]["preflight"].clone(),
+                "approval":null
+            }
+        }})),
+    );
+    let execute_response = broker.read();
+    assert_eq!(execute_response.payload["ok"], true);
+    assert_eq!(
+        execute_response.payload["result"]["output"]["text"],
+        "frosting thread"
+    );
+    assert!(!Value::Object(execute_response.payload)
+        .to_string()
+        .contains(selected.path().to_str().unwrap()));
+}
+
+#[test]
+fn runtime_event_is_forwarded_before_terminal_response() {
+    let mut broker = BrokerProcess::launch();
+    let correlation = uuid_v7();
+    let started = Instant::now();
+    broker.send(
+        correlation,
+        MessageType::Request,
+        object(json!({"method":"chat.send","params":{"modelId":"mock:stream"}})),
+    );
+    let event = broker.read();
+    let event_elapsed = started.elapsed();
+    assert_eq!(event.correlation_id, correlation);
+    assert_eq!(event.message_type, MessageType::Event);
+    assert_eq!(event.sequence, 1);
+    let response = broker.read();
+    assert_eq!(response.correlation_id, correlation);
+    assert_eq!(response.message_type, MessageType::Response);
+    assert_eq!(response.sequence, 2);
+    assert!(
+        started.elapsed().saturating_sub(event_elapsed) >= Duration::from_millis(1_300),
+        "event and terminal response were delivered together"
+    );
+}
+
+#[test]
+fn cancel_is_processed_while_runtime_request_is_still_active() {
+    let mut broker = BrokerProcess::launch();
+    let chat_correlation = uuid_v7();
+    broker.send(
+        chat_correlation,
+        MessageType::Request,
+        object(json!({"method":"chat.send","params":{"modelId":"mock:stream"}})),
+    );
+    assert_eq!(broker.read().message_type, MessageType::Event);
+
+    let cancel_correlation = uuid_v7();
+    let started = Instant::now();
+    broker.send(
+        cancel_correlation,
+        MessageType::Cancel,
+        object(json!({"targetId":"run-active"})),
+    );
+    let cancelled = broker.read();
+    assert_eq!(cancelled.correlation_id, cancel_correlation);
+    assert_eq!(cancelled.message_type, MessageType::Response);
+    assert_eq!(cancelled.payload["ok"], true);
+    assert!(started.elapsed() < Duration::from_millis(500));
+
+    let terminal = broker.read();
+    assert_eq!(terminal.correlation_id, chat_correlation);
+    assert_eq!(terminal.message_type, MessageType::Response);
+}
+
+fn object(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().unwrap_or_default()
+}

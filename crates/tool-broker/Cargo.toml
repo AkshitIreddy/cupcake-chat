@@ -1,0 +1,65 @@
+[package]
+name = "cupcake-tool-broker"
+version = "2.0.0-rc.1"
+edition = "2021"
+license = "Unlicense"
+description = "Security boundary and native-tool broker for CUPCAKEAGI"
+
+[lib]
+name = "cupcake_tool_broker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cupcake-tool-broker"
+path = "src/main.rs"
+
+[dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+hex = "0.4"
+hmac = "0.12"
+rand = "0.8"
+regex = "1.10"
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "form", "json", "rustls"] }
+rusqlite = { version = "0.37", features = ["backup", "bundled"] }
+ryu-js = "1.0"
+semver = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+subtle = "2.6"
+thiserror = "2.0"
+url = { version = "2.5", features = ["serde"] }
+uuid = { version = "1.11", features = ["serde", "v7"] }
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Isolation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_JobObjects",
+  "Win32_System_Memory",
+  "Win32_System_Pipes",
+  "Win32_System_Com",
+  "Win32_System_Diagnostics",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.0"
+
+[dev-dependencies]
+tempfile = "3.14"
