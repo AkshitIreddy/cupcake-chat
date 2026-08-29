@@ -9,9 +9,10 @@ works.
 
 The personality is still here. The sugar rush is not.
 
-> **Local release-candidate work.** Version 2.0 is being assembled and tested for Windows 10/11 x64
-> on the `feat/cupcakeagi-2.0` branch. It has not been published, pushed as a 2.0 release, connected
-> to a production update feed, or approved for general installation. The
+> **Local release candidate.** Version 2.0 has been assembled and locally validated for Windows
+> 10/11 x64 on the `feat/cupcakeagi-2.0` branch. The unsigned installer and ZIP are private
+> owner-test artifacts. Nothing has been pushed or published as a 2.0 release, connected to a
+> production update feed, or approved for general distribution. The
 > [implementation checklist](docs/architecture/IMPLEMENTATION_CHECKLIST.md) is the source of truth
 > for current completion.
 
@@ -120,9 +121,10 @@ before using a cloud provider with sensitive data.
 ## Run from source
 
 The eventual supported end-user path will be a signed Windows 10/11 x64 installer. The current
-private candidate is intentionally unsigned and must not be distributed. Until the owner approves
-it, development runs and the local test package are the only supported ways to try 2.0. macOS,
-Linux, Windows on Arm, and 32-bit Windows are not release-candidate targets.
+private candidate is intentionally unsigned and must not be distributed. A local installer, portable
+ZIP, and unpacked app have passed package smoke testing and the release-candidate audit, but owner
+acceptance is still required. macOS, Linux, Windows on Arm, and 32-bit Windows are not
+release-candidate targets.
 
 Requirements:
 
@@ -206,6 +208,10 @@ interface uses the calmer CUPCAKEAGI 2.0 mark.
 The original source remains recoverable in Git history and at the `v1.0.0` tag. Legacy data is
 imported once through a constrained importer; old API keys are never imported. The project remains
 licensed under the [Unlicense](LICENSE).
+
+The original `write-the` MkDocs documentation generator is also preserved at the `v1.0.0` tag. It is
+a historical 1.x packaging/documentation tool, not a 2.0 runtime dependency, migration target, or
+compatibility feature, so it is intentionally not carried into the active 2.0 tree.
 
 ## Release policy
 

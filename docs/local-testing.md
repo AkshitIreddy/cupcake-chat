@@ -4,6 +4,12 @@ This is the owner-facing verification pass for CUPCAKEAGI 2.0. It is intentional
 unit-test checklist: a passing build is not proof that the desktop app looks right, preserves data,
 routes context safely, or recovers durable work.
 
+The final local automation checkpoint passed strict Pyright, 138 unit tests, 22 Playwright tests,
+atomic sidecar promotion/rollback, seeded authenticated protocol and local-model discovery smoke,
+make-mode package smoke, and the release-candidate audit. Live packaged checks also passed for a
+hosted NVIDIA NIM response and a local LM Studio Gemma GPU conversation. These results make the
+candidate ready for owner review; they do not replace the manual sections below.
+
 Use a disposable test profile and non-production provider accounts. Do not point destructive or
 migration tests at your normal files.
 
@@ -67,8 +73,8 @@ The current private artifacts are:
 - portable ZIP:
   `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\apps\desktop\out\make\zip\win32\x64\CUPCAKEAGI-win32-x64-2.0.0-rc.1.zip`
 
-These are unsigned local test artifacts. The installer has not been installed system-wide and no
-update feed or publication step was performed.
+These are unsigned local test artifacts. Installer lifecycle testing used an isolated test root, not
+the normal system-wide location, and no update feed or publication step was performed.
 
 ## 2. Install and run automated checks
 
@@ -92,10 +98,9 @@ node scripts/verify.mjs --lane python
 node scripts/verify.mjs --lane rust
 ```
 
-The Python lane intentionally resolves `services/runtime/pyproject.toml` in strict mode. At the
-current checkpoint it reports the documented strict-type debt and is therefore a release blocker; do
-not substitute a repository-root positional Pyright command, because that silently uses weaker
-defaults. Reproduce the strict gate directly with:
+The Python lane intentionally resolves `services/runtime/pyproject.toml` in strict mode, and the
+final validation run is clean. Do not substitute a repository-root positional Pyright command,
+because that can silently use weaker defaults. Reproduce the strict gate directly with:
 
 ```powershell
 Push-Location services\runtime
@@ -224,6 +229,12 @@ external vLLM as a connection, not an installation workflow.
 On an approximately 12 GB VRAM machine, verify 7–9B Q4_K_M models are favored, 12–14B guidance
 accounts for context/headroom, and larger models are labeled hybrid or unsuitable.
 
+Final machine evidence: the packaged app discovered LM Studio, loaded `google/gemma-3n-e4b`,
+completed a real local GPU chat, and rendered it in `out/live-ui/gpu-local-chat.png`. A separate
+direct Qwen 9B run measured approximately 36.8 generated tokens per second. After testing, the model
+was unloaded, the LM Studio server was stopped, and `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`
+was restored to `no`.
+
 ## 9. Projects, files, search, and artifacts
 
 Create two projects with deliberately conflicting facts. Attach a disposable repository and
@@ -316,6 +327,9 @@ With synthetic data:
   imported nor executed;
 - verify the original legacy source remains untouched and the import report is understandable.
 
+Do not migrate the original `write-the` MkDocs generator. It remains available at the `v1.0.0` tag
+as historical source and has no 2.0 compatibility contract.
+
 ## 14. Package and installer
 
 ```powershell
@@ -338,6 +352,19 @@ Do not generate, test, or describe macOS/Linux/Windows Arm packages as release-c
 
 Unsigned or locally signed output is a private test artifact. Do not distribute it.
 
+Final isolated lifecycle evidence:
+
+- clean silent install passed;
+- attempting a same-version silent reinstall while the test app was running hung and was terminated;
+- after closing the test app, clean reinstall passed;
+- `Update.exe --uninstall -s` exited 0 and removed the installed app and launcher executables;
+- normal Squirrel `.dead`/Update cleanup residue remained; and
+- `out/installer-rc-20260829/profile-retention/cupcake.db` persisted as intended.
+
+Close CUPCAKEAGI before reinstalling the same candidate. A supported upgrade between distinct
+candidate versions and the clean-machine matrix remain owner acceptance checks; the isolated result
+must not be described as a system-wide installation.
+
 ## 15. Final evidence and decision
 
 The candidate is ready for owner review only when the following are attached to the handoff:
@@ -353,3 +380,7 @@ The candidate is ready for owner review only when the following are attached to 
 
 Owner testing and explicit approval are required after this checklist. Passing it does not authorize
 publication.
+
+The final automated evidence bundle includes strict Pyright, 138 unit tests, 22 Playwright tests,
+sidecar atomic promotion/rollback, frozen seeded protocol/local-discovery smoke, packaged NIM and LM
+Studio UI screenshots, installer and ZIP output, make smoke, and a passing release-candidate audit.

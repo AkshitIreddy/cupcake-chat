@@ -36,22 +36,23 @@ Production signing credentials and a production updater endpoint are not part of
 candidate. Windows may warn about an unsigned or locally signed installer. Do not bypass
 organizational security policy or distribute the artifact as a release.
 
+### Running-app same-version reinstall
+
+A same-version Squirrel silent reinstall attempted while the isolated test app was running did not
+complete and had to be terminated. Close CUPCAKEAGI before reinstalling the same candidate. With the
+test app closed, a clean reinstall completed normally. This does not establish behavior for a
+supported upgrade between different versions, which remains part of owner acceptance testing.
+
+The subsequent isolated `Update.exe --uninstall -s` check exited 0 and removed the installed app and
+launcher executables. It left normal Squirrel `.dead`/Update cleanup residue and preserved the
+explicit profile-retention database at `out/installer-rc-20260829/profile-retention/cupcake.db`.
+
 ### Cloud credentials and cost
 
 Live provider tests require user-supplied credentials and can incur charges. Deterministic fixtures
 cover ordinary development and CI, but cannot prove current account permissions, quotas, model
 availability, regional behavior, or billing. Configure low test budgets and never commit
 credentials.
-
-### Strict Python type-check debt
-
-The runtime's declared strict Pyright configuration currently reports existing type debt across the
-runtime and its tests. The release verification script now resolves that configuration explicitly
-instead of accidentally running Pyright's weaker default mode from the repository root. This is a
-release gate: do not describe the candidate as fully approved until the strict run is clean or the
-owner explicitly accepts a documented, bounded remediation plan. Runtime lint, tests, the focused
-changed protocol module check, and the packaged smoke checks remain separate evidence; they do not
-make the strict gate pass.
 
 ### Local model weights
 
@@ -78,6 +79,22 @@ backup/export for portability and protect the resulting files.
 
 Voice and automatic model routing are not planned for 2.0. Thoughts and Dreams are disabled by
 default. These are product choices, not missing controls.
+
+The 1.x `write-the` MkDocs generator is preserved in Git history and at the `v1.0.0` tag only. It is
+not migrated, bundled, or supported as a 2.0 documentation/package generator.
+
+## Cleared during final validation
+
+- Strict Pyright passes under `services/runtime/pyproject.toml`; the verification script uses that
+  declared project configuration.
+- Frozen sidecar replacement is atomic and rollback-tested, and the seeded authenticated protocol
+  smoke reaches bootstrap plus local-model discovery.
+- The packaged NVIDIA NIM chat rendered its exact-format response without exposing a thinking trace.
+- The packaged LM Studio route completed a real local Gemma GPU chat. The coordination flag was
+  restored to `no`, the model was unloaded, and the server was stopped afterward.
+- Isolated clean silent install, closed-app reinstall, and silent uninstall passed. The uninstall
+  removed app/launcher executables and retained the disposable profile database; the running-app
+  same-version reinstall limitation is documented above.
 
 ## What must block approval
 
