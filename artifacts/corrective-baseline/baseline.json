@@ -1,0 +1,16 @@
+{
+  "titlebarOverlap": {
+    "viewport": {
+      "width": 1024,
+      "height": 720
+    },
+    "reserved": {
+      "left": 874,
+      "top": 0,
+      "right": 1024,
+      "bottom": 40
+    },
+    "overlaps": []
+  },
+  "browserErrors": []
+}
