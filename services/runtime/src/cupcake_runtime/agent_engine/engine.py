@@ -24,6 +24,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolCallPartDelta,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import UsageLimits
@@ -138,6 +139,12 @@ class CupcakeAgentEngine:
             return
 
         model = self._model_factory.build(descriptor, adapter.config, request)
+        # Third-party model subclasses are not fully typed at this reflection
+        # boundary. Keep the dynamic comparison local instead of letting an
+        # unknown member type contaminate the product-owned result path.
+        supports_streaming = cast(Any, type(model)).request_stream is not cast(
+            Any, Model
+        ).request_stream
         toolsets = [BrokerDeferredToolset(request.tools)] if request.tools else []
         agent: Agent[object, Any] = Agent(
             model,
@@ -161,6 +168,9 @@ class CupcakeAgentEngine:
 
         async def produce() -> None:
             try:
+                run_kwargs: dict[str, Any] = {}
+                if supports_streaming:
+                    run_kwargs["event_stream_handler"] = handle_stream
                 result = await agent.run(
                     plan.prompt,
                     message_history=history,
@@ -174,11 +184,25 @@ class CupcakeAgentEngine:
                     ),
                     cancellation_token=cancellation.pydantic_token,
                     run_id=events.run_id,
-                    event_stream_handler=handle_stream,
+                    **run_kwargs,
                 )
-                pending = isinstance(result.output, DeferredToolRequests)
-                if pending:
-                    for call in (*result.output.calls, *result.output.approvals):
+                deferred = (
+                    result.output if isinstance(result.output, DeferredToolRequests) else None
+                )
+                pending = deferred is not None
+                if not supports_streaming and isinstance(result.output, str):
+                    await queue.put(events.make(StreamEventType.TEXT_DELTA, text=result.output))
+                if deferred is not None:
+                    for call in (*deferred.calls, *deferred.approvals):
+                        if not supports_streaming and call.tool_call_id not in open_calls:
+                            await queue.put(
+                                events.make(
+                                    StreamEventType.TOOL_CALL_START,
+                                    item_id=call.tool_call_id,
+                                    name=call.tool_name,
+                                )
+                            )
+                            open_calls.add(call.tool_call_id)
                         if call.tool_call_id in open_calls:
                             open_calls.remove(call.tool_call_id)
                             await queue.put(
@@ -213,8 +237,8 @@ class CupcakeAgentEngine:
                         metadata={
                             "awaiting_broker": pending,
                             "pending_tool_calls": (
-                                len(result.output.calls) + len(result.output.approvals)
-                                if pending
+                                len(deferred.calls) + len(deferred.approvals)
+                                if deferred is not None
                                 else 0
                             ),
                         },

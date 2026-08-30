@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-runtime-request"
+description = "Enables the runtime_request command without any pre-configured scope."
+commands.allow = ["runtime_request"]
+
+[[permission]]
+identifier = "deny-runtime-request"
+description = "Denies the runtime_request command without any pre-configured scope."
+commands.deny = ["runtime_request"]

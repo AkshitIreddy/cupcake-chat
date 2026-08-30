@@ -10,8 +10,6 @@ from typing import Any
 import pytest
 
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
-from cupcake_runtime.desktop_protocol import canonical_json
-from cupcake_runtime.local_models import RuntimeEndpoint, RuntimeKind, RuntimeState
 from cupcake_runtime.providers.types import (
     ModelCapabilities,
     ModelDescriptor,
@@ -23,62 +21,6 @@ from cupcake_runtime.providers.types import (
 
 def service(tmp_path: Path) -> RuntimeService:
     return RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
-
-
-class _DiscoveredLocalModels:
-    def __init__(self, private_destination: Path | None = None) -> None:
-        self.private_destination = private_destination
-
-    async def discover(self, _endpoints: tuple[str, ...]) -> tuple[RuntimeEndpoint, ...]:
-        return (
-            RuntimeEndpoint(
-                id="lm_studio:http://127.0.0.1:1234",
-                kind=RuntimeKind.LM_STUDIO,
-                base_url="http://127.0.0.1:1234",
-                state=RuntimeState.READY,
-                models=("google/gemma-3n-e4b",),
-                metadata={
-                    "destination": (
-                        str(self.private_destination) if self.private_destination else None
-                    ),
-                    "model_states": {
-                        "google/gemma-3n-e4b": {
-                            "display_name": "Gemma 3n E4B",
-                            "loaded": True,
-                            "context_window": 32_768,
-                        }
-                    },
-                },
-            ),
-        )
-
-
-def test_local_discovery_registers_lm_studio_inference_endpoint(tmp_path: Path) -> None:
-    runtime = service(tmp_path)
-    private_destination = tmp_path / "models" / "gemma.gguf"
-    runtime.local_models = _DiscoveredLocalModels(private_destination)  # type: ignore[assignment]
-
-    result, _ = runtime.handle("local_models.discover")
-
-    serialized = canonical_json(result)
-    assert str(private_destination) not in serialized
-    assert "destination" not in result["endpoints"][0]["metadata"]
-    assert result["endpoints"][0]["base_url"] == ""
-    descriptor = result["models"][0]
-    assert descriptor["metadata"]["runtime_kind"] == "lm_studio"
-    assert descriptor["model"] == "google/gemma-3n-e4b"
-    adapter = runtime.providers.adapter(descriptor["id"])
-    assert adapter.config.base_url == "http://127.0.0.1:1234/v1"
-    route, _ = runtime.handle(
-        "broker.providers.resolve_compatible_route", {"modelId": descriptor["id"]}
-    )
-    assert route == {
-        "modelId": descriptor["id"],
-        "baseUrl": "http://127.0.0.1:1234/v1",
-        "runtimeKind": "lm_studio",
-        "privacyRoute": "local",
-    }
-    runtime.close()
 
 
 def test_broker_route_resolution_never_exempts_a_generic_remote_endpoint(tmp_path: Path) -> None:

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-window-start-dragging"
+description = "Enables the window_start_dragging command without any pre-configured scope."
+commands.allow = ["window_start_dragging"]
+
+[[permission]]
+identifier = "deny-window-start-dragging"
+description = "Denies the window_start_dragging command without any pre-configured scope."
+commands.deny = ["window_start_dragging"]

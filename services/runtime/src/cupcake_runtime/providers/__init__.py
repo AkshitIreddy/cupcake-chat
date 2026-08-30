@@ -16,6 +16,17 @@ from .nvidia_nim import (
     NvidiaNimCatalogDiscovery,
     NvidiaNimCatalogResult,
 )
+from .onboarding import (
+    DiscoveredProviderModel,
+    ModelDiscoveryState,
+    OnboardingCancellation,
+    ProviderOnboardingDiagnostic,
+    ProviderOnboardingExecution,
+    ProviderOnboardingResult,
+    ProviderOnboardingService,
+    ProviderTestState,
+    validate_remote_openai_compatible_endpoint,
+)
 from .registry import ProviderRegistry
 from .types import *  # noqa: F403
 
@@ -24,17 +35,26 @@ __all__ = [
     "MOCK_DESCRIPTOR",
     "NVIDIA_NIM_BASE_URL",
     "NVIDIA_NIM_PROVIDER",
+    "DiscoveredProviderModel",
     "MissingProviderCredential",
     "MissingProviderDependency",
     "MockProviderAdapter",
     "ModelCatalog",
+    "ModelDiscoveryState",
     "NvidiaNimAdapter",
     "NvidiaNimCatalogDiscovery",
     "NvidiaNimCatalogResult",
+    "OnboardingCancellation",
     "ProviderAdapter",
     "ProviderConfig",
     "ProviderError",
+    "ProviderOnboardingDiagnostic",
+    "ProviderOnboardingExecution",
+    "ProviderOnboardingResult",
+    "ProviderOnboardingService",
     "ProviderRegistry",
+    "ProviderTestState",
     "UnknownModel",
     "openai_compatible_descriptor",
+    "validate_remote_openai_compatible_endpoint",
 ]

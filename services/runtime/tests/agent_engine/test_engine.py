@@ -11,6 +11,7 @@ import pytest
 from httpx2 import AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
@@ -55,6 +56,12 @@ class FixedFactory:
     ) -> Any:
         del descriptor, config, request
         return self.model
+
+
+class NonStreamingTestModel(TestModel):
+    """Exercise the ordinary-request fallback used by CohereModel."""
+
+    request_stream = Model.request_stream
 
 
 class CupcakeAgentEngineProbe(CupcakeAgentEngine):
@@ -166,6 +173,30 @@ async def test_real_pydantic_agent_streams_text_usage_cost_and_explicit_personal
     assert "Be warm and concise." in observed["instructions"]
     assert observed["settings"]["max_tokens"] == 200
     assert observed["settings"]["temperature"] == 0.3
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_pydantic_model_is_normalized_to_text_events() -> None:
+    registry = ProviderRegistry()
+    model = NonStreamingTestModel(custom_output_text="Fallback response")
+    engine = CupcakeAgentEngine(registry, model_factory=FixedFactory(model))
+
+    events = await collect(
+        engine,
+        ModelRequest(
+            MOCK_DESCRIPTOR.id,
+            (CanonicalMessage("user", "Use the ordinary request path"),),
+            max_output_tokens=128,
+        ),
+    )
+
+    assert [event.type for event in events] == [
+        StreamEventType.START,
+        StreamEventType.TEXT_DELTA,
+        StreamEventType.USAGE,
+        StreamEventType.FINISH,
+    ]
+    assert events[1].text == "Fallback response"
 
 
 @pytest.mark.asyncio

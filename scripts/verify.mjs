@@ -49,22 +49,28 @@ async function verifyPython() {
 }
 
 async function verifyRust() {
-  const manifest = join(repoRoot, 'crates', 'tool-broker', 'Cargo.toml');
-  if (!(await exists(manifest)))
-    throw new Error('Rust broker manifest not found at crates/tool-broker/Cargo.toml');
   requireCommand('cargo', 'Install the stable Rust toolchain with rustfmt and clippy.');
-  run('cargo', ['fmt', '--manifest-path', manifest, '--all', '--', '--check']);
-  run('cargo', [
-    'clippy',
-    '--manifest-path',
-    manifest,
-    '--all-targets',
-    '--all-features',
-    '--',
-    '-D',
-    'warnings',
-  ]);
-  run('cargo', ['test', '--manifest-path', manifest, '--all-features']);
+  const manifests = [
+    join(repoRoot, 'crates', 'tool-broker', 'Cargo.toml'),
+    join(repoRoot, 'apps', 'desktop', 'src-tauri', 'Cargo.toml'),
+  ];
+  for (const manifest of manifests) {
+    if (!(await exists(manifest))) {
+      throw new Error(`Rust manifest not found: ${manifest}`);
+    }
+    run('cargo', ['fmt', '--manifest-path', manifest, '--all', '--', '--check']);
+    run('cargo', [
+      'clippy',
+      '--manifest-path',
+      manifest,
+      '--all-targets',
+      '--all-features',
+      '--',
+      '-D',
+      'warnings',
+    ]);
+    run('cargo', ['test', '--manifest-path', manifest, '--all-features']);
+  }
 }
 
 async function verifyContracts() {

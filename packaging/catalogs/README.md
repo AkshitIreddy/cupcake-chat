@@ -1,4 +1,7 @@
-# Cupcake Local release-candidate catalog
+# Cupcake Local local-candidate catalogs
+
+These signed catalogs are metadata inputs for private corrective testing. They are not production
+trust roots and do not establish that a model has been downloaded, loaded, benchmarked, or accepted.
 
 `cupcake-local-runtime-v1.json` pins the official llama.cpp `b10679` Windows x64 CPU asset and its
 source revision. GitHub release API metadata reported archive digest
@@ -19,12 +22,29 @@ production key and must not be reused for a published release. Its ignored priva
 `.secrets/cupcake-local-rc-2026-08-ed25519.pem` in the local workspace. The committed key file
 contains only the raw 32-byte public key encoded as base64.
 
-This catalog contains runtime executables and DLLs only. It contains no model records and the
-packaging pipeline rejects any staged `.gguf` file.
+The runtime catalog contains runtime executables and DLLs only. The separate
+`cupcake-local-models-v1.json` catalog contains installable-model metadata only; the packaging
+pipeline rejects every staged `.gguf` file. The public-key document also sets minimum accepted
+runtime and model catalog versions so a correctly signed older catalog cannot silently roll back the
+local candidate.
+
+## Installable model catalog
+
+`cupcake-local-models-v1.json` is signed by the same local-candidate key and currently records:
+
+- Qwen3 4B Q4_K_M, 2,497,280,640 bytes;
+- Qwen3 8B Q4_K_M, 5,027,783,488 bytes;
+- Qwen3 14B Q4_K_M, 9,001,752,960 bytes.
+
+Each entry pins an immutable Hugging Face source revision, exact filename/byte length/SHA-256,
+Apache license and source, parameter count, quantization, architecture, context choices, capability
+and task tags, and minimum Cupcake Local runtime requirements. The 14B entry explicitly warns that
+reduced context or hybrid offload may be required. Device ranking remains runtime-derived; catalog
+presence is not a compatibility promise.
 
 ## Optional acceleration packs
 
-The same signed catalog contains two download-only packs. Neither is copied into the installer:
+The same signed catalog contains three download-only packs. None is copied into the installer:
 
 - **Vulkan:** `llama-b10679-bin-win-vulkan-x64.zip`, SHA-256
   `d288a375a324f650a587d3b876afe692ca3586110f20b863fadbe91dd3b93469`. It requires a Vulkan-capable
@@ -37,6 +57,13 @@ The same signed catalog contains two download-only packs. Neither is copied into
   GPU and Windows driver 551.61 or newer. The companion CUDA DLLs are governed by the
   [NVIDIA CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html), which must be disclosed
   and accepted before download.
+- **CUDA 13.3:** `llama-b10679-bin-win-cuda-13.3-x64.zip`, SHA-256
+  `2936f7230732df0dda2070960a940a7ca69d4debbd5edff4a1b98c2dad339efb`, plus the required
+  `cudart-llama-bin-win-cuda-13.3-x64.zip`, SHA-256
+  `1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e`. It is the preferred NVIDIA
+  pack when NVML reports Windows driver 580.00 or newer and the installed runtime independently
+  passes `llama-server.exe --list-devices`. Its companion DLLs have the same explicit NVIDIA CUDA
+  Toolkit EULA acceptance boundary as the CUDA 12.4 pack.
 
 The CPU pack remains the safe bundled baseline and rollback target. Optional packs are installed
 side-by-side, verified before activation, and can roll back without replacing or deleting CPU.

@@ -4,6 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import {
   ensureDir,
   exists,
+  fileSize,
   parseArgValue,
   readJson,
   repoRoot,
@@ -16,6 +17,7 @@ const args = process.argv.slice(2);
 const requireArtifacts = args.includes('--require-artifacts');
 const jsonOutput = parseArgValue(args, '--json', null);
 const checks = [];
+const targetTriple = 'x86_64-pc-windows-msvc';
 
 function record(name, ok, detail) {
   checks.push({ name, ok, detail });
@@ -43,23 +45,17 @@ async function auditVersions() {
       manifest.private === true ? 'private' : 'must remain private',
     );
   }
-
-  const cargoPath = join(repoRoot, 'crates', 'tool-broker', 'Cargo.toml');
-  const cargo = await readFile(cargoPath, 'utf8');
-  assertRcVersion('crates/tool-broker/Cargo.toml', cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]);
-
-  const pyprojectPath = join(repoRoot, 'services', 'runtime', 'pyproject.toml');
-  if (await exists(pyprojectPath)) {
-    const pyproject = await readFile(pyprojectPath, 'utf8');
-    const version = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
-    record(
-      'services/runtime/pyproject.toml version',
-      typeof version === 'string' && /^2\.0\.0rc\d+$/.test(version),
-      String(version ?? 'missing'),
-    );
-  } else {
-    record('Python runtime manifest', false, 'services/runtime/pyproject.toml is missing');
+  for (const path of ['apps/desktop/src-tauri/Cargo.toml', 'crates/tool-broker/Cargo.toml']) {
+    const cargo = await readFile(join(repoRoot, path), 'utf8');
+    assertRcVersion(path, cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]);
   }
+  const pyproject = await readFile(join(repoRoot, 'services/runtime/pyproject.toml'), 'utf8');
+  const pythonVersion = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  record(
+    'services/runtime/pyproject.toml version',
+    typeof pythonVersion === 'string' && /^2\.0\.0rc\d+$/.test(pythonVersion),
+    String(pythonVersion ?? 'missing'),
+  );
 }
 
 async function auditTrackedState() {
@@ -82,26 +78,29 @@ async function auditTrackedState() {
     forbidden.length === 0,
     forbidden.length ? forbidden.join(', ') : 'clean',
   );
-
-  for (const lockfile of ['pnpm-lock.yaml', 'crates/tool-broker/Cargo.lock']) {
+  for (const lockfile of [
+    'pnpm-lock.yaml',
+    'apps/desktop/src-tauri/Cargo.lock',
+    'crates/tool-broker/Cargo.lock',
+  ]) {
     record(`${lockfile} present`, await exists(join(repoRoot, lockfile)), lockfile);
   }
 }
 
 async function auditAutomationPolicy() {
-  const scanRoots = ['.github/workflows', 'scripts', 'packaging', 'apps/desktop'];
+  const scanRoots = ['.github/workflows', 'scripts', 'packaging', 'apps/desktop/src-tauri'];
   const extensions = new Set(['.yml', '.yaml', '.json', '.ts', '.js', '.mjs', '.py', '.toml']);
   const forbiddenPatterns = [
     { label: 'write-enabled GitHub contents permission', pattern: /contents\s*:\s*write/i },
     {
       label: 'release publishing command',
       pattern:
-        /\b(?:npm\s+publish|gh\s+release\s+create|electron-forge\s+publish|mkdocs\s+gh-deploy)\b/i,
+        /\b(?:npm\s+publish|gh\s+release\s+create|tauri\s+signer\s+sign|mkdocs\s+gh-deploy)\b/i,
     },
-    { label: 'Electron Forge publisher configuration', pattern: /\bpublishers\s*:/i },
     {
-      label: 'live updater feed endpoint',
-      pattern: /\b(?:setFeedURL|updateConfigPath|RELEASES\.json)\b/i,
+      label: 'live updater configuration',
+      pattern:
+        /(?:tauri-plugin-updater|createUpdaterArtifacts|pubkey\s*"?\s*:|endpoints\s*"?\s*:)/i,
     },
   ];
   const violations = [];
@@ -117,131 +116,229 @@ async function auditAutomationPolicy() {
     }
   }
   record(
-    'No publish/updater configuration',
+    'No publish/sign/update automation',
     violations.length === 0,
     violations.length ? violations.join('; ') : 'clean',
   );
 }
 
+async function auditRemovedIntegrations() {
+  const roots = [
+    'package.json',
+    'pnpm-workspace.yaml',
+    'pnpm-lock.yaml',
+    'apps/desktop/package.json',
+    'apps/desktop/src',
+    'apps/desktop/src-tauri',
+    'services/runtime/src',
+    'crates/tool-broker/src',
+    'packages/contracts/src',
+    'packages/contracts/schema',
+    'README.md',
+    'docs/development.md',
+    'docs/local-testing.md',
+    'docs/known-issues.md',
+    'docs/free-tier-guide.md',
+    'docs/user-guide.md',
+    'docs/architecture',
+    'packaging/README.md',
+    'packages/contracts/README.md',
+  ];
+  const violations = [];
+  for (const root of roots) {
+    const absolute = join(repoRoot, root);
+    const files =
+      (await exists(absolute)) && extname(absolute) ? [absolute] : await walkFiles(absolute);
+    for (const file of files) {
+      if (/[/\\](?:PAUSED_HANDOFF|RESEARCH_LEDGER|REPOSITORY_AUDIT)\.md$/i.test(file)) continue;
+      const extension = extname(file).toLowerCase();
+      if (
+        !new Set([
+          '.md',
+          '.json',
+          '.yaml',
+          '.yml',
+          '.toml',
+          '.ts',
+          '.tsx',
+          '.js',
+          '.mjs',
+          '.py',
+          '.rs',
+        ]).has(extension)
+      ) {
+        continue;
+      }
+      const lines = (await readFile(file, 'utf8')).split(/\r?\n/);
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (!/(?:electron|squirrel|lm[ _-]?studio|ollama)/i.test(line)) continue;
+        const negativeRemovalTest =
+          /ensure_runtime_method_allowed/.test(line) && /\.is_err\(\)/.test(line);
+        const explicitHistorical =
+          /histor(?:y|ic|ical)|rejected baseline|removed migration|intentionally excludes/i.test(
+            line,
+          );
+        if (!negativeRemovalTest && !explicitHistorical) {
+          violations.push(`${relative(repoRoot, file)}:${index + 1}`);
+        }
+      }
+    }
+  }
+  record(
+    'No active rejected desktop/local-runtime references',
+    violations.length === 0,
+    violations.length ? violations.join(', ') : 'clean',
+  );
+}
+
 async function auditContracts() {
   const sidecars = await readJson(join(repoRoot, 'packaging', 'sidecars.json'));
+  const ids = sidecars.sidecars
+    ?.map((entry) => entry.id)
+    .sort()
+    .join(',');
   record(
-    'Sidecar descriptor schema',
-    sidecars.schemaVersion === 1 && sidecars.protocolVersion === 1,
-    'schema/protocol v1',
-  );
-  record(
-    'Sidecar descriptor completeness',
-    sidecars.sidecars
-      ?.map((entry) => entry.id)
-      .sort()
-      .join(',') === 'runtime,tool-broker',
-    sidecars.sidecars?.map((entry) => entry.id).join(', ') ?? 'missing',
+    'Sidecar descriptor',
+    sidecars.schemaVersion === 1 && sidecars.protocolVersion === 1 && ids === 'runtime,tool-broker',
+    `schema=${String(sidecars.schemaVersion)} protocol=${String(sidecars.protocolVersion)} ids=${ids ?? 'missing'}`,
   );
 }
 
 async function auditWindowsOnlyPackaging() {
-  const forge = await readFile(join(repoRoot, 'apps', 'desktop', 'forge.config.ts'), 'utf8');
-  const sidecarScript = await readFile(join(repoRoot, 'scripts', 'package-sidecars.mjs'), 'utf8');
-  const workflow = await readFile(
-    join(repoRoot, '.github', 'workflows', 'desktop-builds.yml'),
-    'utf8',
-  );
+  const config = await readJson(join(repoRoot, 'apps/desktop/src-tauri/tauri.conf.json'));
+  const packageScript = await readFile(join(repoRoot, 'scripts/package-sidecars.mjs'), 'utf8');
+  const workflow = await readFile(join(repoRoot, '.github/workflows/desktop-builds.yml'), 'utf8');
+  const externalBins = config.bundle?.externalBin ?? [];
+  const resources = config.bundle?.resources ?? [];
+  const hasSidecarResource = Array.isArray(resources)
+    ? resources.includes('resources/sidecars')
+    : ['sidecars', 'sidecars/'].includes(
+        resources['resources/sidecars'] ?? resources['resources/sidecars/'],
+      );
   const valid =
-    forge.includes("packagePlatform !== 'win32' || packageArch !== 'x64'") &&
-    !/@electron-forge\/maker-(?:deb|dmg|rpm)/.test(forge) &&
-    sidecarScript.includes("targetPlatform !== 'win32' || targetArch !== 'x64'") &&
+    JSON.stringify(config.bundle?.targets) === JSON.stringify(['nsis']) &&
+    externalBins.includes('binaries/cupcake-runtime') &&
+    externalBins.includes('binaries/cupcake-tool-broker') &&
+    hasSidecarResource &&
+    packageScript.includes("targetPlatform !== 'win32' || targetArch !== 'x64'") &&
+    packageScript.includes(targetTriple) &&
     /runs-on:\s*windows-latest/.test(workflow) &&
+    /bundle:nsis/.test(workflow) &&
     !/runs-on:\s*(?:ubuntu|macos)-latest/.test(workflow);
   record(
-    'Windows x64-only packaging policy',
+    'Windows x64 Tauri NSIS packaging policy',
     valid,
-    valid ? 'Forge, sidecars, and installer CI reject non-Windows-x64 targets' : 'policy drift',
+    valid ? 'Tauri NSIS, target-triple sidecars, resources, and Windows-only CI' : 'policy drift',
   );
 }
 
 async function auditArtifacts() {
-  const stage = join(
-    repoRoot,
-    'out',
-    'sidecars',
-    `${process.platform}-${process.arch}`,
-    'sidecars',
-  );
-  const manifestPath = join(stage, 'sidecars.manifest.json');
+  const tauriRoot = join(repoRoot, 'apps', 'desktop', 'src-tauri');
+  const resourceRoot = join(tauriRoot, 'resources', 'sidecars');
+  const binaryRoot = join(tauriRoot, 'binaries');
+  const manifestPath = join(resourceRoot, 'sidecars.manifest.json');
   if (!(await exists(manifestPath))) {
     record(
-      'Staged sidecars',
+      'Staged Tauri sidecars',
       !requireArtifacts,
-      requireArtifacts ? 'missing' : 'not required for this audit',
+      requireArtifacts ? 'missing' : 'not required',
     );
   } else {
     const manifest = await readJson(manifestPath);
-    const descriptor = await readJson(join(repoRoot, 'packaging', 'sidecars.json'));
+    const descriptor = await readJson(join(repoRoot, 'packaging/sidecars.json'));
     let valid =
       manifest.schemaVersion === descriptor.schemaVersion &&
       manifest.protocolVersion === descriptor.protocolVersion &&
-      manifest.platform === process.platform &&
-      manifest.architecture === process.arch &&
+      manifest.platform === 'win32' &&
+      manifest.architecture === 'x64' &&
       manifest.binaries?.length === descriptor.sidecars.length;
-    const seen = new Set();
     for (const binary of manifest.binaries ?? []) {
       const expected = descriptor.sidecars.find((item) => item.id === binary.id);
-      const suffix = process.platform === 'win32' ? '.exe' : '';
+      const packaged = join(resourceRoot, binary.file);
+      const external = join(binaryRoot, `${expected?.baseName}-${targetTriple}.exe`);
       valid &&=
         Boolean(expected) &&
-        !seen.has(binary.id) &&
-        binary.file === `${expected?.baseName}${suffix}` &&
+        binary.file === `${expected?.baseName}.exe` &&
         binary.file === basename(binary.file) &&
         binary.transport === expected?.transport &&
         Number.isSafeInteger(binary.bytes) &&
         binary.bytes > 0 &&
-        /^[a-f0-9]{64}$/.test(binary.sha256);
-      seen.add(binary.id);
-      const file = join(stage, basename(binary.file));
-      valid &&= (await exists(file)) && (await sha256File(file)) === binary.sha256;
+        /^[a-f0-9]{64}$/.test(binary.sha256) &&
+        (await exists(packaged)) &&
+        (await exists(external));
+      if (valid) {
+        valid &&=
+          (await fileSize(packaged)) === binary.bytes &&
+          (await fileSize(external)) === binary.bytes &&
+          (await sha256File(packaged)) === binary.sha256 &&
+          (await sha256File(external)) === binary.sha256;
+      }
     }
     const resource = manifest.resources?.[0];
+    const localManifest = join(resourceRoot, resource?.manifest ?? 'missing');
     valid &&=
       manifest.resources?.length === 1 &&
       resource?.id === 'cupcake-local-cpu-baseline' &&
       resource?.directory === 'cupcake-local' &&
       resource?.manifest === 'cupcake-local/cupcake-local.manifest.json' &&
-      /^[a-f0-9]{64}$/.test(resource?.sha256 ?? '');
-    const localManifestPath = join(stage, resource?.manifest ?? 'missing');
-    valid &&=
-      (await exists(localManifestPath)) &&
-      (await sha256File(localManifestPath)) === resource?.sha256;
-    if (await exists(localManifestPath)) {
-      const localManifest = await readJson(localManifestPath);
-      const localFiles = await walkFiles(join(stage, 'cupcake-local'));
+      /^[a-f0-9]{64}$/.test(resource?.sha256 ?? '') &&
+      (await exists(localManifest));
+    if (await exists(localManifest))
+      valid &&= (await sha256File(localManifest)) === resource.sha256;
+    if (await exists(localManifest)) {
+      const local = await readJson(localManifest);
+      const runtimeCatalog = join(resourceRoot, 'cupcake-local/cupcake-local-runtime-v1.json');
+      const modelCatalog = join(resourceRoot, 'cupcake-local/cupcake-local-models-v1.json');
+      const publicKeys = join(resourceRoot, 'cupcake-local/cupcake-local-public-keys.json');
       valid &&=
-        localManifest.environment === 'local-release-candidate' &&
-        localManifest.productionSigning === false &&
-        localManifest.modelWeightsBundled === false &&
-        localManifest.runtimeFileCount === 51 &&
-        !localFiles.some((file) => /\.gguf$/i.test(file));
+        local.modelWeightsBundled === false &&
+        Number.isSafeInteger(local.modelCount) &&
+        local.modelCount > 0 &&
+        (await exists(runtimeCatalog)) &&
+        (await exists(modelCatalog)) &&
+        (await exists(publicKeys));
+      if (
+        (await exists(runtimeCatalog)) &&
+        (await exists(modelCatalog)) &&
+        (await exists(publicKeys))
+      ) {
+        valid &&=
+          (await sha256File(runtimeCatalog)) === local.catalogSha256 &&
+          (await sha256File(modelCatalog)) === local.modelCatalogSha256 &&
+          (await sha256File(publicKeys)) === local.publicKeysSha256;
+      }
     }
+    const localFiles = await walkFiles(join(resourceRoot, 'cupcake-local'));
+    valid &&= !localFiles.some((file) => /\.gguf$/i.test(file));
     record(
-      'Staged sidecars',
+      'Staged Tauri sidecars',
       valid,
-      valid
-        ? 'two checksummed binaries plus verified no-weights Cupcake Local CPU baseline'
-        : 'manifest, resource, or digest mismatch',
+      valid ? 'verified externalBin and resource inputs' : 'invalid',
     );
   }
 
-  const desktopOut = join(repoRoot, 'apps', 'desktop', 'out');
+  const releaseRoot = join(tauriRoot, 'target/release');
+  const launcher = join(releaseRoot, 'CUPCAKEAGI.exe');
+  const installers = (await walkFiles(join(releaseRoot, 'bundle/nsis'))).filter((file) =>
+    /-setup\.exe$/i.test(file),
+  );
+  const packaged =
+    (await exists(launcher)) &&
+    (await fileSize(launcher)) > 0 &&
+    installers.length === 1 &&
+    (await fileSize(installers[0])) > 0;
   record(
-    'Packaged desktop output',
-    !requireArtifacts || (await exists(desktopOut)),
-    requireArtifacts ? desktopOut : 'not required',
+    'Tauri executable and unsigned NSIS installer',
+    !requireArtifacts || packaged,
+    requireArtifacts ? (packaged ? relative(repoRoot, installers[0]) : 'missing') : 'not required',
   );
 }
 
 await auditVersions();
 await auditTrackedState();
 await auditAutomationPolicy();
+await auditRemovedIntegrations();
 await auditContracts();
 await auditWindowsOnlyPackaging();
 await auditArtifacts();
@@ -250,7 +347,6 @@ const failed = checks.filter((check) => !check.ok);
 for (const check of checks) {
   process.stdout.write(`${check.ok ? 'PASS' : 'FAIL'}  ${check.name}: ${check.detail}\n`);
 }
-
 if (jsonOutput) {
   const path = resolve(repoRoot, jsonOutput);
   const relativeOutput = relative(join(repoRoot, 'out'), path);
@@ -264,10 +360,9 @@ if (jsonOutput) {
     'utf8',
   );
 }
-
 if (failed.length) {
   process.exitCode = 1;
-  process.stderr.write(`\nRelease-candidate audit failed ${failed.length} check(s).\n`);
+  process.stderr.write(`\nLocal-candidate audit failed ${failed.length} check(s).\n`);
 } else {
-  process.stdout.write('\nRelease-candidate audit passed. No publish action was performed.\n');
+  process.stdout.write('\nLocal-candidate audit passed. No publish action was performed.\n');
 }

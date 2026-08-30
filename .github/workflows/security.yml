@@ -70,6 +70,7 @@ jobs:
       - run: rustup default stable
       - run: cargo install cargo-audit --locked
       - run: cargo audit --file crates/tool-broker/Cargo.lock
+      - run: cargo audit --file apps/desktop/src-tauri/Cargo.lock
 
   release-policy:
     name: No-publish release policy

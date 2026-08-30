@@ -30,7 +30,8 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
     weight_gb = artifact.parameter_billions * bits / 8 * 1.08
     # KV cache varies by architecture; this is a deliberately conservative UI
     # estimate, with actual measurements replacing it once the model loads.
-    context = min(artifact.context_window, 8192)
+    context_cap = min(artifact.context_window, 8192)
+    context = _catalog_context(artifact, context_cap)
     kv_gb = max(0.5, artifact.parameter_billions / 8 * context / 8192)
     vram_need = weight_gb + kv_gb + 1.0
     ram_need = max(4.0, weight_gb * 1.2 + 2.0)
@@ -38,6 +39,12 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
     vram = hardware.vram_gb or 0
 
     if (
+        hardware.free_disk_gb is not None
+        and artifact.size_bytes * 1.15 > hardware.free_disk_gb * 2**30
+    ):
+        classification = RecommendationClass.INCOMPATIBLE
+        reasons.append("insufficient free disk for download, verification, and atomic promotion")
+    elif (
         11 <= vram <= 13
         and 7 <= artifact.parameter_billions <= 9
         and artifact.quantization.upper() == "Q4_K_M"
@@ -48,18 +55,20 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         classification = RecommendationClass.RECOMMENDED
         reasons.append("weights, context, and runtime headroom fit in dedicated VRAM")
     elif vram and vram_need <= vram * 1.08 and ram_need <= hardware.available_ram_gb:
-        classification = RecommendationClass.POSSIBLE
-        context = min(context, 4096)
+        classification = RecommendationClass.FITS_REDUCED_CONTEXT
+        context = _catalog_context(artifact, 4096)
         reasons.append("tight VRAM fit; use a shorter context and close GPU-heavy applications")
-    elif ram_need <= hardware.available_ram_gb and (
-        hardware.vram_gb is None or artifact.parameter_billions <= 34
-    ):
+    elif not vram and ram_need <= hardware.available_ram_gb:
+        classification = RecommendationClass.CPU_ONLY_SLOW
+        context = _catalog_context(artifact, 4096)
+        reasons.append("fits system RAM on the safe CPU baseline, but generation will be slower")
+    elif ram_need <= hardware.available_ram_gb and artifact.parameter_billions <= 34:
         classification = RecommendationClass.HYBRID
-        context = min(context, 4096)
+        context = _catalog_context(artifact, 4096)
         reasons.append("requires partial CPU/RAM offload and will be slower")
     else:
-        classification = RecommendationClass.UNSUITABLE
-        context = min(context, 2048)
+        classification = RecommendationClass.INCOMPATIBLE
+        context = _catalog_context(artifact, 2048)
         reasons.append("estimated memory demand exceeds safe local headroom")
 
     if (
@@ -67,16 +76,50 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         and 12 <= artifact.parameter_billions <= 14
         and classification == RecommendationClass.RECOMMENDED
     ):
-        classification = RecommendationClass.POSSIBLE
-        context = min(context, 4096)
+        classification = RecommendationClass.FITS_REDUCED_CONTEXT
+        context = _catalog_context(artifact, 4096)
         reasons.append("12-14B models on 12 GB VRAM need tighter context and headroom checks")
     if artifact.parameter_billions > 14 and 11 <= vram <= 13:
         classification = (
             RecommendationClass.HYBRID
             if ram_need <= hardware.available_ram_gb
-            else RecommendationClass.UNSUITABLE
+            else RecommendationClass.INCOMPATIBLE
         )
         reasons.append("larger than the recommended dedicated-VRAM class for 12 GB cards")
+
+    labels = {
+        RecommendationClass.RECOMMENDED: "Recommended",
+        RecommendationClass.FITS_REDUCED_CONTEXT: "Fits with reduced context",
+        RecommendationClass.CPU_ONLY_SLOW: "CPU-only / slow",
+        RecommendationClass.HYBRID: "Hybrid",
+        RecommendationClass.INCOMPATIBLE: "Incompatible",
+    }
+    if classification == RecommendationClass.RECOMMENDED:
+        speed = "fast" if vram else "moderate"
+    elif classification == RecommendationClass.FITS_REDUCED_CONTEXT:
+        speed = "moderate"
+    elif classification in {
+        RecommendationClass.CPU_ONLY_SLOW,
+        RecommendationClass.HYBRID,
+    }:
+        speed = "slow"
+    else:
+        speed = "unavailable"
+    acceleration = (
+        "gpu"
+        if classification
+        in {RecommendationClass.RECOMMENDED, RecommendationClass.FITS_REDUCED_CONTEXT}
+        and vram
+        else "hybrid"
+        if classification == RecommendationClass.HYBRID
+        else "cpu"
+        if classification == RecommendationClass.CPU_ONLY_SLOW
+        else "none"
+    )
+    reasons.append(
+        f"estimated load: {vram_need:.1f} GB VRAM, {ram_need:.1f} GB RAM, "
+        f"{artifact.size_bytes / 2**30:.1f} GB disk"
+    )
 
     return ModelRecommendation(
         artifact.id,
@@ -85,6 +128,11 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         round(ram_need, 2),
         context,
         tuple(reasons),
+        labels[classification],
+        round(artifact.size_bytes / 2**30 * 1.15, 2),
+        max(0, artifact.context_window - context),
+        speed,
+        acceleration,
     )
 
 
@@ -93,9 +141,10 @@ def rank_catalog(
 ) -> tuple[ModelRecommendation, ...]:
     order = {
         RecommendationClass.RECOMMENDED: 0,
-        RecommendationClass.POSSIBLE: 1,
-        RecommendationClass.HYBRID: 2,
-        RecommendationClass.UNSUITABLE: 3,
+        RecommendationClass.FITS_REDUCED_CONTEXT: 1,
+        RecommendationClass.CPU_ONLY_SLOW: 2,
+        RecommendationClass.HYBRID: 3,
+        RecommendationClass.INCOMPATIBLE: 4,
     }
     return tuple(
         sorted(
@@ -105,13 +154,20 @@ def rank_catalog(
     )
 
 
+def _catalog_context(artifact: ModelArtifact, limit: int) -> int:
+    choices = tuple(choice for choice in artifact.context_choices if choice <= limit)
+    if choices:
+        return max(choices)
+    return min(artifact.context_window, limit)
+
+
 def rank_runtime_packs(
     runtimes: tuple[RuntimePackArtifact, ...], hardware: HardwareProfile
 ) -> tuple[RuntimeCompatibility, ...]:
     assessed = [_assess_runtime(runtime, hardware) for runtime in runtimes]
     priority = {
-        RuntimeBackend.CUDA_12: 0,
-        RuntimeBackend.CUDA_13: 1,
+        RuntimeBackend.CUDA_13: 0,
+        RuntimeBackend.CUDA_12: 1,
         RuntimeBackend.VULKAN: 2,
         RuntimeBackend.SYCL: 3,
         RuntimeBackend.ROCM: 4,

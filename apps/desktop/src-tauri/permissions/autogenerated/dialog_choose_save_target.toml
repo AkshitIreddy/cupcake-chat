@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dialog-choose-save-target"
+description = "Enables the dialog_choose_save_target command without any pre-configured scope."
+commands.allow = ["dialog_choose_save_target"]
+
+[[permission]]
+identifier = "deny-dialog-choose-save-target"
+description = "Denies the dialog_choose_save_target command without any pre-configured scope."
+commands.deny = ["dialog_choose_save_target"]

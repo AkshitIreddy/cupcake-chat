@@ -19,5 +19,5 @@
     "strict": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "*.config.ts", "*.config.mts", "forge.config.ts"]
+  "include": ["src/renderer", "src/shared", "*.config.ts", "*.config.mts"]
 }

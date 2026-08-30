@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Narrow local-only permissions for the CUPCAKEAGI main workbench.",
+  "local": true,
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "permissions": [
+    "core:event:default",
+    "allow-app-info",
+    "allow-app-quit",
+    "allow-command-execute",
+    "allow-dialog-choose-save-target",
+    "allow-dialog-open-directory",
+    "allow-dialog-open-files",
+    "allow-dialog-release-handle",
+    "allow-open-external-url",
+    "allow-provider-connect",
+    "allow-provider-disconnect",
+    "allow-provider-test",
+    "allow-runtime-cancel",
+    "allow-runtime-request",
+    "allow-runtime-status",
+    "allow-window-close",
+    "allow-window-is-maximized",
+    "allow-window-minimize",
+    "allow-window-start-dragging",
+    "allow-window-toggle-maximize"
+  ]
+}

@@ -11,9 +11,6 @@ from typing import Any
 
 class RuntimeKind(StrEnum):
     CUPCAKE_LLAMA_CPP = "cupcake_llama_cpp"
-    OLLAMA = "ollama"
-    LM_STUDIO = "lm_studio"
-    VLLM = "vllm"
 
 
 class RuntimeState(StrEnum):
@@ -73,6 +70,13 @@ class HardwareProfile:
     acceleration: tuple[str, ...] = ()
     free_disk_gb: float | None = None
     gpu_driver_version: str | None = None
+    os_name: str | None = None
+    architecture: str | None = None
+    cpu_name: str | None = None
+    cpu_features: tuple[str, ...] = ()
+    windows_version: str | None = None
+    windows_build: str | None = None
+    installed_acceleration_packs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +96,12 @@ class ModelArtifact:
     architecture: str = "llama"
     min_runtime_version: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    source: str = "catalog"
+    source_revision: str | None = None
+    context_choices: tuple[int, ...] = ()
+    capability_tags: tuple[str, ...] = ()
+    task_tags: tuple[str, ...] = ()
+    runtime_requirements: tuple[str, ...] = ()
 
     def target(self, model_directory: Path) -> Path:
         return model_directory / self.filename
@@ -194,9 +204,14 @@ class DownloadSnapshot:
 
 class RecommendationClass(StrEnum):
     RECOMMENDED = "recommended"
-    POSSIBLE = "possible"
+    FITS_REDUCED_CONTEXT = "fits_reduced_context"
+    # Compatibility aliases for earlier callers. Their serialized values use
+    # the more useful product labels above.
+    POSSIBLE = "fits_reduced_context"
+    CPU_ONLY_SLOW = "cpu_only_slow"
     HYBRID = "hybrid"
-    UNSUITABLE = "unsuitable"
+    INCOMPATIBLE = "incompatible"
+    UNSUITABLE = "incompatible"
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +222,11 @@ class ModelRecommendation:
     estimated_ram_gb: float
     recommended_context: int
     reasons: tuple[str, ...]
+    label: str = ""
+    estimated_disk_gb: float = 0.0
+    context_headroom_tokens: int = 0
+    likely_speed_class: str = "unknown"
+    acceleration: str = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,3 +239,5 @@ class PerformanceMeasurement:
     generated_tokens_per_second: float
     context_size: int
     measured_at: str
+    total_seconds: float | None = None
+    measurement_source: str = "runtime"

@@ -18,12 +18,24 @@ const runtime = join(stage, `cupcake-runtime${suffix}`);
 const dataDirectory = await mkdtemp(join(tmpdir(), 'cupcake-sidecar-smoke-'));
 const secret = randomBytes(32);
 const sessionId = uuidV7();
+const inheritedEnvironment =
+  process.env.CUPCAKE_FORCE_MINIMAL_WINDOWS_ENV === '1'
+    ? {
+        SYSTEMROOT: process.env.SYSTEMROOT,
+        WINDIR: process.env.WINDIR,
+        TEMP: process.env.TEMP,
+        TMP: process.env.TMP,
+        PATH: `${process.env.SYSTEMROOT}\\System32`,
+        PATHEXT: '.CPL',
+      }
+    : process.env;
 const processHandle = spawn(broker, ['--stdio'], {
   env: {
-    ...process.env,
+    ...inheritedEnvironment,
     CUPCAKE_BROKER_AUTH: secret.toString('base64url'),
     CUPCAKE_RUNTIME_PATH: runtime,
     CUPCAKE_DATA_DIR: dataDirectory,
+    CUPCAKE_LOCAL_BASELINE_DIR: join(stage, 'cupcake-local'),
     CUPCAKE_PROTOCOL_VERSION: '1',
   },
   stdio: ['pipe', 'pipe', 'pipe'],
@@ -96,19 +108,57 @@ try {
   }
   assert(response, 'runtime bootstrap response missing');
 
+  const chat = await requestRuntimeStream('chat.send', {
+    content: 'Return the deterministic packaged-runtime acknowledgement.',
+    modelId: 'mock:cupcake-deterministic',
+  });
+  assert(
+    chat.response.payload?.ok === true,
+    `runtime chat failed: ${JSON.stringify(chat.response.payload)}`,
+  );
+  assert(
+    chat.events.some((event) => event.payload?.type === 'message.completed'),
+    'runtime chat did not emit message.completed before its terminal response',
+  );
+  assert(
+    chat.response.payload.result?.status === 'completed',
+    `runtime chat did not return a completed terminal result: ${JSON.stringify(chat.response.payload)}`,
+  );
+
   // This response contains runtime endpoint dataclasses in the production
   // service. Exercise it over the authenticated frozen pipe so JSON-safe
   // redaction and outbound sequencing regressions cannot hide behind the
   // desktop's noncritical refresh recovery.
-  const discovery = await requestRuntime('local_models.discover', {});
+  const discovery = await requestRuntime('local_models.cupcake.status', {});
   assert(
     discovery.payload?.ok === true,
     `local model discovery failed: ${JSON.stringify(discovery.payload)}`,
   );
   assert(
-    Array.isArray(discovery.payload.result?.endpoints),
-    'local model discovery endpoint list missing',
+    Array.isArray(discovery.payload.result?.availableModels) &&
+      discovery.payload.result.availableModels.length === 3,
+    'signed Cupcake Local model catalog is missing',
   );
+  assert(
+    Array.isArray(discovery.payload.result?.availableRuntimes) &&
+      discovery.payload.result.availableRuntimes.length === 4,
+    'signed Cupcake Local CPU/CUDA 13/CUDA 12/Vulkan runtime ladder is missing',
+  );
+  if (process.env.CUPCAKE_EXPECT_NVIDIA === '1') {
+    const hardware = discovery.payload.result?.hardware;
+    assert(
+      typeof hardware?.gpu_name === 'string' && hardware.gpu_name.startsWith('NVIDIA'),
+      `packaged runtime did not detect the expected NVIDIA GPU: ${JSON.stringify(hardware)}`,
+    );
+    assert(
+      typeof hardware?.gpu_driver_version === 'string' && hardware.gpu_driver_version.length > 0,
+      `packaged runtime did not detect the NVIDIA driver: ${JSON.stringify(hardware)}`,
+    );
+    assert(
+      Array.isArray(hardware?.acceleration) && hardware.acceleration.includes('cuda'),
+      `packaged runtime did not expose CUDA acceleration: ${JSON.stringify(hardware)}`,
+    );
+  }
 
   const shutdownId = uuidV7();
   send('shutdown', shutdownId, {});
@@ -158,6 +208,23 @@ async function requestRuntime(method, params) {
     const frame = await nextFrame(120_000);
     assert(verify(frame), `${method} response authentication failed`);
     if (frame.correlationId === correlationId && frame.type === 'response') return frame;
+  }
+}
+
+async function requestRuntimeStream(method, params) {
+  const correlationId = uuidV7();
+  const events = [];
+  send('request', correlationId, { method, params });
+  while (true) {
+    const frame = await nextFrame(120_000);
+    assert(verify(frame), `${method} response authentication failed`);
+    if (frame.correlationId !== correlationId) continue;
+    if (frame.type === 'event') {
+      events.push(frame);
+      continue;
+    }
+    if (frame.type === 'response') return { events, response: frame };
+    throw new Error(`${method} returned unexpected frame type ${frame.type}`);
   }
 }
 

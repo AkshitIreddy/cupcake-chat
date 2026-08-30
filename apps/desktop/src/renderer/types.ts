@@ -62,7 +62,22 @@ export interface ModelDescriptor {
   tags: string[];
   context: string;
   cost: string;
-  status: 'ready' | 'setup' | 'download' | 'offline';
+  status:
+    | 'catalog'
+    | 'incompatible'
+    | 'setup'
+    | 'download'
+    | 'paused'
+    | 'verifying'
+    | 'checksum-failed'
+    | 'installed'
+    | 'loading'
+    | 'ready'
+    | 'benchmarked'
+    | 'unloading'
+    | 'removing'
+    | 'offline'
+    | 'error';
   description: string;
   selected?: boolean;
   progress?: number;
@@ -78,6 +93,18 @@ export interface ModelDescriptor {
   chatCompatibility?: 'chat' | 'unknown' | 'non_chat';
   privacyLabel?: string;
   pricingProvenance?: string;
+  fit?: 'pending' | 'recommended' | 'reduced-context' | 'cpu-slow' | 'hybrid' | 'incompatible';
+  fitReason?: string;
+  source?: string;
+  license?: string;
+  parameters?: string;
+  quantization?: string;
+  fileSizeBytes?: number;
+  estimatedRamBytes?: number;
+  estimatedVramBytes?: number;
+  estimatedDiskBytes?: number;
+  speedClass?: string;
+  benchmark?: { tokensPerSecond: number; contextTokens: number; measuredAt: string };
 }
 
 export interface LiveChatMessage {

@@ -1,4 +1,4 @@
-# JavaScript / Electron
+# JavaScript / Tauri renderer
 node_modules/
 .vite/
 dist/
@@ -20,6 +20,8 @@ __pycache__/
 # Rust
 target/
 target*/
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/resources/sidecars/
 
 # Local application data and secrets
 .secrets/

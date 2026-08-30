@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from cupcake_runtime.providers.base import ProviderConfig, ProviderError
+from cupcake_runtime.providers.base import MissingProviderCredential, ProviderConfig, ProviderError
 from cupcake_runtime.providers.nvidia_nim import (
     MAX_MODEL_ID_LENGTH,
     NVIDIA_NIM_BASE_URL,
@@ -15,8 +16,14 @@ from cupcake_runtime.providers.nvidia_nim import (
     NvidiaNimAdapter,
     NvidiaNimCatalogDiscovery,
 )
+from cupcake_runtime.providers.onboarding import ProviderOnboardingService, ProviderTestState
 from cupcake_runtime.providers.registry import ProviderRegistry
-from cupcake_runtime.providers.types import CanonicalMessage, ModelRequest, ReasoningEffort
+from cupcake_runtime.providers.types import (
+    CanonicalMessage,
+    ModelRequest,
+    PrivacyRoute,
+    ReasoningEffort,
+)
 
 
 class FakeModels:
@@ -83,6 +90,27 @@ def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:
     assert client.models.calls == 1
 
 
+def test_discovery_cache_is_scoped_to_the_credential_fingerprint() -> None:
+    client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
+    discovery = NvidiaNimCatalogDiscovery(ttl_seconds=60)
+
+    asyncio.run(discovery.discover(ProviderConfig(api_key="nvapi-first"), client=client))
+    asyncio.run(discovery.discover(ProviderConfig(api_key="nvapi-second"), client=client))
+
+    assert client.models.calls == 2
+
+
+def test_cached_catalog_never_bypasses_missing_credential_validation() -> None:
+    client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
+    discovery = NvidiaNimCatalogDiscovery(ttl_seconds=60)
+    asyncio.run(discovery.discover(ProviderConfig(api_key="nvapi-first"), client=client))
+
+    with pytest.raises(ProviderError) as captured:
+        asyncio.run(discovery.discover(ProviderConfig(), client=client))
+
+    assert captured.value.code == "missing_provider_credential"
+
+
 def test_registry_invalidates_discovery_only_when_nim_credentials_change() -> None:
     client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
     registry = ProviderRegistry()
@@ -95,6 +123,81 @@ def test_registry_invalidates_discovery_only_when_nim_credentials_change() -> No
     registry.configure("nvidia-nim", ProviderConfig(api_key="nvapi-second"))
     asyncio.run(registry.refresh_nvidia_nim_models(client=client))
     assert client.models.calls == 2
+
+
+def test_tested_nim_catalog_commits_without_duplicate_discovery() -> None:
+    client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
+    registry = ProviderRegistry()
+    service = ProviderOnboardingService(
+        nvidia_nim_discovery=registry.nvidia_nim_discovery
+    )
+    config = ProviderConfig(api_key="nvapi-recorded")
+
+    execution = asyncio.run(
+        service.test_connection_with_evidence("nvidia-nim", config, client=client)
+    )
+    assert execution.result.state is ProviderTestState.READY
+    assert execution.nvidia_nim_catalog is not None
+    registry.configure_tested(
+        "nvidia-nim",
+        config,
+        nvidia_nim_catalog=execution.nvidia_nim_catalog,
+    )
+    refreshed = asyncio.run(registry.refresh_nvidia_nim_models(client=client))
+
+    assert refreshed.cached is True
+    assert client.models.calls == 1
+    assert registry.catalog.get("nvidia-nim:vendor/model").model == "vendor/model"
+
+
+def test_disconnect_clears_nim_configuration_cache_and_dynamic_catalog() -> None:
+    registry = ProviderRegistry()
+    registry.configure("nvidia-nim", ProviderConfig(api_key="nvapi-recorded"))
+    asyncio.run(
+        registry.refresh_nvidia_nim_models(
+            client=fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
+        )
+    )
+
+    assert registry.disconnect("nvidia-nim") is True
+    assert registry.catalog.list(provider="nvidia-nim", include_deprecated=True) == ()
+    with pytest.raises(MissingProviderCredential):
+        asyncio.run(registry.refresh_nvidia_nim_models(client=fake_client([])))
+
+
+def test_disconnect_generic_remote_preserves_runtime_owned_local_routes() -> None:
+    registry = ProviderRegistry()
+    registry.configure(
+        "openai-compatible",
+        ProviderConfig(api_key="remote-secret", base_url="https://models.example.test/v1"),
+    )
+    remote = registry.register_openai_compatible_endpoint(
+        "remote",
+        model="remote-model",
+        display_name="Remote model",
+        base_url="https://models.example.test/v1",
+        api_key="remote-secret",
+    )
+    local = replace(
+        remote,
+        id="openai-compatible:cupcake-local/local-model",
+        model="local-model",
+        display_name="Local model",
+        family="openai-compatible:cupcake-local:local-model",
+        privacy_route=PrivacyRoute.LOCAL,
+        metadata={"runtime_kind": "cupcake_llama_cpp"},
+    )
+    registry.catalog.register(local)
+    registry.configure_model(
+        local.id,
+        ProviderConfig(base_url="http://127.0.0.1:54321/v1"),
+    )
+
+    assert registry.disconnect("openai-compatible") is True
+    with pytest.raises(KeyError):
+        registry.catalog.get(remote.id)
+    assert registry.catalog.get(local.id) is local
+    assert registry.compatible_runtime_route(local.id) is not None
 
 
 def test_oversized_or_malformed_catalog_fails_closed() -> None:

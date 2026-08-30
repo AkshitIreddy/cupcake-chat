@@ -1,4 +1,4 @@
-"""Management APIs for Ollama, LM Studio, llama.cpp, and external vLLM."""
+"""App-managed llama.cpp supervision and measured local inference."""
 
 from __future__ import annotations
 
@@ -11,16 +11,14 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .discovery import RuntimeDiscovery, validate_endpoint
-from .http import JsonHttpClient
 from .types import PerformanceMeasurement, RuntimeEndpoint, RuntimeKind, RuntimeState
 
 
@@ -62,85 +60,6 @@ class LlamaServerConfig:
             raise ValueError("device contains invalid characters")
 
 
-class OllamaManager:
-    def __init__(
-        self, base_url: str = "http://127.0.0.1:11434", client: JsonHttpClient | None = None
-    ):
-        self.base_url = validate_endpoint(base_url, allow_remote=False)
-        self.client = client or JsonHttpClient()
-
-    async def pull(self, model: str) -> AsyncIterator[OperationProgress]:
-        if not model.strip():
-            raise ValueError("model name is required")
-        async for event in self.client.stream_json(
-            "POST", f"{self.base_url}/api/pull", {"name": model, "stream": True}
-        ):
-            yield OperationProgress(
-                "pull",
-                event.get("status", "working"),
-                event.get("completed"),
-                event.get("total"),
-                event.get("digest"),
-            )
-
-    async def remove(self, model: str) -> None:
-        await self.client.request("DELETE", f"{self.base_url}/api/delete", {"name": model})
-
-    async def load(self, model: str, *, keep_alive: str = "5m") -> None:
-        await self.client.request(
-            "POST", f"{self.base_url}/api/generate", {"model": model, "keep_alive": keep_alive}
-        )
-
-    async def unload(self, model: str) -> None:
-        await self.client.request(
-            "POST", f"{self.base_url}/api/generate", {"model": model, "keep_alive": 0}
-        )
-
-
-class LMStudioManager:
-    def __init__(
-        self, base_url: str = "http://127.0.0.1:1234", client: JsonHttpClient | None = None
-    ):
-        self.base_url = validate_endpoint(base_url, allow_remote=False)
-        # Loading a GGUF may involve a multi-gigabyte mmap and GPU allocation.
-        # Discovery remains separately bounded; management calls must not give
-        # up after the generic two-second localhost probe timeout.
-        self.client = client or JsonHttpClient(timeout_seconds=120.0)
-
-    async def list_models(self) -> Any:
-        return await self.client.request("GET", f"{self.base_url}/api/v1/models")
-
-    async def download(self, model: str) -> Any:
-        return await self.client.request(
-            "POST", f"{self.base_url}/api/v1/models/download", {"model": model}
-        )
-
-    async def load(self, model: str, *, context_length: int | None = None) -> Any:
-        payload: dict[str, Any] = {"model": model}
-        if context_length:
-            payload["context_length"] = context_length
-        return await self.client.request("POST", f"{self.base_url}/api/v1/models/load", payload)
-
-    async def unload(self, model: str) -> Any:
-        return await self.client.request(
-            "POST", f"{self.base_url}/api/v1/models/unload", {"model": model}
-        )
-
-
-class LocalRuntimeDiscovery(Protocol):
-    async def discover_defaults(
-        self, *, vllm_endpoints: tuple[str, ...] = ()
-    ) -> tuple[RuntimeEndpoint, ...]: ...
-
-    async def probe(
-        self, kind: RuntimeKind, base_url: str, *, allow_remote: bool = False
-    ) -> RuntimeEndpoint: ...
-
-
-class LMStudioCatalogClient(Protocol):
-    async def list_models(self) -> Any: ...
-
-
 class LlamaCppSupervisor:
     """Own one authenticated, loopback-only ``llama-server`` process.
 
@@ -172,6 +91,7 @@ class LlamaCppSupervisor:
         self._api_key: str | None = None
         self._api_prefix: str | None = None
         self._started_at: float | None = None
+        self._context_size: int | None = None
         # Kept as a compatibility argument for callers from earlier RCs. Logs
         # are intentionally retained only as a bounded in-memory tail.
         del log_directory
@@ -277,6 +197,7 @@ class LlamaCppSupervisor:
         self._detail = "loading model"
         self._model = model
         self._started_at = time.monotonic()
+        self._context_size = context_size
         self._stderr_tail.clear()
         self._stderr_thread = threading.Thread(
             target=self._drain_stderr,
@@ -342,6 +263,97 @@ class LlamaCppSupervisor:
         if not self._api_key:
             raise RuntimeError("llama.cpp runtime is not running")
         return {"Authorization": f"Bearer {self._api_key}"}
+
+    async def benchmark(
+        self,
+        *,
+        runtime_id: str,
+        model_id: str,
+        max_tokens: int = 32,
+        timeout_seconds: float = 120.0,
+    ) -> PerformanceMeasurement:
+        """Measure one bounded inference against the authenticated local server."""
+
+        if self.state != RuntimeState.READY:
+            raise RuntimeError("load a model before running a benchmark")
+        if not 8 <= max_tokens <= 512:
+            raise ValueError("benchmark max_tokens must be in 8..512")
+        return await asyncio.to_thread(
+            self._benchmark_request,
+            runtime_id,
+            model_id,
+            max_tokens,
+            timeout_seconds,
+        )
+
+    def _benchmark_request(
+        self,
+        runtime_id: str,
+        model_id: str,
+        max_tokens: int,
+        timeout_seconds: float,
+    ) -> PerformanceMeasurement:
+        payload = json.dumps(
+            {
+                "model": model_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Reply with one short paragraph explaining why deterministic "
+                            "benchmarks should report measured throughput."
+                        ),
+                    }
+                ],
+                "temperature": 0,
+                "seed": 1,
+                "max_tokens": max_tokens,
+                "stream": False,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/v1/chat/completions",
+            data=payload,
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                **self.authorization_headers(),
+            },
+        )
+        started = time.monotonic()
+        with urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read(2 * 1024 * 1024 + 1)
+        elapsed = time.monotonic() - started
+        if len(raw) > 2 * 1024 * 1024:
+            raise RuntimeError("llama.cpp benchmark response exceeded 2 MiB")
+        decoded = _object_mapping(cast(object, json.loads(raw)))
+        if not decoded:
+            raise RuntimeError("llama.cpp benchmark returned an invalid response")
+        timings = _object_mapping(decoded.get("timings"))
+        usage = _object_mapping(decoded.get("usage"))
+        prompt_tokens = _positive_int(timings.get("prompt_n")) or _positive_int(
+            usage.get("prompt_tokens")
+        )
+        generated_tokens = _positive_int(timings.get("predicted_n")) or _positive_int(
+            usage.get("completion_tokens")
+        )
+        if prompt_tokens is None or generated_tokens is None:
+            raise RuntimeError("llama.cpp benchmark response omitted token counts")
+        prompt_seconds = _positive_float(timings.get("prompt_ms"), scale=1000) or elapsed
+        generation_seconds = _positive_float(timings.get("predicted_ms"), scale=1000) or elapsed
+        return PerformanceMeasurement(
+            runtime_id=runtime_id,
+            model_id=model_id,
+            prompt_tokens=prompt_tokens,
+            generated_tokens=generated_tokens,
+            prompt_tokens_per_second=prompt_tokens / prompt_seconds,
+            generated_tokens_per_second=generated_tokens / generation_seconds,
+            context_size=self._context_size or 0,
+            measured_at=datetime.now(UTC).isoformat(),
+            total_seconds=elapsed,
+            measurement_source=("llama.cpp timings" if timings else "wall clock"),
+        )
 
     def version(self, *, timeout_seconds: float = 5.0) -> str:
         if not self.executable.is_file():
@@ -437,6 +449,7 @@ class LlamaCppSupervisor:
         self._api_prefix = None
         self._model = None
         self._started_at = None
+        self._context_size = None
         self._state = RuntimeState.STOPPED if self.executable.is_file() else RuntimeState.ABSENT
         self._detail = None
 
@@ -472,100 +485,24 @@ def _minimal_server_environment(api_key: str | None, api_prefix: str | None) -> 
     return environment
 
 
-class LocalModelManager:
-    """Facade used by runtime RPC. External vLLM is discovery-only."""
-
-    def __init__(
-        self,
-        discovery: LocalRuntimeDiscovery | None = None,
-        lm_studio: LMStudioCatalogClient | None = None,
-    ):
-        self.discovery = discovery or RuntimeDiscovery()
-        self.lm_studio = lm_studio or LMStudioManager()
-        self._measurements: dict[tuple[str, str], PerformanceMeasurement] = {}
-
-    async def discover(self, vllm_endpoints: tuple[str, ...] = ()) -> tuple[RuntimeEndpoint, ...]:
-        endpoints = list(await self.discovery.discover_defaults(vllm_endpoints=vllm_endpoints))
-        for index, endpoint in enumerate(endpoints):
-            if (
-                endpoint.kind is not RuntimeKind.LM_STUDIO
-                or endpoint.state is not RuntimeState.READY
-            ):
-                continue
-            try:
-                payload = await self.lm_studio.list_models()
-            except Exception:
-                # The bounded discovery result remains useful if LM Studio
-                # exits between its probe and the richer management query.
-                continue
-            records = _lm_studio_llm_records(payload)
-            model_states = {
-                record["key"]: {
-                    "display_name": record.get("display_name"),
-                    "loaded": bool(record.get("loaded_instances")),
-                    "context_window": record.get("max_context_length"),
-                }
-                for record in records
-            }
-            endpoints[index] = replace(
-                endpoint,
-                models=tuple(model_states),
-                metadata={**endpoint.metadata, "model_states": model_states},
-            )
-        return tuple(endpoints)
-
-    async def attach_vllm(self, base_url: str) -> RuntimeEndpoint:
-        # Explicit remote opt-in occurs in the UI before this boundary.
-        return await self.discovery.probe(RuntimeKind.VLLM, base_url, allow_remote=True)
-
-    def record_performance(
-        self,
-        runtime_id: str,
-        model_id: str,
-        *,
-        prompt_tokens: int,
-        generated_tokens: int,
-        prompt_seconds: float,
-        generation_seconds: float,
-        context_size: int,
-    ) -> PerformanceMeasurement:
-        if (
-            min(prompt_tokens, generated_tokens, context_size) < 0
-            or min(prompt_seconds, generation_seconds) <= 0
-        ):
-            raise ValueError("token counts must be non-negative and durations positive")
-        measurement = PerformanceMeasurement(
-            runtime_id,
-            model_id,
-            prompt_tokens,
-            generated_tokens,
-            prompt_tokens / prompt_seconds,
-            generated_tokens / generation_seconds,
-            context_size,
-            datetime.now(UTC).isoformat(),
-        )
-        self._measurements[(runtime_id, model_id)] = measurement
-        return measurement
-
-    def performance(self, runtime_id: str, model_id: str) -> PerformanceMeasurement | None:
-        return self._measurements.get((runtime_id, model_id))
+def _positive_int(value: object) -> int | None:
+    try:
+        parsed = int(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
-def _lm_studio_llm_records(payload: Any) -> tuple[dict[str, Any], ...]:
-    if not isinstance(payload, dict):
-        return ()
-    payload_map = cast(dict[str, Any], payload)
-    items = payload_map.get("models", payload_map.get("data", ()))
-    if not isinstance(items, list):
-        return ()
-    records: list[dict[str, Any]] = []
-    for item in cast(list[Any], items):
-        if not isinstance(item, dict):
-            continue
-        item_map = cast(dict[str, Any], item)
-        model_type = item_map.get("type")
-        key = item_map.get("key") or item_map.get("id")
-        if model_type not in {None, "llm"} or not isinstance(key, str) or not key.strip():
-            continue
-        records.append({**item_map, "key": key})
-    return tuple(records)
+def _positive_float(value: object, *, scale: float = 1.0) -> float | None:
+    try:
+        parsed = float(cast(Any, value)) / scale
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _object_mapping(value: object) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    raw = cast(Mapping[object, object], value)
+    return {key: item for key, item in raw.items() if isinstance(key, str)}

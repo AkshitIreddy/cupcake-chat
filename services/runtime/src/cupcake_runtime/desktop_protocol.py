@@ -1,4 +1,4 @@
-"""Authenticated desktop stdio transport shared with Electron and ToolBroker."""
+"""Authenticated desktop stdio transport shared with the Tauri host and ToolBroker."""
 
 from __future__ import annotations
 

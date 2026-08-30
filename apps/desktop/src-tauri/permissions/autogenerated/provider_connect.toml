@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-connect"
+description = "Enables the provider_connect command without any pre-configured scope."
+commands.allow = ["provider_connect"]
+
+[[permission]]
+identifier = "deny-provider-connect"
+description = "Denies the provider_connect command without any pre-configured scope."
+commands.deny = ["provider_connect"]

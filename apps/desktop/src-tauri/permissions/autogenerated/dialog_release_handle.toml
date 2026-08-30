@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dialog-release-handle"
+description = "Enables the dialog_release_handle command without any pre-configured scope."
+commands.allow = ["dialog_release_handle"]
+
+[[permission]]
+identifier = "deny-dialog-release-handle"
+description = "Denies the dialog_release_handle command without any pre-configured scope."
+commands.deny = ["dialog_release_handle"]

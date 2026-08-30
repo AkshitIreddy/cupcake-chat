@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   font-family:
     'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible', system-ui, sans-serif;
   color: #2a2322;
@@ -26,10 +27,17 @@
   --shadow-soft: 0 8px 24px rgba(72, 54, 45, 0.07);
   --radius: 16px;
   --shelf: 236px;
+  --titlebar-height: 44px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --scrollbar-size: 12px;
+  --scrollbar-track: color-mix(in srgb, var(--crumb), var(--paper) 35%);
+  --scrollbar-thumb: #b9aaa0;
+  --scrollbar-thumb-hover: #8f7d73;
+  --scrollbar-thumb-active: var(--berry);
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   color: #eee8e1;
   background: #151313;
   --crumb: #1a1818;
@@ -52,6 +60,10 @@
   --danger: #ed8a86;
   --shadow: 0 20px 55px rgba(0, 0, 0, 0.33);
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.23);
+  --scrollbar-track: #191717;
+  --scrollbar-thumb: #625854;
+  --scrollbar-thumb-hover: #887a74;
+  --scrollbar-thumb-active: #dc84a6;
 }
 :root[data-theme='minimal'] {
   color: #1f1f1f;
@@ -73,6 +85,10 @@
   --blueberry-soft: #ececec;
   --gold: #666;
   --gold-ink: #555;
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #a2a2a2;
+  --scrollbar-thumb-hover: #737373;
+  --scrollbar-thumb-active: #333;
 }
 :root[data-theme='classic'] {
   color: #2d2240;
@@ -94,6 +110,10 @@
   --blueberry-soft: #e9e3ff;
   --gold: #e89b1f;
   --gold-ink: #965900;
+  --scrollbar-track: #fff2fa;
+  --scrollbar-thumb: #c996b5;
+  --scrollbar-thumb-hover: #a45d8b;
+  --scrollbar-thumb-active: #c21874;
 }
 :root[data-theme='dark'] .button--primary {
   color: #181515;
@@ -101,6 +121,31 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: auto;
+}
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+*::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 3px solid var(--scrollbar-track);
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+*::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+}
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
 }
 html,
 body,
@@ -172,12 +217,127 @@ kbd {
 .app-shell {
   display: grid;
   grid-template-columns: var(--shelf) minmax(0, 1fr);
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background: var(--crumb);
   overflow: hidden;
 }
+.cupcake-titlebar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(112px, auto) minmax(24px, 1fr) 138px;
+  min-width: 0;
+  height: var(--titlebar-height);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--crumb), var(--paper) 18%);
+  color: var(--cocoa);
+  position: relative;
+  z-index: 180;
+  user-select: none;
+}
+.cupcake-titlebar__identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 13px;
+  font:
+    700 11px/1 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque',
+    sans-serif;
+  letter-spacing: 0.08em;
+}
+.cupcake-titlebar__identity img {
+  width: 22px;
+  height: 22px;
+}
+.cupcake-titlebar__drag {
+  min-width: 24px;
+  cursor: default;
+}
+.cupcake-titlebar__controls {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  justify-self: end;
+  height: 100%;
+}
+.window-control {
+  display: grid;
+  width: 46px;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cocoa);
+  touch-action: manipulation;
+}
+.window-control:hover {
+  background: color-mix(in srgb, var(--soft), var(--cocoa) 7%);
+}
+.window-control:active {
+  background: color-mix(in srgb, var(--soft), var(--cocoa) 14%);
+}
+.window-control--close:hover,
+.window-control--close:active {
+  background: #c42b36;
+  color: #fff;
+}
+.window-control > span {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+.window-control__minimize::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 2px;
+  height: 1px;
+  background: currentColor;
+}
+.window-control__maximize {
+  border: 1px solid currentColor;
+}
+.window-control__restore::before,
+.window-control__restore::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+}
+.window-control__restore::before {
+  top: 0;
+  right: 0;
+}
+.window-control__restore::after {
+  left: 0;
+  bottom: 0;
+  background: inherit;
+}
+.window-control__close::before,
+.window-control__close::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: -1px;
+  width: 1px;
+  height: 13px;
+  background: currentColor;
+}
+.window-control__close::before {
+  transform: rotate(45deg);
+}
+.window-control__close::after {
+  transform: rotate(-45deg);
+}
 .app-content {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   position: relative;
@@ -226,6 +386,8 @@ kbd {
   font-size: 18px;
 }
 .shelf {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   width: var(--shelf);
@@ -557,17 +719,28 @@ kbd {
   background: var(--muted);
 }
 .status-dot--ready,
+.status-dot--benchmarked,
+.status-dot--installed,
 .status-dot--working,
 .status-dot--download {
   background: var(--pistachio);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pistachio), transparent 84%);
 }
 .status-dot--waiting,
-.status-dot--setup {
+.status-dot--setup,
+.status-dot--catalog,
+.status-dot--paused,
+.status-dot--loading,
+.status-dot--unloading,
+.status-dot--removing,
+.status-dot--verifying {
   background: var(--gold);
 }
 .status-dot--offline,
-.status-dot--failed {
+.status-dot--failed,
+.status-dot--incompatible,
+.status-dot--checksum-failed,
+.status-dot--error {
   background: var(--danger);
 }
 .toggle {

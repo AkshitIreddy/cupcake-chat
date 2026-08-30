@@ -26,16 +26,14 @@ function model(id: string, overrides: Partial<ModelDescriptor> = {}): ModelDescr
 
 describe('model selection hardening', () => {
   it('uses the catalog id for product requests and keeps native ids out of chat selection', () => {
-    const local = model('openai-compatible:lm-studio/google/gemma-3n-e4b', {
-      provider: 'LM Studio',
-      runtimeModelId: 'google/gemma-3n-e4b',
+    const local = model('cupcake-local:qwen3-4b-q4-k-m', {
+      provider: 'Cupcake Local',
+      runtimeModelId: 'qwen3-4b-q4-k-m',
       route: 'Local',
     });
 
-    expect(canonicalModelId(local)).toBe('openai-compatible:lm-studio/google/gemma-3n-e4b');
-    expect(modelSelectionParams(local, false).modelId).toBe(
-      'openai-compatible:lm-studio/google/gemma-3n-e4b',
-    );
+    expect(canonicalModelId(local)).toBe('cupcake-local:qwen3-4b-q4-k-m');
+    expect(modelSelectionParams(local, false).modelId).toBe('cupcake-local:qwen3-4b-q4-k-m');
   });
 
   it('restores a persisted selection when its refreshed descriptor arrives later', () => {

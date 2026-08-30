@@ -34,7 +34,7 @@
           "type": "string"
         },
         {
-          "const": "gemini",
+          "const": "google",
           "type": "string"
         },
         {
@@ -59,18 +59,6 @@
         },
         {
           "const": "cupcake-local",
-          "type": "string"
-        },
-        {
-          "const": "ollama",
-          "type": "string"
-        },
-        {
-          "const": "lm-studio",
-          "type": "string"
-        },
-        {
-          "const": "vllm",
           "type": "string"
         },
         {

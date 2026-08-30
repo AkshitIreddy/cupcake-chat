@@ -1,40 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import {
   localModelActionRequest,
+  mapCupcakeLocalModels,
+  mapCupcakeRuntimePacks,
   mapDiscoveredRuntime,
   mapModel,
   normalizeHardware,
 } from './workspace';
 
 describe('workspace local model integration', () => {
-  const lmStudio = mapModel({
-    id: 'openai-compatible:lm-studio-local/google/gemma-3n-e4b',
-    provider: 'openai-compatible',
-    model: 'google/gemma-3n-e4b',
-    display_name: 'google/gemma-3n-e4b (LM Studio)',
+  const cupcakeLocal = mapModel({
+    id: 'cupcake-local:qwen3-4b-q4-k-m',
+    provider: 'cupcake_local',
+    model: 'qwen3-4b-q4-k-m',
+    display_name: 'Qwen3 4B · Q4_K_M',
     privacy_route: 'local',
-    context_window: 32_768,
-    metadata: { runtime_kind: 'lm_studio', endpoint_id: 'lm-studio-local' },
+    context_window: 131_072,
+    metadata: { runtime_kind: 'cupcake_local', lifecycle_state: 'installed' },
   });
 
-  it('preserves LM Studio identity and native model key', () => {
-    expect(lmStudio).toEqual(
+  it('preserves Cupcake Local catalog identity and managed model key', () => {
+    expect(cupcakeLocal).toEqual(
       expect.objectContaining({
-        provider: 'LM Studio',
+        provider: 'Cupcake Local',
         route: 'Local',
-        runtimeModelId: 'google/gemma-3n-e4b',
+        runtimeModelId: 'qwen3-4b-q4-k-m',
       }),
     );
   });
 
-  it('routes LM Studio load and unload through its native management API', () => {
-    expect(localModelActionRequest('load', lmStudio)).toEqual({
-      method: 'local_models.lm_studio.load',
-      params: { model: 'google/gemma-3n-e4b' },
+  it('routes load and unload through the app-managed Cupcake Local lifecycle', () => {
+    expect(localModelActionRequest('load', cupcakeLocal)).toEqual({
+      method: 'local_models.cupcake.load',
+      params: { modelId: 'qwen3-4b-q4-k-m' },
     });
-    expect(localModelActionRequest('unload', lmStudio)).toEqual({
-      method: 'local_models.lm_studio.unload',
-      params: { model: 'google/gemma-3n-e4b' },
+    expect(localModelActionRequest('unload', cupcakeLocal)).toEqual({
+      method: 'local_models.cupcake.unload',
+      params: {},
+    });
+    expect(localModelActionRequest('download', cupcakeLocal)).toEqual({
+      method: 'local_models.cupcake.download',
+      params: { artifactId: 'qwen3-4b-q4-k-m', artifactKind: 'model' },
+    });
+    expect(localModelActionRequest('resume', cupcakeLocal)).toEqual({
+      method: 'local_models.cupcake.download',
+      params: { artifactId: 'qwen3-4b-q4-k-m', artifactKind: 'model' },
+    });
+  });
+
+  it('normalizes the complete hardware report emitted by Cupcake Local', () => {
+    expect(
+      normalizeHardware({
+        system_ram_gb: 32,
+        free_disk_gb: 120,
+        cpu_name: 'AMD Ryzen 9',
+        os_name: 'Windows',
+      }),
+    ).toEqual({
+      ramBytes: 32 * 1024 ** 3,
+      diskAvailableBytes: 120 * 1024 ** 3,
+      cpu: 'AMD Ryzen 9',
+      os: 'Windows',
     });
   });
 
@@ -45,6 +71,9 @@ describe('workspace local model integration', () => {
         vram_gb: 11.99,
         gpu_name: 'NVIDIA GeForce RTX 4070',
         cpu_threads: 16,
+        cpu_architecture: 'x86_64',
+        disk_available_bytes: 400_000_000_000,
+        windows_version: 'Windows 11 24H2',
         acceleration: ['cuda'],
       }),
     ).toEqual({
@@ -52,6 +81,9 @@ describe('workspace local model integration', () => {
       vramBytes: 11.99 * 1024 ** 3,
       gpu: 'NVIDIA GeForce RTX 4070',
       cpu: '16 threads',
+      cpuArchitecture: 'x86_64',
+      diskAvailableBytes: 400_000_000_000,
+      windowsVersion: 'Windows 11 24H2',
       acceleration: ['cuda'],
     });
   });
@@ -59,17 +91,118 @@ describe('workspace local model integration', () => {
   it('maps discovered runtime state for the Models screen', () => {
     expect(
       mapDiscoveredRuntime({
-        id: 'lm_studio:http://127.0.0.1:1234',
-        kind: 'lm_studio',
+        id: 'cupcake-local',
+        kind: 'cupcake_llama_cpp',
         state: 'ready',
-        models: ['google/gemma-3n-e4b'],
+        models: ['qwen3-4b-q4-k-m'],
       }),
     ).toEqual({
-      id: 'lm_studio:http://127.0.0.1:1234',
-      name: 'LM Studio',
+      id: 'cupcake-local',
+      name: 'Cupcake Local',
       status: 'ready',
-      models: ['google/gemma-3n-e4b'],
+      models: ['qwen3-4b-q4-k-m'],
       detail: undefined,
     });
+  });
+
+  it('maps the signed model catalog to real artifact ids and lifecycle state', () => {
+    const [model] = mapCupcakeLocalModels({
+      activeModelId: null,
+      availableModels: [
+        {
+          id: 'qwen3-8b-q4-k-m',
+          display_name: 'Qwen3 8B · Q4_K_M',
+          parameter_billions: 8,
+          quantization: 'Q4_K_M',
+          size_bytes: 5_027_783_488,
+          context_window: 131_072,
+          capability_tags: ['text', 'chat'],
+          task_tags: ['code'],
+          license: 'Apache-2.0',
+          source: 'https://example.invalid/qwen',
+          source_revision: 'pinned-revision',
+        },
+      ],
+      recommendations: [
+        {
+          model_id: 'qwen3-8b-q4-k-m',
+          classification: 'recommended',
+          estimated_ram_gb: 8,
+          estimated_vram_gb: 7.5,
+          estimated_disk_gb: 5.4,
+          likely_speed_class: 'fast',
+          reasons: ['ideal device fit'],
+        },
+      ],
+    });
+
+    expect(model).toEqual(
+      expect.objectContaining({
+        id: 'cupcake-local:qwen3-8b-q4-k-m',
+        runtimeModelId: 'qwen3-8b-q4-k-m',
+        provider: 'Cupcake Local',
+        status: 'catalog',
+        fit: 'recommended',
+        fitReason: 'ideal device fit',
+      }),
+    );
+  });
+
+  it('exposes required CUDA companion terms with the acceleration pack', () => {
+    const packs = mapCupcakeRuntimePacks({
+      availableRuntimes: [
+        {
+          id: 'llama.cpp:b10679:windows-x64-cuda-12.4',
+          version: 'b10679',
+          backend: 'cuda-12',
+          size_bytes: 250,
+          license: 'MIT',
+          companions: [
+            {
+              size_bytes: 390,
+              license_requires_acceptance: true,
+              license_url: 'https://docs.nvidia.com/cuda/eula/index.html',
+            },
+          ],
+        },
+      ],
+      runtimeRecommendations: [
+        {
+          runtime_id: 'llama.cpp:b10679:windows-x64-cuda-12.4',
+          compatible: true,
+          recommended: true,
+          reasons: ['driver verified'],
+        },
+      ],
+    });
+
+    expect(packs[0]).toEqual(
+      expect.objectContaining({
+        status: 'catalog',
+        version: 'b10679',
+        totalDownloadBytes: 640,
+        recommended: true,
+        licenseUrls: ['https://docs.nvidia.com/cuda/eula/index.html'],
+      }),
+    );
+  });
+
+  it('uses the registered endpoint model id only while a local model is loaded', () => {
+    const [model] = mapCupcakeLocalModels({
+      activeModelId: 'qwen3-4b-q4-k-m',
+      availableModels: [
+        {
+          id: 'qwen3-4b-q4-k-m',
+          display_name: 'Qwen3 4B',
+          context_window: 8192,
+        },
+      ],
+    });
+
+    expect(model).toBeDefined();
+    if (!model) throw new Error('expected a mapped local model');
+    expect(model.id).toBe('openai-compatible:cupcake-local/qwen3-4b-q4-k-m');
+    expect(model.runtimeModelId).toBe('qwen3-4b-q4-k-m');
+    expect(model.status).toBe('ready');
   });
 });

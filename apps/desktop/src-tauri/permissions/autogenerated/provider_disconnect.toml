@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-disconnect"
+description = "Enables the provider_disconnect command without any pre-configured scope."
+commands.allow = ["provider_disconnect"]
+
+[[permission]]
+identifier = "deny-provider-disconnect"
+description = "Denies the provider_disconnect command without any pre-configured scope."
+commands.deny = ["provider_disconnect"]

@@ -5,9 +5,8 @@ export interface ModelSelectionOptions {
 }
 
 /**
- * Product commands always address the catalog descriptor, not a provider's
- * native model key. The native key is reserved for runtime management calls
- * such as LM Studio load and unload.
+ * Product commands always address the signed catalog descriptor. Runtime
+ * lifecycle commands keep their app-managed Cupcake Local ID separately.
  */
 export function canonicalModelId(model: ModelDescriptor): string {
   return model.id;

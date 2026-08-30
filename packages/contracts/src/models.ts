@@ -12,17 +12,28 @@ import {
 export const ProviderKind = Type.Union([
   Type.Literal('openai'),
   Type.Literal('anthropic'),
-  Type.Literal('gemini'),
+  Type.Literal('google'),
   Type.Literal('xai'),
   Type.Literal('mistral'),
   Type.Literal('cohere'),
   Type.Literal('nvidia-nim'),
   Type.Literal('openai-compatible'),
   Type.Literal('cupcake-local'),
-  Type.Literal('ollama'),
-  Type.Literal('lm-studio'),
-  Type.Literal('vllm'),
   Type.Literal('mock'),
+]);
+
+export const ProviderDiagnosticCode = Type.Union([
+  Type.Literal('authentication'),
+  Type.Literal('rate_limit'),
+  Type.Literal('network'),
+  Type.Literal('offline'),
+  Type.Literal('timeout'),
+  Type.Literal('cancelled'),
+  Type.Literal('tls'),
+  Type.Literal('provider_unavailable'),
+  Type.Literal('invalid_endpoint'),
+  Type.Literal('invalid_response'),
+  Type.Literal('unknown'),
 ]);
 
 export const ReasoningLevel = Type.Union([
@@ -123,6 +134,39 @@ export const ProviderDescriptor = StrictObject(
       Type.Literal('configured'),
       Type.Literal('invalid'),
     ]),
+    setupState: Type.Optional(
+      Type.Union([
+        Type.Literal('not-configured'),
+        Type.Literal('editing'),
+        Type.Literal('testing'),
+        Type.Literal('review'),
+        Type.Literal('ready'),
+        Type.Literal('error'),
+        Type.Literal('removing'),
+      ]),
+    ),
+    diagnostic: Type.Optional(
+      StrictObject({
+        code: ProviderDiagnosticCode,
+        message: Type.String({ minLength: 1, maxLength: 1024 }),
+        retryable: Type.Boolean(),
+      }),
+    ),
+    savedCredentialHint: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    lastTestedAt: Type.Optional(UtcTimestamp),
+    discoveredModelIds: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 255 }), {
+        maxItems: 512,
+        uniqueItems: true,
+      }),
+    ),
+    vault: Type.Optional(
+      StrictObject({
+        kind: Type.Union([Type.Literal('dpapi'), Type.Literal('session')]),
+        persistent: Type.Boolean(),
+        fallbackReason: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+      }),
+    ),
     modelCatalogEtag: Type.Optional(Nullable(Type.String({ minLength: 1, maxLength: 512 }))),
   },
   { $id: 'https://schemas.cupcakeagi.local/v1/provider-descriptor.schema.json' },

@@ -5,10 +5,13 @@ import '@fontsource-variable/bricolage-grotesque';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import { App } from './App';
+import { installTauriDesktopApi } from '../shared/tauri-client';
 import './styles.css';
 import './styles-workspace.css';
 import './styles-panels.css';
 import './styles-responsive.css';
+
+installTauriDesktopApi();
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -151,7 +151,7 @@ class RuntimePackStore:
     ) -> InstalledRuntimePack:
         """Seed a profile from the immutable runtime staged beside the app.
 
-        This is the first-launch counterpart to ``install``: Electron packages
+        This is the first-launch counterpart to ``install``: desktop packages
         already contain extracted files, so copying the ZIP too would waste
         space. Every source and destination file is checked against the same
         signed catalog before the atomic version-directory switch.

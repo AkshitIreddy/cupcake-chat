@@ -7,6 +7,7 @@ capabilities and visibly marks models whose chat compatibility is unknown.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import re
@@ -93,6 +94,21 @@ class ChatCompatibility(StrEnum):
     UNKNOWN = "unknown"
 
 
+def _credential_fingerprint(config: ProviderConfig) -> bytes:
+    """Key the metadata cache without retaining credentials or headers."""
+
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update((config.api_key or "").encode("utf-8"))
+    digest.update(b"\0")
+    digest.update((config.organization or "").encode("utf-8"))
+    for key, value in sorted((config.headers or {}).items()):
+        digest.update(b"\0")
+        digest.update(key.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(value.encode("utf-8"))
+    return digest.digest()
+
+
 @dataclass(frozen=True, slots=True)
 class NvidiaNimCatalogResult:
     models: tuple[ModelDescriptor, ...]
@@ -115,6 +131,7 @@ class NvidiaNimCatalogDiscovery:
     max_catalog_bytes: int = MAX_CATALOG_BYTES
     _cached: NvidiaNimCatalogResult | None = field(default=None, init=False, repr=False)
     _cached_at: float = field(default=0.0, init=False, repr=False)
+    _cached_credential_fingerprint: bytes | None = field(default=None, init=False, repr=False)
 
     def invalidate(self) -> None:
         """Forget normalized metadata after a credential change.
@@ -127,6 +144,7 @@ class NvidiaNimCatalogDiscovery:
 
         self._cached = None
         self._cached_at = 0.0
+        self._cached_credential_fingerprint = None
 
     async def discover(
         self,
@@ -135,11 +153,17 @@ class NvidiaNimCatalogDiscovery:
         client: Any = None,
         force: bool = False,
     ) -> NvidiaNimCatalogResult:
-        now = time.monotonic()
-        if not force and self._cached is not None and now - self._cached_at < self.ttl_seconds:
-            return replace(self._cached, cached=True)
         if not config.api_key:
             raise MissingProviderCredential(NVIDIA_NIM_PROVIDER, "NVIDIA NIM API key")
+        now = time.monotonic()
+        credential_fingerprint = _credential_fingerprint(config)
+        if (
+            not force
+            and self._cached is not None
+            and self._cached_credential_fingerprint == credential_fingerprint
+            and now - self._cached_at < self.ttl_seconds
+        ):
+            return replace(self._cached, cached=True)
 
         resolved_client = client or self._create_client(config)
         try:
@@ -156,6 +180,7 @@ class NvidiaNimCatalogDiscovery:
         result = self._parse_response(response)
         self._cached = result
         self._cached_at = now
+        self._cached_credential_fingerprint = credential_fingerprint
         return result
 
     @staticmethod

@@ -1,7 +1,7 @@
 //! Stateful translation between the desktop/runtime wire contracts and the
 //! broker-owned grants, policy, approvals, registry, and audit components.
 //!
-//! Raw operating-system paths enter only in authenticated Electron events and
+//! Raw operating-system paths enter only in authenticated Tauri-host events and
 //! are retained in this process. Responses expose newly generated broker grant
 //! IDs; the Python runtime never receives a native path.
 
@@ -455,7 +455,7 @@ impl BrokerIntegration {
     /// Copy one exact desktop file capability into a broker-private staging
     /// directory using bounded streaming I/O. The returned native path is only
     /// for the authenticated broker→runtime pipe and must never be serialized
-    /// to Electron.
+    /// to the renderer.
     pub fn stage_attachment(&mut self, handle_id: &str) -> Result<StagedAttachment> {
         validate_handle_id(handle_id)?;
         let desktop = self

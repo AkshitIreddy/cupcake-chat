@@ -194,6 +194,15 @@ class ModelCatalog:
             raise ValueError(f"model already registered: {descriptor.id}")
         self._models[descriptor.id] = descriptor
 
+    def unregister(self, model_id: str) -> bool:
+        """Remove one dynamic model if present.
+
+        Built-in callers never use this to alter the static catalog; it exists
+        so disconnecting a discovered provider can stop exposing stale models.
+        """
+
+        return self._models.pop(model_id, None) is not None
+
     def get(self, model_id: str) -> ModelDescriptor:
         try:
             return self._models[model_id]

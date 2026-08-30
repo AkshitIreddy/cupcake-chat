@@ -7,13 +7,18 @@ import io
 import json
 import subprocess
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from cupcake_runtime.local_models.catalog import SignedRuntimeCatalog, canonical_json
+from cupcake_runtime.local_models.catalog import (
+    SignedModelCatalog,
+    SignedRuntimeCatalog,
+    canonical_json,
+)
 from cupcake_runtime.local_models.downloads import ModelDownload
 from cupcake_runtime.local_models.managed import (
     CupcakeLocalManager,
@@ -147,14 +152,20 @@ def test_committed_local_rc_runtime_catalog_signature_and_provenance() -> None:
     assert runtime.source_revision == "50f068ffffc3e0e4c9c2e4139281c6075224f429"
     assert len(runtime.files) == 51
     assert runtime.bundled_by_default is True
-    assert len(catalog.runtimes) == 3
+    assert len(catalog.runtimes) == 4
     vulkan = catalog.get("llama.cpp:b10679:windows-x64-vulkan")
     cuda = catalog.get("llama.cpp:b10679:windows-x64-cuda-12.4")
+    cuda_13 = catalog.get("llama.cpp:b10679:windows-x64-cuda-13.3")
     assert vulkan.bundled_by_default is False
     assert vulkan.hardware_compatibility["api"] == "vulkan"
     assert cuda.total_download_bytes == 641981732
     assert cuda.companions[0].license == "NVIDIA CUDA Toolkit EULA"
     assert cuda.hardware_compatibility["minimum_windows_driver"] == "551.61"
+    assert cuda_13.total_download_bytes == 537489729
+    assert cuda_13.companions[0].files["cudart64_13.dll"] == (
+        "b00ca6f53699120da815bf3e06e2e4285fae2f201235b883dcbb50eec51e2a2a"
+    )
+    assert cuda_13.hardware_compatibility["minimum_windows_driver"] == "580.00"
     assert key_document["productionTrustRoot"] is False
     assert document["payload"]["provenance"]["production_signing"] is False
 
@@ -260,9 +271,16 @@ def test_runtime_pack_selection_respects_driver_and_falls_back() -> None:
     runtimes = SignedRuntimeCatalog.verify_and_load(document, keys).runtimes
 
     modern_nvidia = HardwareProfile(
-        32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda", "vulkan"), 100, "551.61"
+        32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda", "vulkan"), 100, "580.00"
     )
     ranked = rank_runtime_packs(runtimes, modern_nvidia)
+    assert ranked[0].runtime_id.endswith("cuda-13.3")
+    assert ranked[0].recommended is True
+
+    cuda_12_driver = HardwareProfile(
+        32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda", "vulkan"), 100, "551.61"
+    )
+    ranked = rank_runtime_packs(runtimes, cuda_12_driver)
     assert ranked[0].runtime_id.endswith("cuda-12.4")
     assert ranked[0].recommended is True
 
@@ -349,6 +367,54 @@ def test_interrupted_download_recovers_as_paused(tmp_path: Path) -> None:
     assert recovered.snapshot.bytes_downloaded == 5
 
 
+def test_manager_rehydrates_download_after_catalog_restore(tmp_path: Path) -> None:
+    data = b"complete model bytes"
+    artifact = _model_artifact(data)
+    root = tmp_path / "cupcake-local"
+    destination = artifact.target(root / "models")
+    destination.parent.mkdir(parents=True)
+    first = _InterruptedModelDownload(artifact, destination)
+    first.partial.write_bytes(data[:5])
+    first.mark_downloading(bytes_downloaded=5)
+    catalog = SignedModelCatalog(
+        1,
+        "2026-08-29T00:00:00Z",
+        (artifact,),
+        "test",
+    )
+
+    recovered = CupcakeLocalManager(root)
+    recovered.configure_catalogs(models=catalog)
+
+    snapshot = recovered.download_status(artifact.id)
+    assert snapshot.state == DownloadState.PAUSED
+    assert snapshot.bytes_downloaded == 5
+    assert recovered.begin_model_download(artifact).state == DownloadState.PAUSED
+
+
+def test_status_exposes_ranked_installable_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = _model_artifact(b"model")
+    catalog = SignedModelCatalog(1, "2026-08-29T00:00:00Z", (artifact,), "test")
+    manager = CupcakeLocalManager(tmp_path / "cupcake-local")
+    manager.configure_catalogs(models=catalog)
+
+    def detected_hardware(*_args: object, **_kwargs: object) -> HardwareProfile:
+        return HardwareProfile(32, 24, "NVIDIA GeForce RTX 4070", 12, 16, ("cuda",), 100)
+
+    monkeypatch.setattr(
+        "cupcake_runtime.local_models.managed.detect_hardware",
+        detected_hardware,
+    )
+
+    status = manager.status()
+
+    assert status["availableModels"][0]["id"] == artifact.id
+    assert status["recommendations"][0]["model_id"] == artifact.id
+    assert status["recommendations"][0]["label"] == "Recommended"
+
+
 def test_download_uses_mirror_after_integrity_failure(tmp_path: Path) -> None:
     valid = tmp_path / "valid.gguf"
     corrupt = tmp_path / "corrupt.gguf"
@@ -427,6 +493,64 @@ def test_supervisor_uses_current_safe_server_flags_and_scrubbed_environment(
     assert "OPENAI_API_KEY" not in process.kwargs["env"]
     asyncio.run(supervisor.stop())
     assert supervisor.state == RuntimeState.STOPPED
+
+
+def test_supervisor_benchmark_uses_authenticated_measured_llama_timings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "llama-server.exe"
+    executable.write_bytes(b"exe")
+
+    class _PrimedBenchmarkSupervisor(LlamaCppSupervisor):
+        def prime(self) -> None:
+            self._process = _FakeProcess([])  # type: ignore[assignment]
+            self._state = RuntimeState.READY
+            self._api_key = "ephemeral-test-key"
+            self._api_prefix = "/cupcake-test"
+            self._context_size = 8192
+
+    supervisor = _PrimedBenchmarkSupervisor(executable, port=8123)
+    supervisor.prime()
+    captured: list[Any] = []
+
+    class _Response:
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return json.dumps(
+                {
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 24},
+                    "timings": {
+                        "prompt_n": 12,
+                        "prompt_ms": 120,
+                        "predicted_n": 24,
+                        "predicted_ms": 800,
+                    },
+                }
+            ).encode()
+
+    def fake_urlopen(request: Any, *, timeout: float) -> _Response:
+        captured.append((request, timeout))
+        return _Response()
+
+    monkeypatch.setattr("cupcake_runtime.local_models.manager.urlopen", fake_urlopen)
+
+    measurement = asyncio.run(
+        supervisor.benchmark(runtime_id="runtime-test", model_id="model-test", max_tokens=24)
+    )
+
+    request, timeout = captured[0]
+    assert request.full_url == "http://127.0.0.1:8123/cupcake-test/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer ephemeral-test-key"
+    assert timeout == 120.0
+    assert measurement.prompt_tokens_per_second == 100
+    assert measurement.generated_tokens_per_second == 30
+    assert measurement.context_size == 8192
+    assert measurement.measurement_source == "llama.cpp timings"
 
 
 def test_server_configuration_bounds_are_explicit() -> None:
@@ -575,9 +699,22 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
     installed = manager.seed_packaged_baseline(baseline)
     assert installed is not None
     assert installed.active is True
+
+    gpu_artifact = replace(
+        artifact,
+        id="llama-b10672-cuda-13",
+        backend=RuntimeBackend.CUDA_13,
+        filename="llama-b10672-bin-win-cuda-13.3-x64.zip",
+    )
+    manager.runtimes.install(gpu_artifact, archive)
+    manager.activate_runtime(gpu_artifact.version, gpu_artifact.backend)
     installed_again = manager.seed_packaged_baseline(baseline)
     assert installed_again is not None
     assert installed_again.id == installed.id
+    assert installed_again.active is False
+    active = manager.runtimes.active()
+    assert active is not None
+    assert active.backend == RuntimeBackend.CUDA_13
     assert manager.seed_packaged_baseline(tmp_path / "missing") is None
 
 

@@ -133,18 +133,48 @@ export interface SearchRecord {
 export interface HardwareRecord {
   os?: string;
   cpu?: string;
+  cpuArchitecture?: string;
+  cpuFeatures?: string[];
   ramBytes?: number;
   vramBytes?: number;
   gpu?: string;
+  diskAvailableBytes?: number;
+  windowsVersion?: string;
   acceleration?: string[];
+}
+
+export interface ProviderSetupInput {
+  provider: string;
+  apiKey: string;
+  endpoint?: string;
+  organization?: string;
+  modelId?: string;
+  connectionName?: string;
+}
+
+export interface ProviderTestResult {
+  maskedIdentity: string;
+  lastTested: string;
+  models: Array<{ id: string; name: string; capabilities?: string[] }>;
+  detail?: string;
 }
 
 export interface LocalRuntimeRecord {
   id: string;
   name: string;
   status: string;
+  version?: string;
   models?: Array<Record<string, unknown> | string>;
   detail?: string;
+  backend?: string;
+  sizeBytes?: number;
+  totalDownloadBytes?: number;
+  license?: string;
+  licenseUrls?: string[];
+  prerequisites?: string[];
+  compatible?: boolean;
+  recommended?: boolean;
+  active?: boolean;
 }
 
 type ModelAction =
@@ -281,6 +311,20 @@ interface RuntimeModel {
   metadata?: Record<string, unknown>;
 }
 
+interface CupcakeLocalStatus {
+  endpoint?: Record<string, unknown>;
+  hardware?: Record<string, unknown>;
+  activeRuntime?: Record<string, unknown> | null;
+  runtimes?: Array<Record<string, unknown>>;
+  models?: Array<Record<string, unknown>>;
+  downloads?: Array<Record<string, unknown>>;
+  availableRuntimes?: Array<Record<string, unknown>>;
+  runtimeRecommendations?: Array<Record<string, unknown>>;
+  availableModels?: Array<Record<string, unknown>>;
+  recommendations?: Array<Record<string, unknown>>;
+  activeModelId?: string | null;
+}
+
 interface RuntimeTool {
   id?: string;
   name: string;
@@ -395,6 +439,8 @@ interface WorkspaceContextValue {
   querySearch(query: string, globalScope?: boolean): Promise<void>;
   selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
+  installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<void>;
+  activateRuntimePack(runtime: LocalRuntimeRecord): Promise<void>;
   setToolEnabled(toolId: string, enabled: boolean): Promise<void>;
   connectMcp(input: {
     name: string;
@@ -404,13 +450,6 @@ interface WorkspaceContextValue {
   disconnectMcp(connectionId: string): Promise<void>;
   preflightTool(tool: ToolDescriptor): Promise<void>;
   resolveApproval(activity: ToolActivity, approved: boolean): Promise<void>;
-  connectProvider(provider: string): Promise<boolean>;
-  configureCompatibleProvider(input: {
-    name: string;
-    baseUrl: string;
-    modelId: string;
-  }): Promise<boolean>;
-  disconnectProvider(provider: string): Promise<boolean>;
   updateSettings(patch: Partial<WorkspaceSettings>): Promise<void>;
   chooseLegacySource(): Promise<void>;
   executeLegacyMigration(): Promise<void>;
@@ -458,6 +497,18 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function stringValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown[]).filter((item): item is string => typeof item === 'string');
+}
+
+function recordValues(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown[])
+    .map(recordValue)
+    .filter((item): item is Record<string, unknown> => item !== null);
 }
 
 function runtimeEventRunId(
@@ -871,10 +922,26 @@ export function normalizeHardware(value: unknown): HardwareRecord | null {
   else if (Number.isFinite(vramGb) && vramGb > 0) result.vramBytes = vramGb * 1024 ** 3;
   const gpu = record.gpu ?? record.gpu_name;
   if (typeof gpu === 'string' && gpu) result.gpu = gpu;
-  if (typeof record.cpu === 'string' && record.cpu) result.cpu = record.cpu;
+  const cpu = record.cpu ?? record.cpu_name;
+  if (typeof cpu === 'string' && cpu) result.cpu = cpu;
   else if (Number.isFinite(Number(record.cpu_threads)) && Number(record.cpu_threads) > 0)
     result.cpu = `${Number(record.cpu_threads)} threads`;
-  if (typeof record.os === 'string' && record.os) result.os = record.os;
+  const cpuArchitecture = record.cpuArchitecture ?? record.cpu_architecture ?? record.architecture;
+  if (typeof cpuArchitecture === 'string' && cpuArchitecture)
+    result.cpuArchitecture = cpuArchitecture;
+  const cpuFeatures = record.cpuFeatures ?? record.cpu_features;
+  if (Array.isArray(cpuFeatures))
+    result.cpuFeatures = cpuFeatures.filter((item): item is string => typeof item === 'string');
+  const freeDiskGb = Number(record.free_disk_gb);
+  const diskAvailableBytes = Number(record.diskAvailableBytes ?? record.disk_available_bytes);
+  if (Number.isFinite(diskAvailableBytes) && diskAvailableBytes > 0)
+    result.diskAvailableBytes = diskAvailableBytes;
+  else if (Number.isFinite(freeDiskGb) && freeDiskGb > 0)
+    result.diskAvailableBytes = freeDiskGb * 1024 ** 3;
+  const windowsVersion = record.windowsVersion ?? record.windows_version;
+  if (typeof windowsVersion === 'string' && windowsVersion) result.windowsVersion = windowsVersion;
+  const os = record.os ?? record.os_name;
+  if (typeof os === 'string' && os) result.os = os;
   if (Array.isArray(record.acceleration))
     result.acceleration = record.acceleration.filter(
       (item): item is string => typeof item === 'string',
@@ -884,12 +951,6 @@ export function normalizeHardware(value: unknown): HardwareRecord | null {
 
 export function mapDiscoveredRuntime(item: Record<string, unknown>): LocalRuntimeRecord {
   const kind = textValue(item.kind, 'local');
-  const names: Record<string, string> = {
-    cupcake_llama_cpp: 'Cupcake Local',
-    lm_studio: 'LM Studio',
-    ollama: 'Ollama',
-    vllm: 'vLLM',
-  };
   const rawModels = Array.isArray(item.models) ? item.models : undefined;
   const models = rawModels?.filter(
     (model): model is string | Record<string, unknown> =>
@@ -897,11 +958,162 @@ export function mapDiscoveredRuntime(item: Record<string, unknown>): LocalRuntim
   );
   return {
     id: textValue(item.id, kind),
-    name: names[kind] ?? cap(kind),
+    name: 'Cupcake Local',
     status: textValue(item.state ?? item.status, 'unknown'),
     models,
     detail: typeof item.detail === 'string' ? item.detail : undefined,
   };
+}
+
+function localDownloadState(value: string, errorCode = ''): ModelDescriptor['status'] {
+  if (['queued', 'resolving', 'downloading'].includes(value)) return 'download';
+  if (value === 'paused') return 'paused';
+  if (value === 'verifying') return 'verifying';
+  if (value === 'failed')
+    return errorCode.toLowerCase().includes('checksum') ? 'checksum-failed' : 'error';
+  return 'catalog';
+}
+
+export function mapCupcakeLocalModels(
+  status: CupcakeLocalStatus,
+  selectedId?: string,
+): ModelDescriptor[] {
+  const installed = new Map(
+    (status.models ?? []).map((item) => [textValue(item.id), item] as const),
+  );
+  const downloads = new Map(
+    (status.downloads ?? []).map((item) => [textValue(item.model_id), item] as const),
+  );
+  const recommendations = new Map(
+    (status.recommendations ?? []).map((item) => [textValue(item.model_id), item] as const),
+  );
+  return (status.availableModels ?? []).map((artifact) => {
+    const artifactId = textValue(artifact.id);
+    const installedModel = installed.get(artifactId);
+    const download = downloads.get(artifactId);
+    const recommendation = recommendations.get(artifactId);
+    const downloadState = textValue(download?.state);
+    const classification = textValue(recommendation?.classification).replaceAll('_', '-');
+    const fitMap: Record<string, ModelDescriptor['fit']> = {
+      recommended: 'recommended',
+      'fits-reduced-context': 'reduced-context',
+      'cpu-only-slow': 'cpu-slow',
+      hybrid: 'hybrid',
+      incompatible: 'incompatible',
+    };
+    const lifecycleState: ModelDescriptor['status'] =
+      status.activeModelId === artifactId
+        ? 'ready'
+        : installedModel
+          ? 'installed'
+          : download && downloadState !== 'completed'
+            ? localDownloadState(downloadState, textValue(download.error_code))
+            : 'catalog';
+    const selectableId =
+      status.activeModelId === artifactId
+        ? `openai-compatible:cupcake-local/${artifactId}`
+        : `cupcake-local:${artifactId}`;
+    const reasons = stringValues(recommendation?.reasons);
+    const mapped = mapModel(
+      {
+        id: selectableId,
+        provider: 'cupcake_local',
+        model: artifactId,
+        display_name: textValue(artifact.display_name, artifactId),
+        privacy_route: 'local',
+        context_window: Number(artifact.context_window) || undefined,
+        capabilities: [
+          ...stringValues(artifact.capability_tags),
+          ...stringValues(artifact.task_tags),
+        ],
+        metadata: {
+          runtime_kind: 'cupcake_local',
+          lifecycle_state: lifecycleState,
+          fit: fitMap[classification] ?? 'pending',
+          fit_reason: reasons.join(' · '),
+          source: `${textValue(artifact.source, 'Signed Cupcake Local catalog')} @ ${textValue(artifact.source_revision, 'pinned revision')}`,
+          license: textValue(artifact.license),
+          parameters: `${Number(artifact.parameter_billions) || 0}B`,
+          quantization: textValue(artifact.quantization),
+          file_size_bytes: Number(artifact.size_bytes) || undefined,
+          estimated_ram_bytes:
+            (Number(recommendation?.estimated_ram_gb) || 0) * 1024 ** 3 || undefined,
+          estimated_vram_bytes:
+            (Number(recommendation?.estimated_vram_gb) || 0) * 1024 ** 3 || undefined,
+          estimated_disk_bytes:
+            (Number(recommendation?.estimated_disk_gb) || 0) * 1024 ** 3 || undefined,
+          speed_class: textValue(recommendation?.likely_speed_class),
+        },
+      },
+      selectedId,
+    );
+    if (!download) return mapped;
+    return {
+      ...mapped,
+      download: {
+        bytesReceived: Number(download.bytes_downloaded) || 0,
+        totalBytes: Number(download.bytes_total) || Number(artifact.size_bytes) || 0,
+        checksumState: downloadState === 'verifying' ? 'verifying' : undefined,
+        state: downloadState,
+      },
+    };
+  });
+}
+
+export function mapCupcakeRuntimePacks(status: CupcakeLocalStatus): LocalRuntimeRecord[] {
+  const installed = new Map(
+    (status.runtimes ?? []).map((item) => [textValue(item.id), item] as const),
+  );
+  const recommendations = new Map(
+    (status.runtimeRecommendations ?? []).map(
+      (item) => [textValue(item.runtime_id), item] as const,
+    ),
+  );
+  const downloads = new Map(
+    (status.downloads ?? []).map((item) => [textValue(item.model_id), item] as const),
+  );
+  return (status.availableRuntimes ?? []).map((artifact) => {
+    const id = textValue(artifact.id);
+    const installedRuntime = installed.get(id);
+    const recommendation = recommendations.get(id);
+    const download = downloads.get(id);
+    const companions = recordValues(artifact.companions);
+    const companionBytes = companions.reduce(
+      (total, item) => total + Number(item.size_bytes ?? 0),
+      0,
+    );
+    const licenseUrls = companions
+      .filter((item) => item.license_requires_acceptance === true)
+      .map((item) => textValue(item.license_url))
+      .filter(Boolean);
+    const active = installedRuntime?.active === true;
+    const compatible = recommendation?.compatible !== false;
+    const reasons = stringValues(recommendation?.reasons);
+    return {
+      id,
+      name: `${textValue(artifact.backend, 'CPU').toUpperCase()} acceleration`,
+      version: textValue(artifact.version),
+      backend: textValue(artifact.backend),
+      status: active
+        ? 'active'
+        : installedRuntime
+          ? 'installed'
+          : download
+            ? localDownloadState(textValue(download.state), textValue(download.error_code))
+            : compatible
+              ? 'catalog'
+              : 'incompatible',
+      detail: reasons.join(' · '),
+      sizeBytes: Number(artifact.size_bytes) || undefined,
+      totalDownloadBytes: (Number(artifact.size_bytes) || 0) + companionBytes,
+      license: textValue(artifact.license),
+      licenseUrls,
+      prerequisites: stringValues(artifact.prerequisites),
+      compatible,
+      recommended: recommendation?.recommended === true,
+      active,
+    };
+  });
 }
 
 export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
@@ -909,8 +1121,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
   const kind = runtimeKind(item);
   const local =
     item.privacy_route === 'local' ||
-    item.privacy_route === 'self_hosted' ||
-    ['local', 'ollama', 'lm_studio', 'vllm', 'cupcake_llama_cpp'].includes(kind ?? item.provider);
+    ['local', 'cupcake_local', 'cupcake_llama_cpp'].includes(kind ?? item.provider);
   const providerNames: Record<string, string> = {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
@@ -919,9 +1130,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
     mistral: 'Mistral',
     cohere: 'Cohere',
     'nvidia-nim': 'NVIDIA NIM',
-    lm_studio: 'LM Studio',
-    ollama: 'Ollama',
-    vllm: 'vLLM',
+    cupcake_local: 'Cupcake Local',
     cupcake_llama_cpp: 'Cupcake Local',
   };
   const capabilityTags = Array.isArray(item.capabilities)
@@ -942,6 +1151,35 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
       : undefined);
   const contextWindowKnown = metadata.context_window_known !== false;
   const runtimeLoaded = metadata.runtime_loaded;
+  const rawState = textValue(item.metadata?.lifecycle_state ?? item.metadata?.state).replaceAll(
+    '_',
+    '-',
+  );
+  const lifecycleStates = new Set<ModelDescriptor['status']>([
+    'catalog',
+    'incompatible',
+    'setup',
+    'download',
+    'paused',
+    'verifying',
+    'checksum-failed',
+    'installed',
+    'loading',
+    'ready',
+    'benchmarked',
+    'unloading',
+    'removing',
+    'offline',
+    'error',
+  ]);
+  const fitValue = textValue(metadata.fit ?? metadata.compatibility_rating).replaceAll('_', '-');
+  const fit = ['recommended', 'reduced-context', 'cpu-slow', 'hybrid', 'incompatible'].includes(
+    fitValue,
+  )
+    ? (fitValue as ModelDescriptor['fit'])
+    : undefined;
+  const numberMetadata = (key: string): number | undefined =>
+    typeof metadata[key] === 'number' ? metadata[key] : undefined;
   return {
     id,
     runtimeModelId: kind && item.model ? item.model : id,
@@ -955,7 +1193,13 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
         : `Unknown · safe ${item.context_window.toLocaleString()} cap`
       : 'Unknown',
     cost: local ? 'Local' : item.pricing?.input ? `From ${item.pricing.input}` : 'Provider pricing',
-    status: local ? (runtimeLoaded === false ? 'offline' : 'ready') : 'setup',
+    status: lifecycleStates.has(rawState as ModelDescriptor['status'])
+      ? (rawState as ModelDescriptor['status'])
+      : local
+        ? runtimeLoaded === true
+          ? 'ready'
+          : 'catalog'
+        : 'setup',
     description: item.reasoning_presets?.length
       ? `Reasoning: ${item.reasoning_presets.join(', ')}`
       : 'Explicitly selected model',
@@ -971,6 +1215,17 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
       item.pricing_provenance ??
       item.pricing?.provenance ??
       (typeof metadata.pricing_provenance === 'string' ? metadata.pricing_provenance : undefined),
+    fit,
+    fitReason: textValue(metadata.fit_reason) || undefined,
+    source: textValue(metadata.source) || undefined,
+    license: textValue(metadata.license) || undefined,
+    parameters: textValue(metadata.parameters) || undefined,
+    quantization: textValue(metadata.quantization) || undefined,
+    fileSizeBytes: numberMetadata('file_size_bytes'),
+    estimatedRamBytes: numberMetadata('estimated_ram_bytes'),
+    estimatedVramBytes: numberMetadata('estimated_vram_bytes'),
+    estimatedDiskBytes: numberMetadata('estimated_disk_bytes'),
+    speedClass: textValue(metadata.speed_class) || undefined,
   };
 }
 
@@ -979,35 +1234,35 @@ export function localModelActionRequest(
   model: ModelDescriptor,
 ): { method: string; params: Record<string, unknown> } {
   const nativeModel = model.runtimeModelId ?? model.id;
-  if (model.provider === 'LM Studio') {
-    if (action === 'load' || action === 'unload') {
-      return {
-        method: `local_models.lm_studio.${action}`,
-        params: { model: nativeModel },
-      };
-    }
-    if (action === 'status') return { method: 'local_models.lm_studio.list', params: {} };
-    if (action === 'remove') {
-      throw new Error('Remove LM Studio models from LM Studio so its model catalog stays intact.');
-    }
-  }
-  if (model.provider === 'Ollama' && ['load', 'unload', 'remove'].includes(action)) {
+  if (model.provider !== 'Cupcake Local')
+    throw new Error('Only app-managed Cupcake Local models support local lifecycle actions.');
+  if (action === 'download')
     return {
-      method: `local_models.ollama.${action}`,
-      params: { model: nativeModel },
+      method: 'local_models.cupcake.download',
+      params: { artifactId: nativeModel, artifactKind: 'model' },
     };
-  }
-  const method =
-    action === 'download'
-      ? 'local_models.cupcake.download'
-      : action === 'benchmark'
-        ? 'local_models.performance.get'
-        : action === 'status'
-          ? 'local_models.cupcake.download.status'
-          : ['pause', 'resume', 'cancel', 'reset'].includes(action)
-            ? `local_models.cupcake.download.${action}`
-            : `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`;
-  return { method, params: { modelId: nativeModel } };
+  if (action === 'benchmark')
+    return { method: 'local_models.cupcake.benchmark', params: { maxTokens: 64 } };
+  if (action === 'status')
+    return {
+      method: 'local_models.cupcake.download.status',
+      params: { artifactId: nativeModel },
+    };
+  if (action === 'resume')
+    return {
+      method: 'local_models.cupcake.download',
+      params: { artifactId: nativeModel, artifactKind: 'model' },
+    };
+  if (['pause', 'cancel', 'reset'].includes(action))
+    return {
+      method: `local_models.cupcake.download.${action}`,
+      params: { artifactId: nativeModel },
+    };
+  if (action === 'unload') return { method: 'local_models.cupcake.unload', params: {} };
+  return {
+    method: `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`,
+    params: { modelId: nativeModel },
+  };
 }
 
 function mapTool(item: RuntimeTool): ToolDescriptor {
@@ -1248,20 +1503,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setConversations(
         (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
       );
-      setModels((current) =>
-        mergeModelDescriptors(
-          current,
-          (bootstrap.models ?? []).map((item) => mapModel(item, bootstrap.selectedModelId)),
-          selectedModelIdRef.current,
-        ),
-      );
       setTools((bootstrap.tools ?? []).map(mapTool));
-      setHardware(normalizeHardware(bootstrap.hardware));
-      setLocalRuntimes(
-        (bootstrap.localRuntimes ?? []).map((item) =>
-          typeof item === 'string' ? { id: item, name: cap(item), status: 'available' } : item,
-        ),
-      );
       const selectedProject =
         activeProjectId && projectRecords.some((item) => item.id === activeProjectId)
           ? activeProjectId
@@ -1276,7 +1518,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const memoryRequest = request<RuntimeMemory[]>('memory.list', {
         states: ['active', 'candidate', 'superseded', 'expired'],
       }).catch(() => request<RuntimeMemory[]>('memory.list'));
-      const [taskResult, memoryResult, providerResult, runtimeSettings, migration, localDiscovery] =
+      const [taskResult, memoryResult, providerResult, runtimeSettings, migration, cupcakeStatus] =
         await Promise.all([
           recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
           recover('Memory', memoryRequest, []),
@@ -1296,18 +1538,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             available: false,
             state: 'unavailable',
           }),
-          recover<{
-            endpoints: Array<Record<string, unknown>>;
-            models: RuntimeModel[];
-          } | null>(
-            'Local model discovery',
-            request<{
-              endpoints: Array<Record<string, unknown>>;
-              models: RuntimeModel[];
-            }>('local_models.discover', undefined, 120_000),
-            null,
+          recover<CupcakeLocalStatus>(
+            'Cupcake Local status',
+            request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
+            {},
           ),
         ]);
+      const localStatus = cupcakeStatus ?? {};
       setTasks(taskResult.map(mapTask));
       setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
       setProviders(
@@ -1321,11 +1558,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const discoveredModels = providerResult.providers.flatMap(
         (item) => item.catalog?.models ?? [],
       );
-      const allRuntimeModels: RuntimeModel[] = [
-        ...(bootstrap.models ?? []),
-        ...discoveredModels,
-        ...(localDiscovery?.models ?? []),
-      ].map((item) => item as unknown as RuntimeModel);
+      const allRuntimeModels: RuntimeModel[] = [...(bootstrap.models ?? []), ...discoveredModels]
+        .map((item) => item as unknown as RuntimeModel)
+        .filter((item) => item.provider !== 'mock' && item.privacy_route !== 'local');
       const uniqueRuntimeModels = [
         ...new Map(
           allRuntimeModels.map((item) => [
@@ -1334,27 +1569,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ]),
         ).values(),
       ];
-      setModels((current) =>
-        mergeModelDescriptors(
-          current,
-          uniqueRuntimeModels.map((item) => {
-            const mapped = mapModel(item, bootstrap.selectedModelId);
-            return {
-              ...mapped,
-              status:
-                mapped.route === 'Local'
-                  ? mapped.status
-                  : configuredProviders[item.provider]
-                    ? ('ready' as const)
-                    : ('setup' as const),
-            };
-          }),
+      setModels((current) => {
+        const mappedRuntimeModels = uniqueRuntimeModels.map((item) => {
+          const mapped = mapModel(item, bootstrap.selectedModelId);
+          return {
+            ...mapped,
+            status:
+              mapped.route === 'Local'
+                ? mapped.status
+                : configuredProviders[item.provider]
+                  ? ('ready' as const)
+                  : ('setup' as const),
+          };
+        });
+        const cupcakeCatalog = mapCupcakeLocalModels(
+          localStatus,
+          selectedModelIdRef.current ?? undefined,
+        );
+        return mergeModelDescriptors(
+          current.filter(
+            (item) => item.provider !== 'Cupcake Local' && item.provider !== 'Mock Cupcake',
+          ),
+          [...mappedRuntimeModels, ...cupcakeCatalog],
           selectedModelIdRef.current,
-        ),
-      );
-      if (localDiscovery) {
-        setLocalRuntimes(localDiscovery.endpoints.map(mapDiscoveredRuntime));
-      }
+        );
+      });
+      setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
+      setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
       if (configuredProviders['nvidia-nim']) {
         if (!nvidiaCatalogRefresh.current) {
           const refreshCatalog = request<Record<string, unknown>>(
@@ -1506,27 +1747,52 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         event.type.startsWith('local_model.download') ||
         event.type.startsWith('model.download')
       ) {
-        const modelId = textValue(payload.modelId ?? payload.model_id);
+        const downloadPayload = recordValue(payload.download) ?? payload;
+        const modelId = textValue(
+          downloadPayload.modelId ??
+            downloadPayload.model_id ??
+            payload.modelId ??
+            payload.model_id,
+        );
+        const state = textValue(downloadPayload.state, 'downloading');
         setModels((items) =>
           items.map((item) =>
-            item.id === modelId
+            item.id === modelId || item.runtimeModelId === modelId
               ? {
                   ...item,
+                  status: localDownloadState(state, textValue(downloadPayload.error_code)),
                   download: {
-                    bytesReceived: Number(payload.bytesReceived ?? payload.bytes_received ?? 0),
-                    totalBytes: Number(payload.totalBytes ?? payload.total_bytes ?? 0),
-                    bytesPerSecond: Number(payload.bytesPerSecond ?? payload.bytes_per_second ?? 0),
+                    bytesReceived: Number(
+                      downloadPayload.bytesReceived ?? downloadPayload.bytes_downloaded ?? 0,
+                    ),
+                    totalBytes: Number(
+                      downloadPayload.totalBytes ??
+                        downloadPayload.bytes_total ??
+                        item.fileSizeBytes ??
+                        0,
+                    ),
+                    bytesPerSecond: Number(
+                      downloadPayload.bytesPerSecond ?? downloadPayload.bytes_per_second ?? 0,
+                    ),
                     checksumState:
-                      typeof payload.checksumState === 'string' ? payload.checksumState : undefined,
+                      state === 'verifying'
+                        ? 'verifying'
+                        : typeof downloadPayload.checksumState === 'string'
+                          ? downloadPayload.checksumState
+                          : undefined,
                     diskState:
-                      typeof payload.diskState === 'string' ? payload.diskState : undefined,
-                    state: textValue(payload.state, 'downloading'),
+                      typeof downloadPayload.diskState === 'string'
+                        ? downloadPayload.diskState
+                        : undefined,
+                    state,
                   },
                   progress:
-                    Number(payload.totalBytes ?? payload.total_bytes ?? 0) > 0
+                    Number(downloadPayload.totalBytes ?? downloadPayload.bytes_total ?? 0) > 0
                       ? Math.round(
-                          (Number(payload.bytesReceived ?? payload.bytes_received ?? 0) /
-                            Number(payload.totalBytes ?? payload.total_bytes)) *
+                          (Number(
+                            downloadPayload.bytesReceived ?? downloadPayload.bytes_downloaded ?? 0,
+                          ) /
+                            Number(downloadPayload.totalBytes ?? downloadPayload.bytes_total)) *
                             100,
                         )
                       : undefined,
@@ -2186,17 +2452,86 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const runModelAction = useCallback(
     async (action: ModelAction, modelId: string) => {
       if (fixtureMode) return;
-      await guard(async () => {
-        const target = models.find(
-          (model) => model.id === modelId || model.runtimeModelId === modelId,
+      const target = models.find(
+        (model) => model.id === modelId || model.runtimeModelId === modelId,
+      );
+      if (!target) throw new Error('The selected local model is no longer available.');
+      const operation = localModelActionRequest(action, target);
+      if (action === 'download' || action === 'resume') {
+        setError(null);
+        setModels((items) =>
+          items.map((item) => (item.id === target.id ? { ...item, status: 'download' } : item)),
         );
-        if (!target) throw new Error('The selected local model is no longer available.');
-        const operation = localModelActionRequest(action, target);
-        await request(operation.method, operation.params, 180_000);
+        void request<Record<string, unknown>>(operation.method, operation.params, 3_600_000)
+          .then(() => refresh())
+          .catch((reason) => {
+            setError(reason instanceof Error ? reason.message : 'The verified download failed.');
+            void refresh();
+          });
+        return;
+      }
+      await guard(async () => {
+        const result = await request<Record<string, unknown>>(
+          operation.method,
+          operation.params,
+          300_000,
+        );
         await refresh();
+        if (action === 'benchmark') {
+          setModels((items) =>
+            items.map((item) =>
+              item.id === target.id
+                ? {
+                    ...item,
+                    status: 'benchmarked',
+                    benchmark: {
+                      tokensPerSecond: Number(result.generated_tokens_per_second) || 0,
+                      contextTokens: Number(result.context_size) || 0,
+                      measuredAt: textValue(result.measured_at, new Date().toISOString()),
+                    },
+                  }
+                : item,
+            ),
+          );
+        }
       });
     },
     [fixtureMode, guard, models, refresh, request],
+  );
+  const installRuntimePack = useCallback(
+    async (runtimeId: string, acceptedLicenseUrls: string[]) => {
+      if (fixtureMode) return;
+      await guard(async () => {
+        await request(
+          'local_models.cupcake.download',
+          {
+            artifactId: runtimeId,
+            artifactKind: 'runtime',
+            activate: true,
+            acceptedLicenseUrls,
+          },
+          1_800_000,
+        );
+        await refresh();
+      });
+    },
+    [fixtureMode, guard, refresh, request],
+  );
+  const activateRuntimePack = useCallback(
+    async (runtime: LocalRuntimeRecord) => {
+      if (fixtureMode) return;
+      if (!runtime.version || !runtime.backend) {
+        throw new Error('The installed runtime is missing its version or backend identity.');
+      }
+      await guard(async () => {
+        await request('local_models.cupcake.runtime.activate', {
+          version: runtime.version,
+          backend: runtime.backend,
+        });
+        await refresh();
+      });
+    },
+    [fixtureMode, guard, refresh, request],
   );
 
   const setToolEnabled = useCallback(
@@ -2270,92 +2605,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             : item,
         ),
       );
-    },
-    [request],
-  );
-
-  const connectProvider = useCallback(
-    async (provider: string) => {
-      try {
-        const result = await request<Record<string, unknown>>(
-          'providers.connectInteractive',
-          { provider },
-          120_000,
-        );
-        const catalog = result.catalog;
-        const catalogModels =
-          catalog &&
-          typeof catalog === 'object' &&
-          Array.isArray((catalog as Record<string, unknown>).models)
-            ? ((catalog as Record<string, unknown>).models as Array<Record<string, unknown>>)
-            : [];
-        if (catalogModels.length) {
-          setModels((current) => {
-            const incoming = catalogModels.map((item) => ({
-              ...mapModel(item as unknown as RuntimeModel, selectedModelIdRef.current ?? undefined),
-              status: 'ready' as const,
-            }));
-            return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
-          });
-        }
-        setProviders((items) => ({ ...items, [provider]: true }));
-        const providerNames: Record<string, string> = {
-          openai: 'OpenAI',
-          anthropic: 'Anthropic',
-          google: 'Google',
-          xai: 'xAI',
-          mistral: 'Mistral',
-          cohere: 'Cohere',
-          'nvidia-nim': 'NVIDIA NIM',
-          'openai-compatible': 'OpenAI-compatible',
-        };
-        setModels((items) =>
-          items.map((model) =>
-            model.provider === providerNames[provider] ? { ...model, status: 'ready' } : model,
-          ),
-        );
-        return true;
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Provider connection failed');
-        return false;
-      }
-    },
-    [request],
-  );
-  const disconnectProvider = useCallback(
-    async (provider: string) => {
-      try {
-        await request('providers.disconnect', { provider });
-        setProviders((items) => ({ ...items, [provider]: false }));
-        return true;
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Provider disconnection failed');
-        return false;
-      }
-    },
-    [request],
-  );
-  const configureCompatibleProvider = useCallback(
-    async (input: { name: string; baseUrl: string; modelId: string }) => {
-      if (
-        !input.baseUrl.startsWith('https://') &&
-        !/^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(input.baseUrl)
-      ) {
-        setError('Compatible endpoints must use HTTPS, except loopback local endpoints.');
-        return false;
-      }
-      try {
-        await request('providers.compatible.configure', input);
-        await request(
-          'providers.connectInteractive',
-          { provider: 'openai-compatible', metadata: input },
-          120_000,
-        );
-        return true;
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Compatible endpoint setup failed');
-        return false;
-      }
     },
     [request],
   );
@@ -2516,14 +2765,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       querySearch,
       selectModel,
       runModelAction,
+      installRuntimePack,
+      activateRuntimePack,
       setToolEnabled,
       connectMcp,
       disconnectMcp,
       preflightTool,
       resolveApproval,
-      connectProvider,
-      configureCompatibleProvider,
-      disconnectProvider,
       updateSettings,
       chooseLegacySource,
       executeLegacyMigration,
@@ -2586,14 +2834,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       querySearch,
       selectModel,
       runModelAction,
+      installRuntimePack,
+      activateRuntimePack,
       setToolEnabled,
       connectMcp,
       disconnectMcp,
       preflightTool,
       resolveApproval,
-      connectProvider,
-      configureCompatibleProvider,
-      disconnectProvider,
       updateSettings,
       chooseLegacySource,
       executeLegacyMigration,

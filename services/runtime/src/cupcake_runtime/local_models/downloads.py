@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -26,6 +27,7 @@ from .types import (
 )
 
 _DOWNLOAD_SNAPSHOT_ADAPTER = TypeAdapter(DownloadSnapshot)
+_ATOMIC_REPLACE_RETRY_DELAYS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.25, 0.25)
 
 
 class DownloadCancelled(Exception):
@@ -33,6 +35,12 @@ class DownloadCancelled(Exception):
 
 
 class DownloadPaused(Exception):
+    pass
+
+
+class DownloadIntegrityError(ValueError):
+    """The received bytes do not match immutable signed catalog metadata."""
+
     pass
 
 
@@ -118,7 +126,17 @@ class CheckedDownload:
             )
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, self.state_file)
+        for delay in (*_ATOMIC_REPLACE_RETRY_DELAYS, None):
+            try:
+                os.replace(temporary, self.state_file)
+                break
+            except PermissionError:
+                # Windows readers and security scanners can briefly open the
+                # destination without FILE_SHARE_DELETE. Preserve atomic state
+                # promotion while tolerating that transient sharing violation.
+                if delay is None:
+                    raise
+                time.sleep(delay)
 
     def pause(self) -> None:
         self._pause.set()
@@ -201,6 +219,11 @@ class CheckedDownload:
                             error_detail=None,
                         )
                         continue
+                    self._transition(
+                        DownloadState.FAILED,
+                        error_code="integrity_failed",
+                        error_detail=str(exc),
+                    )
                     break
         if self.snapshot.state != DownloadState.FAILED:
             self._transition(
@@ -263,9 +286,9 @@ class CheckedDownload:
 
     def _verify(self, path: Path) -> None:
         if not path.is_file() or path.stat().st_size != self.artifact.size_bytes:
-            raise ValueError(f"size mismatch for {self.artifact.id}")
+            raise DownloadIntegrityError(f"size mismatch for {self.artifact.id}")
         if sha256_file(path).lower() != self.artifact.sha256.lower():
-            raise ValueError(f"checksum mismatch for {self.artifact.id}")
+            raise DownloadIntegrityError(f"checksum mismatch for {self.artifact.id}")
 
     def _recover(self, fallback: DownloadSnapshot) -> DownloadSnapshot:
         try:

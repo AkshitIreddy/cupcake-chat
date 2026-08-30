@@ -11,7 +11,7 @@ test('home, navigation, command palette and explicit model picker work', async (
   }
   await page.getByRole('button', { name: 'Models' }).click();
   await expect(page.getByRole('heading', { name: 'Models', exact: true }).last()).toBeVisible();
-  await expect(page.getByText('Cupcake never routes automatically.')).toBeVisible();
+  await expect(page.getByText(/Cupcake never changes routes automatically/)).toBeVisible();
 
   await page.keyboard.press('Control+K');
   await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
@@ -187,7 +187,7 @@ test('live workspace windows long history and switches immutable branches', asyn
             calls.push(method);
             const results: Record<string, unknown> = {
               'app.bootstrap': {
-                selectedModelId: 'mock:cupcake-deterministic',
+                selectedModelId: 'openai-compatible:cupcake-local/qwen3-4b-q4-k-m',
                 projects: [
                   {
                     id: 'project-1',
@@ -204,17 +204,7 @@ test('live workspace windows long history and switches immutable branches', asyn
                     status: 'active',
                   },
                 ],
-                models: [
-                  {
-                    id: 'mock:cupcake-deterministic',
-                    provider: 'mock',
-                    model: 'cupcake-deterministic',
-                    display_name: 'Deterministic local',
-                    privacy_route: 'local',
-                    capabilities: ['chat'],
-                    reasoning_presets: ['none'],
-                  },
-                ],
+                models: [],
                 tools: [],
                 hardware: {},
                 localRuntimes: [],
@@ -225,6 +215,24 @@ test('live workspace windows long history and switches immutable branches', asyn
               'providers.status': { providers: [] },
               'settings.list': {},
               'migration.detect': { state: 'not_found', available: false },
+              'local_models.cupcake.status': {
+                activeModelId: 'qwen3-4b-q4-k-m',
+                availableModels: [
+                  {
+                    id: 'qwen3-4b-q4-k-m',
+                    display_name: 'Qwen3 4B',
+                    context_window: 8192,
+                    capability_tags: ['text', 'chat'],
+                  },
+                ],
+                models: [{ id: 'qwen3-4b-q4-k-m', integrity_verified: true }],
+                recommendations: [],
+                downloads: [],
+                availableRuntimes: [],
+                runtimes: [],
+                runtimeRecommendations: [],
+                hardware: {},
+              },
               'artifacts.list': [],
               'developer.events': [],
               'conversations.get': {
@@ -457,183 +465,116 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   expect(memoryList?.params).not.toMatchObject({ states: expect.arrayContaining(['disabled']) });
 });
 
-test('discovered LM Studio model keeps its canonical id through selection and chat', async ({
+test('custom titlebar reserves normal flow and exposes semantic window controls', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    const calls: Array<{ method: string; params?: unknown }> = [];
-    Object.assign(window, { __localModelRuntimeCalls: calls });
-    Object.defineProperty(window, 'cupcake', {
-      value: {
-        apiVersion: 1,
-        platform: 'win32',
-        app: {
-          getInfo: async () => {
-            await Promise.resolve();
-            return {
-              apiVersion: 1,
-              appVersion: 'test',
-              platform: 'win32',
-              packaged: false,
-              runtime: 'ready',
-            };
-          },
-        },
-        window: {
-          minimize: async () => {},
-          toggleMaximize: async () => {
-            await Promise.resolve();
-            return false;
-          },
-          close: async () => {},
-          isMaximized: async () => {
-            await Promise.resolve();
-            return false;
-          },
-        },
-        dialog: {
-          openFiles: async () => {
-            await Promise.resolve();
-            return [];
-          },
-          openDirectory: async () => {
-            await Promise.resolve();
-            return null;
-          },
-          chooseSaveTarget: async () => {
-            await Promise.resolve();
-            return null;
-          },
-          releaseHandle: async () => {},
-        },
-        commands: { execute: async () => {}, onCommand: () => () => {} },
-        runtime: {
-          status: async () => {
-            await Promise.resolve();
-            return { state: 'ready', mode: 'broker', restartCount: 0 };
-          },
-          cancel: async () => {
-            await Promise.resolve();
-            return true;
-          },
-          onEvent: () => () => {},
-          onStatus: () => () => {},
-          request: async ({ method, params }: { method: string; params?: unknown }) => {
-            await Promise.resolve();
-            calls.push({ method, params });
-            const canonicalId =
-              'openai-compatible:lm_studio-http---127-0-0-1-1234/google/gemma-3n-e4b';
-            const results: Record<string, unknown> = {
-              'app.bootstrap': {
-                selectedModelId: 'mock:cupcake-deterministic',
-                projects: [],
-                conversations: [],
-                models: [
-                  {
-                    id: 'mock:cupcake-deterministic',
-                    provider: 'mock',
-                    model: 'cupcake-deterministic',
-                    display_name: 'Deterministic local',
-                    privacy_route: 'local',
-                    capabilities: ['chat'],
-                  },
-                ],
-                tools: [],
-                hardware: {},
-                localRuntimes: [],
-                suggestionsEnabled: false,
-              },
-              'tasks.list': [],
-              'memory.list': [],
-              'providers.status': { providers: [] },
-              'settings.list': {},
-              'migration.detect': { state: 'not_found', available: false },
-              'local_models.discover': {
-                endpoints: [
-                  {
-                    id: 'lm_studio:http://127.0.0.1:1234',
-                    kind: 'lm_studio',
-                    state: 'ready',
-                    models: ['google/gemma-3n-e4b'],
-                  },
-                ],
-                models: [
-                  {
-                    id: canonicalId,
-                    provider: 'openai-compatible',
-                    model: 'google/gemma-3n-e4b',
-                    display_name: 'Gemma 3n E4B',
-                    privacy_route: 'local',
-                    context_window: 32_768,
-                    capabilities: { streaming: true },
-                    metadata: {
-                      runtime_kind: 'lm_studio',
-                      runtime_loaded: true,
-                      endpoint_id: 'lm_studio-http---127-0-0-1-1234',
-                    },
-                  },
-                ],
-              },
-              'models.select': {},
-              'conversations.create': {
-                conversation: {
-                  id: 'conversation-local',
-                  title: 'Local chat',
-                  status: 'active',
-                },
-                branch: {
-                  id: 'branch-local',
-                  conversation_id: 'conversation-local',
-                  name: 'Main',
-                },
-              },
-              'chat.send': {
-                conversationId: 'conversation-local',
-                branchId: 'branch-local',
-                content: 'Local response',
-              },
-              'chat.history': [],
-              'conversations.list': [],
-              'conversations.get': { branches: [], activeBranchId: 'branch-local' },
-              'artifacts.list': [],
-              'developer.events': [],
-            };
-            return { ok: true, result: results[method] };
-          },
-        },
-      },
-    });
-  });
-
-  await page.goto('/?view=models');
-  const gemma = page.locator('.model-card').filter({ hasText: 'Gemma 3n E4B' });
-  await expect(gemma).toBeVisible();
-  await gemma.getByRole('button', { name: 'Make default' }).click();
-  await expect(gemma.getByText('Default model')).toBeVisible();
-
-  if ((page.viewportSize()?.width ?? 1440) < 960) {
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-  }
-  await page.getByRole('button', { name: 'Chats' }).click();
-  await page.getByRole('button', { name: 'New chat', exact: true }).last().click();
-  const composer = page.getByLabel('Message Cupcake');
-  await composer.fill('Reply locally');
-  await composer.press('Enter');
-
-  const calls = await page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __localModelRuntimeCalls: Array<{ method: string; params?: Record<string, unknown> }>;
-        }
-      ).__localModelRuntimeCalls,
+  await page.goto('/');
+  const titlebar = page.locator('.cupcake-titlebar');
+  await expect(titlebar).toBeVisible();
+  await expect(titlebar.getByRole('button', { name: 'Minimize window' })).toBeVisible();
+  await expect(titlebar.getByRole('button', { name: 'Maximize window' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
   );
-  const canonicalId = 'openai-compatible:lm_studio-http---127-0-0-1-1234/google/gemma-3n-e4b';
-  expect(calls).toContainEqual({
-    method: 'models.select',
-    params: { modelId: canonicalId, compatibilityConfirmed: false },
+  await expect(titlebar.getByRole('button', { name: 'Close window' })).toBeVisible();
+  const geometry = await page.evaluate(() => {
+    const title = document.querySelector<HTMLElement>('.cupcake-titlebar');
+    const shelf = document.querySelector<HTMLElement>('.shelf');
+    const drag = title?.querySelector<HTMLElement>(':scope > .cupcake-titlebar__drag');
+    const controls = title?.querySelector<HTMLElement>('.cupcake-titlebar__controls');
+    if (!title || !shelf || !drag || !controls) throw new Error('Titlebar geometry is unavailable');
+    return {
+      titleBottom: title.getBoundingClientRect().bottom,
+      shelfTop: shelf.getBoundingClientRect().top,
+      directDrag: drag.parentElement === title,
+      dragChildren: drag.childElementCount,
+      dragWidth: drag.getBoundingClientRect().width,
+      controlsWidth: controls.getBoundingClientRect().width,
+    };
   });
-  expect(calls.find((call) => call.method === 'chat.send')?.params).toMatchObject({
-    modelId: canonicalId,
-  });
+  expect(geometry.shelfTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
+  expect(geometry.directDrag).toBe(true);
+  expect(geometry.dragChildren).toBe(0);
+  expect(geometry.dragWidth).toBeGreaterThan(20);
+  expect(geometry.controlsWidth).toBe(138);
+});
+
+test('provider setup stays in-app, traps focus, supports Escape, and reviews a masked key', async ({
+  page,
+}) => {
+  await page.goto('/?view=models');
+  await page.getByRole('button', { name: 'Add provider' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Choose a provider' });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .locator('.provider-choice-grid button')
+    .filter({
+      has: page.getByText('OpenAI', { exact: true }),
+    })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Connect OpenAI' })).toBeVisible();
+  const key = page.getByRole('textbox', { name: 'API key', exact: true });
+  await key.fill('sk-deterministic-secret-1234');
+  await expect(key).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: 'Reveal API key' }).click();
+  await expect(key).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Hide API key' }).click();
+  await page.getByRole('button', { name: 'Test connection' }).click();
+  await expect(page.getByRole('heading', { name: 'Connection verified' })).toBeVisible();
+  await expect(page.getByText('••••1234')).toBeVisible();
+
+  const setup = page.locator('.provider-setup');
+  const last = setup.getByRole('button', { name: 'Save & connect' });
+  await last.focus();
+  await page.keyboard.press('Tab');
+  await expect(setup.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(setup).toBeHidden();
+});
+
+test('all themes style root and nested WebView scrollbars from explicit tokens', async ({
+  page,
+}) => {
+  for (const theme of ['light', 'dark', 'minimal', 'classic']) {
+    await page.goto(`/?view=models&theme=${theme}`);
+    const scrollbar = await page.evaluate(() => {
+      const nested = document.createElement('div');
+      nested.style.cssText = 'width:20px;height:20px;overflow:auto';
+      nested.innerHTML = '<div style="width:80px;height:80px"></div>';
+      document.body.append(nested);
+      const root = getComputedStyle(document.documentElement);
+      const thumb = getComputedStyle(nested, '::-webkit-scrollbar-thumb');
+      const track = getComputedStyle(nested, '::-webkit-scrollbar-track');
+      const result = {
+        size: root.getPropertyValue('--scrollbar-size').trim(),
+        thumbToken: root.getPropertyValue('--scrollbar-thumb').trim(),
+        trackToken: root.getPropertyValue('--scrollbar-track').trim(),
+        thumb: thumb.backgroundColor,
+        track: track.backgroundColor,
+      };
+      nested.remove();
+      return result;
+    });
+    expect(scrollbar.size).toBe('12px');
+    expect(scrollbar.thumbToken).not.toBe('');
+    expect(scrollbar.trackToken).not.toBe('');
+    expect(scrollbar.thumb).not.toBe('rgba(0, 0, 0, 0)');
+    expect(scrollbar.track).not.toBe('rgba(0, 0, 0, 0)');
+  }
+});
+
+test('fresh model catalog is Cupcake Local only and explains pending device fit', async ({
+  page,
+}) => {
+  await page.goto('/?view=models');
+  const localCards = page.locator('.model-card').filter({ hasText: 'Cupcake Local' });
+  await expect(localCards).toHaveCount(3);
+  await expect(page.getByText('Device scan pending').first()).toBeVisible();
+  await expect(page.getByText(/LM Studio|Ollama|vLLM/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Install a model to benchmark' })).toBeDisabled();
+  const install = localCards.first().getByRole('button', { name: 'Review install' });
+  await install.click();
+  await expect(page.getByRole('dialog', { name: /Review/ })).toContainText('SHA-256');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: /Review/ })).toBeHidden();
 });

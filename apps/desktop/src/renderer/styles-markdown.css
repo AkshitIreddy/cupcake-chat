@@ -232,7 +232,6 @@
   overflow: auto;
   overscroll-behavior: contain;
   padding: 1rem 1.1rem 1.15rem;
-  scrollbar-color: #5d5150 transparent;
   tab-size: 2;
 }
 

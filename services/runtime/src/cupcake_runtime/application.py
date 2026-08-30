@@ -59,12 +59,9 @@ from cupcake_runtime.ingestion.worker_protocol import decode_document
 from cupcake_runtime.local_models import (
     CupcakeLocalManager,
     LlamaServerConfig,
-    LMStudioManager,
-    LocalModelManager,
-    OllamaManager,
     detect_hardware,
 )
-from cupcake_runtime.local_models.catalog import SignedModelCatalog, SignedRuntimeCatalog
+from cupcake_runtime.local_models.types import RuntimeBackend
 from cupcake_runtime.mcp import (
     MCPCallBrokerRequest,
     MCPConnectBrokerRequest,
@@ -89,7 +86,7 @@ from cupcake_runtime.migration import LegacyMigrationService, ProductMigrationSi
 from cupcake_runtime.object_store import EncryptedObjectStore
 from cupcake_runtime.observability import DeveloperTraceStore, TraceKind, TraceRecorder
 from cupcake_runtime.personality import build_personality_instructions
-from cupcake_runtime.providers import ProviderRegistry
+from cupcake_runtime.providers import ProviderOnboardingService, ProviderRegistry, ProviderTestState
 from cupcake_runtime.providers.base import ProviderConfig
 from cupcake_runtime.providers.types import (
     CanonicalMessage,
@@ -225,6 +222,9 @@ class RuntimeService:
             else None
         )
         self.providers = ProviderRegistry()
+        self.provider_onboarding = ProviderOnboardingService(
+            nvidia_nim_discovery=self.providers.nvidia_nim_discovery
+        )
         self.agent_engine = CupcakeAgentEngine(self.providers)
         self.cupcake_local = CupcakeLocalManager(self.data_dir / "local-models")
         baseline_directory = os.environ.get("CUPCAKE_LOCAL_BASELINE_DIR")
@@ -233,11 +233,6 @@ class RuntimeService:
             if baseline_directory
             else None
         )
-        self._model_catalog: SignedModelCatalog | None = None
-        self._runtime_catalog: SignedRuntimeCatalog | None = None
-        self.ollama = OllamaManager()
-        self.lm_studio = LMStudioManager()
-        self.local_models = LocalModelManager(lm_studio=self.lm_studio)
         self.tools = ToolRegistry(native_tool_descriptors())
         self.mcp_schemas = SchemaCatalog()
         self.traces = DeveloperTraceStore(str(self.data_dir / "developer-traces.db"))
@@ -316,10 +311,8 @@ class RuntimeService:
             "settings.get": self._settings_get,
             "settings.list": self._settings_list,
             "settings.set": self._settings_set,
-            "local_models.discover": self._local_models_discover,
             "local_models.hardware": self._local_models_hardware,
             "local_models.cupcake.status": self._cupcake_local_status,
-            "local_models.cupcake.catalogs.configure": self._cupcake_local_catalogs_configure,
             "local_models.cupcake.download": self._cupcake_local_download,
             "local_models.cupcake.download.status": self._cupcake_local_download_status,
             "local_models.cupcake.download.pause": self._cupcake_local_download_pause,
@@ -328,18 +321,13 @@ class RuntimeService:
             "local_models.cupcake.download.reset": self._cupcake_local_download_reset,
             "local_models.cupcake.load": self._cupcake_local_load,
             "local_models.cupcake.unload": self._cupcake_local_unload,
+            "local_models.cupcake.benchmark": self._cupcake_local_benchmark,
             "local_models.cupcake.remove_model": self._cupcake_local_remove_model,
+            "local_models.cupcake.runtime.activate": self._cupcake_local_runtime_activate,
             "local_models.cupcake.runtime_version": self._cupcake_local_runtime_version,
             "local_models.cupcake.devices": self._cupcake_local_devices,
-            "local_models.performance.record": self._local_models_performance_record,
-            "local_models.performance.get": self._local_models_performance_get,
-            "local_models.ollama.load": self._ollama_load,
-            "local_models.ollama.unload": self._ollama_unload,
-            "local_models.ollama.remove": self._ollama_remove,
-            "local_models.lm_studio.list": self._lm_studio_list,
-            "local_models.lm_studio.load": self._lm_studio_load,
-            "local_models.lm_studio.unload": self._lm_studio_unload,
             "providers.configure": self._provider_configure,
+            "providers.disconnect": self._provider_disconnect,
             "providers.compatible.configure": self._provider_compatible_configure,
             "broker.providers.resolve_compatible_route": (self._broker_provider_compatible_route),
             "projects.list": self._projects_list,
@@ -578,7 +566,7 @@ class RuntimeService:
             "selectedModelId": selected,
             "models": _jsonable(self.providers.catalog.list()),
             "hardware": _jsonable(detect_hardware(self.data_dir)),
-            "localRuntimes": ["cupcake-local", "ollama", "lm-studio", "vllm"],
+            "localRuntimes": ["cupcake-local"],
             "projects": _jsonable(projects),
             "conversations": _jsonable(conversations),
             "tools": _jsonable(self.tools.list()),
@@ -741,102 +729,12 @@ class RuntimeService:
             self.memory.set_suggestions_enabled(bool(value))
         return {"key": key, "value": value}
 
-    def _local_models_discover(self, params: Mapping[str, Any]) -> Any:
-        endpoints = tuple(str(value) for value in params.get("vllmEndpoints", ()))
-        discovered = asyncio.run(self.local_models.discover(endpoints))
-        descriptors: list[ModelDescriptor] = []
-        for endpoint in discovered:
-            if endpoint.state.value != "ready":
-                continue
-            inference_base_url = (
-                f"{endpoint.base_url}/v1"
-                if endpoint.kind.value in {"ollama", "lm_studio"}
-                else endpoint.base_url
-            )
-            model_states = endpoint.metadata.get("model_states")
-            if not isinstance(model_states, Mapping):
-                typed_model_states: Mapping[str, Any] = {}
-            else:
-                typed_model_states = cast(Mapping[str, Any], model_states)
-            for model in endpoint.models:
-                state_value = typed_model_states.get(model)
-                state: Mapping[str, Any] = (
-                    cast(Mapping[str, Any], state_value) if isinstance(state_value, Mapping) else {}
-                )
-                context_window_value = state.get("context_window")
-                context_window = (
-                    int(context_window_value)
-                    if isinstance(context_window_value, int) and context_window_value > 0
-                    else 32_768
-                )
-                display_name = state.get("display_name")
-                descriptors.append(
-                    self._register_local_endpoint_model(
-                        endpoint_id=endpoint.id,
-                        model=model,
-                        display_name=(
-                            str(display_name)
-                            if isinstance(display_name, str) and display_name.strip()
-                            else f"{model} ({endpoint.kind.value})"
-                        ),
-                        base_url=inference_base_url,
-                        privacy=(
-                            PrivacyRoute.SELF_HOSTED
-                            if endpoint.kind.value == "vllm"
-                            else PrivacyRoute.LOCAL
-                        ),
-                        context_window=context_window,
-                        runtime_kind=endpoint.kind.value,
-                        runtime_loaded=bool(state.get("loaded", True)),
-                    )
-                )
-        return {
-            "endpoints": _redact_local_paths(discovered),
-            "models": _jsonable(descriptors),
-        }
-
     def _local_models_hardware(self, _params: Mapping[str, Any]) -> Any:
         return _jsonable(detect_hardware(self.data_dir))
 
     def _cupcake_local_status(self, params: Mapping[str, Any]) -> Any:
         status = self.cupcake_local.status(verify_integrity=bool(params.get("verifyIntegrity")))
         return _redact_local_paths(status)
-
-    def _cupcake_local_catalogs_configure(self, params: Mapping[str, Any]) -> Any:
-        keys_value = _required_mapping(params, "publicKeys")
-        keys: dict[str, bytes] = {}
-        for key_id, encoded in keys_value.items():
-            if not isinstance(encoded, str):
-                raise RuntimeCommandError("INVALID_ARGUMENT", "Catalog public keys must be base64")
-            try:
-                keys[key_id] = base64.b64decode(encoded, validate=True)
-            except ValueError as exc:
-                raise RuntimeCommandError(
-                    "INVALID_ARGUMENT", "Catalog public key is invalid"
-                ) from exc
-        model_doc = params.get("modelCatalog")
-        runtime_doc = params.get("runtimeCatalog")
-        models = (
-            SignedModelCatalog.verify_and_load(cast(Mapping[str, Any], model_doc), keys)
-            if isinstance(model_doc, Mapping)
-            else None
-        )
-        runtimes = (
-            SignedRuntimeCatalog.verify_and_load(cast(Mapping[str, Any], runtime_doc), keys)
-            if isinstance(runtime_doc, Mapping)
-            else None
-        )
-        if models is None and runtimes is None:
-            raise RuntimeCommandError("INVALID_ARGUMENT", "At least one signed catalog is required")
-        self.cupcake_local.configure_catalogs(models=models, runtimes=runtimes)
-        if models is not None:
-            self._model_catalog = models
-        if runtimes is not None:
-            self._runtime_catalog = runtimes
-        return {
-            "modelCatalog": _catalog_summary(models),
-            "runtimeCatalog": _catalog_summary(runtimes),
-        }
 
     def _cupcake_local_download(self, params: Mapping[str, Any]) -> RuntimeResult:
         return _collect_stream(self._cupcake_local_download_stream, params)
@@ -851,18 +749,25 @@ class RuntimeService:
         artifact_id = _required_string(params, "artifactId")
         artifact_kind = str(params.get("artifactKind") or "model")
         activate = bool(params.get("activate", True))
+        accepted_license_urls_value = params.get("acceptedLicenseUrls", ())
+        if not isinstance(accepted_license_urls_value, (list, tuple)):
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "acceptedLicenseUrls must be a list of license URLs"
+            )
+        accepted_license_url_items = cast(Sequence[object], accepted_license_urls_value)
+        if not all(isinstance(item, str) for item in accepted_license_url_items):
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "acceptedLicenseUrls must be a list of license URLs"
+            )
+        accepted_license_urls = tuple(cast(Sequence[str], accepted_license_url_items))
         if artifact_kind == "model":
-            if self._model_catalog is None:
-                raise RuntimeCommandError("CATALOG_REQUIRED", "Verified model catalog is required")
-            artifact = self._model_catalog.get(artifact_id)
+            artifact = self.cupcake_local.model_artifact(artifact_id)
             self.cupcake_local.begin_model_download(artifact)
         elif artifact_kind == "runtime":
-            if self._runtime_catalog is None:
-                raise RuntimeCommandError(
-                    "CATALOG_REQUIRED", "Verified runtime catalog is required"
-                )
-            artifact = self._runtime_catalog.get(artifact_id)
-            self.cupcake_local.begin_runtime_download(artifact)
+            artifact = self.cupcake_local.runtime_artifact(artifact_id)
+            self.cupcake_local.begin_runtime_download(
+                artifact, accepted_license_urls=accepted_license_urls
+            )
         else:
             raise RuntimeCommandError("INVALID_ARGUMENT", "artifactKind must be model or runtime")
         operation = asyncio.create_task(self.cupcake_local.resume_download(artifact_id))
@@ -887,7 +792,9 @@ class RuntimeService:
                 _, installed = await self.cupcake_local.download_model_by_id(artifact_id)
             else:
                 _, installed = await self.cupcake_local.download_runtime_by_id(
-                    artifact_id, activate=activate
+                    artifact_id,
+                    activate=activate,
+                    accepted_license_urls=accepted_license_urls,
                 )
         await emit(
             _event(
@@ -929,8 +836,20 @@ class RuntimeService:
         self.cupcake_local.reset_download(_required_string(params, "artifactId"))
         return {"reset": True}
 
+    def _cupcake_local_runtime_activate(self, params: Mapping[str, Any]) -> Any:
+        version = _required_string(params, "version")
+        try:
+            backend = RuntimeBackend(_required_string(params, "backend"))
+        except ValueError as exc:
+            raise RuntimeCommandError("INVALID_ARGUMENT", "Unknown local runtime backend") from exc
+        return _redact_local_paths(self.cupcake_local.activate_runtime(version, backend))
+
     def _cupcake_local_load(self, params: Mapping[str, Any]) -> Any:
-        gpu_layers_value = params.get("gpuLayers", 0)
+        active_runtime = self.cupcake_local.runtimes.active()
+        default_gpu_layers: int | str = (
+            "auto" if active_runtime is not None and active_runtime.backend.value != "cpu" else 0
+        )
+        gpu_layers_value = params.get("gpuLayers", default_gpu_layers)
         gpu_layers: int | str
         if isinstance(gpu_layers_value, str):
             gpu_layers = gpu_layers_value
@@ -981,6 +900,10 @@ class RuntimeService:
     def _cupcake_local_unload(self, _params: Mapping[str, Any]) -> Any:
         return _jsonable(asyncio.run(self.cupcake_local.unload()))
 
+    def _cupcake_local_benchmark(self, params: Mapping[str, Any]) -> Any:
+        max_tokens = int(params.get("maxTokens", 32))
+        return _jsonable(asyncio.run(self.cupcake_local.benchmark(max_tokens=max_tokens)))
+
     def _cupcake_local_remove_model(self, params: Mapping[str, Any]) -> dict[str, bool]:
         self.cupcake_local.remove_model(_required_string(params, "modelId"))
         return {"removed": True}
@@ -991,99 +914,82 @@ class RuntimeService:
     def _cupcake_local_devices(self, _params: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
         return {"devices": self.cupcake_local.devices()}
 
-    def _local_models_performance_record(self, params: Mapping[str, Any]) -> Any:
-        return _jsonable(
-            self.local_models.record_performance(
-                _required_string(params, "runtimeId"),
-                _required_string(params, "modelId"),
-                prompt_tokens=int(params.get("promptTokens") or 0),
-                generated_tokens=int(params.get("generatedTokens") or 0),
-                prompt_seconds=float(params.get("promptSeconds") or 0),
-                generation_seconds=float(params.get("generationSeconds") or 0),
-                context_size=int(params.get("contextSize") or 0),
-            )
-        )
-
-    def _local_models_performance_get(self, params: Mapping[str, Any]) -> Any:
-        return _jsonable(
-            self.local_models.performance(
-                _required_string(params, "runtimeId"),
-                _required_string(params, "modelId"),
-            )
-        )
-
-    def _ollama_load(self, params: Mapping[str, Any]) -> dict[str, Any]:
-        model = _required_string(params, "model")
-        asyncio.run(self.ollama.load(model))
-        descriptor = self._register_local_endpoint_model(
-            endpoint_id="ollama-local",
-            model=model,
-            display_name=f"{model} (Ollama)",
-            base_url=f"{self.ollama.base_url}/v1",
-            privacy=PrivacyRoute.LOCAL,
-            runtime_kind="ollama",
-            runtime_loaded=True,
-        )
-        return {"loaded": True, "model": _jsonable(descriptor)}
-
-    def _ollama_unload(self, params: Mapping[str, Any]) -> dict[str, bool]:
-        asyncio.run(self.ollama.unload(_required_string(params, "model")))
-        return {"unloaded": True}
-
-    def _ollama_remove(self, params: Mapping[str, Any]) -> dict[str, bool]:
-        asyncio.run(self.ollama.remove(_required_string(params, "model")))
-        return {"removed": True}
-
-    def _lm_studio_list(self, _params: Mapping[str, Any]) -> Any:
-        return _jsonable(asyncio.run(self.lm_studio.list_models()))
-
-    def _lm_studio_load(self, params: Mapping[str, Any]) -> Any:
-        context = int(params["contextLength"]) if "contextLength" in params else None
-        model = _required_string(params, "model")
-        result = asyncio.run(self.lm_studio.load(model, context_length=context))
-        descriptor = self._register_local_endpoint_model(
-            endpoint_id="lm-studio-local",
-            model=model,
-            display_name=f"{model} (LM Studio)",
-            base_url=f"{self.lm_studio.base_url}/v1",
-            privacy=PrivacyRoute.LOCAL,
-            context_window=context or 32_768,
-            runtime_kind="lm_studio",
-            runtime_loaded=True,
-        )
-        return {"result": _jsonable(result), "model": _jsonable(descriptor)}
-
-    def _lm_studio_unload(self, params: Mapping[str, Any]) -> Any:
-        return _jsonable(asyncio.run(self.lm_studio.unload(_required_string(params, "model"))))
-
     def _provider_configure(self, params: Mapping[str, Any]) -> dict[str, Any]:
         provider = _required_string(params, "provider")
         credential = _required_string(params, "credentialLease")
         base_url = _optional_string(params, "baseUrl")
         organization = _optional_string(params, "organization")
-        self.providers.configure(
-            provider,
-            ProviderConfig(api_key=credential, base_url=base_url, organization=organization),
+        config = ProviderConfig(
+            api_key=credential,
+            base_url=base_url,
+            organization=organization,
         )
-        response: dict[str, Any] = {
-            "provider": provider,
-            "configured": True,
-            "persisted": False,
-        }
-        if provider == "nvidia-nim":
-            catalog = asyncio.run(
-                self.providers.refresh_nvidia_nim_models(
-                    force=params.get("forceCatalogRefresh") is True
+        # The broker uses this path only to rehydrate a credential that it
+        # previously validated and persisted in the platform vault. It is not
+        # exposed through the renderer's generic runtime command allowlist.
+        # Avoid an extra provider model-list request before every chat while
+        # still forcing all new/replaced credentials through onboarding below.
+        if params.get("trustedHydration") is True:
+            if provider == "openai-compatible":
+                descriptor = self.providers.register_openai_compatible_endpoint(
+                    _required_string(params, "endpointId"),
+                    model=_required_string(params, "modelId"),
+                    display_name=_required_string(params, "displayName"),
+                    base_url=_required_string(params, "baseUrl"),
+                    api_key=credential,
+                    replace=True,
                 )
-            )
-            response["catalog"] = {
-                "models": _jsonable(catalog.models),
-                "filteredNonChat": catalog.filtered_non_chat,
-                "unknownChatCompatibility": catalog.unknown_chat_compatibility,
-                "fetchedAtMs": catalog.fetched_at_ms,
-                "cached": catalog.cached,
+                models = [_jsonable(descriptor)]
+            else:
+                self.providers.configure(provider, config)
+                models = []
+            return {
+                "provider": provider,
+                "state": ProviderTestState.READY.value,
+                "discovery": "unsupported",
+                "models": models,
+                "tested_at_ms": int(datetime.now(UTC).timestamp() * 1000),
+                "latency_ms": 0,
+                "diagnostic": None,
+                "hydrated": True,
             }
-        return response
+        execution = asyncio.run(
+            self.provider_onboarding.test_connection_with_evidence(
+                provider,
+                config,
+                force_catalog_refresh=params.get("forceCatalogRefresh") is True,
+            )
+        )
+        result = execution.result
+        if (
+            result.state in {ProviderTestState.READY, ProviderTestState.DEGRADED}
+            and params.get("validateOnly") is not True
+        ):
+            if result.provider == "openai-compatible":
+                self.providers.register_openai_compatible_endpoint(
+                    _required_string(params, "endpointId"),
+                    model=_required_string(params, "modelId"),
+                    display_name=_required_string(params, "displayName"),
+                    base_url=_required_string(params, "baseUrl"),
+                    api_key=credential,
+                    replace=True,
+                )
+            else:
+                self.providers.configure_tested(
+                    result.provider,
+                    config,
+                    nvidia_nim_catalog=execution.nvidia_nim_catalog,
+                )
+        return cast(dict[str, Any], _jsonable(result))
+
+    def _provider_disconnect(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        provider = _required_string(params, "provider")
+        removed = self.providers.disconnect(provider)
+        return {
+            "provider": "google" if provider == "gemini" else provider,
+            "configured": False,
+            "disconnected": removed,
+        }
 
     def _provider_compatible_configure(self, params: Mapping[str, Any]) -> Any:
         descriptor = self.providers.register_openai_compatible_endpoint(
@@ -3996,26 +3902,6 @@ def _looks_like_secret(value: str) -> bool:
     ):
         return True
     return bool(re.fullmatch(r"[A-Fa-f0-9]{32,}|[A-Za-z0-9+/=_-]{40,}", compact))
-
-
-def _catalog_summary(value: Any) -> Any:
-    if value is None:
-        return None
-    entries = getattr(value, "models", None) or getattr(value, "runtimes", ())
-    return {
-        "version": value.version,
-        "generatedAt": value.generated_at,
-        "keyId": value.key_id,
-        "entries": [
-            {
-                "id": item.id,
-                "displayName": getattr(item, "display_name", item.id),
-                "sizeBytes": item.size_bytes,
-                "license": item.license,
-            }
-            for item in entries
-        ],
-    }
 
 
 def _outbound_digest(descriptor: ModelDescriptor, params: Mapping[str, Any], content: str) -> str:

@@ -9,7 +9,6 @@ pub mod approval;
 pub mod audit;
 pub mod backup_container;
 pub mod backup_envelope;
-pub mod credential_prompt;
 pub mod custom_tool;
 pub mod error;
 pub mod framing;

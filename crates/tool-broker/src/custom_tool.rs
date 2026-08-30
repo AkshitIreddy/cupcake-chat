@@ -555,11 +555,12 @@ fn bounded_error(value: &Value) -> String {
 }
 
 fn inherit_windows_runtime_environment(command: &mut Command) {
-    for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
+    for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH"] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
     }
+    command.env("PATHEXT", ".COM;.EXE;.BAT;.CMD");
 }
 
 #[cfg(test)]

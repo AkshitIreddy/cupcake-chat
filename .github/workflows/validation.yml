@@ -61,9 +61,9 @@ jobs:
       - run: node scripts/verify.mjs --lane python
 
   rust:
-    name: Rust format, Clippy, tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Rust broker and Tauri host
+    runs-on: windows-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy

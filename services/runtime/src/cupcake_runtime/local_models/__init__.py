@@ -1,20 +1,22 @@
 from .catalog import (
+    CATALOG_TRUST_FILENAME,
+    MODEL_CATALOG_FILENAME,
+    RUNTIME_CATALOG_FILENAME,
     CatalogSignatureError,
+    PinnedCatalogBundle,
+    PinnedCatalogTrustStore,
     SignedModelCatalog,
     SignedRuntimeCatalog,
+    load_pinned_catalog_bundle,
     sha256_file,
     verify_artifact,
 )
-from .discovery import RuntimeDiscovery, validate_endpoint
 from .downloads import CheckedDownload, DownloadManager, ModelDownload, RuntimePackDownload
 from .hardware import detect_hardware
 from .managed import CupcakeLocalManager, LicenseAcceptanceRequired
 from .manager import (
     LlamaCppSupervisor,
     LlamaServerConfig,
-    LMStudioManager,
-    LocalModelManager,
-    OllamaManager,
     OperationProgress,
 )
 from .model_store import InstalledModelStore, ModelInUseError
@@ -28,21 +30,22 @@ from .runtime_packs import (
 from .types import *  # noqa: F403
 
 __all__ = [
+    "CATALOG_TRUST_FILENAME",
+    "MODEL_CATALOG_FILENAME",
+    "RUNTIME_CATALOG_FILENAME",
     "CatalogSignatureError",
     "CheckedDownload",
     "CupcakeLocalManager",
     "DownloadManager",
     "InstalledModelStore",
-    "LMStudioManager",
     "LicenseAcceptanceRequired",
     "LlamaCppSupervisor",
     "LlamaServerConfig",
-    "LocalModelManager",
     "ModelDownload",
     "ModelInUseError",
-    "OllamaManager",
     "OperationProgress",
-    "RuntimeDiscovery",
+    "PinnedCatalogBundle",
+    "PinnedCatalogTrustStore",
     "RuntimePackDownload",
     "RuntimePackError",
     "RuntimePackInUseError",
@@ -52,9 +55,9 @@ __all__ = [
     "SignedRuntimeCatalog",
     "detect_hardware",
     "estimate_fit",
+    "load_pinned_catalog_bundle",
     "rank_catalog",
     "rank_runtime_packs",
     "sha256_file",
-    "validate_endpoint",
     "verify_artifact",
 ]

@@ -5,10 +5,7 @@
     "types": ["node"]
   },
   "include": [
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
     "src/shared/**/*.ts",
-    "*.config.ts",
-    "forge.config.ts"
+    "*.config.ts"
   ]
 }

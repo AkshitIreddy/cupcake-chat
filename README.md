@@ -2,138 +2,66 @@
 
 ![CUPCAKEAGI mark](apps/desktop/public/brand/cupcake-mark.svg)
 
-CUPCAKEAGI is a text-first, local desktop workspace for chatting with AI, giving it files and tools,
-and letting substantial work continue in the background. The conversation stays at the center:
-choose a model, add the context you want, see where data is going, and keep chatting while Cupcake
-works.
+CUPCAKEAGI is a Windows-first, text-first AI workbench for conversations, files, tools, tasks,
+citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside
+a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
-The personality is still here. The sugar rush is not.
+> **Corrective local candidate, not an accepted release.** The previous desktop baseline was
+> rejected by the owner. The Tauri executable, verified sidecars, unsigned NSIS bundle, and fresh
+> in-app NVIDIA NIM/Cohere conversations now pass local testing. App-managed local inference,
+> clean-machine installer lifecycle, the complete native accessibility/performance matrix, and owner
+> acceptance remain governed by the live checklist. Nothing here is approved for distribution.
 
-> **Local release candidate.** Version 2.0 has been assembled and locally validated for Windows
-> 10/11 x64 on the `feat/cupcakeagi-2.0` branch. The unsigned installer and ZIP are private
-> owner-test artifacts. Nothing has been pushed or published as a 2.0 release, connected to a
-> production update feed, or approved for general distribution. The
-> [implementation checklist](docs/architecture/IMPLEMENTATION_CHECKLIST.md) is the source of truth
-> for current completion.
+## Product contract
 
-## What 2.0 is
+- Chat remains the primary surface. Voice and automatic model routing are excluded.
+- Model choice is explicit. Optional fallbacks are off by default and disclose cost/privacy changes.
+- Provider setup stays inside CUPCAKEAGI: key entry, privacy/cost disclosure, connection testing,
+  supported-model discovery, saved masked identity, reconnect, and removal.
+- Cupcake Local is the only installed local-model manager. It owns a pinned llama.cpp runtime and
+  optional downloaded GGUF weights; users do not need Node, Python, Conda, or a separate model
+  server.
+- OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, NVIDIA NIM, and generic remote OpenAI-compatible
+  endpoints remain explicit hosted routes.
+- Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, and Settings remain
+  persistent destinations.
+- Cupcake Light, Cupcake Dark, Minimal, and Classic remain the four themes.
 
-- **Text first.** There is no voice surface in the 2.0 release candidate.
-- **Model explicit.** You choose the provider and model for a message. CUPCAKEAGI does not silently
-  route requests.
-- **Local by default, clear at the boundary.** Local data remains local unless a selected cloud
-  model or connected tool needs it; the destination is shown before data leaves the machine.
-- **One conversation, small or substantial.** A quick answer stays a chat turn. Longer work can
-  become a durable task without forcing a separate mode.
-- **Project aware.** Projects group chats, files, instructions, memories, tasks, artifacts, and
-  permissions without leaking context into unrelated work.
-- **Inspectable, not noisy.** Tool calls collapse into concise cards. Context, permissions, costs,
-  task events, and redacted runtime details are available when needed.
+The corrective Models-screen target is useful before installation: detect the current device, load
+verified catalog metadata, rank compatible choices, explain RAM/VRAM/disk/context tradeoffs, and
+support download recovery, checksum validation, load/unload, removal, and measured benchmarking.
 
-## Release-candidate feature map
-
-| Area               | 2.0 contract                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Chat               | Streaming Markdown, code, tables, equations, citations, message actions, and non-destructive branches                                                        |
-| Models             | Direct OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, and NVIDIA NIM adapters; generic OpenAI-compatible endpoints; explicit model and reasoning selection |
-| Local models       | CUPCAKEAGI-managed llama.cpp plus Ollama and LM Studio discovery/management and external vLLM connections; model weights are never bundled                   |
-| Projects and files | Optional project boundaries, rich attachments, live read-only repositories, structured parsing, stable citations, and search                                 |
-| Memory             | Typed and scoped memories with source, confidence, revision, expiry, disable, and delete controls                                                            |
-| Tasks              | Durable background work, approvals, checkpoints, recovery, queued follow-ups, and bounded specialist subagents                                               |
-| Tools              | Scoped file/repository, web, Git, Python, model, and artifact tools plus local/remote MCP and an out-of-process custom-tool SDK                              |
-| Artifacts          | Documents, code, tables, images, diagrams, webpages, and reports with preview, editing, revisions, and export                                                |
-| Interface          | Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, Settings, and optional Developer Mode                                                |
-| Themes             | Cupcake Light, Cupcake Dark, Minimal, and Classic, with reduced-motion and keyboard support                                                                  |
-| Proactive features | Quiet Thoughts and Dreams suggestions, disabled by default                                                                                                   |
-
-See the [user guide](docs/user-guide.md) for how these parts fit together and
-[known issues](docs/known-issues.md) for the current release-candidate boundaries.
-
-## Try it before upgrading
-
-You do not need to begin with a large paid plan. These are the official developer offers CUPCAKEAGI
-users can currently experiment with; limits, regions, and eligibility can change.
-
-| Route             | Free-access status                                                                                                         | Good first step                                                                                                                         |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Gemini            | Ongoing free API tier for selected models                                                                                  | Create a key in [Google AI Studio](https://aistudio.google.com/app/apikey)                                                              |
-| Mistral           | Free plan currently includes $10/month in API credits                                                                      | Start in [Mistral Studio](https://console.mistral.ai/)                                                                                  |
-| Cohere            | Free, rate-limited evaluation key; not for production or commercial use                                                    | Create a [trial key](https://dashboard.cohere.com/api-keys)                                                                             |
-| NVIDIA NIM        | Free NVIDIA-hosted API Catalog access for individual prototyping, development, and testing; not a production entitlement   | Join the [NVIDIA Developer Program](https://developer.nvidia.com/nim) and get one key from the [API Catalog](https://build.nvidia.com/) |
-| OpenAI            | A first test request or account-specific grants may be available; no published recurring free tier for current chat models | Check the [API quickstart](https://platform.openai.com/docs/quickstart) before adding credits                                           |
-| Anthropic         | General API access is prepaid/pay-as-you-go; no general free tier is published                                             | Open the [Claude Console](https://console.anthropic.com/) only if you want to fund testing                                              |
-| xAI               | General API access uses prepaid credits or approved invoicing; promotions are account-specific                             | Check the [xAI Console](https://console.x.ai/) for any current credit                                                                   |
-| OpenAI-compatible | Groq, selected OpenRouter models, and Cloudflare Workers AI publish limited free developer access                          | Use an explicit model through CUPCAKEAGI's compatible-endpoint setup                                                                    |
-| Local             | CUPCAKEAGI Local/llama.cpp, Ollama, and LM Studio have no provider API charge                                              | Download a model whose license and hardware needs fit your use                                                                          |
-
-The detailed [free-tier guide](docs/free-tier-guide.md) has current limits, official signup links,
-compatible endpoint notes, and privacy/cost cautions. It was last checked on **2026-08-29**; verify
-the provider dashboard before relying on any allowance.
-
-## Screenshot
-
-![CUPCAKEAGI chat workbench](apps/desktop/public/screenshots/cupcake-chat-workbench.png)
-
-The screenshot uses deterministic local fixtures so the interface can be reviewed without exposing
-credentials, private conversations, or provider data.
-
-## Architecture at a glance
+## Current architecture
 
 ```text
 React + TypeScript renderer
-          │ narrow, typed preload API
-Electron main process
-          │ authenticated framed messages over private pipes
-          ├──────── Python runtime
-          │         providers, tasks, memory, retrieval, persistence
+          │ typed invoke/events; no raw Node, path, process, credential, or network primitive
+Tauri 2 Rust host
+          │ window/tray/dialog/deep-link policy, capabilities, sidecar supervision
+          ├──────── packaged Python runtime
+          │         providers, tasks, memory, retrieval, persistence, Cupcake Local
           │
           └──────── Rust ToolBroker
-                    credentials, policy, grants, MCP, sandboxing, audit
+                    DPAPI vault, policy, grants, MCP, sandboxing, audit
 ```
 
-The renderer has no Node.js access and never receives credentials, arbitrary process APIs, or raw
-filesystem paths. Product-owned, versioned contracts keep provider SDK objects and framework
-checkpoints out of durable application state. Conversations and artifacts are immutable revision
-graphs; SQLite FTS5 provides the search baseline; encrypted content-addressed objects hold files and
-artifact revisions.
-
-The runtime uses Pydantic AI Core for provider-neutral agent mechanics and DBOS for recoverable
-work. These are implementation details behind CUPCAKEAGI contracts, not the product database or UI
-protocol. The architecture is documented under [`docs/architecture`](docs/architecture/).
-
-## Privacy and permissions
-
-CUPCAKEAGI is a local, single-user application with no Cupcake account or cloud sync.
-
-- Provider keys are protected per Windows user with DPAPI, not stored in project files or logs.
-- Files and repositories are represented by opaque grants. Repositories are read-only until an exact
-  write is approved.
-- Cloud models and remote tools receive only the context required for that request, with a visible
-  Local/Cloud destination.
-- Generated code runs in a staged, bounded sandbox with no credentials or network by default.
-- Deletion, external communication, financial actions, installation, system changes, and unsandboxed
-  execution always require fresh approval.
-- Developer Mode exposes redacted events and provenance, never private chain-of-thought.
-
-Read [Privacy, destinations, and approvals](docs/user-guide.md#privacy-destinations-and-approvals)
-before using a cloud provider with sensitive data.
+The Python runtime and ToolBroker remain private child processes, never public localhost services.
+The renderer receives opaque handles and canonical events. Product storage, workflow checkpoints,
+and broker audit state remain separate encrypted stores. Conversations and artifacts are immutable
+revision graphs, and project scope is a privacy boundary.
 
 ## Run from source
 
-The eventual supported end-user path will be a signed Windows 10/11 x64 installer. The current
-private candidate is intentionally unsigned and must not be distributed. A local installer, portable
-ZIP, and unpacked app have passed package smoke testing and the release-candidate audit, but owner
-acceptance is still required. macOS, Linux, Windows on Arm, and 32-bit Windows are not
-release-candidate targets.
+Prerequisites:
 
-Requirements:
+- Windows 10 or 11 x64;
+- Node.js 20.19 or newer and pnpm 10.15.1 through Corepack;
+- Python 3.12;
+- stable Rust using `x86_64-pc-windows-msvc`, with rustfmt and Clippy;
+- Visual Studio C++ Build Tools with Desktop development with C++;
+- Microsoft Edge WebView2 Runtime.
 
-- Node.js 20.19 or newer
-- pnpm 10.15.1 or newer through Corepack
-- Rust stable for the ToolBroker
-- Python 3.12 for runtime development
-
-From the repository root:
+From Windows PowerShell at the repository root:
 
 ```powershell
 corepack enable
@@ -142,79 +70,78 @@ pnpm install --frozen-lockfile
 pnpm --filter @cupcakeagi/desktop dev
 ```
 
-The desktop can run against clearly labeled deterministic fixtures while cloud credentials and local
-model runtimes are absent. Do not place API keys in the repository or a `.env` file. Configure
-credentials only through the in-app provider setup; the packaged Rust broker protects them with
-per-user Windows DPAPI before the Python runtime receives a memory-only credential lease.
+Development fixtures keep the renderer reviewable without credentials or installed models. Fixture
+content is never evidence of a live provider, installed model, durable recovery, or completed task.
 
-For the complete toolchain, runtime setup, and packaging commands, use the
-[development guide](docs/development.md). For an evidence-oriented release-candidate pass, use
-[local testing](docs/local-testing.md).
-
-## Common checks
+## Validation
 
 ```powershell
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-cargo test --manifest-path crates/tool-broker/Cargo.toml
+pnpm format:check
+node scripts/verify.mjs --lane contracts
+node scripts/verify.mjs --lane js
+node scripts/verify.mjs --lane python
+node scripts/verify.mjs --lane rust
 ```
 
-`pnpm check` runs the JavaScript/TypeScript lint, type, and unit-test checks together. After
-installing the documented Python and Rust toolchains, `node scripts/verify.mjs --lane all` runs
-contract drift, JavaScript/TypeScript, Python, and Rust validation. Runtime setup is detailed in
-[development.md](docs/development.md).
+The Rust lane covers both `crates/tool-broker/Cargo.toml` and `apps/desktop/src-tauri/Cargo.toml`.
+Browser-renderer tests remain useful, but native Tauri behavior, window controls, WebView2
+scrollbars, DPI, packaging, and lifecycle require a packaged Windows app plus opened and inspected
+screenshots.
 
-No build result is a visual acceptance test. User-interface work also requires Playwright
-interaction checks, captured screenshots at the required themes and viewports, and human inspection
-of those screenshots.
+## Local unsigned package
+
+These commands are for a disposable local candidate only:
+
+```powershell
+node scripts/package-sidecars.mjs
+pnpm --filter @cupcakeagi/desktop bundle:nsis
+node scripts/smoke-package.mjs --platform win32 --mode bundle
+node scripts/release-candidate-audit.mjs --require-artifacts
+```
+
+Expected output conventions, which must be verified after a successful build:
+
+- executable: `apps/desktop/src-tauri/target/release/CUPCAKEAGI.exe`;
+- installer: `apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe`;
+- disposable profile: set `CUPCAKE_TEST_DATA_DIR` to an explicitly selected new absolute directory
+  below `out/tauri-test-profiles/`.
+
+The commands above currently produce the named executable and one unsigned NSIS installer, and the
+package smoke verifies their sidecar/resource digests. Rebuild them after any source, catalog, or
+sidecar change; never reuse an older artifact as current Tauri evidence.
+
+## Try before upgrading
+
+Provider terms change. The maintained [provider guide](docs/free-tier-guide.md) distinguishes
+published free/trial access from paid access and links to official dashboards. Add keys only through
+the in-app provider flow. Never commit keys, place them in `.env`, include them in screenshots, or
+paste them into diagnostics.
+
+Protecting a key locally does not keep hosted prompts, selected attachments, retrieved context, or
+responses on the device. Those are processed under the selected provider's current terms; the
+provider guide records the required route-specific disclosures.
+
+Cupcake Local has no provider API charge after a model is downloaded, but model licenses, storage,
+RAM/VRAM use, electricity, and download bandwidth still matter.
+
+NVIDIA NIM is an optional evaluation route, never unlimited or the default. Mistral's optional free
+Experiment mode has lower limits and different data-use terms than paid access. Cohere trial keys
+are limited to 1,000 calls per month and are not for production.
 
 ## Documentation
 
 - [User guide](docs/user-guide.md)
 - [Development guide](docs/development.md)
-- [Local release-candidate testing](docs/local-testing.md)
-- [Known issues and release boundaries](docs/known-issues.md)
-- [Architecture decisions and implementation ledger](docs/architecture/)
+- [Corrective local testing](docs/local-testing.md)
+- [Known issues and unfinished gates](docs/known-issues.md)
+- [Architecture decisions](docs/architecture/)
 - [Product contracts](packages/contracts/README.md)
 
-## Roadmap
-
-The 2.0 release-candidate gate is deliberately broad: the desktop shell, provider adapters,
-local-model manager, projects/files/search, memory, artifacts, native and MCP tools, durable tasks,
-Developer Mode, migration, accessibility, security verification, and native packaging must work
-together before approval.
-
-After that gate, likely work includes production signing and update infrastructure, more MCP
-connection recipes, additional Windows acceleration packs, and optional secondary capabilities.
-macOS/Linux parity, voice, and automatic model routing are not part of the 2.0 contract.
-
-## From the original CUPCAKEAGI
-
-![Original CUPCAKEAGI mascot](apps/desktop/public/brand/cupcake-classic.png)
-
-CUPCAKEAGI began in 2023 as an experimental multisensory assistant built around GPT-3.5, a Next.js
-frontend, a Python/FastAPI backend, persistent flat-file state, scheduled tasks, modular
-“Abilities,” emotions, random thoughts, dreams, and a very enthusiastic rainbow cupcake mascot.
-
-2.0 keeps the ideas that made the project distinctive—memory, tools, background work, proactive
-reflection, personality, and the mascot—while replacing the architecture and presentation.
-“Abilities” become permissioned native and MCP tools. Talk and Task become one continuous chat that
-can promote substantial work into a durable task. Thoughts and Dreams become quiet, opt-in memory
-suggestions. The original glossy mascot remains in About and the Classic theme; the everyday
-interface uses the calmer CUPCAKEAGI 2.0 mark.
-
-The original source remains recoverable in Git history and at the `v1.0.0` tag. Legacy data is
-imported once through a constrained importer; old API keys are never imported. The project remains
-licensed under the [Unlicense](LICENSE).
-
-The original `write-the` MkDocs documentation generator is also preserved at the `v1.0.0` tag. It is
-a historical 1.x packaging/documentation tool, not a 2.0 runtime dependency, migration target, or
-compatibility feature, so it is intentionally not carried into the active 2.0 tree.
+The historical 1.x source and `write-the` generator remain at the `v1.0.0` tag. They are not a 2.0
+dependency, migration target, compatibility target, or packaging path.
 
 ## Release policy
 
-Do not publish packages, push a 2.0 release, create a GitHub release, enable a production updater,
-or distribute an installer from this branch before explicit owner approval. A locally packaged
-application is a test artifact, not a release.
+Local testing does not authorize a push, package publication, public download, GitHub release,
+production signature, updater, or artifact distribution. The owner decides whether a fully tested
+corrective build becomes the CUPCAKEAGI 2.0 release candidate.

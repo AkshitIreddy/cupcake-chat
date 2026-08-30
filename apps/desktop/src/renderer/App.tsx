@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   artifacts as fixtureArtifacts,
   conversations as initialConversations,
@@ -30,8 +39,12 @@ import {
   useWorkspace,
   type ArtifactRecord,
   type AttachmentRecord,
+  type HardwareRecord,
+  type LocalRuntimeRecord,
   type MessageRecord,
   type OutboundIntent,
+  type ProviderSetupInput,
+  type ProviderTestResult,
   type ReasoningEffort,
   type ReferenceRecord,
   type SearchRecord,
@@ -160,6 +173,113 @@ function RouteBadge({ route }: { route: 'Cloud' | 'Local' }) {
 
 function StatusDot({ status }: { status: string }) {
   return <span className={cx('status-dot', `status-dot--${status}`)} aria-hidden="true" />;
+}
+
+function useModalFocusTrap(
+  active: boolean,
+  containerRef: RefObject<HTMLElement | null>,
+  onEscape: () => void,
+) {
+  const previousFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    previousFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const container = containerRef.current;
+    const focusable = container?.querySelector<HTMLElement>(
+      '[autofocus], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.focus();
+    const keydown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onEscape();
+        return;
+      }
+      if (event.key !== 'Tab' || !container) return;
+      const items = [
+        ...container.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((item) => item.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0]!;
+      const last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', keydown, true);
+    return () => {
+      document.removeEventListener('keydown', keydown, true);
+      previousFocus.current?.focus();
+    };
+  }, [active, containerRef, onEscape]);
+}
+
+function CupcakeTitlebar() {
+  const [maximized, setMaximized] = useState(false);
+  const refreshMaximized = useCallback(async () => {
+    setMaximized((await window.cupcake?.window?.isMaximized?.()) ?? false);
+  }, []);
+  useEffect(() => {
+    void refreshMaximized();
+    const onResize = () => void refreshMaximized();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [refreshMaximized]);
+  const toggleMaximize = async () => {
+    const next = await window.cupcake?.window?.toggleMaximize?.();
+    setMaximized(next ?? !maximized);
+  };
+  return (
+    <header className="cupcake-titlebar" aria-label="Application window controls">
+      <div className="cupcake-titlebar__identity" aria-hidden="true">
+        <img src="/brand/cupcake-mark.svg" alt="" />
+        <span>CUPCAKEAGI</span>
+      </div>
+      <div
+        className="cupcake-titlebar__drag"
+        data-tauri-drag-region
+        onDoubleClick={() => void toggleMaximize()}
+        aria-hidden="true"
+      />
+      <div className="cupcake-titlebar__controls">
+        <button
+          type="button"
+          className="window-control"
+          aria-label="Minimize window"
+          onClick={() => void window.cupcake?.window?.minimize?.()}
+        >
+          <span aria-hidden="true" className="window-control__minimize" />
+        </button>
+        <button
+          type="button"
+          className="window-control"
+          aria-label={maximized ? 'Restore window' : 'Maximize window'}
+          aria-pressed={maximized}
+          onClick={() => void toggleMaximize()}
+        >
+          <span
+            aria-hidden="true"
+            className={maximized ? 'window-control__restore' : 'window-control__maximize'}
+          />
+        </button>
+        <button
+          type="button"
+          className="window-control window-control--close"
+          aria-label="Close window"
+          onClick={() => void window.cupcake?.window?.close?.()}
+        >
+          <span aria-hidden="true" className="window-control__close" />
+        </button>
+      </div>
+    </header>
+  );
 }
 
 function Toggle({
@@ -1209,7 +1329,7 @@ function ToolCard() {
             <ul>
               <li>DBOS workflow recovery documentation</li>
               <li>SQLite WAL and FTS5 reference</li>
-              <li>Electron security checklist</li>
+              <li>Tauri 2 security and capability reference</li>
             </ul>
           </div>
           <button className="text-button">
@@ -2631,7 +2751,7 @@ function FixtureArtifactsView() {
   const [selected, setSelected] = useState(fixtureArtifacts[0]!);
   const [tab, setTab] = useState<'preview' | 'edit' | 'revisions'>('preview');
   const [content, setContent] = useState(
-    `# CUPCAKEAGI 2.0 architecture\n\nThe application owns its conversations, memories, and artifacts. Framework state remains replaceable.\n\n## Runtime boundaries\n\n- React renderer for presentation\n- Electron main for desktop lifecycle\n- Python runtime for model and workflow orchestration\n- Rust broker for permissions and tool execution\n\n> Project scope is a privacy boundary, not a ranking hint.\n\n## Storage\n\nProduct data lives in encrypted SQLite. Large revisions are immutable, encrypted objects addressed by their content hash.`,
+    `# CUPCAKEAGI 2.0 architecture\n\nThe application owns its conversations, memories, and artifacts. Framework state remains replaceable.\n\n## Runtime boundaries\n\n- React renderer for presentation\n- Tauri Rust host for desktop lifecycle\n- Python runtime for model and workflow orchestration\n- Rust broker for permissions and tool execution\n\n> Project scope is a privacy boundary, not a ranking hint.\n\n## Storage\n\nProduct data lives in encrypted SQLite. Large revisions are immutable, encrypted objects addressed by their content hash.`,
   );
   const [saved, setSaved] = useState(true);
   return (
@@ -2745,7 +2865,7 @@ function FixtureArtifactsView() {
                   <strong>React renderer</strong> for presentation
                 </li>
                 <li>
-                  <strong>Electron main</strong> for desktop lifecycle
+                  <strong>Tauri Rust host</strong> for desktop lifecycle
                 </li>
                 <li>
                   <strong>Python runtime</strong> for model and workflow orchestration
@@ -3135,7 +3255,7 @@ function MemoryView({
             if (!body) return;
             if (looksLikeCredential(body)) {
               setMemoryNotice(
-                'Credentials cannot be saved as memory. Store provider keys through Windows Credential UI.',
+                'Credentials cannot be saved as memory. Store provider keys only through the encrypted provider setup flow.',
               );
               return;
             }
@@ -3397,32 +3517,235 @@ function MemoryView({
   );
 }
 
+type DeviceFit = NonNullable<ModelDescriptor['fit']>;
+
+const fitRank: Record<DeviceFit, number> = {
+  recommended: 0,
+  hybrid: 1,
+  'reduced-context': 2,
+  'cpu-slow': 3,
+  pending: 4,
+  incompatible: 5,
+};
+
+function formatStorage(bytes?: number) {
+  if (!bytes || bytes <= 0) return 'Not reported';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: index > 2 ? 1 : 0 }).format(bytes / 1024 ** index)} ${units[index]}`;
+}
+
+function deviceFit(
+  model: ModelDescriptor,
+  hardware?: HardwareRecord | null,
+): { fit: DeviceFit; fitReason: string } {
+  if (model.route !== 'Local')
+    return { fit: 'recommended', fitReason: 'Runs through its cloud provider.' };
+  if (!hardware?.ramBytes) {
+    return {
+      fit: 'pending',
+      fitReason: 'Complete the device scan before Cupcake recommends a runtime profile.',
+    };
+  }
+  const file = model.estimatedDiskBytes ?? model.fileSizeBytes;
+  const ram = model.estimatedRamBytes ?? (file ? Math.ceil(file * 1.25) : undefined);
+  const vram = model.estimatedVramBytes ?? ram;
+  if (file && hardware.diskAvailableBytes && hardware.diskAvailableBytes < file * 1.12) {
+    return {
+      fit: 'incompatible',
+      fitReason: `Needs ${formatStorage(Math.ceil(file * 1.12))} free including download headroom; ${formatStorage(hardware.diskAvailableBytes)} is available.`,
+    };
+  }
+  if (!ram) {
+    return {
+      fit: 'pending',
+      fitReason: 'This catalog entry does not include a memory estimate yet.',
+    };
+  }
+  if (hardware.ramBytes < ram * 0.78) {
+    return {
+      fit: 'incompatible',
+      fitReason: `Estimated memory is ${formatStorage(ram)}; this device reports ${formatStorage(hardware.ramBytes)}.`,
+    };
+  }
+  if (hardware.vramBytes && vram && hardware.vramBytes >= vram) {
+    return {
+      fit: 'recommended',
+      fitReason: `Fits the ${formatStorage(hardware.vramBytes)} detected VRAM profile with the published estimate.`,
+    };
+  }
+  if (hardware.vramBytes && vram && hardware.vramBytes >= vram * 0.55 && hardware.ramBytes >= ram) {
+    return {
+      fit: 'hybrid',
+      fitReason:
+        'Fits by sharing weights between detected GPU memory and system RAM; speed will vary by backend.',
+    };
+  }
+  if (hardware.ramBytes >= ram * 1.25) {
+    return {
+      fit: 'cpu-slow',
+      fitReason:
+        'Fits system RAM, but no complete GPU fit was detected; expect a slower CPU-heavy load.',
+    };
+  }
+  return {
+    fit: 'reduced-context',
+    fitReason:
+      'Memory is close to the published estimate. Start with a smaller context window and close other heavy apps.',
+  };
+}
+
+function modelStatusLabel(status: ModelDescriptor['status']) {
+  const labels: Record<ModelDescriptor['status'], string> = {
+    catalog: 'Available',
+    incompatible: 'Does not fit',
+    setup: 'Needs setup',
+    download: 'Downloading',
+    paused: 'Paused',
+    verifying: 'Checking SHA-256',
+    'checksum-failed': 'Checksum failed',
+    installed: 'Installed',
+    loading: 'Loading',
+    ready: 'Loaded',
+    benchmarked: 'Benchmarked',
+    unloading: 'Unloading',
+    removing: 'Removing',
+    offline: 'Not loaded',
+    error: 'Needs recovery',
+  };
+  return labels[status];
+}
+
+function modelSize(model: ModelDescriptor): 'compact' | 'balanced' | 'large' {
+  const parameterCount = Number.parseFloat(model.parameters ?? '0');
+  if (parameterCount > 0 && parameterCount <= 5) return 'compact';
+  if (parameterCount > 10) return 'large';
+  return 'balanced';
+}
+
+function providerDialogId(provider: string) {
+  const ids: Record<string, string> = {
+    OpenAI: 'openai',
+    Anthropic: 'anthropic',
+    Google: 'google',
+    xAI: 'xai',
+    Mistral: 'mistral',
+    Cohere: 'cohere',
+    'NVIDIA NIM': 'nvidia-nim',
+  };
+  return ids[provider] ?? 'openai-compatible';
+}
+
 function ModelsView({
   models,
   selectModel,
+  openProvider,
 }: {
   models: ModelDescriptor[];
   selectModel: (id: string, options?: { compatibilityConfirmed?: boolean }) => Promise<void>;
+  openProvider: (provider: string) => void;
 }) {
   const workspace = useWorkspace();
   const [tab, setTab] = useState<'all' | 'cloud' | 'local'>('all');
   const [modelQuery, setModelQuery] = useState('');
-  const [benchmark, setBenchmark] = useState(false);
-  const [providerCatalog, setProviderCatalog] = useState(false);
-  const [compatible, setCompatible] = useState({ name: '', baseUrl: '', modelId: '' });
+  const [taskFilter, setTaskFilter] = useState('all');
+  const [sizeFilter, setSizeFilter] = useState('all');
+  const [fitFilter, setFitFilter] = useState('all');
+  const [licenseFilter, setLicenseFilter] = useState('all');
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<ModelDescriptor | null>(null);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [workingId, setWorkingId] = useState<string | null>(null);
   const [pendingCompatibility, setPendingCompatibility] = useState<ModelDescriptor | null>(null);
   const [compatibilityAcknowledged, setCompatibilityAcknowledged] = useState(false);
-  const shown = models.filter(
-    (m) =>
-      (tab === 'all' || m.route.toLowerCase() === tab) &&
-      `${m.name} ${m.provider} ${m.tags.join(' ')}`
-        .toLowerCase()
-        .includes(modelQuery.toLowerCase()),
+  const [pendingRuntime, setPendingRuntime] = useState<LocalRuntimeRecord | null>(null);
+  const [runtimeTermsAccepted, setRuntimeTermsAccepted] = useState(false);
+  const installRef = useRef<HTMLElement>(null);
+  const removeRef = useRef<HTMLElement>(null);
+  const runtimeInstallRef = useRef<HTMLElement>(null);
+  const closeInstall = useCallback(() => {
+    setPendingDownload(null);
+    setLicenseAccepted(false);
+  }, []);
+  const closeRemove = useCallback(() => setPendingRemove(null), []);
+  const closeRuntimeInstall = useCallback(() => {
+    setPendingRuntime(null);
+    setRuntimeTermsAccepted(false);
+  }, []);
+  useModalFocusTrap(Boolean(pendingDownload), installRef, closeInstall);
+  useModalFocusTrap(Boolean(pendingRemove), removeRef, closeRemove);
+  useModalFocusTrap(Boolean(pendingRuntime), runtimeInstallRef, closeRuntimeInstall);
+
+  const rankedModels = useMemo(
+    () =>
+      models
+        .map((model) => ({
+          ...model,
+          ...(model.route === 'Local' ? deviceFit(model, workspace.hardware) : {}),
+        }))
+        .sort((a, b) => {
+          if (a.route !== b.route) return a.route === 'Local' ? -1 : 1;
+          const fitDifference = fitRank[a.fit ?? 'pending'] - fitRank[b.fit ?? 'pending'];
+          if (fitDifference) return fitDifference;
+          if (a.route === 'Local' && b.route === 'Local') {
+            const memoryDifference =
+              (a.estimatedRamBytes ?? Number.MAX_SAFE_INTEGER) -
+              (b.estimatedRamBytes ?? Number.MAX_SAFE_INTEGER);
+            if (memoryDifference) return memoryDifference;
+          }
+          return a.name.localeCompare(b.name);
+        }),
+    [models, workspace.hardware],
   );
+  const shown = rankedModels.filter((model) => {
+    const searchable =
+      `${model.name} ${model.provider} ${model.tags.join(' ')} ${model.license ?? ''}`.toLowerCase();
+    return (
+      (tab === 'all' || model.route.toLowerCase() === tab) &&
+      (taskFilter === 'all' || model.tags.some((tag) => tag.toLowerCase() === taskFilter)) &&
+      (sizeFilter === 'all' || modelSize(model) === sizeFilter) &&
+      (fitFilter === 'all' || model.route !== 'Local' || model.fit === fitFilter) &&
+      (licenseFilter === 'all' ||
+        (model.license ?? '').toLowerCase().includes(licenseFilter.toLowerCase())) &&
+      searchable.includes(modelQuery.trim().toLowerCase())
+    );
+  });
+  const installedLocal = rankedModels.find(
+    (model) =>
+      model.route === 'Local' &&
+      ['installed', 'ready', 'benchmarked', 'offline'].includes(model.status),
+  );
+
+  const runAction = async (
+    action:
+      | 'download'
+      | 'load'
+      | 'unload'
+      | 'remove'
+      | 'status'
+      | 'benchmark'
+      | 'pause'
+      | 'resume'
+      | 'cancel'
+      | 'reset',
+    model: ModelDescriptor,
+  ) => {
+    if (workingId) return;
+    setActionError(null);
+    setWorkingId(model.id);
+    try {
+      await workspace.runModelAction(action, model.runtimeModelId ?? model.id);
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error ? reason.message : `Cupcake could not ${action} ${model.name}.`,
+      );
+    } finally {
+      setWorkingId(null);
+    }
+  };
   const performSelection = async (model: ModelDescriptor, acknowledged = false) => {
     if (selectingId) return;
     if (requiresCompatibilityAcknowledgement(model) && !acknowledged) {
@@ -3435,9 +3758,7 @@ function ModelsView({
     setSelectingId(model.id);
     try {
       const params = modelSelectionParams(model, acknowledged);
-      await selectModel(params.modelId, {
-        compatibilityConfirmed: params.compatibilityConfirmed,
-      });
+      await selectModel(params.modelId, { compatibilityConfirmed: params.compatibilityConfirmed });
       setPendingCompatibility(null);
       setCompatibilityAcknowledged(false);
     } catch (reason) {
@@ -3448,13 +3769,90 @@ function ModelsView({
       setSelectingId(null);
     }
   };
+
+  const primaryAction = (model: ModelDescriptor) => {
+    const busy = workingId === model.id;
+    if (model.selected)
+      return (
+        <span className="selected-label">
+          <Icon name="check" />
+          Default model
+        </span>
+      );
+    if (model.route === 'Cloud' && model.status === 'setup')
+      return (
+        <button className="button" onClick={() => openProvider(providerDialogId(model.provider))}>
+          Connect provider
+        </button>
+      );
+    if (model.route === 'Cloud' || ['ready', 'benchmarked'].includes(model.status))
+      return (
+        <button
+          className="button"
+          disabled={Boolean(selectingId)}
+          aria-busy={selectingId === model.id}
+          onClick={() => void performSelection(model)}
+        >
+          {selectingId === model.id ? 'Selecting…' : 'Make default'}
+        </button>
+      );
+    if (model.status === 'catalog' || model.status === 'incompatible')
+      return (
+        <button
+          className="button"
+          disabled={model.fit === 'incompatible'}
+          onClick={() => setPendingDownload(model)}
+        >
+          {model.fit === 'incompatible' ? 'Does not fit' : 'Review install'}
+        </button>
+      );
+    if (model.status === 'download' || model.status === 'verifying')
+      return (
+        <button className="button" disabled={busy} onClick={() => void runAction('status', model)}>
+          Check status
+        </button>
+      );
+    if (model.status === 'paused')
+      return (
+        <button className="button" disabled={busy} onClick={() => void runAction('resume', model)}>
+          Resume download
+        </button>
+      );
+    if (model.status === 'checksum-failed')
+      return (
+        <button className="button" disabled={busy} onClick={() => void runAction('reset', model)}>
+          Discard and retry
+        </button>
+      );
+    if (model.status === 'installed' || model.status === 'offline')
+      return (
+        <button className="button" disabled={busy} onClick={() => void runAction('load', model)}>
+          {busy ? 'Loading…' : 'Load model'}
+        </button>
+      );
+    if (model.status === 'error')
+      return (
+        <button className="button" disabled={busy} onClick={() => void runAction('resume', model)}>
+          Retry download
+        </button>
+      );
+    return (
+      <button className="button" disabled>
+        {modelStatusLabel(model.status)}
+      </button>
+    );
+  };
+
   return (
-    <main className="page">
+    <main className="page models-page">
       <div className="page-intro">
         <div>
-          <p className="eyebrow">You choose every time</p>
+          <p className="eyebrow">Explicit routing · verified local catalog</p>
           <h2>Models</h2>
-          <p>Cloud and local models share one workspace. Cupcake never routes automatically.</p>
+          <p>
+            Choose a cloud model or install a signed Cupcake Local model. Cupcake never changes
+            routes automatically.
+          </p>
         </div>
         <div className="page-intro__actions">
           <button
@@ -3465,406 +3863,639 @@ function ModelsView({
             <Icon name="retry" />
             {workspace.busy ? 'Refreshing…' : 'Refresh catalog'}
           </button>
-          <button className="button button--primary" onClick={() => setProviderCatalog(true)}>
+          <button className="button button--primary" onClick={() => openProvider('choose')}>
             <Icon name="plus" />
             Add provider
           </button>
         </div>
       </div>
-      <section className="hardware-card">
+
+      <section
+        className={cx('hardware-card', !workspace.hardware?.ramBytes && 'is-pending')}
+        aria-live="polite"
+      >
         <div className="hardware-card__art">
           <span className="chip-lines" />
           <Icon name="local" size={34} />
         </div>
         <div>
           <span className="eyebrow">This computer</span>
-          <h3>Ready for strong local models</h3>
-          <p>
-            {workspace.hardware?.gpu ?? 'GPU detection pending'} ·{' '}
-            {workspace.hardware?.vramBytes
-              ? `${(workspace.hardware.vramBytes / 1024 ** 3).toFixed(1)} GB VRAM`
-              : 'VRAM unknown'}{' '}
-            ·{' '}
+          <h3>
             {workspace.hardware?.ramBytes
-              ? `${(workspace.hardware.ramBytes / 1024 ** 3).toFixed(1)} GB system RAM`
-              : 'RAM detection pending'}
+              ? 'Device profile detected'
+              : 'Scanning device compatibility'}
+          </h3>
+          <p>
+            {workspace.hardware?.cpu ?? 'Processor detection pending'}
+            {workspace.hardware?.cpuArchitecture
+              ? ` · ${workspace.hardware.cpuArchitecture}`
+              : ''}{' '}
+            · {workspace.hardware?.gpu ?? 'GPU detection pending'}
           </p>
           <div className="hardware-tags">
-            <span>7–9B Q4 recommended</span>
-            <span>12–14B possible</span>
+            <span>
+              {workspace.hardware?.ramBytes
+                ? `${formatStorage(workspace.hardware.ramBytes)} RAM`
+                : 'RAM pending'}
+            </span>
+            <span>
+              {workspace.hardware?.vramBytes
+                ? `${formatStorage(workspace.hardware.vramBytes)} VRAM`
+                : 'Dedicated VRAM not reported'}
+            </span>
+            <span>
+              {workspace.hardware?.diskAvailableBytes
+                ? `${formatStorage(workspace.hardware.diskAvailableBytes)} disk free`
+                : 'Disk scan pending'}
+            </span>
             {(workspace.hardware?.acceleration ?? []).map((item) => (
-              <span key={item}>{item} available</span>
+              <span key={item}>{item}</span>
             ))}
           </div>
         </div>
         <div className="hardware-meter">
           <span>
             <strong>
-              {workspace.hardware?.vramBytes
-                ? (workspace.hardware.vramBytes / 1024 ** 3).toFixed(1)
-                : '—'}
+              {workspace.hardware?.vramBytes ? formatStorage(workspace.hardware.vramBytes) : '—'}
             </strong>{' '}
-            GB detected
+            detected VRAM
           </span>
           <div>
-            <i />
+            <i
+              style={{
+                width:
+                  workspace.hardware?.vramBytes && workspace.hardware?.ramBytes
+                    ? `${Math.min(100, Math.round((workspace.hardware.vramBytes / workspace.hardware.ramBytes) * 100))}%`
+                    : '0%',
+              }}
+            />
           </div>
-          <small>Measured hardware informs model headroom checks.</small>
+          <small>
+            {workspace.hardware?.windowsVersion ??
+              workspace.hardware?.os ??
+              'Waiting for the runtime hardware report.'}
+          </small>
         </div>
         <button
           className="button"
-          onClick={() => {
-            setBenchmark(true);
-            const local = models.find((item) => item.route === 'Local');
-            if (local) void workspace.runModelAction('benchmark', local.runtimeModelId ?? local.id);
-          }}
+          disabled={!installedLocal || Boolean(workingId)}
+          onClick={() => installedLocal && void runAction('benchmark', installedLocal)}
         >
-          {benchmark ? 'Benchmark requested' : 'Run benchmark'}
+          {workingId === installedLocal?.id
+            ? 'Benchmarking…'
+            : installedLocal
+              ? `Benchmark ${installedLocal.name}`
+              : 'Install a model to benchmark'}
         </button>
       </section>
-      <div className="toolbar">
-        <div className="segmented">
-          {(['all', 'cloud', 'local'] as const).map((t) => (
-            <button className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)} key={t}>
-              {t === 'all' ? 'All models' : cap(t)}
+
+      <section className="runtime-packs" aria-labelledby="runtime-packs-title">
+        <header>
+          <div>
+            <span className="eyebrow">App-managed acceleration</span>
+            <h3 id="runtime-packs-title">Local inference runtime</h3>
+          </div>
+          <p>
+            The signed CPU baseline is always available. Optional GPU packs are verified and kept
+            inside Cupcake—no third-party model server is required.
+          </p>
+        </header>
+        <div className="runtime-pack-grid">
+          {workspace.localRuntimes.map((runtime) => (
+            <article
+              className={cx(
+                'runtime-pack',
+                runtime.active && 'is-active',
+                runtime.compatible === false && 'is-incompatible',
+              )}
+              key={runtime.id}
+            >
+              <div>
+                <Icon name={runtime.backend?.startsWith('cuda') ? 'sparkle' : 'local'} />
+                <span>
+                  <strong>{runtime.name}</strong>
+                  <small>
+                    {runtime.active
+                      ? 'Active runtime'
+                      : runtime.status === 'installed'
+                        ? 'Installed'
+                        : runtime.recommended
+                          ? 'Recommended for this device'
+                          : cap(runtime.status.replace('-', ' '))}
+                  </small>
+                </span>
+              </div>
+              <p>{runtime.detail || 'Verified against the detected Windows hardware profile.'}</p>
+              <footer>
+                <span>{formatStorage(runtime.totalDownloadBytes ?? runtime.sizeBytes)}</span>
+                {runtime.active ? (
+                  <span className="selected-label">
+                    <Icon name="check" /> Active
+                  </span>
+                ) : runtime.status === 'installed' ? (
+                  <button
+                    className="button"
+                    disabled={workspace.busy}
+                    onClick={() => void workspace.activateRuntimePack(runtime)}
+                  >
+                    Activate
+                  </button>
+                ) : (
+                  <button
+                    className="button"
+                    disabled={runtime.compatible === false || workspace.busy}
+                    onClick={() => setPendingRuntime(runtime)}
+                  >
+                    Review pack
+                  </button>
+                )}
+              </footer>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className="toolbar model-toolbar">
+        <div className="segmented" aria-label="Model location">
+          {(['all', 'cloud', 'local'] as const).map((value) => (
+            <button
+              className={tab === value ? 'is-active' : ''}
+              aria-pressed={tab === value}
+              onClick={() => setTab(value)}
+              key={value}
+            >
+              {value === 'all' ? 'All models' : cap(value)}
             </button>
           ))}
         </div>
-        <div className="search-field">
+        <label className="filter-field">
+          <span>Task</span>
+          <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
+            <option value="all">Any task</option>
+            <option value="coding">Coding</option>
+            <option value="reasoning">Reasoning</option>
+            <option value="vision">Vision</option>
+            <option value="tools">Tools</option>
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>Size</span>
+          <select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}>
+            <option value="all">Any size</option>
+            <option value="compact">Compact</option>
+            <option value="balanced">Balanced</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>Device fit</span>
+          <select value={fitFilter} onChange={(event) => setFitFilter(event.target.value)}>
+            <option value="all">Any fit</option>
+            <option value="recommended">Recommended</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="reduced-context">Reduced context</option>
+            <option value="cpu-slow">CPU-heavy</option>
+            <option value="pending">Scan pending</option>
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>License</span>
+          <select value={licenseFilter} onChange={(event) => setLicenseFilter(event.target.value)}>
+            <option value="all">Any license</option>
+            <option value="Apache-2.0">Apache 2.0</option>
+            <option value="MIT">MIT</option>
+            <option value="Llama">Llama community</option>
+            <option value="Gemma">Gemma terms</option>
+          </select>
+        </label>
+        <label className="search-field">
           <Icon name="search" />
+          <span className="sr-only">Find a model</span>
           <input
             placeholder="Find a model"
             value={modelQuery}
             onChange={(event) => setModelQuery(event.target.value)}
           />
-        </div>
+        </label>
       </div>
-      <div className="model-grid">
-        {shown.map((model) => (
-          <article className={cx('model-card', model.selected && 'is-selected')} key={model.id}>
-            <header>
-              <span
-                className={cx(
-                  'provider-logo',
-                  `provider-logo--${model.provider.toLowerCase().replaceAll(' ', '-')}`,
-                )}
-              >
-                {model.provider.charAt(0)}
-              </span>
-              <div>
-                <span>{model.provider}</span>
-                <h3>{model.name}</h3>
-              </div>
-              <RouteBadge route={model.route} />
-            </header>
-            <p>{model.description}</p>
-            <div className="model-tags">
-              {model.tags.map((t) => (
-                <span key={t}>{t}</span>
-              ))}
-            </div>
-            <dl>
-              <div>
-                <dt>Context</dt>
-                <dd>{model.context}</dd>
-              </div>
-              <div>
-                <dt>Cost</dt>
-                <dd>{model.cost}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>
-                  <StatusDot status={model.status} />
-                  {model.status === 'setup' ? 'Needs setup' : cap(model.status)}
-                </dd>
-              </div>
-            </dl>
-            {model.download && model.download.totalBytes > 0 && (
-              <div className="download-progress">
-                <div>
-                  <i
-                    style={{
-                      width: `${Math.round((model.download.bytesReceived / model.download.totalBytes) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <span>
-                  {Math.round((model.download.bytesReceived / model.download.totalBytes) * 100)}% ·{' '}
-                  {(model.download.bytesReceived / 1024 ** 3).toFixed(2)} of{' '}
-                  {(model.download.totalBytes / 1024 ** 3).toFixed(2)} GB
-                  {model.download.bytesPerSecond
-                    ? ` · ${(model.download.bytesPerSecond / 1024 ** 2).toFixed(1)} MB/s`
-                    : ''}{' '}
-                  · checksum {model.download.checksumState ?? 'pending'}
-                </span>
-                <button
-                  aria-label={`${model.download.state === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
-                  onClick={() =>
-                    void workspace.runModelAction(
-                      model.download?.state === 'paused' ? 'resume' : 'pause',
-                      model.runtimeModelId ?? model.id,
-                    )
-                  }
-                >
-                  <Icon name={model.download.state === 'paused' ? 'play' : 'pause'} />
-                </button>
-                <button
-                  aria-label={`Cancel download for ${model.name}`}
-                  onClick={() =>
-                    void workspace.runModelAction('cancel', model.runtimeModelId ?? model.id)
-                  }
-                >
-                  <Icon name="x" />
-                </button>
-              </div>
-            )}
-            <footer>
-              {model.selected ? (
-                <span className="selected-label">
-                  <Icon name="check" />
-                  Default model
-                </span>
-              ) : model.status === 'ready' ? (
-                <button
-                  className="button"
-                  disabled={selectingId !== null}
-                  aria-busy={selectingId === model.id}
-                  onClick={() => void performSelection(model)}
-                >
-                  {selectingId === model.id ? 'Selecting…' : 'Make default'}
-                </button>
-              ) : model.status === 'download' ? (
-                <button
-                  className="button"
-                  onClick={() =>
-                    void workspace.runModelAction('status', model.runtimeModelId ?? model.id)
-                  }
-                >
-                  Check download
-                </button>
-              ) : model.status === 'offline' ? (
-                <button
-                  className="button"
-                  onClick={() =>
-                    void workspace.runModelAction('load', model.runtimeModelId ?? model.id)
-                  }
-                >
-                  Load model
-                </button>
-              ) : (
-                <button
-                  className="button"
-                  onClick={() =>
-                    model.route === 'Local'
-                      ? setPendingDownload(model)
-                      : void workspace.runModelAction('status', model.runtimeModelId ?? model.id)
-                  }
-                >
-                  {model.route === 'Local' ? 'Review download' : 'Set up'}
-                </button>
-              )}
-              <button
-                className="icon-button"
-                aria-label={`Remove ${model.name}`}
-                onClick={() =>
-                  void workspace.runModelAction('remove', model.runtimeModelId ?? model.id)
-                }
-                disabled={model.route !== 'Local'}
-              >
-                <Icon name="trash" />
-              </button>
-            </footer>
-          </article>
-        ))}
-      </div>
-      {selectionError && (
-        <p className="field-error" role="alert">
-          {selectionError}
+
+      {(selectionError || actionError) && (
+        <p className="field-error model-page-error" role="alert">
+          {selectionError ?? actionError}
         </p>
       )}
-      {providerCatalog && (
-        <div
-          className="popover-layer"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setProviderCatalog(false);
-          }}
-        >
-          <section
-            className="provider-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add model provider"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Explicit provider setup</span>
-                <h2>Add a provider</h2>
-              </div>
-              <button
-                className="icon-button"
-                onClick={() => setProviderCatalog(false)}
-                aria-label="Close provider catalog"
+      {shown.length ? (
+        <div className="model-grid">
+          {shown.map((model) => {
+            const fit = model.fit ?? 'pending';
+            const progress = model.download?.totalBytes
+              ? Math.min(
+                  100,
+                  Math.round((model.download.bytesReceived / model.download.totalBytes) * 100),
+                )
+              : 0;
+            const removable =
+              model.route === 'Local' &&
+              ![
+                'catalog',
+                'download',
+                'paused',
+                'verifying',
+                'loading',
+                'unloading',
+                'removing',
+              ].includes(model.status);
+            return (
+              <article
+                className={cx(
+                  'model-card',
+                  model.selected && 'is-selected',
+                  model.fit === 'incompatible' && 'is-incompatible',
+                )}
+                key={model.id}
               >
-                <Icon name="x" />
-              </button>
-            </header>
-            <div className="model-picker__list">
-              {(
-                [
-                  ['openai', 'OpenAI'],
-                  ['anthropic', 'Anthropic'],
-                  ['google', 'Google Gemini'],
-                  ['xai', 'xAI'],
-                  ['mistral', 'Mistral'],
-                  ['cohere', 'Cohere'],
-                  ['nvidia-nim', 'NVIDIA NIM'],
-                ] as const
-              ).map(([id, name]) => (
-                <button key={id} onClick={() => void workspace.connectProvider(id)}>
-                  <span className="provider-logo">{name[0]}</span>
-                  <span>
-                    <strong>{name}</strong>
-                    <small>
-                      Cloud ·{' '}
-                      {id === 'nvidia-nim'
-                        ? 'Recommended for experimentation: one key, many hosted models · trial/evaluation only · catalog/terms vary'
-                        : 'provider pricing and privacy terms apply'}{' '}
-                      · credentials stay broker-owned
-                    </small>
+                <header>
+                  <span
+                    className={cx(
+                      'provider-logo',
+                      model.route === 'Local' && 'provider-logo--cupcake-local',
+                    )}
+                  >
+                    {model.route === 'Local' ? <Icon name="local" /> : model.provider.charAt(0)}
                   </span>
-                  <RouteBadge route="Cloud" />
-                </button>
-              ))}
-            </div>
-            <div className="settings-section">
-              <header>
-                <h3>OpenAI-compatible endpoint</h3>
-                <p>
-                  Nonsecret endpoint metadata is validated here. Any key is collected separately by
-                  Windows Credential UI.
-                </p>
-              </header>
-              <label>
-                Name
-                <input
-                  value={compatible.name}
-                  onChange={(event) =>
-                    setCompatible((value) => ({ ...value, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Base URL
-                <input
-                  value={compatible.baseUrl}
-                  onChange={(event) =>
-                    setCompatible((value) => ({ ...value, baseUrl: event.target.value }))
-                  }
-                  placeholder="https://host.example/v1 or http://localhost:port/v1"
-                />
-              </label>
-              <label>
-                Model ID
-                <input
-                  value={compatible.modelId}
-                  onChange={(event) =>
-                    setCompatible((value) => ({ ...value, modelId: event.target.value }))
-                  }
-                />
-              </label>
-              <button
-                className="button"
-                onClick={() => void workspace.configureCompatibleProvider(compatible)}
-              >
-                Validate and test
-              </button>
-            </div>
-          </section>
+                  <div>
+                    <span>{model.provider}</span>
+                    <h3>{model.name}</h3>
+                  </div>
+                  <RouteBadge route={model.route} />
+                </header>
+                {model.route === 'Local' && (
+                  <div className={cx('model-fit', `model-fit--${fit}`)}>
+                    <strong>
+                      {fit === 'pending' ? 'Device scan pending' : cap(fit.replace('-', ' '))}
+                    </strong>
+                    <span>{model.fitReason}</span>
+                  </div>
+                )}
+                <p>{model.description}</p>
+                <div className="model-tags">
+                  {model.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                  {model.quantization && <em>{model.quantization}</em>}
+                  {model.parameters && <em>{model.parameters}</em>}
+                </div>
+                <dl className="model-specs">
+                  <div>
+                    <dt>Context</dt>
+                    <dd>{model.context}</dd>
+                  </div>
+                  <div>
+                    <dt>{model.route === 'Local' ? 'Download' : 'Cost'}</dt>
+                    <dd>
+                      {model.route === 'Local'
+                        ? formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
+                        : model.cost}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>
+                      <StatusDot status={model.status} />
+                      {modelStatusLabel(model.status)}
+                    </dd>
+                  </div>
+                  {model.route === 'Local' && (
+                    <>
+                      <div>
+                        <dt>RAM estimate</dt>
+                        <dd>{formatStorage(model.estimatedRamBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>VRAM estimate</dt>
+                        <dd>{formatStorage(model.estimatedVramBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>License</dt>
+                        <dd>{model.license ?? 'See catalog'}</dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+                {model.download && model.download.totalBytes > 0 && (
+                  <div className="download-progress" aria-label={`${model.name} download`}>
+                    <div
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progress}
+                    >
+                      <i style={{ width: `${progress}%` }} />
+                    </div>
+                    <span>
+                      {progress}% · {formatStorage(model.download.bytesReceived)} of{' '}
+                      {formatStorage(model.download.totalBytes)}
+                      {model.download.bytesPerSecond
+                        ? ` · ${formatStorage(model.download.bytesPerSecond)}/s`
+                        : ''}
+                      <br />
+                      Checksum: {model.download.checksumState ?? 'pending'}
+                    </span>
+                    <button
+                      aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
+                      onClick={() =>
+                        void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
+                      }
+                    >
+                      <Icon name={model.status === 'paused' ? 'play' : 'pause'} />
+                    </button>
+                    <button
+                      aria-label={`Cancel download for ${model.name}`}
+                      onClick={() => void runAction('cancel', model)}
+                    >
+                      <Icon name="x" />
+                    </button>
+                  </div>
+                )}
+                {model.benchmark && (
+                  <p className="benchmark-result">
+                    <strong>{model.benchmark.tokensPerSecond.toFixed(1)} tok/s</strong> ·{' '}
+                    {model.benchmark.contextTokens.toLocaleString()} token test ·{' '}
+                    {new Date(model.benchmark.measuredAt).toLocaleDateString()}
+                  </p>
+                )}
+                <footer>
+                  <div className="model-actions">
+                    {primaryAction(model)}
+                    {['ready', 'benchmarked'].includes(model.status) && model.route === 'Local' && (
+                      <button
+                        className="button button--quiet"
+                        disabled={workingId === model.id}
+                        onClick={() => void runAction('unload', model)}
+                      >
+                        Unload
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    className="icon-button"
+                    aria-label={`Remove ${model.name}`}
+                    onClick={() => setPendingRemove(model)}
+                    disabled={!removable}
+                  >
+                    <Icon name="trash" />
+                  </button>
+                </footer>
+              </article>
+            );
+          })}
         </div>
+      ) : (
+        <section className="empty-state model-empty">
+          <Icon name="model" size={30} />
+          <h3>No models match these filters</h3>
+          <p>
+            Clear a filter or refresh the signed catalog. Cupcake Local remains available without a
+            third-party model server.
+          </p>
+          <button
+            className="button"
+            onClick={() => {
+              setTab('all');
+              setTaskFilter('all');
+              setSizeFilter('all');
+              setFitFilter('all');
+              setLicenseFilter('all');
+              setModelQuery('');
+            }}
+          >
+            Clear filters
+          </button>
+        </section>
       )}
+
       {pendingDownload && (
         <div className="popover-layer">
           <section
-            className="provider-dialog"
+            ref={installRef}
+            className="provider-dialog model-install-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Review local model download"
+            aria-labelledby="model-install-title"
           >
             <header>
               <div>
-                <span className="eyebrow">Verified local model catalog</span>
-                <h2>Review {pendingDownload.name}</h2>
+                <span className="eyebrow">Signed Cupcake Local catalog</span>
+                <h2 id="model-install-title">Review {pendingDownload.name}</h2>
+              </div>
+              <button className="icon-button" onClick={closeInstall} aria-label="Cancel install">
+                <Icon name="x" />
+              </button>
+            </header>
+            <div className={cx('model-fit', `model-fit--${pendingDownload.fit ?? 'pending'}`)}>
+              <strong>
+                {pendingDownload.fit === 'pending'
+                  ? 'Device scan pending'
+                  : cap((pendingDownload.fit ?? 'pending').replace('-', ' '))}
+              </strong>
+              <span>{pendingDownload.fitReason}</span>
+            </div>
+            <dl className="permission-list">
+              <div>
+                <dt>Catalog source</dt>
+                <dd>{pendingDownload.source ?? 'Cupcake Local signed catalog'}</dd>
+              </div>
+              <div>
+                <dt>Artifact</dt>
+                <dd>
+                  {pendingDownload.parameters ?? 'Size not reported'} ·{' '}
+                  {pendingDownload.quantization ?? 'Quantization not reported'} ·{' '}
+                  {formatStorage(pendingDownload.fileSizeBytes)}
+                </dd>
+              </div>
+              <div>
+                <dt>Memory estimate</dt>
+                <dd>
+                  {formatStorage(pendingDownload.estimatedRamBytes)} RAM ·{' '}
+                  {formatStorage(pendingDownload.estimatedVramBytes)} VRAM ·{' '}
+                  {formatStorage(pendingDownload.estimatedDiskBytes)} disk
+                </dd>
+              </div>
+              <div>
+                <dt>Integrity</dt>
+                <dd>
+                  Catalog signature is checked before download; SHA-256 is checked before install.
+                </dd>
+              </div>
+              <div>
+                <dt>License</dt>
+                <dd>
+                  {pendingDownload.license ?? 'Open the catalog source to review the model terms.'}
+                </dd>
+              </div>
+            </dl>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={licenseAccepted}
+                onChange={(event) => setLicenseAccepted(event.target.checked)}
+              />
+              <span>I reviewed this catalog entry, its license, and the storage estimate.</span>
+            </label>
+            <footer>
+              <button className="button" onClick={closeInstall}>
+                Cancel
+              </button>
+              <span />
+              <button
+                className="button button--primary"
+                disabled={
+                  !licenseAccepted ||
+                  pendingDownload.fit === 'incompatible' ||
+                  workingId === pendingDownload.id
+                }
+                onClick={() => {
+                  void runAction('download', pendingDownload);
+                  closeInstall();
+                }}
+              >
+                Start verified download
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {pendingRuntime && (
+        <div className="popover-layer">
+          <section
+            ref={runtimeInstallRef}
+            className="provider-dialog model-install-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="runtime-install-title"
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Signed acceleration component</span>
+                <h2 id="runtime-install-title">Install {pendingRuntime.name}?</h2>
               </div>
               <button
                 className="icon-button"
-                onClick={() => setPendingDownload(null)}
-                aria-label="Cancel download"
+                onClick={closeRuntimeInstall}
+                aria-label="Cancel runtime install"
               >
                 <Icon name="x" />
               </button>
             </header>
             <dl className="permission-list">
               <div>
-                <dt>Catalog provenance</dt>
-                <dd>
-                  {pendingDownload.description ||
-                    'Catalog metadata unavailable — download blocked until verified.'}
-                </dd>
+                <dt>Download</dt>
+                <dd>{formatStorage(pendingRuntime.totalDownloadBytes)}</dd>
               </div>
               <div>
-                <dt>Quantization</dt>
-                <dd>
-                  {pendingDownload.tags.find((tag) => /Q\d|quant/i.test(tag)) ?? 'Not reported'}
-                </dd>
+                <dt>Integrity</dt>
+                <dd>Signed catalog, pinned revision, SHA-256, and per-file hashes.</dd>
               </div>
               <div>
-                <dt>Context</dt>
-                <dd>{pendingDownload.context}</dd>
+                <dt>License</dt>
+                <dd>{pendingRuntime.license ?? 'See the pinned upstream catalog.'}</dd>
               </div>
-              <div>
-                <dt>RAM / VRAM / disk estimate</dt>
-                <dd>Runtime preflight required before bytes are downloaded.</dd>
-              </div>
-              <div>
-                <dt>Version and checksum</dt>
-                <dd>Verified by catalog signature and SHA-256 during download.</dd>
-              </div>
-              <div>
-                <dt>Suitability</dt>
-                <dd>
-                  {pendingDownload.tags.find((tag) =>
-                    /recommended|possible|unsuitable|hybrid/i.test(tag),
-                  ) ?? 'Awaiting hardware preflight'}
-                </dd>
-              </div>
+              {(pendingRuntime.prerequisites ?? []).map((item) => (
+                <div key={item}>
+                  <dt>Requirement</dt>
+                  <dd>{item}</dd>
+                </div>
+              ))}
+              {(pendingRuntime.licenseUrls ?? []).map((url) => (
+                <div key={url}>
+                  <dt>Required terms</dt>
+                  <dd>
+                    <a
+                      href={url}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void window.cupcake?.app.openExternal(url);
+                      }}
+                    >
+                      Review NVIDIA CUDA Toolkit EULA
+                    </a>
+                  </dd>
+                </div>
+              ))}
             </dl>
-            <label>
+            <label className="checkbox-row">
               <input
                 type="checkbox"
-                checked={licenseAccepted}
-                onChange={(event) => setLicenseAccepted(event.target.checked)}
-              />{' '}
-              I reviewed the model license and terms shown by its catalog entry.
+                checked={runtimeTermsAccepted}
+                onChange={(event) => setRuntimeTermsAccepted(event.target.checked)}
+              />
+              <span>
+                I reviewed the runtime license, device requirements, and any required companion
+                terms shown above.
+              </span>
             </label>
             <footer>
-              <button className="button" onClick={() => setPendingDownload(null)}>
+              <button className="button" onClick={closeRuntimeInstall}>
                 Cancel
               </button>
               <span />
               <button
                 className="button button--primary"
-                disabled={!licenseAccepted || !pendingDownload.description}
+                disabled={!runtimeTermsAccepted || workspace.busy}
                 onClick={() => {
-                  void workspace.runModelAction(
-                    'download',
-                    pendingDownload.runtimeModelId ?? pendingDownload.id,
-                  );
-                  setPendingDownload(null);
-                  setLicenseAccepted(false);
+                  const runtime = pendingRuntime;
+                  void workspace
+                    .installRuntimePack(runtime.id, runtime.licenseUrls ?? [])
+                    .finally(closeRuntimeInstall);
                 }}
               >
-                Start verified download
+                {workspace.busy ? 'Installing…' : 'Download and verify'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {pendingRemove && (
+        <div className="popover-layer">
+          <section
+            ref={removeRef}
+            className="provider-dialog model-remove-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="model-remove-title"
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Remove local files</span>
+                <h2 id="model-remove-title">Remove {pendingRemove.name}?</h2>
+              </div>
+              <button className="icon-button" onClick={closeRemove} aria-label="Cancel removal">
+                <Icon name="x" />
+              </button>
+            </header>
+            <div className="provider-remove-warning">
+              <Icon name="trash" />
+              <div>
+                <strong>This deletes the installed weights from this device.</strong>
+                <p>
+                  The signed catalog entry stays available, so you can download it again later.
+                  Cloud providers and other local models are untouched.
+                </p>
+              </div>
+            </div>
+            <footer>
+              <button className="button" onClick={closeRemove}>
+                Keep model
+              </button>
+              <span />
+              <button
+                className="button button--danger"
+                onClick={() => {
+                  void runAction('remove', pendingRemove);
+                  closeRemove();
+                }}
+              >
+                Remove local files
               </button>
             </footer>
           </section>
@@ -4451,6 +5082,7 @@ function SettingsView({
     ['Mistral', 'mistral'],
     ['Cohere', 'cohere'],
     ['NVIDIA NIM', 'nvidia-nim'],
+    ['Remote OpenAI-compatible', 'openai-compatible'],
   ] as const;
   const semanticModels = workspace.models.filter(
     (model) =>
@@ -5369,8 +6001,8 @@ function AboutView() {
                 <div>
                   <strong>Four isolated runtime boundaries.</strong>
                   <p>
-                    React renders; Electron owns desktop lifecycle; Python owns product state and
-                    agent workflows; the verified packaged Rust broker owns credentials, grants,
+                    React renders; Tauri owns desktop lifecycle; Python owns product state and agent
+                    workflows; the verified packaged Rust broker owns credentials, grants,
                     approvals, and privileged execution. The renderer receives opaque handles, never
                     raw paths or secrets.
                   </p>
@@ -5540,100 +6172,717 @@ function ModelPicker({
   );
 }
 
-function ProviderDialog({
-  provider,
-  close,
-  connected,
-}: {
-  provider: string | null;
-  close: () => void;
-  connected: (provider: string, value: boolean) => void;
-}) {
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+type ProviderSetupStep =
+  | 'choice'
+  | 'credentials'
+  | 'testing'
+  | 'review'
+  | 'saving'
+  | 'success'
+  | 'remove-confirm'
+  | 'error';
+
+interface ProviderDefinition {
+  id: string;
+  name: string;
+  route: string;
+  privacy: string;
+  cost: string;
+  keyUrl?: string;
+  keyHint: string;
+  supportsOrganization?: boolean;
+  supportsEndpoint?: boolean;
+  supportsModelId?: boolean;
+}
+
+const providerDefinitions: ProviderDefinition[] = [
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    route: 'OpenAI API',
+    privacy: 'Prompts and selected files go to OpenAI under your API account and data controls.',
+    cost: 'API usage is billed separately from ChatGPT. Trial credits are account-dependent.',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    keyHint: 'Usually begins with sk-',
+    supportsOrganization: true,
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    route: 'Anthropic API',
+    privacy: 'Prompts and selected files go to Anthropic under your API account.',
+    cost: 'Usage-based API pricing applies; free access is not guaranteed.',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    keyHint: 'Usually begins with sk-ant-',
+  },
+  {
+    id: 'google',
+    name: 'Google Gemini',
+    route: 'Google AI Gemini API',
+    privacy: 'Prompts and selected files go to Google. Review the terms for your billing tier.',
+    cost: 'A limited free tier may be available; quotas and model access can change.',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+    keyHint: 'Paste a Google AI Studio API key',
+  },
+  {
+    id: 'xai',
+    name: 'xAI',
+    route: 'xAI API',
+    privacy: 'Prompts and selected files go to xAI under your API account.',
+    cost: 'Usage-based API billing and account limits apply.',
+    keyUrl: 'https://console.x.ai/',
+    keyHint: 'Paste an xAI API key',
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    route: 'Mistral La Plateforme API',
+    privacy: 'Prompts and selected files go to Mistral under your API account.',
+    cost: 'Usage-based pricing applies; trial access varies by account.',
+    keyUrl: 'https://console.mistral.ai/api-keys',
+    keyHint: 'Paste a Mistral API key',
+  },
+  {
+    id: 'cohere',
+    name: 'Cohere',
+    route: 'Cohere API',
+    privacy: 'Prompts and selected files go to Cohere under your API account.',
+    cost: 'Trial and production keys have different limits; check the current dashboard terms.',
+    keyUrl: 'https://dashboard.cohere.com/api-keys',
+    keyHint: 'Paste a Cohere trial or production key',
+  },
+  {
+    id: 'nvidia-nim',
+    name: 'NVIDIA NIM',
+    route: 'NVIDIA API Catalog',
+    privacy: 'Prompts and selected files go to NVIDIA-hosted model endpoints.',
+    cost: 'Evaluation access and rate limits vary. It is not presented as unlimited.',
+    keyUrl: 'https://build.nvidia.com/settings/api-keys',
+    keyHint: 'Usually begins with nvapi-',
+  },
+  {
+    id: 'openai-compatible',
+    name: 'Remote OpenAI-compatible',
+    route: 'Your HTTPS endpoint',
+    privacy:
+      'Prompts and selected files go to the endpoint you enter. Cupcake cannot verify its operator.',
+    cost: 'Your endpoint operator controls pricing, retention, capabilities, and availability.',
+    keyHint: 'Paste the credential required by this remote endpoint',
+    supportsEndpoint: true,
+    supportsModelId: true,
+  },
+];
+
+type ProviderSheetError = { title: string; detail: string; code?: string };
+
+type ProviderHostResult = {
+  provider?: string;
+  state?: 'ready' | 'degraded' | 'failed' | 'cancelled';
+  configured?: boolean;
+  masked_identity?: string;
+  tested_at_ms?: number;
+  latency_ms?: number;
+  models?: Array<Record<string, unknown> | string>;
+  diagnostic?: { code?: string; message?: string; detail?: string } | string | null;
+};
+
+function diagnosticError(value: ProviderHostResult | undefined): ProviderSheetError | null {
+  if (!value || value.state === 'ready' || value.state === 'degraded') return null;
+  const diagnostic = value.diagnostic;
+  const code = typeof diagnostic === 'object' && diagnostic ? diagnostic.code : undefined;
+  const message =
+    typeof diagnostic === 'string'
+      ? diagnostic
+      : (diagnostic?.message ??
+        diagnostic?.detail ??
+        `Provider returned ${value.state ?? 'an unknown state'}.`);
+  const classified = classifyProviderError(new Error(`${code ? `${code}: ` : ''}${message}`));
+  return { ...classified, code: code ?? classified.code };
+}
+
+function classifyProviderError(reason: unknown): ProviderSheetError {
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string'
+        ? reason
+        : 'Unknown provider error';
+  const code = /^([A-Z][A-Z0-9_-]{2,}):\s*/.exec(message)?.[1];
+  if (/401|403|auth|credential|key/i.test(message))
+    return {
+      title: 'The credential was rejected',
+      detail: message,
+      code: code ?? 'AUTHENTICATION_FAILED',
+    };
+  if (/429|rate|quota/i.test(message))
+    return {
+      title: 'The provider is rate-limiting this test',
+      detail: message,
+      code: code ?? 'RATE_LIMITED',
+    };
+  if (/offline|network|dns|timeout|fetch/i.test(message))
+    return {
+      title: 'Cupcake could not reach the provider',
+      detail: message,
+      code: code ?? 'PROVIDER_OFFLINE',
+    };
+  return { title: 'The connection test did not complete', detail: message, code };
+}
+
+function ProviderDialog({ provider, close }: { provider: string | null; close: () => void }) {
+  const workspace = useWorkspace();
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const generation = useRef(0);
+  const providerRegistry = useRef(workspace.providers);
+  providerRegistry.current = workspace.providers;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [step, setStep] = useState<ProviderSetupStep>('choice');
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [endpoint, setEndpoint] = useState('');
+  const [organization, setOrganization] = useState('');
+  const [modelId, setModelId] = useState('');
+  const [connectionName, setConnectionName] = useState('');
+  const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
+  const [error, setError] = useState<ProviderSheetError | null>(null);
+  const active = provider !== null;
+  const selected = providerDefinitions.find((item) => item.id === selectedId) ?? null;
+  const connected = selected ? Boolean(workspace.providers[selected.id]) : false;
+  const closeStable = useCallback(() => {
+    generation.current += 1;
+    setApiKey('');
+    close();
+  }, [close]);
+  useModalFocusTrap(active, dialogRef, closeStable);
   useEffect(() => {
-    setStatus('idle');
+    generation.current += 1;
+    const initial = provider && provider !== 'choose' ? provider : null;
+    setSelectedId(initial);
+    setStep(initial ? (providerRegistry.current[initial] ? 'success' : 'credentials') : 'choice');
+    setApiKey('');
+    setShowKey(false);
+    setEndpoint('');
+    setOrganization('');
+    setModelId('');
+    setConnectionName('');
+    setTestResult(null);
+    setError(null);
   }, [provider]);
-  if (!provider) return null;
-  const save = async () => {
-    if (!window.cupcake) return;
-    setStatus('saving');
-    const response = await window.cupcake.runtime.request({
-      method: 'providers.connectInteractive',
-      params: { provider },
-      timeoutMs: 120000,
-    });
-    if (response.ok) {
-      connected(provider, true);
-      close();
-    } else setStatus('error');
+  if (!active) return null;
+
+  const input = (): ProviderSetupInput => ({
+    provider: selected!.id,
+    apiKey,
+    endpoint: endpoint.trim() || undefined,
+    organization: organization.trim() || undefined,
+    modelId: modelId.trim() || undefined,
+    connectionName: connectionName.trim() || undefined,
+  });
+  const validate = (): string | null => {
+    if (!apiKey.trim()) return 'Enter an API key before testing the connection.';
+    if (selected?.supportsEndpoint && !/^https:\/\//i.test(endpoint.trim()))
+      return 'Enter a complete HTTPS endpoint, such as https://api.example.com/v1.';
+    if (selected?.supportsModelId && !modelId.trim()) return 'Enter the exact remote model ID.';
+    return null;
   };
-  const disconnect = async () => {
-    if (!window.cupcake) return;
-    const response = await window.cupcake.runtime.request({
-      method: 'providers.disconnect',
-      params: { provider },
-    });
-    if (response.ok) {
-      connected(provider, false);
-      close();
+  const testConnection = async () => {
+    const issue = validate();
+    if (issue) {
+      setError({ title: 'More information is needed', detail: issue });
+      setStep('error');
+      return;
+    }
+    const token = ++generation.current;
+    setError(null);
+    setStep('testing');
+    try {
+      const setup = input();
+      let result: ProviderTestResult;
+      if (window.cupcake?.provider) {
+        const response = await window.cupcake.provider.test({
+          provider: setup.provider,
+          secret: setup.apiKey,
+          baseUrl: setup.endpoint,
+          organization: setup.organization,
+          modelId: setup.modelId,
+          displayName: setup.connectionName,
+        });
+        if (!response.ok)
+          throw new Error(
+            `${response.error?.code ? `${response.error.code}: ` : ''}${response.error?.message ?? 'Provider test failed'}`,
+          );
+        const hostResult = response.result as ProviderHostResult | undefined;
+        const hostError = diagnosticError(hostResult);
+        if (hostError) {
+          setError(hostError);
+          setStep('error');
+          return;
+        }
+        const catalogItems = Array.isArray(hostResult?.models) ? hostResult.models : [];
+        result = {
+          maskedIdentity: hostResult?.masked_identity ?? `••••${setup.apiKey.slice(-4)}`,
+          lastTested: new Date(hostResult?.tested_at_ms ?? Date.now()).toISOString(),
+          models: catalogItems.map((item) => {
+            const idValue =
+              typeof item === 'string'
+                ? item
+                : ([item.id, item.model_id].find(
+                    (value): value is string => typeof value === 'string',
+                  ) ?? '');
+            const nameValue =
+              typeof item === 'string'
+                ? item
+                : ([item.display_name, item.name, item.id, item.model_id].find(
+                    (value): value is string => typeof value === 'string',
+                  ) ?? 'Provider model');
+            return { id: idValue, name: nameValue };
+          }),
+          detail:
+            hostResult?.state === 'degraded'
+              ? `Connected with a degraded provider response${hostResult.latency_ms ? ` in ${hostResult.latency_ms} ms` : ''}. Review the provider diagnostic before relying on this route.`
+              : hostResult?.latency_ms
+                ? `Verified in ${hostResult.latency_ms} ms.`
+                : undefined,
+        };
+      } else {
+        await Promise.resolve();
+        result = {
+          maskedIdentity: `••••${setup.apiKey.slice(-4)}`,
+          lastTested: new Date().toISOString(),
+          models: [{ id: `${setup.provider}:verified-model`, name: 'Verified provider model' }],
+          detail: 'Deterministic desktop-preview test. No network request left this browser.',
+        };
+      }
+      if (token !== generation.current) return;
+      setTestResult(result);
+      setStep('review');
+    } catch (reason) {
+      if (token !== generation.current) return;
+      setError(classifyProviderError(reason));
+      setStep('error');
     }
   };
+  const cancelTest = () => {
+    generation.current += 1;
+    setStep('credentials');
+  };
+  const saveConnection = async () => {
+    setStep('saving');
+    try {
+      const setup = input();
+      const result = testResult!;
+      if (window.cupcake?.provider) {
+        const response = await window.cupcake.provider.connect({
+          provider: setup.provider,
+          secret: setup.apiKey,
+          baseUrl: setup.endpoint,
+          organization: setup.organization,
+          modelId: setup.modelId,
+          displayName: setup.connectionName,
+        });
+        if (!response.ok)
+          throw new Error(
+            `${response.error?.code ? `${response.error.code}: ` : ''}${response.error?.message ?? 'Provider connection failed'}`,
+          );
+        const hostResult = response.result as ProviderHostResult | undefined;
+        const hostError = diagnosticError(hostResult);
+        if (hostError)
+          throw new Error(`${hostError.code ? `${hostError.code}: ` : ''}${hostError.detail}`);
+        if (hostResult?.configured !== true) {
+          throw new Error(
+            'CONFIGURATION_NOT_PERSISTED: The provider test passed, but the desktop vault did not confirm a saved credential.',
+          );
+        }
+      }
+      setApiKey('');
+      setTestResult(result);
+      void workspace.refresh();
+      setStep('success');
+    } catch (reason) {
+      setApiKey('');
+      setError(classifyProviderError(reason));
+      setStep('error');
+    }
+  };
+  const removeConnection = async () => {
+    if (!selected) return;
+    if (window.cupcake?.provider) {
+      const response = await window.cupcake.provider.disconnect(selected.id);
+      if (!response.ok) {
+        setError(classifyProviderError(response.error?.message));
+        setStep('error');
+        return;
+      }
+    }
+    void workspace.refresh();
+    setTestResult(null);
+    setStep('credentials');
+  };
+  const choose = (id: string) => {
+    setSelectedId(id);
+    setStep(workspace.providers[id] ? 'success' : 'credentials');
+  };
+
   return (
-    <div
-      className="popover-layer"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-    >
-      <form
-        className="provider-dialog"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
+    <div className="popover-layer provider-setup-layer">
+      <section
+        ref={dialogRef}
+        className="provider-setup"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="provider-setup-title"
       >
-        <header>
+        <header className="provider-setup__header">
           <div>
-            <span className="eyebrow">Windows credential vault</span>
-            <h2>Connect {cap(provider)}</h2>
+            <span className="eyebrow">Private setup inside Cupcake</span>
+            <h2 id="provider-setup-title">
+              {selected
+                ? `${connected ? 'Manage' : 'Connect'} ${selected.name}`
+                : 'Choose a provider'}
+            </h2>
           </div>
           <button
             type="button"
             className="icon-button"
-            onClick={close}
-            aria-label="Close provider dialog"
+            onClick={closeStable}
+            aria-label="Close provider setup"
           >
             <Icon name="x" />
           </button>
         </header>
-        <div className="security-note">
-          <Icon name="shield" />
-          <div>
-            <strong>Protected for this Windows user.</strong>
-            <p>
-              Continue to Windows Credential UI. The verified packaged broker receives the key
-              directly, encrypts it with DPAPI, and returns only connection status to this screen.
-            </p>
-          </div>
+
+        <div className="provider-setup__progress" aria-label="Setup progress">
+          {['Choose', 'Credentials', 'Test', 'Review', 'Connected'].map((label, index) => {
+            const order =
+              step === 'choice'
+                ? 0
+                : step === 'credentials' || step === 'error'
+                  ? 1
+                  : step === 'testing'
+                    ? 2
+                    : step === 'review' || step === 'saving'
+                      ? 3
+                      : 4;
+            return (
+              <span className={index <= order ? 'is-active' : ''} key={label}>
+                {label}
+              </span>
+            );
+          })}
         </div>
-        {status === 'error' && (
-          <p className="field-error" role="alert">
-            The broker could not store this key. Open Developer Mode for the redacted error.
-          </p>
-        )}
-        <footer>
-          <button type="button" className="button button--danger" onClick={() => void disconnect()}>
-            Disconnect
-          </button>
-          <span />
-          <button type="button" className="button" onClick={close}>
-            Cancel
-          </button>
-          <button className="button button--primary" disabled={status === 'saving'}>
-            {status === 'saving' ? 'Waiting for Windows…' : 'Continue in Windows'}
-          </button>
-        </footer>
-      </form>
+
+        <div className="provider-setup__body">
+          {step === 'choice' && (
+            <div className="provider-choice-grid">
+              {providerDefinitions.map((item) => (
+                <button type="button" key={item.id} onClick={() => choose(item.id)}>
+                  <span className="provider-logo">{item.name.charAt(0)}</span>
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.route}</small>
+                  </span>
+                  <Icon name="chevron" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {selected && ['credentials', 'testing', 'error'].includes(step) && (
+            <form
+              className="provider-credentials"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void testConnection();
+              }}
+            >
+              <div className="provider-disclosure">
+                <div>
+                  <Icon name="cloud" />
+                  <span>
+                    <strong>Where data goes</strong>
+                    <small>{selected.privacy}</small>
+                  </span>
+                </div>
+                <div>
+                  <Icon name="database" />
+                  <span>
+                    <strong>Cost & limits</strong>
+                    <small>{selected.cost}</small>
+                  </span>
+                </div>
+              </div>
+              {selected.keyUrl && (
+                <a
+                  className="provider-key-link"
+                  href={selected.keyUrl}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (selected.keyUrl) void window.cupcake?.app.openExternal(selected.keyUrl);
+                  }}
+                >
+                  Get a {selected.name} API key <span aria-hidden="true">↗</span>
+                </a>
+              )}
+              {selected.supportsEndpoint && (
+                <label>
+                  HTTPS endpoint
+                  <input
+                    autoFocus
+                    name="endpoint"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="off"
+                    value={endpoint}
+                    onChange={(e) => setEndpoint(e.target.value)}
+                    placeholder="https://api.example.com/v1"
+                  />
+                </label>
+              )}
+              {selected.id === 'openai-compatible' && (
+                <label>
+                  Connection name
+                  <input
+                    name="connection-name"
+                    autoComplete="off"
+                    value={connectionName}
+                    onChange={(e) => setConnectionName(e.target.value)}
+                    placeholder="Research gateway"
+                  />
+                </label>
+              )}
+              {selected.supportsModelId && (
+                <label>
+                  Model ID
+                  <input
+                    name="model-id"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    placeholder="provider/model-name"
+                  />
+                </label>
+              )}
+              <div className="provider-field">
+                <label htmlFor="provider-api-key">API key</label>
+                <span className="secret-input">
+                  <input
+                    id="provider-api-key"
+                    autoFocus={!selected.supportsEndpoint}
+                    name="api-key"
+                    type={showKey ? 'text' : 'password'}
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={selected.keyHint}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((value) => !value)}
+                    aria-label={showKey ? 'Hide API key' : 'Reveal API key'}
+                  >
+                    <Icon name="eye" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setApiKey('')}
+                    aria-label="Clear API key"
+                    disabled={!apiKey}
+                  >
+                    <Icon name="x" />
+                  </button>
+                </span>
+              </div>
+              {selected.supportsOrganization && (
+                <label>
+                  Organization ID <span>Optional</span>
+                  <input
+                    name="organization"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={organization}
+                    onChange={(e) => setOrganization(e.target.value)}
+                    placeholder="org-…"
+                  />
+                </label>
+              )}
+              <p className="provider-vault-note">
+                <Icon name="shield" /> The key is sent once to the trusted desktop boundary,
+                protected with Windows DPAPI, and never returned to this screen.
+              </p>
+              {step === 'testing' && (
+                <div className="provider-testing" role="status" aria-live="polite">
+                  <span className="provider-spinner" />
+                  <span>
+                    <strong>Testing the connection…</strong>
+                    <small>Checking authentication, network access, and supported models.</small>
+                  </span>
+                </div>
+              )}
+              {step === 'error' && error && (
+                <div className="provider-error" role="alert">
+                  <Icon name="info" />
+                  <span>
+                    <strong>{error.title}</strong>
+                    {error.code && <code>{error.code}</code>}
+                    <small>{error.detail}</small>
+                  </span>
+                </div>
+              )}
+              <footer>
+                <button type="button" className="text-button" onClick={() => setStep('choice')}>
+                  Choose another provider
+                </button>
+                <span />
+                {step === 'testing' ? (
+                  <button type="button" className="button" onClick={cancelTest}>
+                    Cancel test
+                  </button>
+                ) : (
+                  <button type="submit" className="button button--primary">
+                    Test connection
+                  </button>
+                )}
+              </footer>
+            </form>
+          )}
+
+          {selected && step === 'review' && testResult && (
+            <div className="provider-review">
+              <div className="provider-success-mark">
+                <Icon name="check" />
+              </div>
+              <h3>Connection verified</h3>
+              <p>
+                {testResult.detail ??
+                  `Cupcake authenticated with ${selected.name} and discovered ${testResult.models.length || 'the available'} model catalog.`}
+              </p>
+              <dl>
+                <div>
+                  <dt>Privacy route</dt>
+                  <dd>{selected.route}</dd>
+                </div>
+                <div>
+                  <dt>Saved identity</dt>
+                  <dd>{testResult.maskedIdentity}</dd>
+                </div>
+                <div>
+                  <dt>Capabilities</dt>
+                  <dd>
+                    {testResult.models.length
+                      ? `${testResult.models.length} models discovered`
+                      : 'Provider catalog verified'}
+                  </dd>
+                </div>
+              </dl>
+              {testResult.models.length > 0 && (
+                <div className="provider-model-preview">
+                  {testResult.models.slice(0, 6).map((model) => (
+                    <span key={model.id}>{model.name}</span>
+                  ))}
+                </div>
+              )}
+              <div className="provider-review-note">
+                <Icon name="info" />
+                <span>
+                  Prompts or files are sent only when you explicitly select a {selected.name} model.
+                  Automatic provider routing stays off.
+                </span>
+              </div>
+              <footer>
+                <button type="button" className="button" onClick={() => setStep('credentials')}>
+                  Back
+                </button>
+                <span />
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => void saveConnection()}
+                >
+                  Save & connect
+                </button>
+              </footer>
+            </div>
+          )}
+
+          {selected && step === 'saving' && (
+            <div className="provider-state-panel" role="status">
+              <span className="provider-spinner" />
+              <h3>Protecting this credential…</h3>
+              <p>Cupcake is saving only the encrypted desktop credential and provider metadata.</p>
+            </div>
+          )}
+
+          {selected && step === 'success' && (
+            <div className="provider-connected">
+              <div className="provider-success-mark">
+                <Icon name="check" />
+              </div>
+              <h3>{selected.name} is connected</h3>
+              <p>
+                Cloud use remains explicit. Cupcake never switches to this provider automatically.
+              </p>
+              <dl>
+                <div>
+                  <dt>Credential</dt>
+                  <dd>{testResult?.maskedIdentity ?? '•••• saved credential'}</dd>
+                </div>
+                <div>
+                  <dt>Last tested</dt>
+                  <dd>
+                    {testResult?.lastTested
+                      ? new Intl.DateTimeFormat(undefined, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(new Date(testResult.lastTested))
+                      : 'Test again to refresh'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Privacy route</dt>
+                  <dd>{selected.route}</dd>
+                </div>
+              </dl>
+              <div className="provider-connected__actions">
+                <button type="button" className="button" onClick={() => setStep('credentials')}>
+                  Reconnect
+                </button>
+                <button
+                  type="button"
+                  className="button button--danger"
+                  onClick={() => setStep('remove-confirm')}
+                >
+                  Remove credential
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selected && step === 'remove-confirm' && (
+            <div className="provider-remove-confirm">
+              <Icon name="shield" />
+              <h3>Remove {selected.name}?</h3>
+              <p>
+                Cupcake will delete the DPAPI-protected credential and disable its models.
+                Conversations remain intact.
+              </p>
+              <footer>
+                <button type="button" className="button" onClick={() => setStep('success')}>
+                  Keep connection
+                </button>
+                <button
+                  type="button"
+                  className="button button--danger"
+                  onClick={() => void removeConnection()}
+                >
+                  Remove credential
+                </button>
+              </footer>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -6163,7 +7412,10 @@ function LegacyFixtureApp() {
   else if (view === 'artifacts') content = <ArtifactsView />;
   else if (view === 'memory')
     content = <MemoryView records={memoryRecords} setRecords={setMemoryRecords} />;
-  else if (view === 'models') content = <ModelsView models={models} selectModel={selectModel} />;
+  else if (view === 'models')
+    content = (
+      <ModelsView models={models} selectModel={selectModel} openProvider={setProviderDialog} />
+    );
   else if (view === 'tools') content = <ToolsView tools={toolRecords} setTools={setToolRecords} />;
   else if (view === 'search') content = <SearchView setView={navigate} />;
   else if (view === 'settings')
@@ -6188,6 +7440,7 @@ function LegacyFixtureApp() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
+      <CupcakeTitlebar />
       <Shelf
         view={view}
         setView={navigate}
@@ -6239,20 +7492,7 @@ function LegacyFixtureApp() {
         models={models}
         select={selectModel}
       />
-      <ProviderDialog
-        provider={providerDialog}
-        close={() => setProviderDialog(null)}
-        connected={(provider, value) => {
-          setProviderStates((states) => ({ ...states, [provider]: value }));
-          setModels((list) =>
-            list.map((model) =>
-              providerIdByName[model.provider] === provider
-                ? { ...model, status: value ? 'ready' : 'setup' }
-                : model,
-            ),
-          );
-        }}
-      />
+      <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
       {toast && (
         <div className="toast" role="status">
           <Icon name="check" />
@@ -6556,6 +7796,7 @@ function LiveApp() {
     content = (
       <ModelsView
         models={workspace.models}
+        openProvider={setProviderDialog}
         selectModel={async (id, options) => {
           await workspace.selectModel(id, options);
           setToast('Default model updated');
@@ -6596,6 +7837,7 @@ function LiveApp() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
+      <CupcakeTitlebar />
       <Shelf
         view={view}
         setView={navigate}
@@ -6668,11 +7910,7 @@ function LiveApp() {
         models={workspace.models}
         select={(id, options) => workspace.selectModel(id, options)}
       />
-      <ProviderDialog
-        provider={providerDialog}
-        close={() => setProviderDialog(null)}
-        connected={() => void workspace.refresh()}
-      />
+      <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
       <LegacyMigrationDialog />
       {shortcutOpen && (
         <div

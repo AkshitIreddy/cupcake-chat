@@ -5,7 +5,7 @@
     {
       "name": "app-settings",
       "file": "app-settings.schema.json",
-      "sha256": "7114658f42cf0e6318f621bd2545f5ed56ec67219dc5b32eb6ec9eb3ae5ba2b3"
+      "sha256": "0d406ef68dc040ad18b203befa08fb406656a2a6a35d3ea7ea08d82188f00646"
     },
     {
       "name": "artifact",
@@ -30,12 +30,12 @@
     {
       "name": "context",
       "file": "context.schema.json",
-      "sha256": "64afa1572bb094a20df85b99dca33da766a242c32981b22e36421e86715d917e"
+      "sha256": "c9ea873135ec44bc09cb4e09c1425119223c2670679588e488f6e476d844a6ef"
     },
     {
       "name": "conversation",
       "file": "conversation.schema.json",
-      "sha256": "b76539dfab2e149a7b4a644583c9ea27ab6a4b2c196e3c27801b96ecc1dbc286"
+      "sha256": "f567782504060fbb57bbfcf2d15d77f4e99d2db1e62178e134445fdfe49648c2"
     },
     {
       "name": "conversation-branch",
@@ -60,17 +60,17 @@
     {
       "name": "message",
       "file": "message.schema.json",
-      "sha256": "46a061c2102dc054982eab752a7202413d296f959715895accd9ccbadfe379cf"
+      "sha256": "f6510e43371377b66d36ebdfe152f1506e714df0b9b84738fd0cdc22030e6e1b"
     },
     {
       "name": "model",
       "file": "model.schema.json",
-      "sha256": "1cb0c0ab1dd375478cd913917895024fcbd463e7beda3dada2a75f7abf2b8b1a"
+      "sha256": "62fa0305338c14e865ca75885bdbbe8ecaa7de7246ceb68f27c13dad665bbeed"
     },
     {
       "name": "project",
       "file": "project.schema.json",
-      "sha256": "b05c31513b2ec2cf7d2b76ecf0173951be3c7cdd3315fd2a8486d1bf5d5034cd"
+      "sha256": "46272791ca00021e9d45c75430f5cabbe3ef5b596e5860c3cec559546fa97d97"
     },
     {
       "name": "protocol",
@@ -80,12 +80,12 @@
     {
       "name": "provider",
       "file": "provider.schema.json",
-      "sha256": "ad21f0ce01e9a7fc3b4c98e2dbfe98b572df13b9a1cd02b75a777b757bcff652"
+      "sha256": "f7b938a729c02e5524864c6575e990183e7a1c738d3fb45774ca115cb4102a86"
     },
     {
       "name": "run-event",
       "file": "run-event.schema.json",
-      "sha256": "b630395f526ca346d7a938fc076997575b3cacfff4b4b5c6bc154bcc84ddde02"
+      "sha256": "ec1cca40206fd48d768fca9260c8bd1882cb5a90ba844377b4972e2161bbe826"
     },
     {
       "name": "search-request",

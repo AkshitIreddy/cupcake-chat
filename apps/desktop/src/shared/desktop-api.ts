@@ -1,4 +1,5 @@
 export const DESKTOP_API_VERSION = 1 as const;
+export type DesktopPlatform = 'win32';
 
 export type DesktopCommand =
   | 'app.about'
@@ -18,7 +19,7 @@ export type RuntimeState = 'disabled' | 'starting' | 'ready' | 'degraded' | 'sto
 export interface AppInfo {
   apiVersion: typeof DESKTOP_API_VERSION;
   appVersion: string;
-  platform: NodeJS.Platform;
+  platform: DesktopPlatform;
   packaged: boolean;
   runtime: RuntimeState;
 }
@@ -65,15 +66,47 @@ export interface RuntimeStatus {
   detail?: string;
 }
 
+export interface ProviderSetupInput {
+  provider: string;
+  secret: string;
+  baseUrl?: string;
+  organization?: string;
+  modelId?: string;
+  displayName?: string;
+}
+
+export interface ProviderSetupResult {
+  provider: string;
+  state?: 'ready' | 'degraded' | 'failed' | 'cancelled';
+  discovery?: 'supported' | 'unsupported' | 'failed';
+  models?: Array<{
+    id: string;
+    model: string;
+    display_name: string;
+    capabilities: string[];
+    compatibility_verified: boolean;
+  }>;
+  tested_at_ms?: number;
+  latency_ms?: number;
+  diagnostic?: { code: string; message: string; retryable: boolean } | null;
+  tested?: boolean;
+  configured?: boolean;
+  endpointId?: string;
+  persistent: boolean;
+  runtimeDisconnected?: boolean;
+  removed?: boolean;
+}
+
 export interface Unsubscribe {
   (): void;
 }
 
 export interface CupcakeDesktopApi {
   readonly apiVersion: typeof DESKTOP_API_VERSION;
-  readonly platform: NodeJS.Platform;
+  readonly platform: DesktopPlatform;
   app: {
     getInfo(): Promise<AppInfo>;
+    openExternal(url: string): Promise<void>;
   };
   window: {
     minimize(): Promise<void>;
@@ -97,6 +130,11 @@ export interface CupcakeDesktopApi {
     cancel(requestId: string): Promise<boolean>;
     onEvent(listener: (event: RuntimeEvent) => void): Unsubscribe;
     onStatus(listener: (status: RuntimeStatus) => void): Unsubscribe;
+  };
+  provider: {
+    test(input: ProviderSetupInput): Promise<RuntimeResponse<ProviderSetupResult>>;
+    connect(input: ProviderSetupInput): Promise<RuntimeResponse<ProviderSetupResult>>;
+    disconnect(provider: string): Promise<RuntimeResponse<ProviderSetupResult>>;
   };
 }
 

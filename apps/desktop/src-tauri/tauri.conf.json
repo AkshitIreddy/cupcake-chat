@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CUPCAKEAGI 2",
+  "mainBinaryName": "CUPCAKEAGI",
+  "version": "2.0.0-rc.1",
+  "identifier": "com.cupcakeagi.desktop",
+  "build": {
+    "beforeDevCommand": "corepack pnpm run dev:web --host 127.0.0.1 --port 42619",
+    "devUrl": "http://127.0.0.1:42619",
+    "beforeBuildCommand": "corepack pnpm run build:web",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CUPCAKEAGI",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 360,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "shadow": true,
+        "transparent": false,
+        "visible": false,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": false,
+        "useHttpsScheme": true
+      }
+    ],
+    "security": {
+      "capabilities": ["main"],
+      "freezePrototype": true,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; media-src 'self' blob:; worker-src 'self' blob:; child-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "CUPCAKEAGI contributors",
+    "copyright": "CUPCAKEAGI contributors",
+    "category": "Productivity",
+    "shortDescription": "A local, text-first AI workspace.",
+    "longDescription": "CUPCAKEAGI is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
+    "icon": ["../public/brand/cupcake.ico"],
+    "resources": {
+      "resources/sidecars/": "sidecars/"
+    },
+    "externalBin": ["binaries/cupcake-tool-broker", "binaries/cupcake-runtime"],
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["cupcake"]
+      }
+    }
+  }
+}

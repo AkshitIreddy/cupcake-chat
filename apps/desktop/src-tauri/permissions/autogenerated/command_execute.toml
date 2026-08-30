@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-command-execute"
+description = "Enables the command_execute command without any pre-configured scope."
+commands.allow = ["command_execute"]
+
+[[permission]]
+identifier = "deny-command-execute"
+description = "Denies the command_execute command without any pre-configured scope."
+commands.deny = ["command_execute"]

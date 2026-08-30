@@ -65,8 +65,8 @@ pub mod app_settings {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -79,12 +79,6 @@ pub mod app_settings {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -111,8 +105,8 @@ pub mod app_settings {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -125,12 +119,6 @@ pub mod app_settings {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -818,8 +806,8 @@ pub mod context {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -832,12 +820,6 @@ pub mod context {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -864,8 +846,8 @@ pub mod context {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -878,12 +860,6 @@ pub mod context {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -1050,8 +1026,8 @@ pub mod conversation {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -1064,12 +1040,6 @@ pub mod conversation {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -1096,8 +1066,8 @@ pub mod conversation {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -1110,12 +1080,6 @@ pub mod conversation {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -1942,8 +1906,8 @@ pub mod message {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -1956,12 +1920,6 @@ pub mod message {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -1988,8 +1946,8 @@ pub mod message {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2002,12 +1960,6 @@ pub mod message {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2087,8 +2039,8 @@ pub mod model {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2101,12 +2053,6 @@ pub mod model {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2249,8 +2195,8 @@ pub mod project {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2263,12 +2209,6 @@ pub mod project {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2295,8 +2235,8 @@ pub mod project {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2309,12 +2249,6 @@ pub mod project {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2437,8 +2371,8 @@ pub mod provider {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2451,12 +2385,6 @@ pub mod provider {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2577,6 +2505,76 @@ pub mod provider {
         Invalid,
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ProviderDescriptorSetupState {
+        #[serde(rename = "not-configured")]
+        NotConfigured,
+        #[serde(rename = "editing")]
+        Editing,
+        #[serde(rename = "testing")]
+        Testing,
+        #[serde(rename = "review")]
+        Review,
+        #[serde(rename = "ready")]
+        Ready,
+        #[serde(rename = "error")]
+        Error,
+        #[serde(rename = "removing")]
+        Removing,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ProviderDescriptorDiagnosticCode {
+        #[serde(rename = "authentication")]
+        Authentication,
+        #[serde(rename = "rate_limit")]
+        RateLimit,
+        #[serde(rename = "network")]
+        Network,
+        #[serde(rename = "offline")]
+        Offline,
+        #[serde(rename = "timeout")]
+        Timeout,
+        #[serde(rename = "cancelled")]
+        Cancelled,
+        #[serde(rename = "tls")]
+        Tls,
+        #[serde(rename = "provider_unavailable")]
+        ProviderUnavailable,
+        #[serde(rename = "invalid_endpoint")]
+        InvalidEndpoint,
+        #[serde(rename = "invalid_response")]
+        InvalidResponse,
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ProviderDescriptorDiagnostic {
+        pub code: ProviderDescriptorDiagnosticCode,
+        pub message: String,
+        pub retryable: bool,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ProviderDescriptorVaultKind {
+        #[serde(rename = "dpapi")]
+        Dpapi,
+        #[serde(rename = "session")]
+        Session,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ProviderDescriptorVault {
+        pub kind: ProviderDescriptorVaultKind,
+        pub persistent: bool,
+        #[serde(rename = "fallbackReason")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub fallback_reason: Option<String>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct ProviderDescriptor {
@@ -2591,6 +2589,22 @@ pub mod provider {
         pub health: ProviderDescriptorHealth,
         #[serde(rename = "credentialState")]
         pub credential_state: ProviderDescriptorCredentialState,
+        #[serde(rename = "setupState")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub setup_state: Option<ProviderDescriptorSetupState>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub diagnostic: Option<ProviderDescriptorDiagnostic>,
+        #[serde(rename = "savedCredentialHint")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub saved_credential_hint: Option<String>,
+        #[serde(rename = "lastTestedAt")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub last_tested_at: Option<String>,
+        #[serde(rename = "discoveredModelIds")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub discovered_model_ids: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub vault: Option<ProviderDescriptorVault>,
         #[serde(rename = "modelCatalogEtag")]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub model_catalog_etag: Option<String>,
@@ -2623,8 +2637,8 @@ pub mod run_event {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2637,12 +2651,6 @@ pub mod run_event {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -2669,8 +2677,8 @@ pub mod run_event {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -2683,12 +2691,6 @@ pub mod run_event {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -3487,8 +3489,8 @@ pub mod run_event {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -3501,12 +3503,6 @@ pub mod run_event {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }
@@ -3533,8 +3529,8 @@ pub mod run_event {
         Openai,
         #[serde(rename = "anthropic")]
         Anthropic,
-        #[serde(rename = "gemini")]
-        Gemini,
+        #[serde(rename = "google")]
+        Google,
         #[serde(rename = "xai")]
         Xai,
         #[serde(rename = "mistral")]
@@ -3547,12 +3543,6 @@ pub mod run_event {
         OpenaiCompatible,
         #[serde(rename = "cupcake-local")]
         CupcakeLocal,
-        #[serde(rename = "ollama")]
-        Ollama,
-        #[serde(rename = "lm-studio")]
-        LmStudio,
-        #[serde(rename = "vllm")]
-        Vllm,
         #[serde(rename = "mock")]
         Mock,
     }

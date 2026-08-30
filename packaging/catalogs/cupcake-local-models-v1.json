@@ -1,0 +1,99 @@
+{
+  "key_id": "cupcake-local-rc-2026-08",
+  "payload": {
+    "version": 1,
+    "generated_at": "2026-08-29T16:00:00Z",
+    "provenance": {
+      "environment": "local-release-candidate",
+      "production_signing": false,
+      "catalog_policy": "immutable Hugging Face revision, exact blob size and SHA-256"
+    },
+    "models": [
+      {
+        "id": "qwen3-4b-q4-k-m",
+        "display_name": "Qwen3 4B · Q4_K_M",
+        "family": "Qwen3",
+        "parameter_billions": 4,
+        "quantization": "Q4_K_M",
+        "size_bytes": 2497280640,
+        "sha256": "ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328",
+        "urls": [
+          "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/2f3b082b1356a6123f7ed71e65aea340da25d53c/Qwen3-4B-Q4_K_M.gguf"
+        ],
+        "filename": "Qwen3-4B-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "context_window": 131072,
+        "architecture": "qwen3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "Compact multilingual reasoning and chat model"
+        },
+        "source": "https://huggingface.co/ggml-org/Qwen3-4B-GGUF",
+        "source_revision": "2f3b082b1356a6123f7ed71e65aea340da25d53c",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "writing", "summarization", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q4_K_M support"]
+      },
+      {
+        "id": "qwen3-8b-q4-k-m",
+        "display_name": "Qwen3 8B · Q4_K_M",
+        "family": "Qwen3",
+        "parameter_billions": 8,
+        "quantization": "Q4_K_M",
+        "size_bytes": 5027783488,
+        "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+        "urls": [
+          "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf"
+        ],
+        "filename": "Qwen3-8B-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/blob/7c41481f57cb95916b40956ab2f0b139b296d974/LICENSE",
+        "context_window": 131072,
+        "architecture": "qwen3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "Balanced local chat, reasoning, writing, and code model"
+        },
+        "source": "https://huggingface.co/Qwen/Qwen3-8B-GGUF",
+        "source_revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "writing", "summarization", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q4_K_M support"]
+      },
+      {
+        "id": "qwen3-14b-q4-k-m",
+        "display_name": "Qwen3 14B · Q4_K_M",
+        "family": "Qwen3",
+        "parameter_billions": 14,
+        "quantization": "Q4_K_M",
+        "size_bytes": 9001752960,
+        "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+        "urls": [
+          "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/530227a7d994db8eca5ab5ced2fb692b614357fd/Qwen3-14B-Q4_K_M.gguf"
+        ],
+        "filename": "Qwen3-14B-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/blob/530227a7d994db8eca5ab5ced2fb692b614357fd/LICENSE",
+        "context_window": 131072,
+        "architecture": "qwen3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "Higher-capacity model; use reduced context or hybrid offload on 12 GB GPUs"
+        },
+        "source": "https://huggingface.co/Qwen/Qwen3-14B-GGUF",
+        "source_revision": "530227a7d994db8eca5ab5ced2fb692b614357fd",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "writing", "summarization", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q4_K_M support", "Reduced context or hybrid offload may be required"]
+      }
+    ]
+  },
+  "signature": "bdNIVQ1v9phEHUxAQmakWSfVDqLycXrXd8mkLtjWAr2AZeR6KrQhPNS+jogVqsLZcP+veIHI4gKrAFCjaHUVDQ=="
+}

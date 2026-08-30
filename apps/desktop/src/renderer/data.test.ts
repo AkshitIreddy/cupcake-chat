@@ -13,16 +13,16 @@ describe('renderer fixtures', () => {
     expect(models.some((model) => /\bauto\b/i.test(model.name))).toBe(false);
   });
 
-  it('includes local runtimes without bundling a ready model download', () => {
-    expect(
-      models.some((model) => model.provider === 'Cupcake Local' && model.status === 'download'),
-    ).toBe(true);
-    expect(models.some((model) => model.provider === 'Ollama' && model.status === 'ready')).toBe(
-      true,
-    );
-    expect(
-      models.some((model) => model.provider === 'LM Studio' && model.status === 'offline'),
-    ).toBe(true);
+  it('ships a nonempty Cupcake Local catalog without third-party runtime fixtures', () => {
+    const localModels = models.filter((model) => model.route === 'Local');
+    expect(localModels).toHaveLength(3);
+    expect(localModels.every((model) => model.provider === 'Cupcake Local')).toBe(true);
+    expect(localModels.every((model) => model.status === 'catalog')).toBe(true);
+    expect(localModels.map((model) => model.name)).toEqual([
+      'Qwen3 8B · Q4_K_M',
+      'Qwen3 4B · Q4_K_M',
+      'Qwen3 14B · Q4_K_M',
+    ]);
   });
 
   it('exercises durable task and memory states', () => {

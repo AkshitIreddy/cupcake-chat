@@ -64,6 +64,62 @@ class ProviderRegistry:
                 self._nvidia_nim_catalog.invalidate()
         self._configs[provider] = config
 
+    @property
+    def nvidia_nim_discovery(self) -> NvidiaNimCatalogDiscovery:
+        """Share the bounded discovery cache with provider onboarding."""
+
+        return self._nvidia_nim_catalog
+
+    def configure_tested(
+        self,
+        provider: str,
+        config: ProviderConfig,
+        *,
+        nvidia_nim_catalog: NvidiaNimCatalogResult | None = None,
+    ) -> None:
+        """Commit a configuration only after onboarding accepted it.
+
+        NVIDIA's already-tested bounded catalog is committed directly. This
+        avoids both a time-of-check/time-of-use discrepancy and a duplicate
+        remote discovery request.
+        """
+
+        if provider != NVIDIA_NIM_PROVIDER:
+            self.configure(provider, config)
+            return
+        if nvidia_nim_catalog is None:
+            raise ValueError("tested NVIDIA NIM catalog evidence is required")
+        self._configs[provider] = replace(config, base_url=NVIDIA_NIM_BASE_URL)
+        self._reconcile_nvidia_nim_catalog(nvidia_nim_catalog)
+
+    def disconnect(self, provider: str) -> bool:
+        """Drop one credential config and its dynamic model state."""
+
+        normalized_provider = "google" if provider == "gemini" else provider
+        removed = self._configs.pop(normalized_provider, None) is not None
+        if normalized_provider == NVIDIA_NIM_PROVIDER:
+            self._nvidia_nim_catalog.invalidate()
+            for descriptor in self.catalog.list(
+                provider=NVIDIA_NIM_PROVIDER, include_deprecated=True
+            ):
+                removed = self.catalog.unregister(descriptor.id) or removed
+                removed = self._model_configs.pop(descriptor.id, None) is not None or removed
+        elif normalized_provider == "openai-compatible":
+            for descriptor in self.catalog.list(
+                provider="openai-compatible", include_deprecated=True
+            ):
+                # Runtime-owned local routes are not remote provider configs.
+                if isinstance(descriptor.metadata.get("runtime_kind"), str):
+                    continue
+                removed = self.catalog.unregister(descriptor.id) or removed
+                removed = self._model_configs.pop(descriptor.id, None) is not None or removed
+        else:
+            for descriptor in self.catalog.list(
+                provider=normalized_provider, include_deprecated=True
+            ):
+                removed = self._model_configs.pop(descriptor.id, None) is not None or removed
+        return removed
+
     async def refresh_nvidia_nim_models(
         self, *, client: Any = None, force: bool = False
     ) -> NvidiaNimCatalogResult:
@@ -80,13 +136,16 @@ class ProviderRegistry:
             client=client,
             force=force,
         )
+        self._reconcile_nvidia_nim_catalog(result)
+        return result
+
+    def _reconcile_nvidia_nim_catalog(self, result: NvidiaNimCatalogResult) -> None:
         discovered_ids = {model.id for model in result.models}
         for existing in self.catalog.list(provider=NVIDIA_NIM_PROVIDER, include_deprecated=True):
             if existing.id not in discovered_ids:
                 self.catalog.register(replace(existing, deprecated=True), replace=True)
         for descriptor in result.models:
             self.catalog.register(descriptor, replace=True)
-        return result
 
     def configure_model(self, model_id: str, config: ProviderConfig) -> None:
         """Configure one model without leaking settings to sibling endpoints."""
@@ -116,12 +175,7 @@ class ProviderRegistry:
         runtime_kind = descriptor.metadata.get("runtime_kind")
         if not isinstance(runtime_kind, str):
             return None
-        expected_privacy = {
-            "cupcake_llama_cpp": "local",
-            "ollama": "local",
-            "lm_studio": "local",
-            "vllm": "self_hosted",
-        }.get(runtime_kind)
+        expected_privacy = {"cupcake_llama_cpp": "local"}.get(runtime_kind)
         if expected_privacy is None or descriptor.privacy_route.value != expected_privacy:
             return None
         return {

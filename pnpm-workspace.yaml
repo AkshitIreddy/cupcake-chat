@@ -4,6 +4,4 @@ packages:
   - services/*
 
 onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
   - esbuild

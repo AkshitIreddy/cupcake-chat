@@ -24,6 +24,7 @@ const skipRuntime = args.includes('--skip-runtime');
 const skipBroker = args.includes('--skip-broker');
 const skipCupcakeLocal = args.includes('--skip-cupcake-local');
 const reuseNative = args.includes('--reuse-native');
+const reuseRuntime = args.includes('--reuse-runtime');
 
 if (targetPlatform !== 'win32' || targetArch !== 'x64') {
   throw new Error(
@@ -59,7 +60,11 @@ const stagingOutputDir = join(
 const outputDir = verifyOnly ? finalOutputDir : stagingOutputDir;
 const manifestPath = join(outputDir, 'sidecars.manifest.json');
 const binarySuffix = '.exe';
+const targetTriple = 'x86_64-pc-windows-msvc';
 const descriptor = await readJson(descriptorPath);
+const tauriRoot = join(repoRoot, 'apps', 'desktop', 'src-tauri');
+const tauriBinaryDir = join(tauriRoot, 'binaries');
+const tauriResourceDir = join(tauriRoot, 'resources', 'sidecars');
 
 async function pythonCommand() {
   const localVenv = join(repoRoot, 'services', 'runtime', '.venv', 'Scripts', 'python.exe');
@@ -74,6 +79,12 @@ function outputName(id) {
   const item = descriptor.sidecars.find((sidecar) => sidecar.id === id);
   if (!item) throw new Error(`Missing ${id} in ${relative(repoRoot, descriptorPath)}`);
   return `${item.baseName}${binarySuffix}`;
+}
+
+function tauriExternalBinName(id) {
+  const item = descriptor.sidecars.find((sidecar) => sidecar.id === id);
+  if (!item) throw new Error(`Missing ${id} in ${relative(repoRoot, descriptorPath)}`);
+  return `${item.baseName}-${targetTriple}${binarySuffix}`;
 }
 
 async function findRuntimeEntry() {
@@ -150,6 +161,22 @@ async function buildRuntime() {
   await copyFile(built, join(outputDir, outputName('runtime')));
 }
 
+async function reuseFrozenRuntime() {
+  const built = join(
+    repoRoot,
+    'out',
+    'pyinstaller',
+    `${targetPlatform}-${targetArch}`,
+    'dist',
+    outputName('runtime'),
+  );
+  if (!(await exists(built))) {
+    throw new Error(`Reusable frozen runtime is missing: ${built}`);
+  }
+  run(built, ['--help']);
+  await copyFile(built, join(outputDir, outputName('runtime')));
+}
+
 async function stageCupcakeLocal({ verify = false } = {}) {
   const command = await pythonCommand();
   const localOutput = join(outputDir, 'cupcake-local');
@@ -159,11 +186,17 @@ async function stageCupcakeLocal({ verify = false } = {}) {
 }
 
 async function buildBroker() {
-  if (!commandExists('cargo'))
-    throw new Error('The stable Rust toolchain is required to package the broker.');
+  const userProfile = process.env.USERPROFILE ?? '';
+  const standardCargo = join(userProfile, '.cargo', 'bin', 'cargo.exe');
+  const cargo = commandExists('cargo')
+    ? 'cargo'
+    : (await exists(standardCargo))
+      ? standardCargo
+      : '';
+  if (!cargo) throw new Error('The stable Rust toolchain is required to package the broker.');
   const manifest = join(repoRoot, 'crates', 'tool-broker', 'Cargo.toml');
   const targetDir = join(repoRoot, 'out', 'cargo', `${targetPlatform}-${targetArch}`);
-  run('cargo', [
+  run(cargo, [
     'build',
     '--locked',
     '--release',
@@ -284,6 +317,51 @@ async function verifyManifest() {
   );
 }
 
+async function stageTauriBundleInputs() {
+  const binaryStaging = join(
+    dirname(tauriBinaryDir),
+    `.${basename(tauriBinaryDir)}.staging-${String(process.pid)}`,
+  );
+  const resourceStaging = join(
+    dirname(tauriResourceDir),
+    `.${basename(tauriResourceDir)}.staging-${String(process.pid)}`,
+  );
+  await rm(binaryStaging, { recursive: true, force: true });
+  await rm(resourceStaging, { recursive: true, force: true });
+  await mkdir(binaryStaging, { recursive: true });
+  await mkdir(resourceStaging, { recursive: true });
+
+  for (const sidecar of descriptor.sidecars) {
+    if ((sidecar.id === 'runtime' && skipRuntime) || (sidecar.id === 'tool-broker' && skipBroker)) {
+      continue;
+    }
+    const source = join(finalOutputDir, outputName(sidecar.id));
+    await copyFile(source, join(binaryStaging, tauriExternalBinName(sidecar.id)));
+    // Keep a verified, self-contained directory for the Rust host. Tauri's
+    // externalBin source names carry the target triple, while the packaged
+    // executable names and verified manifest deliberately do not.
+    await copyFile(source, join(resourceStaging, outputName(sidecar.id)));
+  }
+  await copyFile(
+    join(finalOutputDir, 'sidecars.manifest.json'),
+    join(resourceStaging, 'sidecars.manifest.json'),
+  );
+  await copyFile(join(finalOutputDir, 'LICENSE.txt'), join(resourceStaging, 'LICENSE.txt'));
+  if (!skipCupcakeLocal) {
+    await cp(join(finalOutputDir, 'cupcake-local'), join(resourceStaging, 'cupcake-local'), {
+      recursive: true,
+    });
+  }
+
+  await ensureDir(dirname(tauriBinaryDir));
+  await ensureDir(dirname(tauriResourceDir));
+  await promoteDirectory(binaryStaging, tauriBinaryDir);
+  await promoteDirectory(resourceStaging, tauriResourceDir);
+  process.stdout.write(
+    `Staged Tauri externalBin inputs for ${targetTriple} and verified resources/sidecars.\n`,
+  );
+}
+
 if (verifyOnly) {
   if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
   await verifyManifest();
@@ -293,12 +371,16 @@ if (verifyOnly) {
     await cp(finalOutputDir, stagingOutputDir, { recursive: true });
   }
   await ensureDir(outputDir);
-  if (!skipRuntime && !reuseNative) await buildRuntime();
+  if (!skipRuntime && !reuseNative) {
+    if (reuseRuntime) await reuseFrozenRuntime();
+    else await buildRuntime();
+  }
   if (!skipBroker && !reuseNative) await buildBroker();
   if (!skipCupcakeLocal) await stageCupcakeLocal();
   await copyFile(join(repoRoot, 'LICENSE'), join(outputDir, 'LICENSE.txt'));
   await createManifest();
   await verifyManifest();
   await promoteDirectory(stagingOutputDir, finalOutputDir);
+  await stageTauriBundleInputs();
   process.stdout.write(`Promoted verified sidecars to ${relativeFinalOutput}.\n`);
 }

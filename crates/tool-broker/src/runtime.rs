@@ -35,7 +35,7 @@ pub struct RuntimeControl {
 }
 
 impl RuntimeChild {
-    /// Start the fixed packaged runtime declared by Electron. Absence is a
+    /// Start the fixed packaged runtime declared by the Tauri host. Absence is a
     /// supported developer state; malformed or unlaunchable declarations fail.
     pub fn launch_from_environment() -> Result<Option<Self>> {
         let Some(path) = std::env::var_os("CUPCAKE_RUNTIME_PATH") else {
@@ -84,11 +84,12 @@ impl RuntimeChild {
         // PyInstaller's one-file launcher and platform TLS/runtime libraries
         // require these operating-system paths. No user credentials or shell
         // configuration are inherited.
-        for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
+        for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH"] {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
             }
         }
+        command.env("PATHEXT", ".COM;.EXE;.BAT;.CMD");
         // The signed, no-weights Cupcake Local baseline is packaged beside the
         // broker. Only the Python child receives this native path.
         let declared_baseline = std::env::var_os("CUPCAKE_LOCAL_BASELINE_DIR")

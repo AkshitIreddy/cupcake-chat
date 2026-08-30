@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from .catalog import SignedModelCatalog, SignedRuntimeCatalog
+from .catalog import (
+    PinnedCatalogBundle,
+    SignedModelCatalog,
+    SignedRuntimeCatalog,
+    load_pinned_catalog_bundle,
+)
 from .downloads import CheckedDownload, ModelDownload, RuntimePackDownload
+from .hardware import detect_hardware
 from .manager import LlamaCppSupervisor, LlamaServerConfig
 from .model_store import InstalledModelStore
+from .recommendations import rank_catalog, rank_runtime_packs
 from .runtime_packs import RuntimePackIntegrityError, RuntimePackStore
 from .types import (
     DownloadSnapshot,
@@ -20,6 +25,7 @@ from .types import (
     InstalledModel,
     InstalledRuntimePack,
     ModelArtifact,
+    PerformanceMeasurement,
     RuntimeBackend,
     RuntimeCompanionArtifact,
     RuntimeEndpoint,
@@ -66,9 +72,31 @@ class CupcakeLocalManager:
             self._model_catalog = models
         if runtimes is not None:
             self._runtime_catalog = runtimes
+        self._rehydrate_downloads()
+
+    def configure_pinned_catalogs(
+        self,
+        directory: Path,
+        *,
+        expected_environment: str | None = None,
+        require_production: bool = False,
+        require_models: bool = True,
+        require_runtimes: bool = True,
+    ) -> PinnedCatalogBundle:
+        """Load fixed packaged catalogs through their pinned Ed25519 trust store."""
+
+        bundle = load_pinned_catalog_bundle(
+            directory,
+            expected_environment=expected_environment,
+            require_production=require_production,
+            require_models=require_models,
+            require_runtimes=require_runtimes,
+        )
+        self.configure_catalogs(models=bundle.models, runtimes=bundle.runtimes)
+        return bundle
 
     def seed_packaged_baseline(self, baseline_dir: Path) -> InstalledRuntimePack | None:
-        """Install and activate the signed CPU pack bundled beside the app.
+        """Install the signed CPU pack and activate it only as a safe default.
 
         A missing optional resource returns ``None`` for source/developer runs.
         Once the directory exists, missing files, malformed provenance, an
@@ -78,20 +106,23 @@ class CupcakeLocalManager:
 
         if not baseline_dir.is_dir():
             return None
-        catalog_path = baseline_dir / "cupcake-local-runtime-v1.json"
-        keys_path = baseline_dir / "cupcake-local-public-keys.json"
-        document = json.loads(catalog_path.read_text(encoding="utf-8"))
-        key_document = json.loads(keys_path.read_text(encoding="utf-8"))
-        if (
-            key_document.get("environment") != "local-release-candidate"
-            or key_document.get("productionTrustRoot") is not False
-        ):
-            raise ValueError("packaged Cupcake Local trust root is not marked local RC")
-        keys = {
-            str(key_id): base64.b64decode(str(encoded), validate=True)
-            for key_id, encoded in dict(key_document["keys"]).items()
-        }
-        catalog = SignedRuntimeCatalog.verify_and_load(document, keys)
+        bundle = self.configure_pinned_catalogs(
+            baseline_dir,
+            expected_environment="local-release-candidate",
+            require_production=False,
+            require_models=False,
+            require_runtimes=True,
+        )
+        catalog = bundle.runtimes
+        if catalog is None:
+            raise ValueError("packaged Cupcake Local runtime catalog is missing")
+        if bundle.trust.production_trust_root:
+            raise ValueError("packaged local RC trust root must not claim production status")
+        import json
+
+        document = json.loads(
+            (baseline_dir / "cupcake-local-runtime-v1.json").read_text(encoding="utf-8")
+        )
         provenance = document["payload"].get("provenance", {})
         if (
             provenance.get("environment") != "local-release-candidate"
@@ -109,8 +140,11 @@ class CupcakeLocalManager:
             raise ValueError("packaged catalog must contain exactly one Windows x64 CPU baseline")
         artifact = candidates[0]
         archive = baseline_dir / "archive" / artifact.filename
-        installed = self.install_runtime(artifact, archive, activate=True)
-        self.configure_catalogs(runtimes=catalog)
+        installed = self.install_runtime(
+            artifact,
+            archive,
+            activate=self.runtimes.active() is None,
+        )
         return installed
 
     async def download_runtime_by_id(
@@ -127,6 +161,16 @@ class CupcakeLocalManager:
             activate=activate,
             accepted_license_urls=accepted_license_urls,
         )
+
+    def model_artifact(self, model_id: str) -> ModelArtifact:
+        if self._model_catalog is None:
+            raise RuntimeError("a verified model catalog is not configured")
+        return self._model_catalog.get(model_id)
+
+    def runtime_artifact(self, runtime_id: str) -> RuntimePackArtifact:
+        if self._runtime_catalog is None:
+            raise RuntimeError("a verified runtime catalog is not configured")
+        return self._runtime_catalog.get(runtime_id)
 
     async def download_model_by_id(
         self, model_id: str
@@ -159,17 +203,27 @@ class CupcakeLocalManager:
                 managed=True,
                 detail="install the verified Cupcake Local CPU runtime pack",
             )
+        installed_packs = tuple(
+            item.backend.value for item in self.runtimes.list() if item.integrity_verified
+        )
+        hardware = detect_hardware(self.root, installed_acceleration_packs=installed_packs)
+        available_models = self._model_catalog.models if self._model_catalog else ()
+        recommendations = rank_catalog(available_models, hardware) if available_models else ()
+        available_runtimes = self._runtime_catalog.runtimes if self._runtime_catalog else ()
+        runtime_recommendations = (
+            rank_runtime_packs(available_runtimes, hardware) if available_runtimes else ()
+        )
         return {
             "endpoint": asdict(endpoint),
+            "hardware": asdict(hardware),
             "activeRuntime": asdict(active_runtime) if active_runtime else None,
             "runtimes": [asdict(item) for item in self.runtimes.list()],
             "models": [asdict(item) for item in self.models.list(verify=verify_integrity)],
             "downloads": [asdict(item) for item in self.download_snapshots()],
-            "availableRuntimes": (
-                [asdict(item) for item in self._runtime_catalog.runtimes]
-                if self._runtime_catalog
-                else []
-            ),
+            "availableRuntimes": [asdict(item) for item in available_runtimes],
+            "runtimeRecommendations": [asdict(item) for item in runtime_recommendations],
+            "availableModels": [asdict(item) for item in available_models],
+            "recommendations": [asdict(item) for item in recommendations],
             "activeModelId": self._active_model_id(),
             "modelWeightsBundled": False,
         }
@@ -430,6 +484,17 @@ class CupcakeLocalManager:
             managed=True,
         )
 
+    async def benchmark(self, *, max_tokens: int = 32) -> PerformanceMeasurement:
+        supervisor = self._supervisor
+        model_id = self._active_model_id()
+        if supervisor is None or model_id is None or self._runtime_id is None:
+            raise RuntimeError("load a verified model before running a benchmark")
+        return await supervisor.benchmark(
+            runtime_id=self._runtime_id,
+            model_id=model_id,
+            max_tokens=max_tokens,
+        )
+
     def remove_model(self, model_id: str) -> None:
         self.models.remove(model_id, active_model_id=self._active_model_id())
 
@@ -459,6 +524,34 @@ class CupcakeLocalManager:
             if Path(model.path).resolve() == active_path:
                 return model.id
         return None
+
+    def _rehydrate_downloads(self) -> None:
+        """Reconstruct crash-recoverable downloads after catalogs are restored."""
+
+        if self._model_catalog is not None:
+            for artifact in self._model_catalog.models:
+                destination = artifact.target(self.models.root)
+                self._rehydrate_one(artifact.id, ModelDownload(artifact, destination))
+        if self._runtime_catalog is not None:
+            for artifact in self._runtime_catalog.runtimes:
+                destination = self.downloads / "runtime" / artifact.filename
+                self._rehydrate_one(artifact.id, RuntimePackDownload(artifact, destination))
+                for companion in artifact.companions:
+                    companion_destination = self.downloads / "runtime" / companion.filename
+                    self._rehydrate_one(
+                        companion.id,
+                        RuntimePackDownload(companion, companion_destination),
+                    )
+
+    def _rehydrate_one(self, artifact_id: str, download: CheckedDownload) -> None:
+        if artifact_id in self._downloads:
+            return
+        if (
+            download.state_file.is_file()
+            or download.partial.is_file()
+            or download.snapshot.state == DownloadState.COMPLETED
+        ):
+            self._downloads[artifact_id] = download
 
     @staticmethod
     def _baseline_config(backend: RuntimeBackend) -> LlamaServerConfig:

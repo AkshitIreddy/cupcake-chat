@@ -6,7 +6,7 @@ from pydantic_ai import CancellationToken
 
 
 class AgentCancellation:
-    """A single-use cancellation handle safe to call from Electron routing threads."""
+    """A single-use cancellation handle safe to call from desktop routing threads."""
 
     def __init__(self) -> None:
         self._token = CancellationToken()

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Stage the pinned Cupcake Local CPU baseline for a Windows x64 RC package.
+"""Stage the pinned Cupcake Local CPU baseline for a Windows x64 local candidate.
 
 This script never downloads model weights. It accepts only the committed,
-local-RC-signed runtime catalog and extracts the exact pinned llama.cpp ZIP
-after both archive-level and per-file SHA-256 verification.
+local-candidate-signed runtime and model catalogs, extracts the exact pinned
+llama.cpp ZIP after archive-level and per-file SHA-256 verification, and stages
+the verified installable-model metadata beside the no-weights baseline.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from cupcake_runtime.local_models import (
     RuntimeBackend,
     RuntimePackDownload,
     RuntimePackStore,
+    SignedModelCatalog,
     SignedRuntimeCatalog,
     sha256_file,
 )
@@ -35,6 +37,9 @@ from cupcake_runtime.local_models.types import (
 )
 
 DEFAULT_CATALOG = REPO_ROOT / "packaging" / "catalogs" / "cupcake-local-runtime-v1.json"
+DEFAULT_MODEL_CATALOG = (
+    REPO_ROOT / "packaging" / "catalogs" / "cupcake-local-models-v1.json"
+)
 DEFAULT_KEYS = REPO_ROOT / "packaging" / "catalogs" / "cupcake-local-public-keys.json"
 DEFAULT_CACHE = REPO_ROOT / "out" / "download-cache" / "cupcake-local"
 DEFAULT_OUTPUT = (
@@ -45,6 +50,7 @@ DEFAULT_OUTPUT = (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    parser.add_argument("--model-catalog", type=Path, default=DEFAULT_MODEL_CATALOG)
     parser.add_argument("--keys", type=Path, default=DEFAULT_KEYS)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -64,8 +70,8 @@ def checked_output(path: Path) -> Path:
 
 
 def load_catalog(
-    catalog_path: Path, keys_path: Path
-) -> tuple[dict[str, Any], SignedRuntimeCatalog]:
+    catalog_path: Path, model_catalog_path: Path, keys_path: Path
+) -> tuple[dict[str, Any], SignedRuntimeCatalog, dict[str, Any], SignedModelCatalog]:
     document = json.loads(catalog_path.read_text(encoding="utf-8"))
     key_document = json.loads(keys_path.read_text(encoding="utf-8"))
     if key_document.get("environment") != "local-release-candidate":
@@ -73,19 +79,27 @@ def load_catalog(
             "only the explicit local-release-candidate trust root is accepted"
         )
     if key_document.get("productionTrustRoot") is not False:
-        raise ValueError("the RC catalog must not claim production signing")
+        raise ValueError("the local-candidate catalog must not claim production signing")
     keys = {
         str(key_id): base64.b64decode(value, validate=True)
         for key_id, value in key_document["keys"].items()
     }
     catalog = SignedRuntimeCatalog.verify_and_load(document, keys)
+    model_document = json.loads(model_catalog_path.read_text(encoding="utf-8"))
+    model_catalog = SignedModelCatalog.verify_and_load(model_document, keys)
     provenance = document["payload"].get("provenance", {})
     if (
         provenance.get("environment") != "local-release-candidate"
         or provenance.get("production_signing") is not False
     ):
-        raise ValueError("runtime catalog provenance is not marked local RC")
-    return document, catalog
+        raise ValueError("runtime catalog provenance is not marked local candidate")
+    model_provenance = model_document["payload"].get("provenance", {})
+    if (
+        model_provenance.get("environment") != "local-release-candidate"
+        or model_provenance.get("production_signing") is not False
+    ):
+        raise ValueError("model catalog provenance is not marked local candidate")
+    return document, catalog, model_document, model_catalog
 
 
 def cpu_baseline(catalog: SignedRuntimeCatalog) -> RuntimePackArtifact:
@@ -149,6 +163,8 @@ def stage(
     archive: Path,
     output: Path,
     catalog_path: Path,
+    model_catalog_path: Path,
+    model_count: int,
     keys_path: Path,
 ) -> None:
     if output.exists():
@@ -163,6 +179,7 @@ def stage(
         installed = store.install(artifact, staged_archive)
         reported = verify_executable(artifact, Path(installed.executable))
     shutil.copy2(catalog_path, output / catalog_path.name)
+    shutil.copy2(model_catalog_path, output / model_catalog_path.name)
     shutil.copy2(keys_path, output / keys_path.name)
     staged_files = tuple(path for path in output.rglob("*") if path.is_file())
     if any(path.suffix.casefold() == ".gguf" for path in staged_files):
@@ -176,6 +193,9 @@ def stage(
         "modelWeightsBundled": False,
         "catalogKeyId": document["key_id"],
         "catalogSha256": sha256_file(catalog_path),
+        "modelCatalogSha256": sha256_file(model_catalog_path),
+        "publicKeysSha256": sha256_file(keys_path),
+        "modelCount": model_count,
         "runtimeId": artifact.id,
         "runtimeVersion": artifact.version,
         "sourceRevision": artifact.source_revision,
@@ -189,7 +209,14 @@ def stage(
     )
 
 
-def verify_stage(artifact: RuntimePackArtifact, output: Path) -> None:
+def verify_stage(
+    artifact: RuntimePackArtifact,
+    output: Path,
+    catalog_path: Path,
+    model_catalog_path: Path,
+    model_count: int,
+    keys_path: Path,
+) -> None:
     archive = output / "archive" / artifact.filename
     if not archive_valid(archive, artifact):
         raise RuntimeError("staged Cupcake Local archive is missing or corrupt")
@@ -210,15 +237,39 @@ def verify_stage(artifact: RuntimePackArtifact, output: Path) -> None:
         raise RuntimeError(
             "Cupcake Local manifest must explicitly exclude model weights"
         )
+    for label, source, manifest_field in (
+        ("runtime catalog", catalog_path, "catalogSha256"),
+        ("model catalog", model_catalog_path, "modelCatalogSha256"),
+        ("public keys", keys_path, "publicKeysSha256"),
+    ):
+        staged = output / source.name
+        source_digest = sha256_file(source)
+        if (
+            not staged.is_file()
+            or sha256_file(staged) != source_digest
+            or manifest.get(manifest_field) != source_digest
+        ):
+            raise RuntimeError(f"staged Cupcake Local {label} is missing or corrupt")
+    if manifest.get("modelCount") != model_count:
+        raise RuntimeError("staged Cupcake Local model catalog count is invalid")
 
 
 def main() -> None:
     args = parse_args()
     output = checked_output(args.out_dir)
-    document, catalog = load_catalog(args.catalog.resolve(), args.keys.resolve())
+    document, catalog, _model_document, model_catalog = load_catalog(
+        args.catalog.resolve(), args.model_catalog.resolve(), args.keys.resolve()
+    )
     artifact = cpu_baseline(catalog)
     if args.verify_only:
-        verify_stage(artifact, output)
+        verify_stage(
+            artifact,
+            output,
+            args.catalog.resolve(),
+            args.model_catalog.resolve(),
+            len(model_catalog.models),
+            args.keys.resolve(),
+        )
     else:
         archive = asyncio.run(
             obtain_archive(artifact, args.cache_dir.resolve(), offline=args.offline)
@@ -229,12 +280,22 @@ def main() -> None:
             archive,
             output,
             args.catalog.resolve(),
+            args.model_catalog.resolve(),
+            len(model_catalog.models),
             args.keys.resolve(),
         )
-        verify_stage(artifact, output)
+        verify_stage(
+            artifact,
+            output,
+            args.catalog.resolve(),
+            args.model_catalog.resolve(),
+            len(model_catalog.models),
+            args.keys.resolve(),
+        )
     print(
         f"Verified Cupcake Local {artifact.version} CPU baseline "
-        f"({artifact.size_bytes} archive bytes, {len(artifact.files)} files, no weights)."
+        f"({artifact.size_bytes} archive bytes, {len(artifact.files)} runtime files, "
+        f"{len(model_catalog.models)} installable model records, no weights)."
     )
 
 

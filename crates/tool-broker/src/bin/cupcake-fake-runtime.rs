@@ -87,31 +87,31 @@ fn run() -> Result<()> {
                         local_models_discovered = true;
                         json!({
                             "endpoints": [{
-                                "id": "lm_studio:http://127.0.0.1:1234",
-                                "kind": "lm_studio",
+                                "id": "cupcake-local:http://127.0.0.1:1234",
+                                "kind": "cupcake_llama_cpp",
                                 "base_url": "",
                                 "state": "ready",
                                 "models": ["local-test-model"]
                             }],
                             "models": [{
-                                "id": "openai-compatible:lm-studio-local/local-test-model",
+                                "id": "openai-compatible:cupcake-local/local-test-model",
                                 "provider": "openai-compatible",
                                 "model": "local-test-model",
                                 "display_name": "Local test model",
                                 "privacy_route": "local",
-                                "metadata": {"runtime_kind": "lm_studio"}
+                                "metadata": {"runtime_kind": "cupcake_llama_cpp"}
                             }]
                         })
                     }
                     Some("broker.providers.resolve_compatible_route")
                         if local_models_discovered
                             && model_id
-                                == Some("openai-compatible:lm-studio-local/local-test-model") =>
+                                == Some("openai-compatible:cupcake-local/local-test-model") =>
                     {
                         json!({
                             "modelId": model_id,
                             "baseUrl": "http://127.0.0.1:1234/v1",
-                            "runtimeKind": "lm_studio",
+                            "runtimeKind": "cupcake_llama_cpp",
                             "privacyRoute": "local"
                         })
                     }

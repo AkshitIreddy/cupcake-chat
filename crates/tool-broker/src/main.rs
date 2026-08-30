@@ -1,5 +1,5 @@
 use chrono::{SecondsFormat, Utc};
-use cupcake_tool_broker::credential_prompt::prompt_api_key;
+use cupcake_tool_broker::audit::redact;
 use cupcake_tool_broker::framing::{
     read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES,
 };
@@ -820,8 +820,8 @@ fn dispatch_secure_request(
             let result = configure_provider(provider, secret.expose(), &options, runtime)?;
             Ok(Some(vec![(MessageType::Response, success(result))]))
         }
-        "providers.connect" | "providers.connectInteractive" => {
-            let interactive = method == "providers.connectInteractive";
+        "providers.test" | "providers.connect" => {
+            let persist = method == "providers.connect";
             let params = payload
                 .get_mut("params")
                 .and_then(Value::as_object_mut)
@@ -834,28 +834,17 @@ fn dispatch_secure_request(
                 .filter(|value| provider_names().contains(value) || *value == "openai-compatible")
                 .ok_or_else(|| BrokerError::InvalidConfig("unsupported provider".into()))?
                 .to_owned();
-            let secret = if interactive {
-                let label = provider_prompt_label(&provider);
-                prompt_api_key(label)?
-            } else {
-                if !cfg!(debug_assertions)
-                    || std::env::var("CUPCAKE_ALLOW_DEV_SECRET_INJECTION").as_deref() != Ok("1")
-                {
-                    params.remove("secret");
-                    return Err(BrokerError::PermissionDenied(
-                        "direct credential injection is disabled; use Windows credential entry"
-                            .into(),
-                    ));
-                }
-                let raw_secret = params
-                    .remove("secret")
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                    .ok_or_else(|| {
-                        BrokerError::InvalidConfig("provider secret is required".into())
-                    })?;
-                SecretBytes::new(raw_secret.into_bytes())?
-            };
-            let endpoint_id = if provider == "openai-compatible" {
+            // This method is reachable only through the authenticated host-to-broker
+            // pipe. The Tauri host exposes it as a dedicated command instead of the
+            // generic runtime facade, so the secret is removed from the request map
+            // immediately and never returned to the webview.
+            let raw_secret = params
+                .remove("secret")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .ok_or_else(|| BrokerError::InvalidConfig("provider secret is required".into()))?;
+            let secret = SecretBytes::new(raw_secret.into_bytes())?;
+
+            let endpoint = if provider == "openai-compatible" {
                 let raw_base_url =
                     params
                         .get("baseUrl")
@@ -867,6 +856,71 @@ fn dispatch_secure_request(
                         })?;
                 let endpoint = validate_openai_compatible_endpoint(raw_base_url)?;
                 params.insert("baseUrl".into(), Value::String(endpoint.base_url.clone()));
+                params.insert("endpointId".into(), Value::String(endpoint.id.clone()));
+                Some(endpoint)
+            } else {
+                None
+            };
+            params.insert("validateOnly".into(), Value::Bool(!persist));
+
+            // Validate first. A wrong key must never become a persisted, apparently
+            // configured credential.
+            let runtime_response =
+                configure_provider_response(&provider, secret.expose(), params, runtime)?;
+            if runtime_response.get("ok").and_then(Value::as_bool) != Some(true) {
+                let diagnostic =
+                    redact(runtime_response.get("error").cloned().unwrap_or_else(|| {
+                        json!({
+                            "code": "provider_unavailable",
+                            "message": "The provider rejected the connection test.",
+                            "retryable": false
+                        })
+                    }));
+                return Ok(Some(vec![(
+                    MessageType::Response,
+                    success(json!({
+                        "provider": provider,
+                        "tested": false,
+                        "configured": false,
+                        "persistent": false,
+                        "diagnostic": diagnostic
+                    })),
+                )]));
+            }
+            let runtime_result = runtime_response
+                .get("result")
+                .cloned()
+                .unwrap_or(Value::Null);
+            let onboarding_state = runtime_result
+                .get("state")
+                .and_then(Value::as_str)
+                .unwrap_or("failed");
+            let tested = matches!(onboarding_state, "ready" | "degraded");
+            if !tested {
+                let mut response = runtime_result.as_object().cloned().unwrap_or_default();
+                response.insert("tested".into(), Value::Bool(false));
+                response.insert("configured".into(), Value::Bool(false));
+                response.insert("persistent".into(), Value::Bool(false));
+                return Ok(Some(vec![(
+                    MessageType::Response,
+                    success(Value::Object(response)),
+                )]));
+            }
+            if !persist {
+                let mut response = runtime_result.as_object().cloned().unwrap_or_default();
+                response.insert("tested".into(), Value::Bool(true));
+                response.insert("configured".into(), Value::Bool(false));
+                response.insert("persistent".into(), Value::Bool(false));
+                return Ok(Some(vec![(
+                    MessageType::Response,
+                    success(Value::Object(response)),
+                )]));
+            }
+
+            let endpoint_id = if provider == "openai-compatible" {
+                let endpoint = endpoint.ok_or_else(|| {
+                    BrokerError::InvalidConfig("validated endpoint is missing".into())
+                })?;
                 vault
                     .inner()
                     .store(&openai_compatible_key_account(&endpoint.id), &secret)?;
@@ -876,17 +930,22 @@ fn dispatch_secure_request(
                 vault.inner().store(&provider_account(&provider), &secret)?;
                 None
             };
-            let runtime_result = configure_provider(&provider, secret.expose(), params, runtime)?;
-            let mut response = json!({
-                "provider": provider,
-                "configured": true,
-                "endpointId": endpoint_id,
-                "persistent": vault.inner().is_persistent()
-            });
-            if let Some(catalog) = runtime_result.get("catalog") {
-                response["catalog"] = catalog.clone();
-            }
-            Ok(Some(vec![(MessageType::Response, success(response))]))
+            let mut response = runtime_result.as_object().cloned().unwrap_or_default();
+            response.insert("provider".into(), Value::String(provider));
+            response.insert("tested".into(), Value::Bool(true));
+            response.insert("configured".into(), Value::Bool(true));
+            response.insert(
+                "persistent".into(),
+                Value::Bool(vault.inner().is_persistent()),
+            );
+            response.insert(
+                "endpointId".into(),
+                endpoint_id.map(Value::String).unwrap_or(Value::Null),
+            );
+            Ok(Some(vec![(
+                MessageType::Response,
+                success(Value::Object(response)),
+            )]))
         }
         "providers.disconnect" => {
             let provider = payload
@@ -896,6 +955,7 @@ fn dispatch_secure_request(
                 .and_then(Value::as_str)
                 .filter(|value| provider_names().contains(value) || *value == "openai-compatible")
                 .ok_or_else(|| BrokerError::InvalidConfig("unsupported provider".into()))?;
+            let runtime_response = disconnect_provider_response(provider, runtime);
             let removed = if provider == "openai-compatible" {
                 if let Some(endpoint) = load_openai_compatible_endpoint(vault)? {
                     let removed = vault
@@ -909,9 +969,25 @@ fn dispatch_secure_request(
             } else {
                 vault.inner().delete(&provider_account(provider))?
             };
+            let runtime_disconnected = match runtime_response {
+                Ok(response) if response.get("ok").and_then(Value::as_bool) == Some(true) => true,
+                Ok(_) | Err(_) => {
+                    // A failed disconnect must not leave a credential-bearing provider
+                    // configuration alive in the Python child. Dropping the supervised
+                    // child clears that memory before a future clean restart.
+                    *runtime = None;
+                    false
+                }
+            };
             Ok(Some(vec![(
                 MessageType::Response,
-                success(json!({"provider": provider, "configured": false, "removed": removed})),
+                success(json!({
+                    "provider": provider,
+                    "configured": false,
+                    "persistent": vault.inner().is_persistent(),
+                    "removed": removed,
+                    "runtimeDisconnected": runtime_disconnected
+                })),
             )]))
         }
         "broker.providers.resolve_compatible_route" => Err(BrokerError::PermissionDenied(
@@ -955,7 +1031,24 @@ fn configure_selected_provider(
             .ok_or_else(|| {
                 BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
             })?;
-        let options = object(json!({"baseUrl": endpoint.base_url}));
+        let (selected_endpoint, selected_model) = model_id
+            .strip_prefix("openai-compatible:")
+            .and_then(|value| value.split_once('/'))
+            .ok_or_else(|| {
+                BrokerError::InvalidConfig("OpenAI-compatible model identity is invalid".into())
+            })?;
+        if selected_endpoint != endpoint.id {
+            return Err(BrokerError::PermissionDenied(
+                "OpenAI-compatible model belongs to a different endpoint".into(),
+            ));
+        }
+        let options = object(json!({
+            "baseUrl": endpoint.base_url,
+            "endpointId": endpoint.id,
+            "modelId": selected_model,
+            "displayName": selected_model,
+            "trustedHydration": true
+        }));
         let _ = configure_provider(provider, secret.expose(), &options, runtime)?;
         return Ok(());
     }
@@ -966,7 +1059,12 @@ fn configure_selected_provider(
         .inner()
         .load(&provider_account(provider))?
         .ok_or_else(|| BrokerError::PermissionDenied(format!("{provider} is not connected")))?;
-    let _ = configure_provider(provider, secret.expose(), &Map::new(), runtime)?;
+    let options = if provider == "nvidia-nim" {
+        Map::new()
+    } else {
+        object(json!({"trustedHydration": true}))
+    };
+    let _ = configure_provider(provider, secret.expose(), &options, runtime)?;
     Ok(())
 }
 
@@ -1046,29 +1144,11 @@ fn validate_runtime_compatible_route(
             .map(|address| address.is_loopback())
             .unwrap_or(false);
     match runtime_kind {
-        "cupcake_llama_cpp" | "ollama" | "lm_studio" => {
+        "cupcake_llama_cpp" => {
             if privacy_route != "local" || !loopback || !matches!(url.scheme(), "http" | "https") {
                 return Err(BrokerError::PermissionDenied(
-                    "local runtime route must use a loopback HTTP(S) origin".into(),
+                    "Cupcake Local must use a loopback HTTP(S) origin".into(),
                 ));
-            }
-        }
-        "vllm" => {
-            if privacy_route != "self_hosted" {
-                return Err(BrokerError::PermissionDenied(
-                    "vLLM route must remain self-hosted".into(),
-                ));
-            }
-            if loopback {
-                if !matches!(url.scheme(), "http" | "https") {
-                    return Err(BrokerError::PermissionDenied(
-                        "loopback vLLM route must use HTTP(S)".into(),
-                    ));
-                }
-            } else {
-                // Remote compatible origins retain the same HTTPS, no-userinfo,
-                // public-address policy as user-configured generic endpoints.
-                validate_openai_compatible_endpoint(base_url)?;
             }
         }
         _ => {
@@ -1091,6 +1171,41 @@ fn configure_provider(
     options: &Map<String, Value>,
     runtime: &mut Option<RuntimeChild>,
 ) -> Result<Value> {
+    let response = configure_provider_response(provider, secret, options, runtime)?;
+    if response.get("ok").and_then(Value::as_bool) != Some(true) {
+        let diagnostic = redact(response.get("error").cloned().unwrap_or(Value::Null));
+        let code = diagnostic
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("PROVIDER_TEST_FAILED");
+        return Err(BrokerError::PermissionDenied(format!(
+            "provider connection test failed ({code})"
+        )));
+    }
+    let result = response.get("result").cloned().unwrap_or(Value::Null);
+    let state = result
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("failed");
+    if !matches!(state, "ready" | "degraded") {
+        let code = result
+            .get("diagnostic")
+            .and_then(|diagnostic| diagnostic.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or("provider_test_failed");
+        return Err(BrokerError::PermissionDenied(format!(
+            "provider connection test failed ({code})"
+        )));
+    }
+    Ok(result)
+}
+
+fn configure_provider_response(
+    provider: &str,
+    secret: &[u8],
+    options: &Map<String, Value>,
+    runtime: &mut Option<RuntimeChild>,
+) -> Result<Value> {
     let credential = std::str::from_utf8(secret)
         .map_err(|_| BrokerError::InvalidConfig("provider secret is not UTF-8".into()))?;
     let mut params = Map::new();
@@ -1102,23 +1217,50 @@ fn configure_provider(
     if let Some(value) = options.get("organization") {
         params.insert("organization".into(), value.clone());
     }
+    for key in ["endpointId", "modelId", "displayName"] {
+        if let Some(value) = options.get(key).filter(|value| value.is_string()) {
+            params.insert(key.into(), value.clone());
+        }
+    }
     if let Some(value) = options
         .get("forceCatalogRefresh")
         .filter(|value| value.is_boolean())
     {
         params.insert("forceCatalogRefresh".into(), value.clone());
     }
+    if let Some(value) = options
+        .get("validateOnly")
+        .filter(|value| value.is_boolean())
+    {
+        params.insert("validateOnly".into(), value.clone());
+    }
+    if let Some(value) = options
+        .get("trustedHydration")
+        .filter(|value| value.is_boolean())
+    {
+        params.insert("trustedHydration".into(), value.clone());
+    }
     let request = object(json!({"method": "providers.configure", "params": params}));
     let messages = ensure_runtime(runtime)?.request(&request)?;
     let response = messages.last().map(|(_, payload)| payload).ok_or_else(|| {
         BrokerError::InvalidEnvelope("runtime provider response is missing".into())
     })?;
-    if response.get("ok").and_then(Value::as_bool) != Some(true) {
-        return Err(BrokerError::PermissionDenied(
-            "runtime rejected provider configuration".into(),
-        ));
-    }
-    Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    Ok(Value::Object(response.clone()))
+}
+
+fn disconnect_provider_response(
+    provider: &str,
+    runtime: &mut Option<RuntimeChild>,
+) -> Result<Value> {
+    let request = object(json!({
+        "method": "providers.disconnect",
+        "params": {"provider": provider}
+    }));
+    let messages = ensure_runtime(runtime)?.request(&request)?;
+    let response = messages.last().map(|(_, payload)| payload).ok_or_else(|| {
+        BrokerError::InvalidEnvelope("runtime provider disconnect response is missing".into())
+    })?;
+    Ok(Value::Object(response.clone()))
 }
 
 fn provider_names() -> &'static [&'static str] {
@@ -1135,20 +1277,6 @@ fn provider_names() -> &'static [&'static str] {
 
 fn provider_account(provider: &str) -> String {
     format!("provider.{provider}.api-key")
-}
-
-fn provider_prompt_label(provider: &str) -> &'static str {
-    match provider {
-        "openai" => "OpenAI",
-        "anthropic" => "Anthropic",
-        "google" => "Google Gemini",
-        "xai" => "xAI",
-        "mistral" => "Mistral",
-        "cohere" => "Cohere",
-        "nvidia-nim" => "NVIDIA NIM",
-        "openai-compatible" => "OpenAI-compatible endpoint",
-        _ => "AI provider",
-    }
 }
 
 const OPENAI_COMPATIBLE_ENDPOINT_ACCOUNT: &str = "provider.openai-compatible.selected-endpoint";
@@ -1314,70 +1442,49 @@ mod tests {
     #[test]
     fn runtime_compatible_route_accepts_only_matching_trusted_boundaries() {
         let local = json!({
-            "modelId": "openai-compatible:lm/local-model",
+            "modelId": "openai-compatible:cupcake-local/local-model",
             "baseUrl": "http://127.0.0.1:1234/v1",
-            "runtimeKind": "lm_studio",
+            "runtimeKind": "cupcake_llama_cpp",
             "privacyRoute": "local"
         });
-        assert!(
-            validate_runtime_compatible_route("openai-compatible:lm/local-model", &local).is_ok()
-        );
+        assert!(validate_runtime_compatible_route(
+            "openai-compatible:cupcake-local/local-model",
+            &local
+        )
+        .is_ok());
 
         for rejected in [
             json!({
-                "modelId": "openai-compatible:lm/different-model",
+                "modelId": "openai-compatible:cupcake-local/different-model",
                 "baseUrl": "http://127.0.0.1:1234/v1",
-                "runtimeKind": "lm_studio",
+                "runtimeKind": "cupcake_llama_cpp",
                 "privacyRoute": "local"
             }),
             json!({
-                "modelId": "openai-compatible:lm/local-model",
+                "modelId": "openai-compatible:cupcake-local/local-model",
                 "baseUrl": "https://models.example.test/v1",
-                "runtimeKind": "lm_studio",
+                "runtimeKind": "cupcake_llama_cpp",
                 "privacyRoute": "local"
             }),
             json!({
-                "modelId": "openai-compatible:lm/local-model",
+                "modelId": "openai-compatible:cupcake-local/local-model",
                 "baseUrl": "http://127.0.0.1:1234/v1",
-                "runtimeKind": "lm_studio",
+                "runtimeKind": "cupcake_llama_cpp",
                 "privacyRoute": "self_hosted"
             }),
             json!({
-                "modelId": "openai-compatible:lm/local-model",
+                "modelId": "openai-compatible:cupcake-local/local-model",
                 "baseUrl": "http://127.0.0.1:1234/v1",
                 "runtimeKind": "forged_runtime",
                 "privacyRoute": "local"
             }),
         ] {
             assert!(validate_runtime_compatible_route(
-                "openai-compatible:lm/local-model",
+                "openai-compatible:cupcake-local/local-model",
                 &rejected
             )
             .is_err());
         }
-    }
-
-    #[test]
-    fn runtime_vllm_route_requires_https_when_not_loopback() {
-        let remote = json!({
-            "modelId": "openai-compatible:vllm/model",
-            "baseUrl": "https://models.example.test/v1",
-            "runtimeKind": "vllm",
-            "privacyRoute": "self_hosted"
-        });
-        assert!(validate_runtime_compatible_route("openai-compatible:vllm/model", &remote).is_ok());
-
-        let insecure_remote = json!({
-            "modelId": "openai-compatible:vllm/model",
-            "baseUrl": "http://models.example.test/v1",
-            "runtimeKind": "vllm",
-            "privacyRoute": "self_hosted"
-        });
-        assert!(validate_runtime_compatible_route(
-            "openai-compatible:vllm/model",
-            &insecure_remote
-        )
-        .is_err());
     }
 
     #[test]
