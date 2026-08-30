@@ -1,21 +1,12 @@
-# Local release-candidate testing
+# Corrective local-candidate testing
 
-This is the owner-facing verification pass for CUPCAKEAGI 2.0. It is intentionally broader than a
-unit-test checklist: a passing build is not proof that the desktop app looks right, preserves data,
-routes context safely, or recovers durable work.
+The Tauri overhaul is not accepted yet. This guide defines the fresh evidence required before the
+owner receives a new test application. Previous package, provider, local-model, installer, visual,
+and performance results are historical only.
 
-The final local automation checkpoint passed strict Pyright, 138 unit tests, 22 Playwright tests,
-atomic sidecar promotion/rollback, seeded authenticated protocol and local-model discovery smoke,
-make-mode package smoke, and the release-candidate audit. Live packaged checks also passed for a
-hosted NVIDIA NIM response and a local LM Studio Gemma GPU conversation. These results make the
-candidate ready for owner review; they do not replace the manual sections below.
+## 1. Record the candidate
 
-Use a disposable test profile and non-production provider accounts. Do not point destructive or
-migration tests at your normal files.
-
-## 1. Record the build
-
-From the repository root in Windows PowerShell:
+From Windows PowerShell:
 
 ```powershell
 git status --short
@@ -23,364 +14,147 @@ git branch --show-current
 git rev-parse HEAD
 node --version
 pnpm --version
-rustc --version
+rustc -Vv
 cargo --version
 py -3.12 --version
 ```
 
-The expected branch is `feat/cupcakeagi-2.0`. Record the commit, date, Windows edition/build, x64
-architecture, CPU, RAM, GPU/VRAM, display scale, and whether the run is a development build,
-unpacked package, or installer. Windows 10 and Windows 11 x64 are the only supported
-release-candidate targets.
+Record Windows edition/build, CPU, RAM, disk, GPU/VRAM, WebView2 version, display scale, app zoom,
+commit, and exact executable type. Do not test against the owner's ordinary profile.
 
-Do not treat unrelated dirty files as part of the candidate. Do not push or publish the result.
-
-## 2a. Disposable packaged-app profile
-
-The Windows package can be exercised with an isolated profile so acceptance testing does not touch
-the normal `%APPDATA%\\CUPCAKEAGI` directory. From PowerShell, after `pnpm package` has completed:
-
-```powershell
-$env:CUPCAKE_TEST_PROFILE = '1'
-$env:CUPCAKE_TEST_DATA_DIR = 'C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\out\test-profile'
-New-Item -ItemType Directory -Force $env:CUPCAKE_TEST_DATA_DIR | Out-Null
-& 'C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\apps\desktop\out\CUPCAKEAGI-win32-x64\CUPCAKEAGI.exe'
-```
-
-The disposable profile contains the SQLCipher product database, DBOS runtime database, broker
-security/audit data, and encrypted object store created by that test run. Delete only this exact
-`out\\test-profile` directory when the test is complete. A normal installed run uses
-`%APPDATA%\\CUPCAKEAGI` instead. The marker and absolute path are ignored unless both are present;
-they are not required for everyday use.
-
-Web search is opt-in at the broker boundary. To test it, set a credential-free public HTTPS search
-origin before launching the package (the endpoint receives `?q=`):
-
-```powershell
-$env:CUPCAKE_WEB_SEARCH_ENDPOINT = 'https://html.duckduckgo.com/html/'
-```
-
-The broker validates the endpoint and discloses its origin in the preflight; leaving the variable
-unset keeps web fetch available while search remains disabled. Do not put API keys or private
-endpoints in this variable.
-
-The current private artifacts are:
-
-- unpacked app:
-  `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\apps\desktop\out\CUPCAKEAGI-win32-x64\CUPCAKEAGI.exe`
-- Squirrel installer:
-  `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\apps\desktop\out\make\squirrel.windows\x64\CUPCAKEAGI-Setup.exe`
-- portable ZIP:
-  `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\apps\desktop\out\make\zip\win32\x64\CUPCAKEAGI-win32-x64-2.0.0-rc.1.zip`
-
-These are unsigned local test artifacts. Installer lifecycle testing used an isolated test root, not
-the normal system-wide location, and no update feed or publication step was performed.
-
-## 2. Install and run automated checks
+## 2. Automated source gates
 
 ```powershell
 corepack enable
 corepack prepare pnpm@10.15.1 --activate
 pnpm install --frozen-lockfile
 pnpm format:check
-node scripts/verify.mjs --lane js
-```
-
-Set up the Python runtime only through its package metadata:
-
-```powershell
-py -3.12 -m venv services\runtime\.venv
-services\runtime\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e "services/runtime[documents,durability,packaging,providers,sqlcipher,test]"
-node scripts/verify.mjs --lane contracts
-node scripts/verify.mjs --lane python
-node scripts/verify.mjs --lane rust
-```
-
-The Python lane intentionally resolves `services/runtime/pyproject.toml` in strict mode, and the
-final validation run is clean. Do not substitute a repository-root positional Pyright command,
-because that can silently use weaker defaults. Reproduce the strict gate directly with:
-
-```powershell
-Push-Location services\runtime
-.\.venv\Scripts\python.exe -m pyright .
-Pop-Location
-```
-
-If the Python package metadata or `test` extra is missing, stop the runtime portion and record that
-as a release blocker. Do not use the 1.x Conda environment as a substitute.
-
-## 3. Start with deterministic fixtures
-
-```powershell
+node scripts/verify.mjs --lane all
 node scripts/setup-fixtures.mjs --clean
-pnpm --filter @cupcakeagi/desktop dev
+pnpm test:e2e
 ```
 
-Before adding credentials or local models, verify that the app opens and that fixture-backed
-surfaces are clearly distinguishable from live provider state. A fixture must never imply that a
-provider is connected, a model is installed, or a task has actually recovered when it has not.
+Browser E2E does not prove native behavior. Run the exact packaged Tauri/WebView2 executable with a
+fresh disposable profile and retain its opened screenshots separately. The local-model acceptance
+harness is `scripts/accept-packaged-local-model.mjs`; it refuses to start unless the caller supplies
+an already-acquired GPU marker whose contents are `yes`.
 
-Check:
-
-- first interactive window appears within 3 seconds on the reference modern 8-core/32 GB/NVMe
-  machine;
-- no terminal or debug console appears in the normal user path;
-- Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, Settings, Developer, and
-  About are reachable;
-- window minimize, maximize/restore, close, resize, and reopen behave normally;
-- the original mascot appears only in About/history or the Classic theme;
-- no voice control or automatic model-routing option is present.
-
-## 4. Verify chat and navigation
-
-Run the canonical chat interactions:
-
-1. Start a chat from Home and send multiline text.
-2. Confirm Enter sends and Shift+Enter inserts a line break.
-3. Stop a streaming response, then Retry and Continue.
-4. Edit an earlier user message and prove the old branch still exists.
-5. Create a sibling branch and move between branches through the Frosting Thread.
-6. Rename, pin, duplicate, archive, restore, search, and delete a disposable chat.
-7. Close and reopen the app; confirm drafts, branch head, and scroll anchor behave as documented.
-8. Build or load a 500-message fixture and verify virtualization plus long-chat navigation remain
-   responsive.
-
-Provider deltas should render within 100 ms of receipt on the reference machine without
-destabilizing incomplete Markdown or code blocks. Inspect long prose, headings, nested lists, links,
-citations, wide tables, syntax-highlighted code, equations, images, tool cards, task cards, and
-artifact anchors.
-
-## 5. Inspect every theme and width
-
-Use Playwright for interaction and screenshot capture, then open and inspect the images. DOM
-assertions alone do not pass this section.
-
-Capture full frames and relevant close-ups at widths:
-
-- 360 px;
-- 768 px;
-- 1024 px;
-- 1440 px;
-- an ultrawide desktop width.
-
-Repeat for Cupcake Light, Cupcake Dark, Minimal, and Classic. Include true empty, loading,
-streaming, complete, offline, approval, provider error, tool error, interrupted task, artifact split
-view, command palette, model picker, context inspector, and cost-warning states.
-
-Look for clipped text, unreadable contrast, overlays beneath the composer, accidental horizontal
-page scroll, unscrollable tables/code, stale focus, layout jumps, mascot overuse, and state
-communicated only by color.
-
-## 6. Accessibility pass
-
-Without a pointer:
-
-- reach and operate every shelf destination, menu, dialog, branch, tool card, citation, revision,
-  artifact tab, and composer control;
-- confirm visible focus and logical order;
-- use F6 to cycle major application regions;
-- verify Escape closes only the topmost transient layer and never discards a draft;
-- test all documented shortcuts and their visible alternatives.
-
-With a screen reader, verify streaming is announced as debounced phrases rather than tokens and that
-task/tool updates use appropriate live regions. Test 200% and 400% zoom, Windows high contrast,
-reduced motion, and keyboard-only file/model/approval flows. Confirm Local/Cloud, success/failure,
-capability, and task state have text or icons in addition to color.
-
-## 7. Provider matrix
-
-Run deterministic adapter fixtures for every provider. Run live smoke tests only with explicit test
-credentials and a small cost limit.
-
-| Provider route    | Required live checks                                                                                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI            | Responses streaming, stop, reasoning setting, tools, citations/usage where supported, continuity, and malformed/rate-limit errors                                 |
-| Anthropic         | Streaming, stop, tools, usage, supported reasoning control, and error normalization                                                                               |
-| Gemini            | Streaming, stop, file/image capability disclosure, tools, usage, and errors                                                                                       |
-| xAI               | Streaming, stop, supported tools/reasoning, usage, and errors                                                                                                     |
-| Mistral           | Streaming, stop, tools, usage, and errors                                                                                                                         |
-| Cohere            | Streaming, stop, retrieval/tool behavior, usage, and errors                                                                                                       |
-| NVIDIA NIM        | Recorded OpenAI-compatible streaming, tool/reasoning deltas, usage, rate limits, bounded dynamic catalog parsing, and explicit model selection; no live key in CI |
-| OpenAI-compatible | Custom endpoint validation, capability override, unavailable endpoint, and privacy boundary confirmation                                                          |
-
-For each route, confirm credentials never appear in logs, diagnostics, UI events, crash output,
-screenshots, or the product database. Switch providers mid-conversation and verify only canonical
-visible history transfers. Confirm no fallback occurs unless explicitly configured, and that a
-cost/privacy boundary requires confirmation.
-
-## 8. Local model matrix
-
-Test the app-managed llama.cpp runtime and any available Ollama/LM Studio installations. Test
-external vLLM as a connection, not an installation workflow.
-
-- absent, stopped, starting, ready, degraded, and crashed runtime states;
-- hardware detection and conservative RAM/VRAM/context recommendation;
-- license acknowledgement and catalog provenance;
-- resumable download, pause, cancel, restart, checksum mismatch, unexpected content type, and low
-  disk;
-- atomic finalization with no loadable partial file;
-- load, unload, chat, stop, removal, and version replacement;
-- measured tokens per second rather than a fabricated estimate;
-- fully offline chat after a verified model is installed;
-- local prompt/file contents never sent to a cloud provider or catalog request.
-
-On an approximately 12 GB VRAM machine, verify 7–9B Q4_K_M models are favored, 12–14B guidance
-accounts for context/headroom, and larger models are labeled hybrid or unsuitable.
-
-Final machine evidence: the packaged app discovered LM Studio, loaded `google/gemma-3n-e4b`,
-completed a real local GPU chat, and rendered it in `out/live-ui/gpu-local-chat.png`. A separate
-direct Qwen 9B run measured approximately 36.8 generated tokens per second. After testing, the model
-was unloaded, the LM Studio server was stopped, and `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`
-was restored to `no`.
-
-## 9. Projects, files, search, and artifacts
-
-Create two projects with deliberately conflicting facts. Attach a disposable repository and
-representative PDF, document, spreadsheet, image, code tree, log, archive, and large text file.
-
-- Confirm repository access is read-only initially, honors ignore rules, and cannot escape through a
-  symlink or junction.
-- Confirm attachment cards show parse/index state, size, citation support, and destination.
-- Verify stable page/range/line/archive/media locators survive app restart and incremental
-  re-indexing.
-- Search 100,000 fixture records and verify FTS results complete within 250 ms p95 on the reference
-  machine.
-- Disable semantic retrieval and prove lexical search still works.
-- Confirm Project A files, memories, and search results never appear in Project B.
-- Generate each artifact category, preview it, edit it, request a revision, inspect history, export,
-  and follow its immutable chat link.
-- Create conflicting artifact edits and verify no revision is silently overwritten.
-- Stage a repository patch, inspect the exact diff, deny once, then approve a fresh identical
-  preflight and confirm only the approved files change.
-
-## 10. Memory and proactive features
-
-- Explicitly remember a preference and verify immediate write plus Undo.
-- Correct Cupcake and verify an inferred preference remains a candidate until reviewed.
-- Attempt to remember a secret and verify confirmation/secret protections.
-- Create user, global, and project-scoped records; test search, edit, pin, disable, expiry, delete,
-  and tombstone behavior.
-- Ask what Cupcake remembers and compare the answer with the Memory screen and Context Inspector.
-- Disable memory for a conversation and verify it contributes no inferred records.
-- Keep Thoughts and Dreams disabled and verify no suggestion appears or runs.
-- Enable them and verify only a quiet suggestion appears, with no external action or undisclosed
-  cloud call.
-
-## 11. Tools, MCP, and security
-
-Test native file/repository, web, Git, Python, model, and artifact tools with success, failure,
-cancellation, and timeout fixtures. Test a local stdio MCP server, a remote Streamable HTTP MCP
-server, OAuth/PKCE, an allowlisted custom tool, and a changed server schema.
-
-Adversarial cases must include:
-
-- forged or oversized IPC frames, unknown protocol version, expired deadline, invalid HMAC, replay,
-  and sequence break;
-- approval digest tampering, reused approval ID, changed resource, changed destination, and expired
-  approval;
-- path traversal, symlink/junction swap, case/normalization edge cases, and revoked grants;
-- remote MCP redirect/origin changes, DNS rebinding/SSRF targets, OAuth state mismatch, and schema
-  replacement;
-- prompt injection attempting to broaden a tool grant;
-- AppContainer/restricted-token isolation, sandbox network denial, environment/credential absence,
-  output/time/memory exhaustion, and Job Object-enforced process-tree termination;
-- deletion, external communication, financial, installation, system, and unsandboxed actions always
-  asking freshly.
-
-Search product data, logs, stderr, traces, crash reports, and exported diagnostics for credential
-patterns and raw secret fixtures.
-
-## 12. Durable tasks and recovery
-
-Start the canonical scenario: attach a repository, ask for a deep redesign, continue chatting while
-it runs, inspect tools and citations, receive and revise an artifact, switch between cloud and local
-models, inspect/remove a memory, restart, and resume the task.
-
-Separately kill the desktop or runtime during:
-
-- a provider stream;
-- a tool call before and after its side effect;
-- file ingestion;
-- an artifact write;
-- an approval pause;
-- a subagent run.
-
-Recovered tasks should appear within 5 seconds of restart. Verify checkpoints resume without
-repeating external communication, patches, artifacts, tool cards, usage, or text events. Test
-Cancel, Retry, Continue, queued follow-up, steering, runtime revision mismatch, and recovery from
-corrupt/partial checkpoints.
-
-## 13. Backup, restore, and migration
-
-With synthetic data:
-
-- create a backup during normal use and verify databases plus reachable encrypted objects are
-  complete;
-- restore into a fresh profile and verify branches, projects, memories, tasks, artifacts, citations,
-  grants, and settings;
-- test wrong keys, corrupt database pages, missing objects, extra unreachable objects, and
-  interrupted backup/restore;
-- import a synthetic 1.x profile twice and verify idempotency;
-- verify `.env`, API keys, tokens, generated scripts, bytecode, and unsafe legacy state are neither
-  imported nor executed;
-- verify the original legacy source remains untouched and the import report is understandable.
-
-Do not migrate the original `write-the` MkDocs generator. It remains available at the `v1.0.0` tag
-as historical source and has no 2.0 compatibility contract.
-
-## 14. Package and installer
+## 3. Build a local unsigned Tauri candidate
 
 ```powershell
-python -m pip install pyinstaller
 node scripts/package-sidecars.mjs
-pnpm --filter @cupcakeagi/desktop package
-node scripts/smoke-package.mjs --platform win32 --mode package
-pnpm --filter @cupcakeagi/desktop make
-node scripts/smoke-package.mjs --platform win32 --mode make
+node scripts/test-atomic-directory.mjs
+node scripts/test-sidecar-protocol.mjs
+pnpm --filter @cupcakeagi/desktop bundle:nsis
+node scripts/smoke-package.mjs --platform win32 --mode bundle
 node scripts/release-candidate-audit.mjs --require-artifacts
 ```
 
-On clean Windows 10 and Windows 11 x64 test machines, verify install, launch, first run, path with
-spaces/non-ASCII characters, protocol registration, runtime and broker startup, supported update
-from a prior local test build, crash recovery, uninstall, and the documented data-retention choice.
-Confirm provider credentials are DPAPI-bound to the current Windows user and generated-code
-processes cannot escape the restricted-token/AppContainer-style boundary or the owning Job Object.
+After a successful build, record rather than assume the exact paths:
 
-Do not generate, test, or describe macOS/Linux/Windows Arm packages as release-candidate artifacts.
+- `apps/desktop/src-tauri/target/release/CUPCAKEAGI.exe`;
+- the single `apps/desktop/src-tauri/target/release/bundle/nsis/CUPCAKEAGI 2_*-setup.exe`.
 
-Unsigned or locally signed output is a private test artifact. Do not distribute it.
+The package smoke currently verifies both paths. Rebuild and rerun it whenever renderer, host,
+sidecar, generated contract, or signed catalog input changes.
 
-Final isolated lifecycle evidence:
+The 2.0 current-user installer identity is `CUPCAKEAGI 2`, while `mainBinaryName` keeps the product
+executable `CUPCAKEAGI.exe`. This deliberately prevents Tauri's default
+`%LOCALAPPDATA%\<productName>` install path and uninstall key from colliding with retained 1.x data.
+Do not use NSIS `/D` as lifecycle evidence: Tauri's current-user template ignores it. Run
+`scripts/test-nsis-lifecycle.mjs`; it reads the registered location, refuses a pre-existing 2.0
+record or directory, and never operates on `%LOCALAPPDATA%\CUPCAKEAGI`.
 
-- clean silent install passed;
-- attempting a same-version silent reinstall while the test app was running hung and was terminated;
-- after closing the test app, clean reinstall passed;
-- `Update.exe --uninstall -s` exited 0 and removed the installed app and launcher executables;
-- normal Squirrel `.dead`/Update cleanup residue remained; and
-- `out/installer-rc-20260829/profile-retention/cupcake.db` persisted as intended.
+## 4. Disposable profile
 
-Close CUPCAKEAGI before reinstalling the same candidate. A supported upgrade between distinct
-candidate versions and the clean-machine matrix remain owner acceptance checks; the isolated result
-must not be described as a system-wide installation.
+Use a new absolute child of:
 
-## 15. Final evidence and decision
+```text
+C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\out\tauri-test-profiles\
+```
 
-The candidate is ready for owner review only when the following are attached to the handoff:
+Set `CUPCAKE_TEST_DATA_DIR` to that absolute, non-root directory before launching the packaged
+executable. Record the exact directory in the final handoff. Never reuse an older desktop profile as
+acceptance evidence, and never delete the owner's normal application data.
 
-- exact commit and environment;
-- command results for lint, type checks, unit/integration/security suites, and builds;
-- provider and local-model matrix with skipped live cases explained;
-- durability, migration, backup/restore, installer, accessibility, and performance results;
-- inspected screenshot set and a short demo of the canonical scenario;
-- updated architecture summary and known issues;
-- precise path to the local installer or unpacked application;
-- confirmation that nothing was pushed, published, released, or connected to a production updater.
+## 5. Reproduce the rejected baseline complaints
 
-Owner testing and explicit approval are required after this checklist. Passing it does not authorize
-publication.
+Retain the baseline captures made by `scripts/capture-corrective-baseline.mjs` as historical repro
+evidence. In the completed Tauri app, prove:
 
-The final automated evidence bundle includes strict Pyright, 138 unit tests, 22 Playwright tests,
-sidecar atomic promotion/rollback, frozen seeded protocol/local-discovery smoke, packaged NIM and LM
-Studio UI screenshots, installer and ZIP output, make smoke, and a passing release-candidate audit.
+1. provider setup never opens a generic credential window;
+2. a fresh Models screen shows compatible installable choices;
+3. every scroll container uses intentional themed scrollbars;
+4. titlebar controls never overlap content.
+
+## 6. Provider flow and hosted conversations
+
+For no-provider, form, invalid key, testing, success, rate-limited, offline, reconnect, and removal
+states, capture and inspect the real app. Confirm paste/reveal/clear, cancellation, accessible
+errors, privacy/cost review, model discovery, saved masked identity, and last-tested time.
+
+Run deterministic fixtures for all retained providers. Then, only when authorized credentials and
+current terms permit, run NVIDIA NIM and at least one direct adapter such as Cohere through the
+finished UI. Conduct several multi-turn chats: follow-up references, edit/branch, regenerate, stop,
+continue, long Markdown/code/table output, ambiguity, provider switching, and error recovery.
+
+Record model identifiers, versions, timings, usage, and redacted logs. Secret-pattern scans must
+cover logs, events, databases, diagnostics, crash output, screenshots, and Git. Fresh packaged
+NVIDIA NIM and Cohere conversations have passed through the application-owned flow; this does not
+waive the remaining provider/error matrix or turn evaluation access into a production entitlement.
+
+## 7. Cupcake Local
+
+With no model installed, verify a nonempty device-ranked catalog and explain each fit. Test task,
+size, license, tools/vision, and local-only filters. Exercise download, pause/resume, cancel,
+restart, retry, checksum failure, insufficient disk/RAM/VRAM, install, load, benchmark, chat, stop,
+unload, remove, and version replacement.
+
+Restart during download and inference. An incomplete object must never become installed, and
+recovery must not duplicate effects. After one verified download, disconnect the network and
+complete a chat. Record measured tokens/second and context settings. No corrective app-managed local
+chat or benchmark has been obtained yet.
+
+Before NVIDIA model work, read `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`. If it is `yes`, do
+not use the GPU. If available, set it to `yes` immediately before model load and restore `no` after
+unload and sidecar shutdown, including failure paths. Ordinary app rendering does not take GPU-model
+ownership.
+
+## 8. Native window and visual matrix
+
+Open and inspect every image; DOM assertions are insufficient. Cover all four themes at 360, 768,
+1024, 1440, and ultrawide widths. Add restored, maximized, minimum-size, narrow, common Windows DPI,
+200% and 400% app zoom, keyboard focus, high contrast, and reduced motion.
+
+Inspect titlebar drag zones and controls, provider sheets, model catalog/states, navigation, chat,
+composer, code, tables, artifacts, drawers, dialogs, nested panels, and all custom scrollbars. Test
+wheel, touchpad, keyboard, Page Up/Down, Home/End, visible focus, and screen-reader streaming.
+
+## 9. Core/security/durability
+
+Rerun corrupt-key, migration, backup/restore, object integrity, project isolation, DAG, FTS, and
+interrupted indexing cases. Exercise forged/oversized commands and events, replay/sequence errors,
+approval tampering, traversal and junction races, prompt injection, secret redaction, sandbox
+network denial, resource limits, and process-tree termination.
+
+Kill/restart during hosted streaming, local inference, download, tool calls, ingestion, artifact
+writes, approvals, tasks, and subagents. Recovery must not duplicate visible events or external
+effects.
+
+## 10. Installer and performance
+
+On clean Windows 10 and Windows 11 x64, verify current-user silent/interactive install, first run,
+paths with spaces and non-ASCII characters, protocol registration, sidecars, upgrade between two
+different local versions, crash recovery, uninstall, and explicit data retention. Do not configure
+an update feed.
+
+Measure startup-to-interactive and steady-state working set on the reference machine and compare
+with the recorded rejected baseline using the same method. Report numbers; do not assume Tauri is
+faster. No corrective installer lifecycle or performance result exists yet.
+
+## Final handoff
+
+Lead with complaint-by-complaint changes, exact verified executable/installer/profile paths, models
+actually tested, opened screenshots/video, redacted logs, startup/memory/tokens-per-second numbers,
+known issues, owner steps, GPU marker `no`, and confirmation that nothing was pushed, published,
+released, distributed, signed for production, or connected to an updater.

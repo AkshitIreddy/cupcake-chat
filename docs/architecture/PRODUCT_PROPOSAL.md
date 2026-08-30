@@ -10,7 +10,7 @@ enough for multi-step local work, and legible about what it remembers, sends, ch
 It is not a voice assistant, autonomous model router, cloud account, or multi-user collaboration
 service.
 
-The successful release candidate lets a user attach a repository, keep chatting while a durable
+The successful corrective candidate lets a user attach a repository, keep chatting while a durable
 analysis runs, inspect sources and tool activity, edit/export an artifact, preserve scoped
 decisions, switch explicitly between cloud and local models, manage memory, restart, and resume
 without duplicated side effects.

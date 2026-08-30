@@ -1,4 +1,8 @@
-# Repository audit
+# Historical repository audit
+
+> **Historical evidence only.** This 2026-08-28 baseline audit predates the rejected desktop build
+> and corrective Tauri overhaul. Its replacement recommendations are not current architecture; use
+> the accepted ADRs, system overview, and implementation checklist.
 
 **Snapshot:** 2026-08-28 **Branch observed:** `feat/cupcakeagi-2.0` **Baseline commit observed:**
 `ab7e3f0` (`chore(repo): establish 2.0 implementation baseline`) **Decision:** Replace the runtime

@@ -1,104 +1,57 @@
-# CUPCAKEAGI 2.0 implementation checklist
+# Corrective Tauri implementation checklist
 
-This is the live completion ledger for the local 2.0 release candidate. An item is complete only
-when its implementation and its relevant verification both exist. The release candidate is not
-published or pushed before the owner's explicit approval.
+This is the live completion ledger. Checked means implementation and fresh relevant evidence both
+exist. Historical results do not check an item.
 
-The implementation and automated/local evidence below are complete for the Windows x64 candidate.
-Owner acceptance of the unpacked app and unsigned installer is still required before this becomes a
-release. Web search remains an explicit endpoint opt-in, and voice/automatic routing remain omitted
-by contract.
+## Host and removal
 
-## 1. Repository and decisions
+- [ ] Tauri 2 host boots on Windows without a rejected desktop runtime installed or running.
+- [x] Typed commands/events, generated capabilities, navigation policy, and sidecar verification
+      pass.
+- [ ] Custom titlebar passes restored/maximized/narrow/DPI/zoom/keyboard/high-contrast checks.
+- [x] Active source, dependencies, tests, fixtures, docs, and packages contain no removed
+      local-server integration.
 
-- [x] Flatten the nested clone without losing Git history.
-- [x] Create the local `feat/cupcakeagi-2.0` branch.
-- [x] Normalize line endings without accepting semantic legacy changes.
-- [x] Record repository, product, desktop, runtime, model, memory, tool, migration, and release
-      decisions.
-- [x] Remove tracked secrets, bytecode, generated state, and unsafe legacy runtime code from the
-      active 2.0 tree while preserving Git history.
+## Provider onboarding
 
-## 2. Platform and contracts
+- [ ] All retained providers have in-app disclosure, key entry, test, discovery, save, reconnect,
+      and removal.
+- [ ] Invalid key, cancellation, rate limit, offline, and secret-redaction states pass.
+- [x] Fresh packaged NVIDIA NIM and one direct-adapter multi-turn conversation pass when authorized.
 
-- [x] Windows 10/11 x64-only support gate; non-Windows and non-x64 packaging rejected.
-- [x] React/TypeScript/Vite renderer and hardened Electron main/preload.
-- [x] Packaged Python runtime boundary and framed protocol.
-- [x] Rust ToolBroker with framed protocol, policy, grants, audit, and per-user Windows DPAPI vault.
-- [x] Versioned JSON Schemas and deterministic generated TS/Python/Rust types with CI drift checks.
-- [x] Product, runtime, and security persistence with migrations and backups.
+## Cupcake Local
 
-## 3. Chat and visual system
+- [x] Fresh no-model profile shows a nonempty device-ranked catalog.
+- [x] Hardware/ranking/catalog/download/recovery fixtures pass.
+- [ ] Real packaged download, checksum, load, benchmark, chat, unload, removal, offline, and restart
+      pass.
 
-- [x] Home, shelf, chat, composer, model picker, context inspector, and command palette.
-- [x] Streaming rich responses, code, math, tables, citations, tools, files, tasks, artifacts,
-      message actions, and non-destructive branches.
-- [x] Frosting Thread long-conversation navigation.
-- [x] Cupcake Light, Dark, Minimal, and Classic themes.
-- [x] Responsive, keyboard, reduced-motion, zoom, and WCAG 2.2 AA behavior.
+## Visual and accessibility
 
-## 4. Models and local inference
+- [x] Deliberate scrollbars cover every container and theme.
+- [x] Provider/model empty/loading/success/error states are polished and application-owned.
+- [ ] 360/768/1024/1440/ultrawide, 200–400% zoom, DPI, high contrast, reduced motion, keyboard, and
+      screen reader pass.
+- [ ] Every visual claim has an opened and inspected screenshot from the real Tauri/WebView2 app.
 
-- [x] Direct adapters for OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, and NVIDIA-hosted NIM.
-- [x] Generic OpenAI-compatible endpoint support.
-- [x] Explicit model selection, reasoning controls, capability catalog, cost, usage, and privacy
-      disclosures; no automatic routing.
-- [x] Cupcake Local llama.cpp management plus Ollama, LM Studio, and external vLLM support.
-- [x] Hardware estimates, downloads, verification, load/unload, removal, and tokens-per-second
-      reporting.
+## Core and security
 
-## 5. Workspace, files, search, and artifacts
+- [x] Contracts, JS, Python, broker, and Tauri-host format/lint/type/test/build gates pass.
+- [x] Encryption, migration, backup/restore, object integrity, project isolation, DAG, FTS, and
+      indexing pass.
+- [x] Forgery/replay, approvals, traversal/junction, prompt injection, secret scans, sandbox limits,
+      and process trees pass.
+- [ ] Kill/restart matrix and canonical end-to-end scenario pass without duplicate effects/events.
 
-- [x] Conversation lifecycle, immutable DAG branching, projects, and project context boundaries.
-- [x] Live read-only repository grants, safe indexing, and approved patch application.
-- [x] Structured ingestion, stable citation locators, FTS5 search, and derived semantic retrieval.
-- [x] Rich file objects, @ references, artifact preview/edit/revision/export, and global search.
+## Package and owner handoff
 
-## 6. Memory and proactive features
-
-- [x] Typed/scoped/versioned memories with evidence, conflict, expiry, disable, delete, and
-      tombstones.
-- [x] Memory UI and conversational remember, forget, and query flows.
-- [x] Context assembly and inspector with local/cloud destination visibility.
-- [x] Disabled-by-default quiet Thoughts and Dreams.
-
-## 7. Tools, MCP, and security
-
-- [x] Native file/repository, web, Git, Python, model, and artifact tools.
-- [x] Registry, exact preflight, approval binding, grants, disclosure, audit, cancellation, and
-      recovery.
-- [x] Windows restricted-token/AppContainer-style staged execution with Job Object
-      resource/process-tree limits and no raw shell API.
-- [x] Local stdio and remote Streamable HTTP MCP with OAuth/PKCE and SSRF defenses.
-- [x] Out-of-process custom tool SDK.
-
-## 8. Durable work and developer experience
-
-- [x] Automatic long-task promotion, durable checkpoints, restart recovery, steering, queued
-      follow-ups, and approvals across restart.
-- [x] Bounded researcher, coder, reviewer, and document-analyst subagents.
-- [x] Tasks and task-detail screens.
-- [x] Redacted Developer Mode events, traces, costs, retrieval, checkpoints, subagents, and errors
-      with retention controls.
-- [x] Personality presets and custom controls.
-
-## 9. Migration, docs, packaging, and release-candidate gate
-
-- [x] Idempotent legacy flat-file importer that never imports old API keys.
-- [x] Full README, architecture docs, local testing guide, known issues, and original-project
-      history.
-- [x] Windows 10/11 x64 installer/package smoke tests; Forge and CI reject all other
-      platform/architecture targets.
-- [x] Unit, integration, provider, local-model, durability, security, accessibility, performance,
-      and end-to-end tests.
-- [x] Strict Python type checking under the explicit runtime project configuration.
-- [x] Atomic frozen-sidecar promotion/rollback and seeded authenticated protocol/local-discovery
+- [ ] Target-triple sidecars/resources, executable, and unsigned NSIS installer pass integrity
       smoke.
-- [x] Packaged hosted NIM and local LM Studio GPU chat checks with inspected rendered evidence.
-- [x] Playwright interaction checks plus inspected full-frame and close-up screenshots for required
-      viewports and themes.
-- [x] Local release-candidate summary and exact owner testing instructions.
-- [x] No push, publish, updater feed, package release, or GitHub release before explicit approval.
-
-The original `write-the` MkDocs generator remains historical at `v1.0.0`; it is intentionally not a
-2.0 migration or compatibility target.
+- [ ] Clean Windows 10/11 install, two-version upgrade, uninstall, and retention pass.
+- [ ] Startup, steady-state memory, and Cupcake Local tokens/second are measured and reported.
+- [ ] README, architecture, known issues, testing guide, and final handoff match only current
+      behavior.
+- [ ] GPU marker is `no`; no model/runtime remains loaded.
+- [x] Nothing was pushed, published, released, distributed, production-signed, or connected to an
+      updater.
+- [ ] Owner explicitly accepts or rejects the corrective candidate.

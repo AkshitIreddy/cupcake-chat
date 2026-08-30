@@ -1,89 +1,59 @@
-# ADR-0003: Cloud providers and local models
+# ADR-0003: Hosted providers and Cupcake Local
 
-**Status:** Accepted **Date:** 2026-08-28
+**Status:** Accepted (corrective revision)
 
-## Context
+**Date:** 2026-08-29
 
-CUPCAKEAGI must support changing provider capabilities without making provider SDK shapes part of
-stored history. Users must choose models explicitly and understand privacy, capability, and
-approximate cost before sending data. Local inference must work without bundled weights.
+## Provider boundary
 
-## Decision
+Product-owned adapters normalize model descriptors, canonical input, cancellation, streamed events,
+usage, citations, tool intents, safe reasoning summaries, finish state, retry metadata, and errors.
+Provider SDK objects are never durable product truth.
 
-Define a product-owned `ProviderAdapter` around `ModelDescriptor`, canonical input, cancellation,
-and streamed `RunEvent`s. Use Pydantic AI Core for model/provider mechanics while keeping
-CUPCAKEAGI's adapter and persistence boundary authoritative.
+Retained hosted routes are OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, NVIDIA NIM, and generic
+remote OpenAI-compatible endpoints. Model selection is explicit. Fallbacks are disabled by default;
+any provider, Local/Cloud, privacy, or cost boundary change requires confirmation.
 
-Ship direct adapters for OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, and NVIDIA-hosted NIM,
-plus a generic OpenAI-compatible endpoint. The OpenAI adapter uses the Responses API. NVIDIA NIM
-uses its fixed hosted OpenAI-compatible base and one broker-owned key, but remains a distinct cloud
-privacy route. It discovers models dynamically, filters explicit non-chat surfaces, and labels
-unknown compatibility without inventing tool, reasoning, modality, context, or price support. Every
-adapter normalizes text, citations, tool intents, safe provider reasoning summaries, usage, finish
-state, retry metadata, and errors; it tolerates additive unknown provider event types without
-inventing completion.
+NVIDIA NIM is optional evaluation access, not unlimited or default. Mistral's optional free
+Experiment mode has lower limits and distinct data-use terms from paid access. Cohere trial keys are
+limited to 1,000 calls per month and are not a production entitlement. UI copy links to current
+official terms and avoids converting a temporary allowance into a product promise.
 
-`ModelDescriptor` contains provider/model IDs, display name, modality and tool capabilities,
-supported reasoning presets, context/output limits, streaming support, privacy route, speed/cost
-class, pricing value/currency/unit/effective date/source, and catalog provenance. The UI disables
-unsupported controls rather than coercing them. Pricing is an estimate, clearly dated, and
-reconciled with provider-reported usage when available.
+## In-app onboarding
 
-Model selection is always explicit. A default model may be saved, but there is no automatic routing.
-Fallbacks are off by default and user-authored; a fallback crossing provider, Local/Cloud route, or
-cost class requires confirmation at failure time.
+Provider setup is an application route or sheet with provider/privacy/cost explanation, obtain-key
+link, masked key field, optional genuine endpoint fields, cancellable connection test, model
+discovery, diagnostics, review, success, masked saved identity, last-tested time, reconnect, and
+removal. The key crosses once to the trusted Tauri/broker boundary and is DPAPI-protected. It never
+returns in bootstrap or appears in logs, product databases, screenshots, crash output, or snapshots.
 
-Canonical visible history is recompiled whenever provider/model family changes. Opaque continuity
-IDs may be retained only for the same provider and compatible model family, are never rendered as
-history, and are discarded on edit/branch or privacy-policy change. Hidden reasoning is neither
-requested for display nor persisted. Provider storage is disabled where supported by default (for
-OpenAI, `store: false`); any feature requiring remote continuity has a separate disclosure.
+## Cupcake Local
 
-## Local model manager
+Cupcake Local is the only installed local-model manager. It uses an app-managed, versioned llama.cpp
+runtime with a safe CPU baseline and verified optional acceleration packs. GGUF weights are optional
+downloads and never bundled.
 
-- **Cupcake Local:** app-managed, versioned llama.cpp runtime with a safe CPU baseline and
-  separately verified acceleration packs. No weights are bundled.
-- **Ollama:** detect and manage via its native loopback API; do not scrape UI or spawn an unrelated
-  server.
-- **LM Studio:** detect and integrate through its documented developer/server APIs.
-- **GGUF:** signed catalog metadata, license display/acceptance, resumable range downloads,
-  partial-file staging, SHA-256 verification, atomic promotion, versioning, and removal.
-- **vLLM:** connect to a user-configured external endpoint; never install or administer vLLM.
+On native Windows/NVIDIA, runtime selection is a signed compatibility ladder rather than a single
+build: CUDA 13.3 for driver 580 or newer, CUDA 12.4 for older supported NVIDIA drivers, Vulkan as
+the portable GPU fallback, and CPU as the guaranteed baseline. NVIDIA identity, VRAM, and driver
+version come from trusted in-process NVML first so Windows Job containment does not block discovery;
+every downloaded pack must also pass its own `llama-server.exe --list-devices` probe before
+activation. TensorRT-RTX/Windows ML remains a researched future ONNX lane, not a substitute for the
+broad GGUF catalog while its high-level integration and artifacts differ.
 
-Loopback endpoints are treated as local only after address resolution proves loopback and redirects
-are disabled. Custom endpoints show the resolved destination and TLS state. Model files and runtimes
-are untrusted inputs: verify catalog signatures/checksums, constrain extraction, and keep runtime
-execution outside the renderer.
+Before installation the Models screen detects CPU features, RAM, disk, Windows version, NVIDIA
+GPU/VRAM, and installed acceleration. The initial signed model catalog contains Qwen3 4B, 8B, and
+14B Q4_K_M records pinned to immutable Hugging Face revisions. Verified entries include provenance,
+license, parameters, quantization, bytes, checksum, architecture, context choices, capabilities, and
+runtime requirements. Rankings explain Recommended, Fits with reduced context, CPU-only/slow,
+Hybrid, or Incompatible. Download, pause/resume/cancel/retry, checksum, atomic promotion,
+versioning, load, benchmark, chat, unload, and removal are app-owned and restart-safe.
 
-Hardware detection reports OS, architecture, CPU features, RAM, GPU/backend, VRAM, free disk, and
-measured runtime performance. Recommendations are labeled estimates: near 12 GB VRAM, prefer 7–9B
-Q4_K_M; allow 12–14B only with context/headroom warnings; classify larger models as
-hybrid/unsuitable unless measured fit proves otherwise. Actual load and tokens/sec replace estimates
-after testing.
-
-## Deterministic testing
-
-Pydantic `TestModel`/`FunctionModel` or a product mock adapter emits recorded canonical sequences
-for ordinary development and CI. Provider fixtures cover fragmented UTF-8, partial tool JSON,
-citations, usage, cancellation, timeouts, 429/Retry-After, mid-stream errors, unknown events, and
-malformed terminal states. Live smoke tests are opt-in and require user-supplied vault credentials.
-
-## Consequences
-
-- Provider additions do not migrate product history.
-- Capability and price catalogs must be maintained, signed, dated, and testable; stale entries
-  remain visible as stale rather than silently refreshed.
-- The local manager has substantial download/runtime lifecycle work but preserves offline and
-  private use.
-- Provider parity means a consistent product contract, not pretending every provider has identical
-  features.
+External vLLM may remain only as an explicitly user-managed remote endpoint after architecture
+review; it is never installed or presented as Cupcake Local.
 
 ## Verification
 
-- Contract tests for all seven direct providers and OpenAI-compatible endpoints; recorded fixtures
-  are required, live credentials optional.
-- Switch providers mid-branch and prove only canonical visible history crosses the boundary.
-- Validate unsupported reasoning controls, store/privacy flags, cancellation, usage/cost, and
-  fallback confirmation.
-- Test absent/stopped/running local services, checksum mismatch, pause/resume/cancel, insufficient
-  disk/RAM/VRAM, load/unload, and offline chat after a verified download.
+Use deterministic provider and hardware/catalog/download fixtures in CI. Fresh acceptance requires
+real multi-turn hosted chat through the finished in-app flow and a real packaged Cupcake Local
+download/load/chat/unload/restart, with secret-safe evidence and measured performance.
