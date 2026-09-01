@@ -255,6 +255,23 @@ impl SecurityDatabase {
             .map_err(Into::into)
     }
 
+    pub fn permission_mode(&self) -> SecurityDbResult<String> {
+        let connection = self.connection()?;
+        Ok(get_meta(&connection, "permission_mode")?
+            .filter(|value| value == "guarded" || value == "full-freedom")
+            .unwrap_or_else(|| "guarded".into()))
+    }
+
+    pub fn set_permission_mode(&self, mode: &str) -> SecurityDbResult<()> {
+        if mode != "guarded" && mode != "full-freedom" {
+            return Err(SecurityDbError::InvalidRecord(
+                "permission mode must be guarded or full-freedom".into(),
+            ));
+        }
+        let connection = self.connection()?;
+        set_meta(&connection, "permission_mode", mode)
+    }
+
     pub fn issue_grant(&self, grant: &SecurityGrant) -> SecurityDbResult<()> {
         validate_grant(grant)?;
         let (scope_kind, session_id, project_id) = grant_scope_columns(&grant.scope);

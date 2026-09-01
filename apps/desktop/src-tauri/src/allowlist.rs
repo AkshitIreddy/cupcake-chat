@@ -79,6 +79,8 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "artifacts.revise",
     "backup.create.intent",
     "backup.restore.intent",
+    "broker.permission_mode.get",
+    "broker.permission_mode.set",
     "chat.continue",
     "chat.disclosure.preflight",
     "chat.edit",

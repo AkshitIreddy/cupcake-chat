@@ -287,7 +287,8 @@ impl BrokerIntegration {
                 None,
             )
             .map_err(security_error)?;
-        let policy = policy_from_security(stored_policies)?;
+        let mut policy = policy_from_security(stored_policies)?;
+        policy.full_freedom = security.permission_mode().map_err(security_error)? == "full-freedom";
         // Search is an explicitly configured outbound capability. Keeping the
         // endpoint out of the renderer and broker defaults prevents a hidden
         // third-party search route; the desktop can opt in through this
@@ -405,6 +406,34 @@ impl BrokerIntegration {
                     .map(|()| json!({"cancelled":true}))
             });
         integration_result(result)
+    }
+
+    pub fn permission_mode(&self) -> &'static str {
+        if self.policy.full_freedom {
+            "full-freedom"
+        } else {
+            "guarded"
+        }
+    }
+
+    pub fn set_permission_mode(&mut self, mode: &str) -> Result<Value> {
+        if mode != "guarded" && mode != "full-freedom" {
+            return Err(BrokerError::InvalidConfig(
+                "permission mode must be guarded or full-freedom".into(),
+            ));
+        }
+        self.security
+            .set_permission_mode(mode)
+            .map_err(security_error)?;
+        self.policy.full_freedom = mode == "full-freedom";
+        self.native.replace_policy(self.policy.clone())?;
+        self.audit.append(AuditEvent {
+            category: "security".into(),
+            action: "permission_mode_changed".into(),
+            outcome: "success".into(),
+            fields: json!({ "mode": mode }),
+        })?;
+        Ok(json!({ "mode": mode }))
     }
 
     fn persist_challenge(&self, challenge: &ApprovalChallenge, created_unix_ms: i64) -> Result<()> {
@@ -1082,9 +1111,10 @@ impl BrokerIntegration {
             "disclosures": parsed.descriptor.default_data_flows,
         }))?;
         let now = Utc::now();
-        let requires_fresh = declared_effects
-            .iter()
-            .any(|effect| effect.requires_fresh_approval());
+        let requires_fresh = !self.policy.full_freedom
+            && declared_effects
+                .iter()
+                .any(|effect| effect.requires_fresh_approval());
         let preflight = json!({
             "invocation_id": parsed.intent.invocation_id,
             "descriptor_identity": format!("{}@{}", parsed.descriptor.name, parsed.descriptor.version),
@@ -2033,6 +2063,19 @@ mod tests {
     use super::*;
     use crate::protocol::RuntimeRequestType;
     use tempfile::tempdir;
+
+    #[test]
+    fn permission_mode_is_persisted_in_the_security_store() {
+        let data = tempdir().unwrap();
+        {
+            let mut broker = BrokerIntegration::open(data.path()).unwrap();
+            assert_eq!(broker.permission_mode(), "guarded");
+            broker.set_permission_mode("full-freedom").unwrap();
+            assert_eq!(broker.permission_mode(), "full-freedom");
+        }
+        let reopened = BrokerIntegration::open(data.path()).unwrap();
+        assert_eq!(reopened.permission_mode(), "full-freedom");
+    }
 
     #[test]
     fn desktop_path_stays_private_and_release_revokes_grant() {

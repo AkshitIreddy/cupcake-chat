@@ -679,6 +679,23 @@ fn dispatch_broker_request(
             "version": env!("CARGO_PKG_VERSION"),
             "protocolVersion": PROTOCOL_VERSION
         })),
+        "broker.permission_mode.get" => success(json!({
+            "mode": integration.permission_mode()
+        })),
+        "broker.permission_mode.set" => {
+            let mode = payload
+                .get("params")
+                .and_then(Value::as_object)
+                .and_then(|params| params.get("mode"))
+                .and_then(Value::as_str);
+            match mode {
+                Some(mode) => match integration.set_permission_mode(mode) {
+                    Ok(value) => success(value),
+                    Err(error) => failure("PERMISSION_MODE_FAILED", &safe_error(&error), false),
+                },
+                None => failure("INVALID_REQUEST", "Permission mode is required", false),
+            }
+        }
         "tools.list" => success(
             serde_json::to_value(native_descriptor_catalog()).unwrap_or(Value::Array(vec![])),
         ),

@@ -57,12 +57,17 @@ pub struct PolicySet {
     pub session_grants: BTreeSet<ScopeKey>,
     pub project_grants: BTreeSet<ScopeKey>,
     pub category: BTreeMap<Effect, CategoryDecision>,
+    /// Explicit owner-selected escape hatch. Explicit denies still win, but
+    /// every other effect is allowed without an approval challenge.
+    #[serde(default)]
+    pub full_freedom: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecisionSource {
     ExplicitDeny,
     MandatoryFreshApproval,
+    FullFreedom,
     ExactGrant,
     SessionGrant,
     ProjectGrant,
@@ -83,6 +88,9 @@ impl PolicySet {
     pub fn evaluate(&self, key: &ScopeKey) -> PolicyDecision {
         if self.denied.contains(key) {
             return PolicyDecision::Deny(DecisionSource::ExplicitDeny);
+        }
+        if self.full_freedom {
+            return PolicyDecision::Allow(DecisionSource::FullFreedom);
         }
         if key.effect.requires_fresh_approval() {
             return PolicyDecision::Ask(DecisionSource::MandatoryFreshApproval);
@@ -143,6 +151,25 @@ mod tests {
         assert_eq!(
             policy.evaluate(&k),
             PolicyDecision::Ask(DecisionSource::MandatoryFreshApproval)
+        );
+    }
+
+    #[test]
+    fn full_freedom_skips_fresh_approval_but_not_explicit_denies() {
+        let allowed = key(Effect::Delete);
+        let denied = key(Effect::SystemChange);
+        let mut policy = PolicySet {
+            full_freedom: true,
+            ..PolicySet::default()
+        };
+        policy.denied.insert(denied.clone());
+        assert_eq!(
+            policy.evaluate(&allowed),
+            PolicyDecision::Allow(DecisionSource::FullFreedom)
+        );
+        assert_eq!(
+            policy.evaluate(&denied),
+            PolicyDecision::Deny(DecisionSource::ExplicitDeny)
         );
     }
 
