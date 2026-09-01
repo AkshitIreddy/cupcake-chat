@@ -148,6 +148,23 @@ describe('workspace local model integration', () => {
     );
   });
 
+  it('does not present completed download history as an active Qwen download', () => {
+    const [model] = mapCupcakeLocalModels({
+      availableModels: [{ id: 'qwen3-8b-q4-k-m', display_name: 'Qwen3 8B' }],
+      downloads: [
+        {
+          model_id: 'qwen3-8b-q4-k-m',
+          state: 'completed',
+          bytes_downloaded: 5_000,
+          bytes_total: 5_000,
+        },
+      ],
+    });
+
+    expect(model?.status).toBe('catalog');
+    expect(model?.download).toBeUndefined();
+  });
+
   it('exposes required CUDA companion terms with the acceleration pack', () => {
     const packs = mapCupcakeRuntimePacks({
       availableRuntimes: [
@@ -185,6 +202,20 @@ describe('workspace local model integration', () => {
         licenseUrls: ['https://docs.nvidia.com/cuda/eula/index.html'],
       }),
     );
+  });
+
+  it('does not present completed runtime-pack history as downloading', () => {
+    const [runtime] = mapCupcakeRuntimePacks({
+      availableRuntimes: [{ id: 'llama.cpp:b10679:windows-x64-cuda-13.3', backend: 'cuda-13' }],
+      downloads: [
+        {
+          model_id: 'llama.cpp:b10679:windows-x64-cuda-13.3',
+          state: 'completed',
+        },
+      ],
+    });
+
+    expect(runtime?.status).toBe('catalog');
   });
 
   it('uses the registered endpoint model id only while a local model is loaded', () => {

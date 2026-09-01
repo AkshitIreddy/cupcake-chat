@@ -229,6 +229,7 @@ export interface WorkspaceSettings {
   };
   personalityInstructions: string;
   semanticEnrichment: { enabled: boolean; provider: string | null; modelId: string | null };
+  permissionMode: 'guarded' | 'full-freedom';
 }
 
 interface RuntimeProject {
@@ -974,6 +975,10 @@ function localDownloadState(value: string, errorCode = ''): ModelDescriptor['sta
   return 'catalog';
 }
 
+function isActiveDownload(value: string): boolean {
+  return ['queued', 'resolving', 'downloading', 'paused', 'verifying', 'failed'].includes(value);
+}
+
 export function mapCupcakeLocalModels(
   status: CupcakeLocalStatus,
   selectedId?: string,
@@ -1006,7 +1011,7 @@ export function mapCupcakeLocalModels(
         ? 'ready'
         : installedModel
           ? 'installed'
-          : download && downloadState !== 'completed'
+          : download && isActiveDownload(downloadState)
             ? localDownloadState(downloadState, textValue(download.error_code))
             : 'catalog';
     const selectableId =
@@ -1047,7 +1052,7 @@ export function mapCupcakeLocalModels(
       },
       selectedId,
     );
-    if (!download) return mapped;
+    if (!download || !isActiveDownload(downloadState)) return mapped;
     return {
       ...mapped,
       download: {
@@ -1098,7 +1103,7 @@ export function mapCupcakeRuntimePacks(status: CupcakeLocalStatus): LocalRuntime
         ? 'active'
         : installedRuntime
           ? 'installed'
-          : download
+          : download && isActiveDownload(textValue(download.state))
             ? localDownloadState(textValue(download.state), textValue(download.error_code))
             : compatible
               ? 'catalog'
@@ -1318,6 +1323,7 @@ const fallbackSettings: WorkspaceSettings = {
   personality: { warmth: 0.55, brevity: 0.45, initiative: 0.3 },
   personalityInstructions: '',
   semanticEnrichment: { enabled: false, provider: null, modelId: null },
+  permissionMode: 'guarded',
 };
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -1518,32 +1524,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const memoryRequest = request<RuntimeMemory[]>('memory.list', {
         states: ['active', 'candidate', 'superseded', 'expired'],
       }).catch(() => request<RuntimeMemory[]>('memory.list'));
-      const [taskResult, memoryResult, providerResult, runtimeSettings, migration, cupcakeStatus] =
-        await Promise.all([
-          recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
-          recover('Memory', memoryRequest, []),
-          recover(
-            'Providers',
-            request<{
-              providers: Array<{
-                provider: string;
-                configured: boolean;
-                catalog?: { models?: Array<Record<string, unknown>> };
-              }>;
-            }>('providers.status'),
-            { providers: [] },
-          ),
-          recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
-          recover('Migration', request<LegacyMigrationState>('migration.detect'), {
-            available: false,
-            state: 'unavailable',
-          }),
-          recover<CupcakeLocalStatus>(
-            'Cupcake Local status',
-            request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
-            {},
-          ),
-        ]);
+      const [
+        taskResult,
+        memoryResult,
+        providerResult,
+        runtimeSettings,
+        permissionPolicy,
+        migration,
+        cupcakeStatus,
+      ] = await Promise.all([
+        recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
+        recover('Memory', memoryRequest, []),
+        recover(
+          'Providers',
+          request<{
+            providers: Array<{
+              provider: string;
+              configured: boolean;
+              catalog?: { models?: Array<Record<string, unknown>> };
+            }>;
+          }>('providers.status'),
+          { providers: [] },
+        ),
+        recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
+        recover('Permission policy', request<{ mode?: string }>('broker.permission_mode.get'), {
+          mode: 'guarded',
+        }),
+        recover('Migration', request<LegacyMigrationState>('migration.detect'), {
+          available: false,
+          state: 'unavailable',
+        }),
+        recover<CupcakeLocalStatus>(
+          'Cupcake Local status',
+          request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
+          {},
+        ),
+      ]);
       const localStatus = cupcakeStatus ?? {};
       setTasks(taskResult.map(mapTask));
       setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
@@ -1694,6 +1710,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         enabledToolIds: Array.isArray(runtimeSettings['tools.enabled'])
           ? (runtimeSettings['tools.enabled'] as string[])
           : current.enabledToolIds,
+        permissionMode: permissionPolicy.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
       }));
       void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
         .then((items) =>
@@ -2652,6 +2669,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ['retrieval.semantic.provider', patch.semanticEnrichment.provider],
             ['retrieval.semantic.model_id', patch.semanticEnrichment.modelId],
           );
+        if (patch.permissionMode !== undefined)
+          await request('broker.permission_mode.set', { mode: patch.permissionMode });
         await Promise.all(entries.map(([key, value]) => request('settings.set', { key, value })));
         if (patch.proactiveEnabled !== undefined)
           await request('memory.suggestions.enable', { enabled: patch.proactiveEnabled });
@@ -2663,7 +2682,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const chooseLegacySource = useCallback(async () => {
     const source = await window.cupcake?.dialog.openDirectory({
-      title: 'Choose the original CUPCAKEAGI data folder',
+      title: 'Choose the original Cupcake 1.0 data folder',
     });
     if (!source) return;
     try {

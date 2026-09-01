@@ -155,7 +155,7 @@ function Brand({ large = false }: { large?: boolean }) {
       <img src="/brand/cupcake-mark.svg" alt="" className="brand__mark" />
       <div>
         <strong>CUPCAKE</strong>
-        <span>AGI</span>
+        <span>AI</span>
       </div>
       {large && <small>2.0 preview</small>}
     </div>
@@ -240,7 +240,7 @@ function CupcakeTitlebar() {
     <header className="cupcake-titlebar" aria-label="Application window controls">
       <div className="cupcake-titlebar__identity" aria-hidden="true">
         <img src="/brand/cupcake-mark.svg" alt="" />
-        <span>CUPCAKEAGI</span>
+        <span>CUPCAKEAI</span>
       </div>
       <div
         className="cupcake-titlebar__drag"
@@ -344,6 +344,7 @@ function Shelf({
   mobileOpen,
   closeMobile,
   conversations,
+  activeTaskCount,
   onNewChat,
   onSelectConversation,
 }: {
@@ -353,6 +354,7 @@ function Shelf({
   mobileOpen: boolean;
   closeMobile: () => void;
   conversations: Conversation[];
+  activeTaskCount: number;
   onNewChat?: () => void;
   onSelectConversation?: (id: string) => void;
 }) {
@@ -398,7 +400,14 @@ function Shelf({
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
-            {item.id === 'tasks' && <em>2</em>}
+            {item.id === 'tasks' && activeTaskCount > 0 && (
+              <em
+                aria-label={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
+                title={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
+              >
+                {activeTaskCount}
+              </em>
+            )}
             {item.shortcut && <kbd>{item.shortcut}</kbd>}
           </button>
         ))}
@@ -520,7 +529,7 @@ function HomeView({
     <main className="page page--home">
       <section className="home-hero">
         <div className="home-hero__mascot">
-          <img src="/brand/cupcake-2-grown.png" alt="Grown CUPCAKEAGI 2.0 mascot" />
+          <img src="/brand/cupcake-2-grown.png" alt="CupcakeAI mascot" />
           <span />
         </div>
         <p className="eyebrow">Your workbench is ready</p>
@@ -553,6 +562,15 @@ function HomeView({
                 <Icon name="arrow" />
               </button>
             ))}
+            {conversations.length === 0 && (
+              <div className="continue-empty">
+                <Icon name="chat" />
+                <span>
+                  <strong>Your first thread will stay within reach</strong>
+                  <small>Start above, then return here without searching through history.</small>
+                </span>
+              </div>
+            )}
           </div>
         </section>
         <section className="home-section home-section--working">
@@ -587,11 +605,18 @@ function HomeView({
               <Icon name="chevron" />
             </button>
           ) : (
-            <EmptyState
-              icon="task"
-              title="Nothing working right now"
-              body="Long work appears here after it becomes a durable task."
-            />
+            <div className="working-idle">
+              <span className="working-idle__icon">
+                <Icon name="task" />
+              </span>
+              <div>
+                <strong>Your task queue is clear</strong>
+                <p>Ask CupcakeAI for longer work and its progress will stay visible here.</p>
+              </div>
+              <button className="text-button" onClick={openChat}>
+                Start something <Icon name="chevron" size={14} />
+              </button>
+            </div>
           )}
           {proactiveEnabled && (
             <div className="notice-card">
@@ -1398,7 +1423,7 @@ function ArtifactInline({ openArtifacts }: { openArtifacts: () => void }) {
       </span>
       <span>
         <span className="eyebrow">Artifact · Document</span>
-        <strong>CUPCAKEAGI architecture.md</strong>
+        <strong>CupcakeAI architecture.md</strong>
         <small>18.4 KB · 4 revisions · just now</small>
       </span>
       <span className="artifact-inline__open">
@@ -1966,7 +1991,7 @@ function ChatView({
                     <div className="file-attachment">
                       <span className="file-icon">ZIP</span>
                       <span>
-                        <strong>Cupcakeagi repository</strong>
+                        <strong>CupcakeAI repository</strong>
                         <small>34 files · 286 KB · indexed</small>
                       </span>
                       <RouteBadge route="Local" />
@@ -2381,6 +2406,7 @@ function ContextSection({
 
 function ProjectsView({ openChat }: { openChat: () => void }) {
   const workspace = useWorkspace();
+  const [showContextHelp, setShowContextHelp] = useState(false);
   const create = () => {
     const name = window.prompt('Project name')?.trim();
     if (!name) return;
@@ -2483,10 +2509,23 @@ function ProjectsView({ openChat }: { openChat: () => void }) {
             explicitly bring in outside context at any time.
           </p>
         </div>
-        <button className="text-button">
+        <button
+          className="text-button"
+          aria-expanded={showContextHelp}
+          onClick={() => setShowContextHelp((value) => !value)}
+        >
           How context works <Icon name="external" />
         </button>
       </section>
+      {showContextHelp && (
+        <section className="callout" role="status">
+          <Icon name="info" />
+          <p>
+            The active project limits retrieval, artifacts, files, and project-scoped memory. A
+            conversation can use outside context only after you attach or explicitly reference it.
+          </p>
+        </section>
+      )}
     </main>
   );
 }
@@ -2589,6 +2628,7 @@ function TaskDetail({
   const paused = task.status === 'waiting';
   const [note, setNote] = useState('');
   const [updates, setUpdates] = useState<string[]>([]);
+  const [showDeveloperTrace, setShowDeveloperTrace] = useState(false);
   return (
     <main className="page task-detail">
       <button className="back-button" onClick={onBack}>
@@ -2675,8 +2715,23 @@ function TaskDetail({
         <section className="task-panel">
           <header>
             <h3>Activity</h3>
-            <button className="text-button">Developer trace</button>
+            <button
+              className="text-button"
+              aria-expanded={showDeveloperTrace}
+              onClick={() => setShowDeveloperTrace((value) => !value)}
+            >
+              {showDeveloperTrace ? 'Hide developer trace' : 'Developer trace'}
+            </button>
           </header>
+          {showDeveloperTrace && (
+            <div className="callout" role="status">
+              <Icon name="terminal" />
+              <p>
+                Task {task.id} · checkpoint {task.progress}% · {task.steps.length} durable steps ·
+                status {task.status}. Hidden reasoning and credentials are never included.
+              </p>
+            </div>
+          )}
           <div className="activity-stream">
             <div>
               <Icon name="check" />
@@ -2751,7 +2806,7 @@ function FixtureArtifactsView() {
   const [selected, setSelected] = useState(fixtureArtifacts[0]!);
   const [tab, setTab] = useState<'preview' | 'edit' | 'revisions'>('preview');
   const [content, setContent] = useState(
-    `# CUPCAKEAGI 2.0 architecture\n\nThe application owns its conversations, memories, and artifacts. Framework state remains replaceable.\n\n## Runtime boundaries\n\n- React renderer for presentation\n- Tauri Rust host for desktop lifecycle\n- Python runtime for model and workflow orchestration\n- Rust broker for permissions and tool execution\n\n> Project scope is a privacy boundary, not a ranking hint.\n\n## Storage\n\nProduct data lives in encrypted SQLite. Large revisions are immutable, encrypted objects addressed by their content hash.`,
+    `# CupcakeAI 2.0 architecture\n\nThe application owns its conversations, memories, and artifacts. Framework state remains replaceable.\n\n## Runtime boundaries\n\n- React renderer for presentation\n- Tauri Rust host for desktop lifecycle\n- Python runtime for model and workflow orchestration\n- Rust broker for permissions and tool execution\n\n> Project scope is a privacy boundary, not a ranking hint.\n\n## Storage\n\nProduct data lives in encrypted SQLite. Large revisions are immutable, encrypted objects addressed by their content hash.`,
   );
   const [saved, setSaved] = useState(true);
   return (
@@ -2854,7 +2909,7 @@ function FixtureArtifactsView() {
           <article className="document-preview">
             <div className="document-paper">
               <p className="eyebrow">Architecture note · revision 4</p>
-              <h1>CUPCAKEAGI 2.0 architecture</h1>
+              <h1>CupcakeAI 2.0 architecture</h1>
               <p className="lead">
                 The application owns its conversations, memories, and artifacts. Framework state
                 remains replaceable.
@@ -3044,14 +3099,43 @@ function ArtifactsView() {
   };
   if (!selected) {
     return (
-      <main className="artifact-workspace">
-        <EmptyState
-          icon="artifact"
-          title="No artifacts in this project"
-          body="Artifacts are isolated to the active project boundary."
-          action="Create artifact"
-          onAction={create}
-        />
+      <main className="artifact-empty-workspace">
+        <section className="artifact-empty-hero">
+          <span className="eyebrow">Project-owned, encrypted revisions</span>
+          <h1>Make the first artifact</h1>
+          <p>
+            Documents, code, tables, diagrams, and generated assets live here without being mixed
+            into another project.
+          </p>
+          <div className="artifact-empty-actions">
+            <button className="button button--primary" onClick={create}>
+              <Icon name="plus" /> Create artifact
+            </button>
+          </div>
+        </section>
+        <section className="artifact-empty-guide" aria-label="Artifact capabilities">
+          <article>
+            <Icon name="artifact" />
+            <div>
+              <strong>Revise safely</strong>
+              <p>Every save creates a new immutable revision instead of overwriting history.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="shield" />
+            <div>
+              <strong>Keep project boundaries</strong>
+              <p>Only artifacts from the active project appear in this workspace.</p>
+            </div>
+          </article>
+          <article>
+            <Icon name="download" />
+            <div>
+              <strong>Export deliberately</strong>
+              <p>Files leave the encrypted store only when you choose an export location.</p>
+            </div>
+          </article>
+        </section>
       </main>
     );
   }
@@ -3189,6 +3273,7 @@ function MemoryView({
 }) {
   const workspace = useWorkspace();
   const [query, setQuery] = useState('');
+  const [scopeFilter, setScopeFilter] = useState('all');
   const [selected, setSelected] = useState<MemoryRecord | null>(records[0] ?? null);
   const [off, setOff] = useState(false);
   const [memoryNotice, setMemoryNotice] = useState('');
@@ -3201,9 +3286,25 @@ function MemoryView({
     /(?:sk-[A-Za-z0-9_-]{12,}|nvapi-[A-Za-z0-9_-]{12,}|api[_ -]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]{12,})/i.test(
       value,
     );
-  const shown = records.filter((m) =>
-    `${m.title} ${m.body} ${m.scope}`.toLowerCase().includes(query.toLowerCase()),
+  const shown = records.filter(
+    (m) =>
+      (scopeFilter === 'all' || m.scope === scopeFilter) &&
+      `${m.title} ${m.body} ${m.scope}`.toLowerCase().includes(query.toLowerCase()),
   );
+  const createMemory = () => {
+    const key = window.prompt('Memory label')?.trim();
+    if (!key) return;
+    const body = window.prompt('What should Cupcake remember?')?.trim();
+    if (!body) return;
+    if (looksLikeCredential(body)) {
+      setMemoryNotice(
+        'Credentials cannot be saved as memory. Store provider keys only through the encrypted provider setup flow.',
+      );
+      return;
+    }
+    void workspace.remember({ key, content: body, kind: 'fact' });
+    setMemoryNotice('Memory saved. You can inspect its scope and provenance here.');
+  };
   const update = (id: string, patch: Partial<MemoryRecord>) => {
     const next = records.map((m) => (m.id === id ? { ...m, ...patch } : m));
     setRecords(next);
@@ -3242,27 +3343,23 @@ function MemoryView({
             placeholder="Search memory"
           />
         </div>
-        <button className="button">
+        <label className="select-control">
           <Icon name="filter" />
-          All scopes
-        </button>
-        <button
-          className="button button--primary"
-          onClick={() => {
-            const key = window.prompt('Memory label')?.trim();
-            if (!key) return;
-            const body = window.prompt('What should Cupcake remember?')?.trim();
-            if (!body) return;
-            if (looksLikeCredential(body)) {
-              setMemoryNotice(
-                'Credentials cannot be saved as memory. Store provider keys only through the encrypted provider setup flow.',
-              );
-              return;
-            }
-            void workspace.remember({ key, content: body, kind: 'fact' });
-            setMemoryNotice('Memory saved. You can inspect its scope and provenance here.');
-          }}
-        >
+          <span className="sr-only">Memory scope</span>
+          <select
+            aria-label="Memory scope"
+            value={scopeFilter}
+            onChange={(event) => setScopeFilter(event.target.value)}
+          >
+            <option value="all">All scopes</option>
+            {[...new Set(records.map((record) => record.scope))].map((scope) => (
+              <option value={scope} key={scope}>
+                {scope}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="button button--primary" onClick={createMemory}>
           <Icon name="plus" />
           Add memory
         </button>
@@ -3296,6 +3393,7 @@ function MemoryView({
           title="Nothing in the recipe box yet"
           body="Ask Cupcake to remember something, or add a preference yourself."
           action="Add a memory"
+          onAction={createMemory}
         />
       ) : (
         <div className="memory-layout">
@@ -3912,6 +4010,15 @@ function ModelsView({
               <span key={item}>{item}</span>
             ))}
           </div>
+          <div className="memory-plan-note">
+            <Icon name="info" size={15} />
+            <span>
+              <strong>Automatic GPU-first memory plan</strong>
+              llama.cpp reserves 1 GB of VRAM and offloads as many layers as fit. If the full model
+              does not fit, remaining layers stay in system RAM and run CPU-assisted instead of
+              failing the load; expect lower speed.
+            </span>
+          </div>
         </div>
         <div className="hardware-meter">
           <span>
@@ -4068,14 +4175,26 @@ function ModelsView({
             <option value="Gemma">Gemma terms</option>
           </select>
         </label>
-        <label className="search-field">
-          <Icon name="search" />
-          <span className="sr-only">Find a model</span>
-          <input
-            placeholder="Find a model"
-            value={modelQuery}
-            onChange={(event) => setModelQuery(event.target.value)}
-          />
+        <label className="filter-field model-search-field">
+          <span>Find a model</span>
+          <div className="search-field">
+            <Icon name="search" />
+            <input
+              aria-label="Find a model"
+              placeholder="Search by name, provider, capability, or license"
+              value={modelQuery}
+              onChange={(event) => setModelQuery(event.target.value)}
+            />
+            {modelQuery && (
+              <button
+                className="icon-button"
+                onClick={() => setModelQuery('')}
+                aria-label="Clear model search"
+              >
+                <Icon name="x" size={13} />
+              </button>
+            )}
+          </div>
         </label>
       </div>
 
@@ -4182,41 +4301,43 @@ function ModelsView({
                     </>
                   )}
                 </dl>
-                {model.download && model.download.totalBytes > 0 && (
-                  <div className="download-progress" aria-label={`${model.name} download`}>
-                    <div
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={progress}
-                    >
-                      <i style={{ width: `${progress}%` }} />
+                {['download', 'paused', 'verifying'].includes(model.status) &&
+                  model.download &&
+                  model.download.totalBytes > 0 && (
+                    <div className="download-progress" aria-label={`${model.name} download`}>
+                      <div
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progress}
+                      >
+                        <i style={{ width: `${progress}%` }} />
+                      </div>
+                      <span>
+                        {progress}% · {formatStorage(model.download.bytesReceived)} of{' '}
+                        {formatStorage(model.download.totalBytes)}
+                        {model.download.bytesPerSecond
+                          ? ` · ${formatStorage(model.download.bytesPerSecond)}/s`
+                          : ''}
+                        <br />
+                        Checksum: {model.download.checksumState ?? 'pending'}
+                      </span>
+                      <button
+                        aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
+                        onClick={() =>
+                          void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
+                        }
+                      >
+                        <Icon name={model.status === 'paused' ? 'play' : 'pause'} />
+                      </button>
+                      <button
+                        aria-label={`Cancel download for ${model.name}`}
+                        onClick={() => void runAction('cancel', model)}
+                      >
+                        <Icon name="x" />
+                      </button>
                     </div>
-                    <span>
-                      {progress}% · {formatStorage(model.download.bytesReceived)} of{' '}
-                      {formatStorage(model.download.totalBytes)}
-                      {model.download.bytesPerSecond
-                        ? ` · ${formatStorage(model.download.bytesPerSecond)}/s`
-                        : ''}
-                      <br />
-                      Checksum: {model.download.checksumState ?? 'pending'}
-                    </span>
-                    <button
-                      aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
-                      onClick={() =>
-                        void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
-                      }
-                    >
-                      <Icon name={model.status === 'paused' ? 'play' : 'pause'} />
-                    </button>
-                    <button
-                      aria-label={`Cancel download for ${model.name}`}
-                      onClick={() => void runAction('cancel', model)}
-                    >
-                      <Icon name="x" />
-                    </button>
-                  </div>
-                )}
+                  )}
                 {model.benchmark && (
                   <p className="benchmark-result">
                     <strong>{model.benchmark.tokensPerSecond.toFixed(1)} tok/s</strong> ·{' '}
@@ -4560,7 +4681,7 @@ function ModelCompatibilityDialog({
           <div>
             <strong>NVIDIA did not declare this model as a chat endpoint.</strong>
             <p>
-              It may reject chat requests or return an unexpected format. CUPCAKEAGI will remember
+              It may reject chat requests or return an unexpected format. CupcakeAI will remember
               this acknowledgement for this exact model only.
             </p>
           </div>
@@ -4612,7 +4733,16 @@ function ToolsView({
   const [mcpTransport, setMcpTransport] = useState<'stdio' | 'streamable-http'>('streamable-http');
   const [mcpEndpoint, setMcpEndpoint] = useState('');
   const [mcpError, setMcpError] = useState('');
-  const shown = tools.filter((t) => tab === 'all' || t.kind === tab);
+  const [toolQuery, setToolQuery] = useState('');
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [freedomPhrase, setFreedomPhrase] = useState('');
+  const shown = tools.filter(
+    (tool) =>
+      (tab === 'all' || tool.kind === tab) &&
+      `${tool.name} ${tool.provider} ${tool.description}`
+        .toLowerCase()
+        .includes(toolQuery.trim().toLowerCase()),
+  );
   const toggle = (id: string) => {
     const tool = tools.find((item) => item.id === id);
     if (!tool) return;
@@ -4645,16 +4775,26 @@ function ToolsView({
           Connect MCP server
         </button>
       </div>
-      <div className="security-note">
+      <div
+        className={cx(
+          'security-note',
+          workspace.settings.permissionMode === 'full-freedom' && 'is-danger',
+        )}
+      >
         <Icon name="shield" />
         <div>
-          <strong>High-impact actions always ask.</strong>
+          <strong>
+            {workspace.settings.permissionMode === 'full-freedom'
+              ? 'Full freedom is active.'
+              : 'High-impact actions always ask.'}
+          </strong>
           <p>
-            Deletion, external communication, purchases, installation, system changes, and
-            unsandboxed execution cannot be pre-approved.
+            {workspace.settings.permissionMode === 'full-freedom'
+              ? 'CupcakeAI can run tools without approval prompts. Tool activity remains audited.'
+              : 'Deletion, external communication, purchases, installation, system changes, and unsandboxed execution require a fresh approval.'}
           </p>
         </div>
-        <button className="text-button">
+        <button className="text-button" onClick={() => setPolicyOpen(true)}>
           Permission policy <Icon name="chevron" />
         </button>
       </div>
@@ -4668,7 +4808,12 @@ function ToolsView({
         </div>
         <div className="search-field">
           <Icon name="search" />
-          <input placeholder="Find a tool" />
+          <input
+            aria-label="Find a tool"
+            placeholder="Find a tool"
+            value={toolQuery}
+            onChange={(event) => setToolQuery(event.target.value)}
+          />
         </div>
       </div>
       <div className="tool-grid">
@@ -4730,6 +4875,18 @@ function ToolsView({
           </article>
         ))}
       </div>
+      {tools.length > 0 && shown.length === 0 && (
+        <EmptyState
+          icon="search"
+          title="No matching tools"
+          body="Try a shorter name or switch tool categories."
+          action="Clear search"
+          onAction={() => {
+            setToolQuery('');
+            setTab('all');
+          }}
+        />
+      )}
       {workspace.toolActivity.length > 0 && (
         <section className="settings-section">
           <header>
@@ -4743,6 +4900,100 @@ function ToolsView({
             <RuntimeToolActivityCard key={activity.id} activity={activity} />
           ))}
         </section>
+      )}
+      {policyOpen && (
+        <div
+          className="popover-layer"
+          onMouseDown={(event) => event.target === event.currentTarget && setPolicyOpen(false)}
+        >
+          <section
+            className="provider-dialog permission-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Permission policy"
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Tool authority</span>
+                <h2>Permission policy</h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setPolicyOpen(false)}
+                aria-label="Close permission policy"
+              >
+                <Icon name="x" />
+              </button>
+            </header>
+            <div className="permission-mode-list">
+              <button
+                className={cx(workspace.settings.permissionMode === 'guarded' && 'is-active')}
+                onClick={() => {
+                  void workspace.updateSettings({ permissionMode: 'guarded' });
+                  setFreedomPhrase('');
+                }}
+              >
+                <Icon name="shield" />
+                <span>
+                  <strong>Guarded</strong>
+                  <small>Ask before high-impact actions. Recommended.</small>
+                </span>
+                {workspace.settings.permissionMode === 'guarded' && <Icon name="check" />}
+              </button>
+              <div
+                className={cx(
+                  'permission-mode-danger',
+                  workspace.settings.permissionMode === 'full-freedom' && 'is-active',
+                )}
+              >
+                <div>
+                  <Icon name="info" />
+                  <span>
+                    <strong>Full freedom</strong>
+                    <small>
+                      No permission prompts, including deletion, external communication, installs,
+                      system changes, and unsandboxed execution.
+                    </small>
+                  </span>
+                </div>
+                {workspace.settings.permissionMode === 'full-freedom' ? (
+                  <button
+                    className="button"
+                    onClick={() => void workspace.updateSettings({ permissionMode: 'guarded' })}
+                  >
+                    Return to guarded
+                  </button>
+                ) : (
+                  <>
+                    <label>
+                      <span>Type FULL FREEDOM to enable</span>
+                      <input
+                        value={freedomPhrase}
+                        onChange={(event) => setFreedomPhrase(event.target.value)}
+                        autoComplete="off"
+                      />
+                    </label>
+                    <button
+                      className="button button--danger"
+                      disabled={freedomPhrase !== 'FULL FREEDOM'}
+                      onClick={() => {
+                        void workspace.updateSettings({ permissionMode: 'full-freedom' });
+                        setFreedomPhrase('');
+                      }}
+                    >
+                      Enable full freedom
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <footer>
+              <span>
+                Changes apply at the local Rust tool broker and are recorded in its security store.
+              </span>
+            </footer>
+          </section>
+        </div>
       )}
       {mcpOpen && (
         <div
@@ -4882,7 +5133,7 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
       icon: 'artifact' as IconName,
       items: [
         {
-          title: 'CUPCAKEAGI architecture.md',
+          title: 'CupcakeAI architecture.md',
           text: 'Runtime boundaries · Storage · Project isolation',
           meta: 'Document · revision 4',
         },
@@ -5511,9 +5762,9 @@ function SettingsView({
                 <strong>Diagnostic retention</strong>
                 <small>Redacted developer events are deleted after 30 days.</small>
               </span>
-              <button className="select-button">
-                30 days <Icon name="chevron" />
-              </button>
+              <span className="select-button" aria-label="Diagnostic retention: 30 days">
+                30 days · fixed policy
+              </span>
             </div>
           </section>
         )}
@@ -5662,6 +5913,8 @@ function SettingsView({
 function DeveloperView({ modelName }: { modelName: string }) {
   const workspace = useWorkspace();
   const [tab, setTab] = useState('Events');
+  const [eventQuery, setEventQuery] = useState('');
+  const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
   const fixtureEvents = [
     {
       time: '10:45:12.804',
@@ -5715,6 +5968,34 @@ function DeveloperView({ modelName }: { modelName: string }) {
             ? 'green'
             : 'blue',
       }));
+  const visibleEvents = events.filter((event) => {
+    const matchesTab =
+      tab === 'Events' ||
+      (tab === 'Errors' && event.type.toLowerCase().includes('error')) ||
+      (tab === 'Retrieval' && event.type.toLowerCase().includes('retrieval')) ||
+      (tab === 'Runs' && /run|task|checkpoint|subagent/i.test(event.type));
+    return (
+      matchesTab &&
+      `${event.time} ${event.type} ${event.detail}`
+        .toLowerCase()
+        .includes(eventQuery.trim().toLowerCase())
+    );
+  });
+  const selectedEvent = events.find(
+    (event) => `${event.time}:${event.type}` === selectedEventKey,
+  );
+  const exportTrace = () => {
+    const blob = new Blob([`${JSON.stringify(workspace.runtimeEvents, null, 2)}\n`], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `cupcakeai-redacted-trace-${new Date().toISOString().replaceAll(':', '-')}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  const copyTrace = (value: string) => void navigator.clipboard.writeText(value);
   return (
     <main className="developer-page">
       <header>
@@ -5738,7 +6019,7 @@ function DeveloperView({ modelName }: { modelName: string }) {
                 ? 'Runtime connected'
                 : 'Runtime starting'}
           </span>
-          <button className="button">
+          <button className="button" onClick={exportTrace}>
             <Icon name="download" />
             Export trace
           </button>
@@ -5781,15 +6062,24 @@ function DeveloperView({ modelName }: { modelName: string }) {
             ))}
           </div>
           <div className="event-toolbar">
-            <button>
+            <span className="connection-state" aria-label="Runtime event stream is live">
               <span className="pulse-dot" />
               Streaming
-            </button>
+            </span>
             <div className="search-field">
               <Icon name="search" />
-              <input placeholder="Filter events" />
+              <input
+                placeholder="Filter events"
+                value={eventQuery}
+                onChange={(event) => setEventQuery(event.target.value)}
+              />
             </div>
-            <button className="icon-button" aria-label="Clear event filter">
+            <button
+              className="icon-button"
+              aria-label="Clear event filter"
+              disabled={!eventQuery}
+              onClick={() => setEventQuery('')}
+            >
               <Icon name="trash" />
             </button>
           </div>
@@ -5799,8 +6089,15 @@ function DeveloperView({ modelName }: { modelName: string }) {
               <span>Event</span>
               <span>Detail</span>
             </div>
-            {events.map((e) => (
-              <button className="event-row" key={e.time}>
+            {visibleEvents.map((e) => (
+              <button
+                className={cx(
+                  'event-row',
+                  selectedEventKey === `${e.time}:${e.type}` && 'is-active',
+                )}
+                onClick={() => setSelectedEventKey(`${e.time}:${e.type}`)}
+                key={`${e.time}:${e.type}`}
+              >
                 <code>{e.time}</code>
                 <span>
                   <i className={e.tone} />
@@ -5811,6 +6108,16 @@ function DeveloperView({ modelName }: { modelName: string }) {
               </button>
             ))}
           </div>
+          {selectedEvent && (
+            <div className="callout" role="status">
+              <Icon name="terminal" />
+              <p>
+                <strong>{selectedEvent.type}</strong> · {selectedEvent.time}
+                <br />
+                {selectedEvent.detail}
+              </p>
+            </div>
+          )}
         </section>
         <aside className="run-tree">
           <header>
@@ -5886,12 +6193,12 @@ function DeveloperView({ modelName }: { modelName: string }) {
           </section>
           <section className="trace-links">
             <h3>Trace</h3>
-            <button>
+            <button onClick={() => copyTrace('019d2c…b841')} aria-label="Copy trace ID">
               <span>trace_id</span>
               <code>019d2c…b841</code>
               <Icon name="copy" />
             </button>
-            <button>
+            <button onClick={() => copyTrace('run_019d…92c')} aria-label="Copy run ID">
               <span>run_id</span>
               <code>run_019d…92c</code>
               <Icon name="copy" />
@@ -5915,7 +6222,7 @@ function AboutView() {
           alt="Original glossy Cupcake mascot"
         />
         <div>
-          <p className="eyebrow">From the original CUPCAKEAGI</p>
+          <p className="eyebrow">From the original Cupcake</p>
           <h1>
             Still curious.
             <br />
@@ -5927,7 +6234,7 @@ function AboutView() {
             a calm, modern text-first workbench.
           </p>
           <div className="about-version">
-            <strong>CUPCAKEAGI 2.0</strong>
+            <strong>CupcakeAI 2.0</strong>
             <span>Local release candidate</span>
             <span>Unlicense</span>
           </div>
@@ -6021,11 +6328,13 @@ function ModelPicker({
   close,
   models,
   select,
+  manageModels,
 }: {
   open: boolean;
   close: () => void;
   models: ModelDescriptor[];
   select: (id: string, options?: { compatibilityConfirmed?: boolean }) => Promise<void>;
+  manageModels: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [selectingId, setSelectingId] = useState<string | null>(null);
@@ -6142,13 +6451,7 @@ function ModelPicker({
                 m.selected && <Icon name="check" />
               )}
               {m.status !== 'ready' && (
-                <small className="unavailable">
-                  {m.status === 'setup'
-                    ? 'Set up'
-                    : m.status === 'offline'
-                      ? 'Offline'
-                      : 'Downloading'}
-                </small>
+                <small className="unavailable">{modelStatusLabel(m.status)}</small>
               )}
               {m.provider === 'NVIDIA NIM' && m.chatCompatibility !== 'chat' && (
                 <small className="unavailable">Chat compatibility unverified</small>
@@ -6162,7 +6465,13 @@ function ModelPicker({
           </p>
         )}
         <footer>
-          <button className="text-button">
+          <button
+            className="text-button"
+            onClick={() => {
+              close();
+              manageModels();
+            }}
+          >
             Manage models <Icon name="chevron" />
           </button>
           <span>Ctrl M</span>
@@ -7448,6 +7757,9 @@ function LegacyFixtureApp() {
         mobileOpen={mobileOpen}
         closeMobile={() => setMobileOpen(false)}
         conversations={conversationRecords}
+        activeTaskCount={
+          taskList.filter((task) => task.status === 'working' || task.status === 'waiting').length
+        }
       />
       <section className="app-content" id="main-content" tabIndex={-1}>
         {topbarNeeded && (
@@ -7491,6 +7803,7 @@ function LegacyFixtureApp() {
         close={() => setModelOpen(false)}
         models={models}
         select={selectModel}
+        manageModels={() => navigate('models')}
       />
       <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
       {toast && (
@@ -7518,7 +7831,7 @@ function LegacyMigrationDialog() {
         className="provider-dialog migration-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Original CUPCAKEAGI data migration"
+        aria-label="Original Cupcake 1.0 data migration"
       >
         <header>
           <div>
@@ -7845,6 +8158,10 @@ function LiveApp() {
         mobileOpen={mobileOpen}
         closeMobile={() => setMobileOpen(false)}
         conversations={workspace.conversations}
+        activeTaskCount={
+          workspace.tasks.filter((task) => task.status === 'working' || task.status === 'waiting')
+            .length
+        }
         onNewChat={startNewChat}
         onSelectConversation={(id) =>
           void workspace.selectConversation(id).then(() => navigate('chat'))
@@ -7909,6 +8226,7 @@ function LiveApp() {
         close={() => setModelOpen(false)}
         models={workspace.models}
         select={(id, options) => workspace.selectModel(id, options)}
+        manageModels={() => navigate('models')}
       />
       <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
       <LegacyMigrationDialog />
@@ -7966,7 +8284,73 @@ function LiveApp() {
   );
 }
 
+function WorkspaceUnlockGate({ unlock }: { unlock: () => void }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  return (
+    <div className="app-shell app-shell--locked">
+      <CupcakeTitlebar />
+      <main className="workspace-unlock">
+        <section className="workspace-unlock__card">
+          <div className="workspace-unlock__mark">
+            <Icon name="shield" size={30} />
+          </div>
+          <span className="eyebrow">Encrypted local workspace</span>
+          <h1>Unlock CupcakeAI</h1>
+          <p>
+            Your workspace key is protected by Windows and can only be opened by this Windows user
+            on this computer.
+          </p>
+          <div className="workspace-unlock__actions">
+            <button
+              className="button button--primary workspace-unlock__action"
+              onClick={unlock}
+              autoFocus
+            >
+              <Icon name="shield" /> Unlock with Windows session
+            </button>
+            <button
+              className="text-button"
+              aria-expanded={detailsOpen}
+              onClick={() => setDetailsOpen((value) => !value)}
+            >
+              Why is there no separate password? <Icon name="chevron" size={13} />
+            </button>
+          </div>
+          {detailsOpen && (
+            <div className="workspace-unlock__details">
+              <strong>Your Windows sign-in is the unlock factor.</strong>
+              <p>
+                CupcakeAI uses Windows Data Protection (DPAPI) for the profile key, then derives
+                separate encryption keys for the SQLCipher database and immutable artifact store. A
+                second app password would be an optional extra lock—not the source of the existing
+                encryption.
+              </p>
+            </div>
+          )}
+        </section>
+        <aside className="workspace-unlock__aside">
+          <span>LOCAL ONLY</span>
+          <h2>One key boundary, three protected stores.</h2>
+          <ul>
+            <li>
+              <Icon name="check" /> Conversations, tasks, memory, and settings
+            </li>
+            <li>
+              <Icon name="check" /> Immutable artifact revisions
+            </li>
+            <li>
+              <Icon name="check" /> Provider credentials in the Windows vault
+            </li>
+          </ul>
+        </aside>
+      </main>
+    </div>
+  );
+}
+
 export function App() {
+  const [unlocked, setUnlocked] = useState(!window.cupcake);
+  if (!unlocked) return <WorkspaceUnlockGate unlock={() => setUnlocked(true)} />;
   return (
     <WorkspaceProvider>
       <LiveApp />
