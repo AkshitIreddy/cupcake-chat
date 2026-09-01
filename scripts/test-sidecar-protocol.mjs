@@ -2,8 +2,16 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+
+const args = process.argv.slice(2);
+const dataDirectoryIndex = args.indexOf('--data-dir');
+const suppliedDataDirectory =
+  dataDirectoryIndex >= 0 && args[dataDirectoryIndex + 1]
+    ? resolve(args[dataDirectoryIndex + 1])
+    : null;
+const healthOnly = args.includes('--health-only');
 
 const suffix = process.platform === 'win32' ? '.exe' : '';
 const stage = join(
@@ -15,7 +23,8 @@ const stage = join(
 );
 const broker = join(stage, `cupcake-tool-broker${suffix}`);
 const runtime = join(stage, `cupcake-runtime${suffix}`);
-const dataDirectory = await mkdtemp(join(tmpdir(), 'cupcake-sidecar-smoke-'));
+const dataDirectory =
+  suppliedDataDirectory ?? (await mkdtemp(join(tmpdir(), 'cupcake-sidecar-smoke-')));
 const secret = randomBytes(32);
 const sessionId = uuidV7();
 const inheritedEnvironment =
@@ -49,6 +58,7 @@ processHandle.stderr.on('data', (chunk) => {
 });
 
 const frames = frameReader(processHandle.stdout);
+class HealthOnlyComplete extends Error {}
 try {
   const handshakeId = uuidV7();
   send('handshake', handshakeId, { product: 'CUPCAKEAGI', protocolVersion: 1 });
@@ -75,6 +85,7 @@ try {
     },
   });
   assert(health.payload?.ok === true, `runtime health failed: ${JSON.stringify(health.payload)}`);
+  if (healthOnly) throw new HealthOnlyComplete();
 
   const project = await requestRuntime('projects.create', {
     name: 'Canonical seed 😀 \ue000',
@@ -167,6 +178,8 @@ try {
   process.stdout.write(
     `Sidecar protocol passed: broker → encrypted Python runtime (${response.payload.result.models.length} models).\n`,
   );
+} catch (error) {
+  if (!(error instanceof HealthOnlyComplete)) throw error;
 } finally {
   processHandle.stdin.end();
   const exit = await Promise.race([
@@ -174,13 +187,17 @@ try {
     new Promise((resolve) => setTimeout(() => resolve('timeout'), 10_000)),
   ]);
   if (exit === 'timeout') processHandle.kill();
-  await rm(dataDirectory, {
-    recursive: true,
-    force: true,
-    maxRetries: 20,
-    retryDelay: 250,
-  });
+  if (!suppliedDataDirectory) {
+    await rm(dataDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    });
+  }
 }
+
+if (healthOnly) process.stdout.write('Sidecar health passed against the supplied profile.\n');
 
 function send(type, correlationId, payload) {
   const unsigned = {
