@@ -4,14 +4,14 @@
   "sidecars": [
     {
       "id": "runtime",
-      "displayName": "CUPCAKEAGI Runtime",
+      "displayName": "CupcakeAI Runtime",
       "baseName": "cupcake-runtime",
       "source": "services/runtime",
       "transport": "authenticated-length-prefixed-json"
     },
     {
       "id": "tool-broker",
-      "displayName": "CUPCAKEAGI Tool Broker",
+      "displayName": "CupcakeAI Tool Broker",
       "baseName": "cupcake-tool-broker",
       "source": "crates/tool-broker",
       "transport": "authenticated-length-prefixed-json"

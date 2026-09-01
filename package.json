@@ -2,7 +2,7 @@
   "name": "cupcakeagi",
   "version": "2.0.0-rc.1",
   "private": true,
-  "description": "CUPCAKEAGI 2.0 local desktop workspace",
+  "description": "CupcakeAI 2.0 local desktop workspace",
   "license": "Unlicense",
   "packageManager": "pnpm@10.15.1",
   "engines": {

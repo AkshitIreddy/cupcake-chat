@@ -1395,7 +1395,7 @@ function ApprovalCard() {
         <div className="approval-resource">
           <Icon name="folder" />
           <span>
-            <strong>Desktop / Code Palace / Cupcakeagi</strong>
+            <strong>Desktop / Code Palace / CupcakeAI</strong>
             <small>Local · read only · this task</small>
           </span>
         </div>
