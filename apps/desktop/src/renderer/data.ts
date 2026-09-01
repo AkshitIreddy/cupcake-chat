@@ -221,9 +221,9 @@ export const models: ModelDescriptor[] = [
   },
   {
     id: 'cohere',
-    runtimeModelId: 'cohere:command-a-plus-05-2026',
+    runtimeModelId: 'cohere:command-a-03-2025',
     provider: 'Cohere',
-    name: 'Command A+',
+    name: 'Command A',
     route: 'Cloud',
     tags: ['Tools', 'Retrieval', 'Fast'],
     context: '128k',

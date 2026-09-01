@@ -94,7 +94,7 @@ def test_xai_maps_reasoning_effort_without_routing() -> None:
 
 
 def test_cohere_non_reasoning_catalog_entry_disables_private_thinking() -> None:
-    descriptor = ModelCatalog.builtins().get("cohere:command-a-plus-05-2026")
+    descriptor = ModelCatalog.builtins().get("cohere:command-a-03-2025")
     adapter = CohereAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),))
     assert adapter.build_request(request)["thinking"] == {"type": "disabled"}
@@ -104,7 +104,7 @@ def test_cohere_non_reasoning_catalog_entry_disables_private_thinking() -> None:
     ("model_id", "adapter_type"),
     (
         ("mistral:mistral-medium-3-5", MistralAdapter),
-        ("cohere:command-a-plus-05-2026", CohereAdapter),
+        ("cohere:command-a-03-2025", CohereAdapter),
     ),
 )
 def test_non_reasoning_models_reject_unsupported_effort(

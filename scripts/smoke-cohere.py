@@ -45,7 +45,7 @@ def credentials(path: Path) -> tuple[str | None, str | None]:
 
 
 async def smoke(api_key: str) -> tuple[int, int, int]:
-    descriptor = ModelCatalog.builtins().get("cohere:command-a-plus-05-2026")
+    descriptor = ModelCatalog.builtins().get("cohere:command-a-03-2025")
     adapter = CohereAdapter(descriptor, ProviderConfig(api_key=api_key, timeout_seconds=30))
     request = ModelRequest(
         descriptor.id,
@@ -71,7 +71,7 @@ async def safe_shape(api_key: str) -> list[dict[str, object]]:
 
     client = AsyncClientV2(api_key=api_key, timeout=30)
     stream = client.v2.chat_stream(
-        model="command-a-plus-05-2026",
+        model="command-a-03-2025",
         messages=[{"role": "user", "content": "Say hello in one short sentence."}],
         max_tokens=128,
         thinking={"type": "disabled"},

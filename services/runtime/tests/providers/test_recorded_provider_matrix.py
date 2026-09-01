@@ -204,7 +204,7 @@ def _adapter(provider: str, stream: Any | None = None, *, client: Any | None = N
         descriptor = catalog.get("mistral:mistral-medium-3-5")
         cls = MistralAdapter
     elif provider == "cohere":
-        descriptor = catalog.get("cohere:command-a-plus-05-2026")
+        descriptor = catalog.get("cohere:command-a-03-2025")
         cls = CohereAdapter
     elif provider == "nvidia-nim":
         descriptor = ModelDescriptor(

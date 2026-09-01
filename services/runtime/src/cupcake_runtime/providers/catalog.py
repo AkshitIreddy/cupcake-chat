@@ -122,9 +122,9 @@ BUILTIN_MODELS: tuple[ModelDescriptor, ...] = (
     ),
     _cloud(
         "cohere",
-        "command-a-plus-05-2026",
-        "Command A+",
-        "command-a-plus",
+        "command-a-03-2025",
+        "Command A",
+        "command-a",
         128_000,
         64_000,
         citations=True,

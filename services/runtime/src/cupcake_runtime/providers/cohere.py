@@ -45,7 +45,7 @@ class CohereAdapter(ProviderAdapter):
         payload: dict[str, Any] = {
             "model": self.descriptor.model,
             "messages": openai_messages(request.messages),
-            # Command A+ otherwise spends short response budgets on private
+            # Command A otherwise spends short response budgets on private
             # thinking blocks. CUPCAKEAGI never displays hidden reasoning, and
             # this catalog entry intentionally exposes no reasoning control.
             "thinking": {"type": "disabled"},
