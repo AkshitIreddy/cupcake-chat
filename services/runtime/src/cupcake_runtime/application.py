@@ -547,9 +547,12 @@ class RuntimeService:
     def _bootstrap(self, _params: Mapping[str, Any]) -> dict[str, Any]:
         projects = self.repository.list_projects()
         conversations = self.repository.list_conversations(limit=100)
-        selected = self.repository.get_setting(
-            "models.default", default="mock:cupcake-deterministic"
+        selected = str(
+            self.repository.get_setting(
+                "models.default", default="mock:cupcake-deterministic"
+            )
         )
+        local_autoload = self._ensure_selected_local_model_loaded(selected)
         return {
             "mode": "runtime",
             "features": [
@@ -564,6 +567,7 @@ class RuntimeService:
                 "developer",
             ],
             "selectedModelId": selected,
+            "localModelAutoload": local_autoload,
             "models": _jsonable(self.providers.catalog.list()),
             "hardware": _jsonable(detect_hardware(self.data_dir)),
             "localRuntimes": ["cupcake-local"],
@@ -573,6 +577,31 @@ class RuntimeService:
             "suggestionsEnabled": self.memory.suggestions_enabled(),
             "recoveredRuns": _jsonable(self.tasks.recover(resume=False)),
         }
+
+    def _ensure_selected_local_model_loaded(self, selected: str) -> dict[str, Any]:
+        prefix = "openai-compatible:cupcake-local/"
+        if not selected.startswith(prefix):
+            return {"attempted": False, "loaded": False, "errorType": None}
+        try:
+            self.providers.catalog.get(selected)
+            return {"attempted": False, "loaded": True, "errorType": None}
+        except KeyError:
+            pass
+        artifact_id = selected.removeprefix(prefix)
+        try:
+            result = self._cupcake_local_load(
+                {
+                    "modelId": artifact_id,
+                    "contextSize": 4096,
+                    "gpuLayers": "auto",
+                    "timeoutSeconds": 180,
+                }
+            )
+            descriptor = result.get("model") if isinstance(result, Mapping) else None
+            loaded = isinstance(descriptor, Mapping) and descriptor.get("id") == selected
+            return {"attempted": True, "loaded": loaded, "errorType": None}
+        except Exception as exc:
+            return {"attempted": True, "loaded": False, "errorType": type(exc).__name__}
 
     def _models_list(self, params: Mapping[str, Any]) -> Any:
         provider = _optional_string(params, "provider")

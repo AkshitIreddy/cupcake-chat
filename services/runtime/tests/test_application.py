@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
+from cupcake_runtime.domain.models import Setting
 from cupcake_runtime.providers.types import (
     ModelCapabilities,
     ModelDescriptor,
@@ -74,6 +75,36 @@ def test_composed_runtime_bootstrap_and_persistence(tmp_path: Path) -> None:
     assert [item["role"] for item in history] == ["user", "assistant"]
     assert reopened.handle("runtime.health")[0]["healthy"] is True
     reopened.close()
+
+
+def test_bootstrap_autoloads_an_explicitly_selected_cupcake_local_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    selected = "openai-compatible:cupcake-local/qwen3-8b-q4-k-m"
+    runtime.repository.set_setting(Setting(key="models.default", value=selected))
+    captured: dict[str, Any] = {}
+
+    def load(params: dict[str, Any]) -> dict[str, Any]:
+        captured.update(params)
+        return {"model": {"id": selected}}
+
+    monkeypatch.setattr(runtime, "_cupcake_local_load", load)
+    bootstrap, _ = runtime.handle("app.bootstrap")
+
+    assert captured == {
+        "modelId": "qwen3-8b-q4-k-m",
+        "contextSize": 4096,
+        "gpuLayers": "auto",
+        "timeoutSeconds": 180,
+    }
+    assert bootstrap["selectedModelId"] == selected
+    assert bootstrap["localModelAutoload"] == {
+        "attempted": True,
+        "loaded": True,
+        "errorType": None,
+    }
+    runtime.close()
 
 
 def test_memory_and_background_task_commands_share_profile(tmp_path: Path) -> None:

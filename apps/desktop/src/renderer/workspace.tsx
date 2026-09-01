@@ -1485,7 +1485,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       let bootstrapFailure: Error | null = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          bootstrap = await request<RuntimeBootstrap>('app.bootstrap');
+          bootstrap = await request<RuntimeBootstrap>('app.bootstrap', {}, 300_000);
           bootstrapFailure = null;
           break;
         } catch (reason) {
