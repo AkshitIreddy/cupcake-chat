@@ -1,4 +1,4 @@
-# CUPCAKEAGI 2.0 — Tauri overhaul and corrective review handoff
+# CupcakeAI 2.0 — Tauri overhaul and corrective review handoff
 
 **Updated:** 2026-08-29 UTC
 **Repository:** `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi`
@@ -59,14 +59,14 @@ Reproduce the owner's complaints first, implement the new target, then create ne
 
 The following requirements override the current implementation and older architecture documents:
 
-1. Provider setup must happen entirely inside CUPCAKEAGI. The current setup opens an unattractive
+1. Provider setup must happen entirely inside CupcakeAI. The current setup opens an unattractive
    Windows UI. Replace it with an in-app setup sheet/page: provider choice, API-key entry, privacy
    and cost disclosure, connection test, supported-model discovery, success/error states, and
    credential removal. DPAPI may still protect the credential behind the scenes; no provider setup
    prompt may escape into a generic Windows credential dialog.
 2. Local Models must present a useful installable catalog filtered or ranked for the detected
    device. The owner currently sees no compatible models to install.
-3. Replace native-looking Windows scrollbars with deliberate CUPCAKEAGI scrollbars throughout the
+3. Replace native-looking Windows scrollbars with deliberate CupcakeAI scrollbars throughout the
    application, including nested panels, code/table overflow, modals, drawers, and all four themes.
 4. Replace Electron completely with Tauri for the Windows desktop host and installer. This is a
    performance and product-quality decision, not a request to put a Tauri wrapper around an
@@ -82,7 +82,7 @@ The following requirements override the current implementation and older archite
 
 ## Product direction that still applies
 
-CUPCAKEAGI 2.0 is a Windows-first, text-first local AI workbench. Chat is the primary surface for
+CupcakeAI 2.0 is a Windows-first, text-first local AI workbench. Chat is the primary surface for
 models, files, tools, tasks, citations, memory, projects, and artifacts. Voice and automatic model
 routing remain excluded. Model selection is explicit; optional failure fallbacks are disabled by
 default and must disclose any cost/privacy boundary crossing.
@@ -96,7 +96,7 @@ Keep the “Quiet Confectionery Workbench” direction:
 - Cupcake Light, Cupcake Dark, Minimal, and Classic themes;
 - Bricolage Grotesque for restrained display use, Atkinson Hyperlegible for UI/conversation text,
   and IBM Plex Mono for code/data, all packaged locally with licenses;
-- the grown CUPCAKEAGI 2.0 mascot in ordinary product surfaces, with the original mascot retained
+- the grown CupcakeAI 2.0 mascot in ordinary product surfaces, with the original mascot retained
   only where historically useful, such as About or Classic;
 - WCAG 2.2 AA, keyboard operation, visible focus, reduced motion, semantic streaming regions, and
   responsive layouts from 360 px through ultrawide.
@@ -441,7 +441,7 @@ provided, and no old Electron artifact is represented as current.
 
 ## Live testing coordination
 
-Use disposable profiles and never overwrite the owner's ordinary CUPCAKEAGI data. The prior paths
+Use disposable profiles and never overwrite the owner's ordinary CupcakeAI data. The prior paths
 under `out/` may be used as historical fixtures, but the Tauri candidate needs a clearly named new
 test profile, new screenshots, and a new executable/installer path.
 
@@ -479,4 +479,4 @@ issue the owner has accepted. The final handoff must lead with:
 9. confirmation that nothing was pushed, published, released, or wired to a live updater.
 
 The owner—not an automated test suite—decides whether this corrective Tauri build becomes the
-CUPCAKEAGI 2.0 release candidate.
+CupcakeAI 2.0 release candidate.

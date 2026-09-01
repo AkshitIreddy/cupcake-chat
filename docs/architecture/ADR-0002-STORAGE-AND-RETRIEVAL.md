@@ -12,7 +12,7 @@ without making an embedding service authoritative.
 
 Use three independent encrypted stores plus an encrypted object directory:
 
-1. `product.sqlite`: authoritative CUPCAKEAGI product data in SQLCipher SQLite.
+1. `product.sqlite`: authoritative CupcakeAI product data in SQLCipher SQLite.
 2. `workflow.sqlite`: DBOS workflow/step state; operational, version-bound, and never a product
    export format.
 3. `security.sqlite`: broker-owned grants, approval state, idempotency/effect records, audit

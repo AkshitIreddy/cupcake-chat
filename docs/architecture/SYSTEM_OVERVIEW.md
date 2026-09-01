@@ -1,4 +1,4 @@
-# CUPCAKEAGI 2.0 system overview
+# CupcakeAI 2.0 system overview
 
 ## Topology
 

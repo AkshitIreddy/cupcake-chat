@@ -357,7 +357,7 @@ impl CustomToolSession {
             "protocolVersion": PROTOCOL_VERSION,
             "sequence": self.next_sequence(),
             "type": "handshake",
-            "broker": {"name":"CUPCAKEAGI", "version":env!("CARGO_PKG_VERSION")},
+            "broker": {"name":"CupcakeAI", "version":env!("CARGO_PKG_VERSION")},
             "packageId": manifest.package_id,
             "packageVersion": manifest.package_version,
             "descriptorDigest": descriptor_digest

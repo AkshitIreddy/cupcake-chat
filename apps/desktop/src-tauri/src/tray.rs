@@ -6,10 +6,10 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{App, Emitter, Manager};
 
 pub fn install(app: &App) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open CUPCAKEAGI", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open CupcakeAI", true, None::<&str>)?;
     let new_chat = MenuItem::with_id(app, "chat.new", "New chat", true, None::<&str>)?;
     let preferences = MenuItem::with_id(app, "app.preferences", "Preferences", true, None::<&str>)?;
-    let about = MenuItem::with_id(app, "app.about", "About CUPCAKEAGI", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "app.about", "About CupcakeAI", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
@@ -26,7 +26,7 @@ pub fn install(app: &App) -> tauri::Result<()> {
         ],
     )?;
     let mut builder = TrayIconBuilder::new()
-        .tooltip("CUPCAKEAGI")
+        .tooltip("CupcakeAI")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

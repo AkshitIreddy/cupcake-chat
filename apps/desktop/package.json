@@ -1,7 +1,7 @@
 {
   "name": "@cupcakeagi/desktop",
   "version": "2.0.0-rc.1",
-  "description": "CUPCAKEAGI 2.0 desktop application",
+  "description": "CupcakeAI 2.0 desktop application",
   "private": true,
   "scripts": {
     "dev": "tauri dev",

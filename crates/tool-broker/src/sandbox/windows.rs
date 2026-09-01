@@ -446,7 +446,7 @@ impl AppContainerSid {
             uuid::Uuid::now_v7().simple()
         );
         let name = wide(OsStr::new(&profile_name));
-        let display = wide(OsStr::new("CUPCAKEAGI generated-code sandbox"));
+        let display = wide(OsStr::new("CupcakeAI generated-code sandbox"));
         let description = wide(OsStr::new(
             "Capability-free identity for staged generated-code execution",
         ));

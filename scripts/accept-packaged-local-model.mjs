@@ -12,7 +12,7 @@ const option = (name, fallback = undefined) => {
 const executable = resolve(
   option(
     '--executable',
-    join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CUPCAKEAGI.exe'),
+    join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
   ),
 );
 const profile = resolve(option('--profile', join('out', 'tauri-test-profiles', 'packaged-local')));
@@ -84,6 +84,8 @@ async function launch() {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
   }
   if (!page) throw new Error('Packaged Tauri WebView2 page was not exposed over CDP');
+  const unlock = page.getByRole('button', { name: 'Unlock CupcakeAI' });
+  if (await unlock.isVisible().catch(() => false)) await unlock.click();
   await page.getByRole('button', { name: 'Models', exact: true }).waitFor({ timeout: 180_000 });
   evidence.startupMs.push(Date.now() - started);
   evidence.userAgent = await page.evaluate(() => globalThis.navigator.userAgent);
@@ -109,6 +111,7 @@ function processMemory() {
     windowsHide: true,
   });
   const processNames = new Set([
+    'cupcakeai.exe',
     'cupcakeagi.exe',
     'cupcake-tool-broker.exe',
     'cupcake-runtime.exe',
@@ -180,7 +183,7 @@ try {
   await recommendedCuda.getByText('Active runtime', { exact: true }).waitFor({ timeout: 1_800_000 });
   await page.screenshot({ path: join(output, '01-cuda-runtime-installed.png') });
 
-  await page.getByPlaceholder('Find a model').fill('Qwen3 8B');
+  await page.getByRole('textbox', { name: 'Find a model' }).fill('Qwen3 8B');
   let modelCard = page
     .locator('article.model-card')
     .filter({ hasText: /Qwen3 8B/ })
@@ -196,7 +199,7 @@ try {
     await stop();
     await launch();
     await openModels();
-    await page.getByPlaceholder('Find a model').fill('Qwen3 8B');
+    await page.getByRole('textbox', { name: 'Find a model' }).fill('Qwen3 8B');
     modelCard = page
       .locator('article.model-card')
       .filter({ hasText: /Qwen3 8B/ })
@@ -251,7 +254,7 @@ try {
   await page.screenshot({ path: join(output, '04-offline-local-chat.png') });
 
   await openModels();
-  await page.getByPlaceholder('Find a model').fill('Qwen3 8B');
+  await page.getByRole('textbox', { name: 'Find a model' }).fill('Qwen3 8B');
   modelCard = page
     .locator('article.model-card')
     .filter({ hasText: /Qwen3 8B/ })

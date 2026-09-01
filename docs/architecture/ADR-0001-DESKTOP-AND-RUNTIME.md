@@ -6,7 +6,7 @@
 
 ## Context
 
-CUPCAKEAGI needs a polished Windows 10/11 x64 workbench without requiring users to install Node,
+CupcakeAI needs a polished Windows 10/11 x64 workbench without requiring users to install Node,
 Python, Conda, or a model server. The renderer must remain untrusted while native lifecycle,
 credentials, durable state, providers, and tools keep narrow ownership.
 

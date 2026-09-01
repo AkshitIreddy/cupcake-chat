@@ -1,8 +1,8 @@
 [package]
 name = "cupcakeagi-desktop-host"
 version = "2.0.0-rc.1"
-description = "Windows Tauri host for CUPCAKEAGI"
-authors = ["CUPCAKEAGI contributors"]
+description = "Windows Tauri host for CupcakeAI"
+authors = ["CupcakeAI contributors"]
 edition = "2021"
 license = "Unlicense"
 rust-version = "1.77.2"
@@ -12,7 +12,7 @@ name = "cupcakeagi_desktop_host"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "CUPCAKEAGI"
+name = "CupcakeAI"
 path = "src/main.rs"
 
 [build-dependencies]

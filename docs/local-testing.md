@@ -52,14 +52,14 @@ node scripts/release-candidate-audit.mjs --require-artifacts
 
 After a successful build, record rather than assume the exact paths:
 
-- `apps/desktop/src-tauri/target/release/CUPCAKEAGI.exe`;
-- the single `apps/desktop/src-tauri/target/release/bundle/nsis/CUPCAKEAGI 2_*-setup.exe`.
+- `apps/desktop/src-tauri/target/release/CupcakeAI.exe`;
+- the single `apps/desktop/src-tauri/target/release/bundle/nsis/CupcakeAI 2_*-setup.exe`.
 
 The package smoke currently verifies both paths. Rebuild and rerun it whenever renderer, host,
 sidecar, generated contract, or signed catalog input changes.
 
-The 2.0 current-user installer identity is `CUPCAKEAGI 2`, while `mainBinaryName` keeps the product
-executable `CUPCAKEAGI.exe`. This deliberately prevents Tauri's default
+The 2.0 current-user installer identity is `CupcakeAI 2`, while `mainBinaryName` keeps the product
+executable `CupcakeAI.exe`. This deliberately prevents Tauri's default
 `%LOCALAPPDATA%\<productName>` install path and uninstall key from colliding with retained 1.x data.
 Do not use NSIS `/D` as lifecycle evidence: Tauri's current-user template ignores it. Run
 `scripts/test-nsis-lifecycle.mjs`; it reads the registered location, refuses a pre-existing 2.0

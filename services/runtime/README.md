@@ -1,6 +1,6 @@
-# CUPCAKEAGI runtime
+# CupcakeAI runtime
 
-This package is the authoritative local product runtime for CUPCAKEAGI 2.0. It owns stable product
+This package is the authoritative local product runtime for CupcakeAI 2.0. It owns stable product
 contracts, the encrypted product database, immutable conversation and artifact graphs,
 content-addressed encrypted objects, the private framed protocol, and portable integrity-checked
 backups.

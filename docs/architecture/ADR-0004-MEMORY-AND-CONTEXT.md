@@ -5,7 +5,7 @@
 ## Context
 
 The legacy “state of mind” mixes conversation, personality, emotions, memory, and transient thoughts
-in prompt-visible files. CUPCAKEAGI 2.0 needs useful persistence without hidden steering,
+in prompt-visible files. CupcakeAI 2.0 needs useful persistence without hidden steering,
 unverifiable claims, or cross-project leakage.
 
 ## Decision

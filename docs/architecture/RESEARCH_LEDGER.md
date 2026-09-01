@@ -23,16 +23,16 @@
 | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | [Tauri NSIS `/D` issue](https://github.com/tauri-apps/tauri/issues/6928)                                            | Tauri's current-user NSIS template ignores the command-line install-directory override and defaults to `%LOCALAPPDATA%\<productName>`. | Lifecycle tests discover and validate the registered location; they do not assume `/D` works.                                       |
 | [Tauri install-directory limitation](https://github.com/tauri-apps/tauri/issues/11015)                              | Tauri has no supported configuration field for a custom NSIS installation directory.                                                    | Do not carry a forked installer template only to change one path.                                                                    |
-| [Tauri configuration schema](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-utils/src/config.rs)         | `productName` and `mainBinaryName` are independent; the latter preserves the executable filename.                                       | Use installer identity `CUPCAKEAGI 2` with `mainBinaryName: CUPCAKEAGI` so 2.0 never overwrites retained legacy credentials or data. |
+| [Tauri configuration schema](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-utils/src/config.rs)         | `productName` and `mainBinaryName` are independent; the latter preserves the executable filename.                                       | Use installer identity `CupcakeAI 2` with `mainBinaryName: CupcakeAI` so 2.0 never overwrites retained legacy credentials or data. |
 | [Tauri custom-template discussion](https://github.com/tauri-apps/tauri/issues/15267)                                | A full custom NSIS template is the documented escape hatch for unsupported installer behavior and carries maintenance cost.             | Keep the upstream template and a distinct major-version installer identity for this corrective candidate.                            |
 
 ## 2026-08-30 Windows/NVIDIA local-inference review
 
-The owner challenged the runtime choice after comparing CUPCAKEAGI with LM Studio's engine manager.
+The owner challenged the runtime choice after comparing CupcakeAI with LM Studio's engine manager.
 This review read 28 current primary sources rather than treating the visible LM Studio runtime names
 as separate inference architectures.
 
-| Primary source                                                                                                                         | Material finding                                                                                                            | Effect on CUPCAKEAGI                                                                                    |
+| Primary source                                                                                                                         | Material finding                                                                                                            | Effect on CupcakeAI                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [LM Studio app docs](https://lmstudio.ai/docs/app)                                                                                     | On Windows, LM Studio's GGUF path is llama.cpp; MLX is Apple-only.                                                          | The comparison validates llama.cpp as the right Windows/GGUF family, not an omitted proprietary engine. |
 | [LM Studio system requirements](https://lmstudio.ai/docs/app/system-requirements)                                                      | Windows x64 requires AVX2; 16 GB RAM and 4 GB VRAM are recommended.                                                         | Keep device gating and the CPU fallback explicit.                                                       |
@@ -78,7 +78,7 @@ maintained upstream repositories were read before recording the architecture. Se
 third-party summaries are not evidence entries. Provider details, prices, model limits, and draft
 specifications can change; implementation pins tested versions and dates catalog metadata.
 
-**Platform scope:** CUPCAKEAGI 2.0 targets Windows 10/11 x64 only. References to macOS or Linux
+**Platform scope:** CupcakeAI 2.0 targets Windows 10/11 x64 only. References to macOS or Linux
 below are retained solely as historical comparisons from the original research pass; they do not
 define a build, packaging, credential, sandbox, CI, or future-parity commitment.
 
@@ -99,11 +99,11 @@ define a build, packaging, credential, sandbox, CI, or future-parity commitment.
 
 | Primary source                                                                                               | Material finding                                                                                                                                                                  | Decision it supports                                                                                             |
 | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [Pydantic AI model providers](https://pydantic.dev/docs/ai/models/overview/)                                 | Pydantic AI separates models, providers, and profiles; supports the six native vendor mechanics, test models, custom/OpenAI-compatible providers, and concurrency/error handling. | Provider-neutral mechanics behind CUPCAKEAGI-owned adapters, including the distinct NVIDIA NIM compatible route. |
+| [Pydantic AI model providers](https://pydantic.dev/docs/ai/models/overview/)                                 | Pydantic AI separates models, providers, and profiles; supports the six native vendor mechanics, test models, custom/OpenAI-compatible providers, and concurrency/error handling. | Provider-neutral mechanics behind CupcakeAI-owned adapters, including the distinct NVIDIA NIM compatible route. |
 | [Pydantic AI deferred tools](https://pydantic.dev/docs/ai/tools-toolsets/deferred-tools/)                    | Tool calls can be deferred for external approval/execution and resumed with approved/denied results.                                                                              | `ToolIntent`/approval boundary and recoverable `input_required` tasks.                                           |
 | [Pydantic AI durable execution with DBOS](https://pydantic.dev/docs/ai/capabilities/durable_execution/dbos/) | Pydantic agent operations can participate in DBOS durable workflows.                                                                                                              | Integration feasibility for agent tasks.                                                                         |
 | [DBOS workflow tutorial](https://docs.dbos.dev/python/tutorials/workflow-tutorial)                           | Interrupted workflows recover from their last completed step; steps are the side-effect/checkpoint boundary.                                                                      | Checkpoint placement and recovery in ADR-0006.                                                                   |
-| [DBOS database connections](https://docs.dbos.dev/python/tutorials/database-connection)                      | DBOS supports SQLite and PostgreSQL, defaults to SQLite, and cautions that SQLite is not for distributed deployments.                                                             | Separate SQLite workflow DB only because CUPCAKEAGI is single-device/single-process.                             |
+| [DBOS database connections](https://docs.dbos.dev/python/tutorials/database-connection)                      | DBOS supports SQLite and PostgreSQL, defaults to SQLite, and cautions that SQLite is not for distributed deployments.                                                             | Separate SQLite workflow DB only because CupcakeAI is single-device/single-process.                             |
 | [OpenTelemetry trace specification](https://opentelemetry.io/docs/specs/otel/trace/)                         | Defines trace/span relationships, context propagation, events, links, and status.                                                                                                 | Local redacted diagnostics with standard trace IDs, not a proprietary event model.                               |
 
 ## Provider adapters
@@ -123,7 +123,7 @@ define a build, packaging, credential, sandbox, CI, or future-parity commitment.
 | [NVIDIA NIM for Developers and access terms](https://developer.nvidia.com/nim)                          | Hosted access is offered for prototyping, development, and testing; production requires a suitable enterprise or partner route and promotional terms can change. | Label the route non-production, surface model-specific terms, and avoid promising permanent free capacity. |
 
 Provider APIs disagree in event shape, reasoning controls, tool delta encoding, continuity, errors,
-and retention. The architecture therefore promises a common CUPCAKEAGI event model and honest
+and retention. The architecture therefore promises a common CupcakeAI event model and honest
 per-model capability flags—not false feature parity.
 
 ## Storage, search, and documents
@@ -186,7 +186,7 @@ embeddings, Windows DPAPI credential protection, and deny-by-default tool execut
 tensions are resolved as follows:
 
 - **SQLite vs “production” PostgreSQL:** DBOS recommends PostgreSQL for distributed production;
-  CUPCAKEAGI is deliberately one local process on one device, so SQLite is the simpler correct
+  CupcakeAI is deliberately one local process on one device, so SQLite is the simpler correct
   boundary. Revisit only if cloud/multi-device execution enters scope.
 - **Electron capability vs attack surface:** Electron supplies the required controlled renderer, but
   only with local content, sandboxing, context isolation, sender validation, restrictive CSP, and no

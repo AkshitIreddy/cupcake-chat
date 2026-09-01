@@ -21,11 +21,11 @@ const installer = resolve(
       'release',
       'bundle',
       'nsis',
-      'CUPCAKEAGI 2_2.0.0-rc.1_x64-setup.exe',
+      'CupcakeAI 2_2.0.0-rc.1_x64-setup.exe',
     ),
   ),
 );
-const productName = option('--product-name', 'CUPCAKEAGI 2');
+const productName = option('--product-name', 'CupcakeAI 2');
 if (!process.env.LOCALAPPDATA)
   throw new Error('LOCALAPPDATA is required for NSIS lifecycle testing');
 const installDirectory = normalize(join(process.env.LOCALAPPDATA, productName));
@@ -147,7 +147,7 @@ try {
       `Installer registered an unexpected location: ${recordedLocation ?? 'missing'}`,
     );
   }
-  const executable = join(installDirectory, 'CUPCAKEAGI.exe');
+  const executable = join(installDirectory, 'CupcakeAI.exe');
   await access(executable);
   app = spawn(executable, [], {
     env: {

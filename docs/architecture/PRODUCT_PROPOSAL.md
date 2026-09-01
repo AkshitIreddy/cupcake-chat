@@ -5,7 +5,7 @@ work who wants explicit control over models, data destinations, tools, and durab
 
 ## Product promise
 
-CUPCAKEAGI 2.0 is a text-first desktop workbench: calm enough for ordinary conversation, capable
+CupcakeAI 2.0 is a text-first desktop workbench: calm enough for ordinary conversation, capable
 enough for multi-step local work, and legible about what it remembers, sends, changes, and resumes.
 It is not a voice assistant, autonomous model router, cloud account, or multi-user collaboration
 service.
@@ -93,7 +93,7 @@ candy-themed toy.
 
 ## Intentional exclusions
 
-- No voice input/output, automatic model routing, bundled model weights, CUPCAKEAGI account, cloud
+- No voice input/output, automatic model routing, bundled model weights, CupcakeAI account, cloud
   sync, team workspace, or multi-profile UI.
 - No silent fallback across model, provider, cost, or privacy classes.
 - No unsolicited Thoughts/Dreams: they are disabled by default, quiet when enabled, reviewable, and

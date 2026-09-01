@@ -265,7 +265,7 @@ pub fn native_descriptor_catalog() -> Vec<ToolDescriptor> {
             id: id.into(),
             version: "1.0.0".into(),
             title: title.into(),
-            description: format!("CUPCAKEAGI native capability: {title}"),
+            description: format!("CupcakeAI native capability: {title}"),
             effects: effects.iter().copied().collect(),
             required_grants: if id.contains("files") || id.contains("git") {
                 [GrantKind::Filesystem].into_iter().collect()

@@ -28,7 +28,7 @@ const reuseRuntime = args.includes('--reuse-runtime');
 
 if (targetPlatform !== 'win32' || targetArch !== 'x64') {
   throw new Error(
-    `CUPCAKEAGI 2.0 sidecars support Windows x64 only (received ${targetPlatform}-${targetArch}).`,
+    `CupcakeAI 2.0 sidecars support Windows x64 only (received ${targetPlatform}-${targetArch}).`,
   );
 }
 if (!verifyOnly && (targetPlatform !== process.platform || targetArch !== process.arch)) {

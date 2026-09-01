@@ -9,7 +9,7 @@ use std::time::Duration;
 use url::Url;
 
 const MAX_REDIRECTS: usize = 3;
-const USER_AGENT_VALUE: &str = "CUPCAKEAGI/2.0-rc (+local desktop; bounded fetch)";
+const USER_AGENT_VALUE: &str = "CupcakeAI/2.0-rc (+local desktop; bounded fetch)";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

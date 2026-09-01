@@ -221,5 +221,5 @@ class ModelCatalog:
 
     def select(self, model_id: str | None) -> ModelDescriptor:
         if not model_id:
-            raise ValueError("model selection is required; CUPCAKEAGI never auto-routes")
+            raise ValueError("model selection is required; CupcakeAI never auto-routes")
         return self.get(model_id)

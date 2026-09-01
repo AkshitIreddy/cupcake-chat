@@ -1,4 +1,4 @@
-CUPCAKEAGI bundled font notices
+CupcakeAI bundled font notices
 
 Atkinson Hyperlegible Next
 Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors

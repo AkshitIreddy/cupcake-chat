@@ -24,11 +24,11 @@ const descriptor = await readJson(join(repoRoot, 'packaging', 'sidecars.json'));
 if (!['build', 'bundle'].includes(mode)) throw new Error('--mode must be build or bundle');
 if (targetPlatform !== 'win32' || targetArch !== 'x64') {
   throw new Error(
-    `CUPCAKEAGI 2.0 package smoke supports Windows x64 only (received ${targetPlatform}-${targetArch}).`,
+    `CupcakeAI 2.0 package smoke supports Windows x64 only (received ${targetPlatform}-${targetArch}).`,
   );
 }
 
-const launcher = join(releaseRoot, 'CUPCAKEAGI.exe');
+const launcher = join(releaseRoot, 'CupcakeAI.exe');
 if (!(await exists(launcher)) || (await fileSize(launcher)) === 0) {
   throw new Error(`Tauri release executable is missing or empty: ${relative(repoRoot, launcher)}`);
 }

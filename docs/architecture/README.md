@@ -1,4 +1,4 @@
-# CUPCAKEAGI 2.0 architecture
+# CupcakeAI 2.0 architecture
 
 These records govern the corrective Windows Tauri 2 implementation. An accepted ADR remains binding
 unless a later decision replaces it. Historical audits and research are evidence, not current

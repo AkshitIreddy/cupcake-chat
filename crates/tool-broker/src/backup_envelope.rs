@@ -749,7 +749,7 @@ pub fn prompt_backup_passphrase(purpose: BackupPassphrasePurpose) -> Result<Secr
         let caption = wide(caption_text);
         let message = wide(message_text);
         let target = wide("CUPCAKEAGI:portable-backup:passphrase");
-        let mut username = wide("CUPCAKEAGI backup");
+        let mut username = wide("CupcakeAI backup");
         username.resize(CREDUI_MAX_USERNAME_LENGTH as usize, 0);
         let mut password = Zeroizing::new(vec![0_u16; 2048]);
         let info = CREDUI_INFOW {
@@ -811,7 +811,7 @@ pub fn prompt_backup_passphrase(purpose: BackupPassphrasePurpose) -> Result<Secr
     match purpose {
         BackupPassphrasePurpose::Create => {
             let first = prompt_once(
-                "Create portable CUPCAKEAGI backup",
+                "Create portable CupcakeAI backup",
                 "Enter a new backup passphrase (12 characters or more). It is never shown to the app and cannot be recovered if lost.",
             )?;
             let confirmation = prompt_once(
@@ -826,7 +826,7 @@ pub fn prompt_backup_passphrase(purpose: BackupPassphrasePurpose) -> Result<Secr
             Ok(first)
         }
         BackupPassphrasePurpose::Restore => prompt_once(
-            "Restore portable CUPCAKEAGI backup",
+            "Restore portable CupcakeAI backup",
             "Enter the passphrase used when this portable backup was created.",
         ),
     }

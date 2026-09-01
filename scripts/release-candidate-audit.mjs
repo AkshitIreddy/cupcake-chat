@@ -319,7 +319,7 @@ async function auditArtifacts() {
   }
 
   const releaseRoot = join(tauriRoot, 'target/release');
-  const launcher = join(releaseRoot, 'CUPCAKEAGI.exe');
+  const launcher = join(releaseRoot, 'CupcakeAI.exe');
   const installers = (await walkFiles(join(releaseRoot, 'bundle/nsis'))).filter((file) =>
     /-setup\.exe$/i.test(file),
   );

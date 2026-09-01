@@ -3,7 +3,7 @@ name = "cupcake-tool-broker"
 version = "2.0.0-rc.1"
 edition = "2021"
 license = "Unlicense"
-description = "Security boundary and native-tool broker for CUPCAKEAGI"
+description = "Security boundary and native-tool broker for CupcakeAI"
 
 [lib]
 name = "cupcake_tool_broker"

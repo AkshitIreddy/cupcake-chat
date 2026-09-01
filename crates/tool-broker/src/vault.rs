@@ -199,7 +199,7 @@ mod linux {
                 .args([
                     "store",
                     "--label",
-                    "CUPCAKEAGI credential",
+                    "CupcakeAI credential",
                     "service",
                     SERVICE,
                     "account",

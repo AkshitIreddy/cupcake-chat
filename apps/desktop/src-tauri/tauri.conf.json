@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CUPCAKEAGI 2",
-  "mainBinaryName": "CUPCAKEAGI",
+  "productName": "CupcakeAI 2",
+  "mainBinaryName": "CupcakeAI",
   "version": "2.0.0-rc.1",
   "identifier": "com.cupcakeagi.desktop",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CUPCAKEAGI",
+        "title": "CupcakeAI",
         "width": 1440,
         "height": 920,
         "minWidth": 360,
@@ -39,11 +39,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "CUPCAKEAGI contributors",
-    "copyright": "CUPCAKEAGI contributors",
+    "publisher": "CupcakeAI contributors",
+    "copyright": "CupcakeAI contributors",
     "category": "Productivity",
     "shortDescription": "A local, text-first AI workspace.",
-    "longDescription": "CUPCAKEAGI is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
+    "longDescription": "CupcakeAI is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
     "icon": ["../public/brand/cupcake.ico"],
     "resources": {
       "resources/sidecars/": "sidecars/"

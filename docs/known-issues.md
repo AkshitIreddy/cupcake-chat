@@ -1,6 +1,6 @@
 # Known issues and unfinished gates
 
-CUPCAKEAGI 2.0 is undergoing a corrective Tauri overhaul. The source tree is not an accepted release
+CupcakeAI 2.0 is undergoing a corrective Tauri overhaul. The source tree is not an accepted release
 candidate and no new artifact should be distributed.
 
 ## Current blockers

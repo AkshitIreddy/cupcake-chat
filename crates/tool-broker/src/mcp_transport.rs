@@ -573,7 +573,7 @@ impl StdioMcpSession {
             json!({
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "CUPCAKEAGI", "version": env!("CARGO_PKG_VERSION")}
+                "clientInfo": {"name": "CupcakeAI", "version": env!("CARGO_PKG_VERSION")}
             }),
         )?;
         self.notify("notifications/initialized", json!({}))
@@ -885,7 +885,7 @@ impl RemoteMcpSession {
             json!({
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name":"CUPCAKEAGI", "version":env!("CARGO_PKG_VERSION")}
+                "clientInfo": {"name":"CupcakeAI", "version":env!("CARGO_PKG_VERSION")}
             }),
             vault,
         )?;

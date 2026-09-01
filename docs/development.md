@@ -1,6 +1,6 @@
-# Developing CUPCAKEAGI 2.0
+# Developing CupcakeAI 2.0
 
-CUPCAKEAGI is a Windows-only Tauri 2 application. React renders the workbench; the Tauri Rust host
+CupcakeAI is a Windows-only Tauri 2 application. React renders the workbench; the Tauri Rust host
 owns native lifecycle and narrow commands/events; the packaged Python runtime owns product behavior;
 the Rust ToolBroker owns credentials, grants, tool policy, MCP, audit, and sandboxing.
 

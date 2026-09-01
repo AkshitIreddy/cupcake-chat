@@ -48,7 +48,7 @@ pub fn normalize_deep_link(raw: &str) -> HostResult<String> {
     }
     let url = Url::parse(raw).map_err(|_| HostError::invalid("Deep link is invalid"))?;
     if url.scheme() != "cupcake" || !url.username().is_empty() || url.password().is_some() {
-        return Err(HostError::invalid("Deep link is not a CUPCAKEAGI link"));
+        return Err(HostError::invalid("Deep link is not a CupcakeAI link"));
     }
     // Keep deep links product-owned. File URLs, embedded network destinations,
     // and opaque paths are never reinterpreted by the host.

@@ -101,7 +101,7 @@ class LegacyMigrationService:
     def _require_importer(self) -> LegacyImporter:
         importer = self._importer()
         if importer is None:
-            raise FileNotFoundError("a safe CUPCAKEAGI 1.0 state directory was not found")
+            raise FileNotFoundError("a safe original Cupcake 1.0 state directory was not found")
         return importer
 
     def _importer(self) -> LegacyImporter | None:

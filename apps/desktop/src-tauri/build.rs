@@ -35,7 +35,7 @@ fn main() {
             {
                 std::thread::sleep(std::time::Duration::from_millis(125 * (attempt + 1)));
             }
-            Err(error) => panic!("failed to generate the CUPCAKEAGI Tauri host manifest: {error}"),
+            Err(error) => panic!("failed to generate the CupcakeAI Tauri host manifest: {error}"),
         }
     }
 }

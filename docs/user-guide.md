@@ -1,4 +1,4 @@
-# CUPCAKEAGI 2.0 user guide
+# CupcakeAI 2.0 user guide
 
 This guide describes the intended Tauri candidate. Features still awaiting live or packaged
 verification are identified in [known issues](known-issues.md).
@@ -11,7 +11,7 @@ attach only the intended context, and use the Frosting Thread to navigate immuta
 
 ## Provider setup
 
-Open Settings or Models and choose a hosted provider. CUPCAKEAGI shows where prompts/files go,
+Open Settings or Models and choose a hosted provider. CupcakeAI shows where prompts/files go,
 current cost/free-trial caveats, and a link to obtain your own key. Enter the key in the
 application, test the connection, review discovered models/capabilities, and save only after
 success.

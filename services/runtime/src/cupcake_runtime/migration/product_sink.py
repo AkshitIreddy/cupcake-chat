@@ -252,7 +252,7 @@ class ProductMigrationSink:
     ) -> dict[str, str]:
         conversation_id = new_id()
         branch_id = new_id()
-        title = "Imported from CUPCAKEAGI 1.0"
+        title = "Imported from Cupcake 1.0"
         connection.execute(
             "INSERT INTO conversations VALUES (?, NULL, ?, 'active', ?, ?)",
             (conversation_id, title, imported_at, imported_at),
@@ -267,7 +267,7 @@ class ProductMigrationSink:
             None,
             "conversation",
             title,
-            "Recovered local conversation history from CUPCAKEAGI 1.0.",
+            "Recovered local conversation history from Cupcake 1.0.",
             imported_at,
         )
         head_id: str | None = None
@@ -370,7 +370,7 @@ class ProductMigrationSink:
             None,
             "task",
             title,
-            "Recovered pending task from CUPCAKEAGI 1.0.",
+            "Recovered pending task from Cupcake 1.0.",
             imported_at,
         )
         self._insert_memory_row(
@@ -523,7 +523,7 @@ def _memory_projection(
     suffix = record.record_id[:8]
     if record.kind == "personality":
         return (
-            f"Imported CUPCAKEAGI personality [{suffix}]",
+            f"Imported Cupcake 1.0 personality [{suffix}]",
             str(record.payload.get("content", "")),
             "instruction",
             "active",

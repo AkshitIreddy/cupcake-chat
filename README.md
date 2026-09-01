@@ -1,8 +1,8 @@
-# CUPCAKEAGI 2.0
+# CupcakeAI 2.0
 
-![CUPCAKEAGI mark](apps/desktop/public/brand/cupcake-mark.svg)
+![CupcakeAI mark](apps/desktop/public/brand/cupcake-mark.svg)
 
-CUPCAKEAGI is a Windows-first, text-first AI workbench for conversations, files, tools, tasks,
+CupcakeAI is a Windows-first, text-first AI workbench for conversations, files, tools, tasks,
 citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside
 a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
@@ -16,7 +16,7 @@ a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
 - Chat remains the primary surface. Voice and automatic model routing are excluded.
 - Model choice is explicit. Optional fallbacks are off by default and disclose cost/privacy changes.
-- Provider setup stays inside CUPCAKEAGI: key entry, privacy/cost disclosure, connection testing,
+- Provider setup stays inside CupcakeAI: key entry, privacy/cost disclosure, connection testing,
   supported-model discovery, saved masked identity, reconnect, and removal.
 - Cupcake Local is the only installed local-model manager. It owns a pinned llama.cpp runtime and
   optional downloaded GGUF weights; users do not need Node, Python, Conda, or a separate model
@@ -101,7 +101,7 @@ node scripts/release-candidate-audit.mjs --require-artifacts
 
 Expected output conventions, which must be verified after a successful build:
 
-- executable: `apps/desktop/src-tauri/target/release/CUPCAKEAGI.exe`;
+- executable: `apps/desktop/src-tauri/target/release/CupcakeAI.exe`;
 - installer: `apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe`;
 - disposable profile: set `CUPCAKE_TEST_DATA_DIR` to an explicitly selected new absolute directory
   below `out/tauri-test-profiles/`.
@@ -144,4 +144,4 @@ dependency, migration target, compatibility target, or packaging path.
 
 Local testing does not authorize a push, package publication, public download, GitHub release,
 production signature, updater, or artifact distribution. The owner decides whether a fully tested
-corrective build becomes the CUPCAKEAGI 2.0 release candidate.
+corrective build becomes the CupcakeAI 2.0 release candidate.
