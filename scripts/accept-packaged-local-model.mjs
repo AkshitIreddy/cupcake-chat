@@ -68,6 +68,7 @@ async function launch() {
     env: {
       ...process.env,
       CUPCAKE_TEST_DATA_DIR: profile,
+      CUPCAKE_TEST_HEADLESS: '1',
       WEBVIEW2_USER_DATA_FOLDER: join(profile, 'webview2'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     },

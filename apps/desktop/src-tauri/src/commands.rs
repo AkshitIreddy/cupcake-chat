@@ -467,6 +467,12 @@ pub fn emit_window_state(window: &WebviewWindow) {
 }
 
 pub fn show_main(app: &AppHandle) {
+    if !should_show_main_window(
+        std::env::var_os("CUPCAKE_TEST_DATA_DIR").is_some(),
+        std::env::var("CUPCAKE_TEST_HEADLESS").ok().as_deref(),
+    ) {
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
@@ -475,10 +481,22 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+fn should_show_main_window(test_profile_present: bool, headless_flag: Option<&str>) -> bool {
+    !(test_profile_present && headless_flag == Some("1"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn headless_window_mode_is_limited_to_explicit_test_profiles() {
+        assert!(!should_show_main_window(true, Some("1")));
+        assert!(should_show_main_window(false, Some("1")));
+        assert!(should_show_main_window(true, Some("0")));
+        assert!(should_show_main_window(true, None));
+    }
 
     #[test]
     fn attachment_contract_is_path_free_unique_and_bounded() {
