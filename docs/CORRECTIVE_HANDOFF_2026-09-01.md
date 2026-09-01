@@ -1,5 +1,9 @@
 # CupcakeAI corrective handoff - 2026-09-01
 
+> The later password, provider, runtime, and normal-profile work is recorded in
+> `READY_TO_CHAT_HANDOFF_2026-09-01.md`. The Windows-session-only gate described below has been
+> replaced by a CupcakeAI-owned password lifecycle.
+
 The owner's empty installed workspace is the acceptance target. Populated fixture documents are not
 evidence for the installed app.
 

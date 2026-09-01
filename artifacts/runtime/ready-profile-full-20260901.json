@@ -1,0 +1,52 @@
+{
+  "profile": "C:\\Users\\akshi\\AppData\\Roaming\\com.cupcakeagi.desktop\\runtime",
+  "startedAt": "2026-09-01T19:45:42.289Z",
+  "providers": [
+    {
+      "provider": "cohere",
+      "state": "ready",
+      "persistent": true,
+      "modelsDiscovered": 20
+    },
+    {
+      "provider": "nvidia-nim",
+      "state": "ready",
+      "persistent": true,
+      "modelsDiscovered": 65
+    }
+  ],
+  "installedRuntimes": [
+    {
+      "version": "b10679",
+      "backend": "cpu",
+      "integrityVerified": true
+    },
+    {
+      "version": "b10679",
+      "backend": "cuda-12",
+      "integrityVerified": true
+    },
+    {
+      "version": "b10679",
+      "backend": "cuda-13",
+      "integrityVerified": true
+    },
+    {
+      "version": "b10679",
+      "backend": "vulkan",
+      "integrityVerified": true
+    }
+  ],
+  "activeRuntime": "cuda-13",
+  "installedModels": [
+    {
+      "id": "qwen3-8b-q4-k-m",
+      "integrityVerified": true,
+      "sizeBytes": 5027783488
+    }
+  ],
+  "hostedChat": true,
+  "localChat": true,
+  "localDefault": true,
+  "finishedAt": "2026-09-01T19:47:17.563Z"
+}

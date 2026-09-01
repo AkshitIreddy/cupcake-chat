@@ -3,6 +3,17 @@
 This guide describes the intended Tauri candidate. Features still awaiting live or packaged
 verification are identified in [known issues](known-issues.md).
 
+## Workspace password
+
+On first launch, create a 15–128 character CupcakeAI password. Every later app launch opens on the
+password screen; local models, tools, and hosted-provider sidecars remain stopped until the password
+is accepted. Failed attempts are rate-limited. Use Settings → Privacy to change the password or
+choose **Lock now**.
+
+This app password is a local application lock. Windows DPAPI independently protects the encrypted
+profile key and hosted-provider credentials at rest for the current Windows user. CupcakeAI stores
+only a salted Argon2id password verifier, never the password itself.
+
 ## Workbench
 
 Use the persistent shelf for Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search,
@@ -27,8 +38,9 @@ Hosted models show provider, capabilities, privacy route, and any unverified cap
 There is no automatic routing.
 
 Cupcake Local detects CPU, RAM, disk, Windows version, NVIDIA GPU/VRAM, and installed acceleration
-pack. The signed catalog currently offers Qwen3 4B, 8B, and 14B Q4_K_M metadata from immutable
-revisions; weights are downloaded only after an explicit install. Before installation it ranks the
+pack. The signed catalog currently offers 11 immutable, checksum-pinned GGUF choices across Qwen3,
+IBM Granite 3.3, Mistral Ministral 3, and Microsoft Phi-4, from 0.6B through a 30B mixture-of-experts
+model; weights are downloaded only after an explicit install. Before installation it ranks the
 verified catalog as Recommended, Fits with reduced context, CPU-only/slow, Hybrid, or Incompatible,
 with explanations and estimates. Filter by task, size, license, tools/vision, and local-only
 privacy.
