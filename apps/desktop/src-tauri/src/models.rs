@@ -7,6 +7,23 @@ pub const RUNTIME_STATUS_EVENT_NAME: &str = "cupcake://runtime-status";
 pub const DESKTOP_COMMAND_EVENT_NAME: &str = "cupcake://command";
 pub const WINDOW_STATE_EVENT_NAME: &str = "cupcake://window-state";
 pub const DEEP_LINK_EVENT_NAME: &str = "cupcake://deep-link";
+pub const WORKSPACE_LOCK_EVENT_NAME: &str = "cupcake://workspace-lock";
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceLockState {
+    NeedsSetup,
+    Locked,
+    Unlocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceLockStatus {
+    pub state: WorkspaceLockState,
+    pub failed_attempts: u32,
+    pub retry_after_ms: u32,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

@@ -14,6 +14,7 @@ import {
   type RuntimeResponse,
   type RuntimeStatus,
   type Unsubscribe,
+  type WorkspaceLockStatus,
 } from './desktop-api';
 
 function subscribe<T>(event: string, listener: (payload: T) => void): Unsubscribe {
@@ -65,6 +66,19 @@ export function installTauriDesktopApi(): boolean {
     commands: {
       execute: (command: DesktopCommand) => invoke<void>('command_execute', { command }),
       onCommand: (listener) => subscribe<DesktopCommand>('cupcake://command', listener),
+    },
+    workspace: {
+      status: () => invoke<WorkspaceLockStatus>('workspace_lock_status'),
+      setup: (password) => invoke<WorkspaceLockStatus>('workspace_password_setup', { password }),
+      unlock: (password) => invoke<WorkspaceLockStatus>('workspace_unlock', { password }),
+      lock: () => invoke<WorkspaceLockStatus>('workspace_lock'),
+      changePassword: (currentPassword, newPassword) =>
+        invoke<WorkspaceLockStatus>('workspace_password_change', {
+          currentPassword,
+          newPassword,
+        }),
+      onStatus: (listener) =>
+        subscribe<WorkspaceLockStatus>('cupcake://workspace-lock', listener),
     },
     runtime: {
       status: () => invoke<RuntimeStatus>('runtime_status'),

@@ -25,6 +25,11 @@
     "allow-window-is-maximized",
     "allow-window-minimize",
     "allow-window-start-dragging",
-    "allow-window-toggle-maximize"
+    "allow-window-toggle-maximize",
+    "allow-workspace-lock",
+    "allow-workspace-lock-status",
+    "allow-workspace-password-change",
+    "allow-workspace-password-setup",
+    "allow-workspace-unlock"
   ]
 }

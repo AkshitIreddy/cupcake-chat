@@ -10,6 +10,7 @@ mod sidecar;
 mod state;
 mod tray;
 mod url_policy;
+mod workspace_lock;
 
 use crate::commands::*;
 use crate::state::HostState;
@@ -51,6 +52,11 @@ pub fn run() {
             window_minimize,
             window_start_dragging,
             window_toggle_maximize,
+            workspace_lock,
+            workspace_lock_status,
+            workspace_password_change,
+            workspace_password_setup,
+            workspace_unlock,
         ])
         .setup(|app| {
             let resource_directory = app.path().resource_dir()?.join("sidecars");
@@ -63,9 +69,11 @@ pub fn run() {
             let supervisor = sidecar::SidecarSupervisor::new(
                 app.handle().clone(),
                 resource_directory,
-                data_directory,
+                data_directory.clone(),
             );
-            app.manage(HostState::new(supervisor.clone()));
+            let workspace_lock =
+                workspace_lock::WorkspaceLock::load(&data_directory, supervisor.clone())?;
+            app.manage(HostState::new(supervisor, workspace_lock));
             tray::install(app)?;
 
             let deep_link_handle = app.handle().clone();
@@ -76,10 +84,8 @@ pub fn run() {
                 );
             });
 
-            // Missing staged binaries are a supported source-checkout state.
-            // The status event reports the disabled/crashed boundary while the
-            // UI remains available for diagnostics and packaging preparation.
-            let _ = supervisor.start();
+            // The runtime and provider sidecars remain stopped until an app-owned
+            // password is created or verified for this launch.
             commands::show_main(app.handle());
             Ok(())
         })

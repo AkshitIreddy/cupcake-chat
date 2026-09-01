@@ -2,8 +2,8 @@ use crate::allowlist::{ensure_provider_id, ensure_runtime_method_allowed};
 use crate::error::{HostError, HostResult};
 use crate::models::{
     AppInfo, DialogOpenOptions, OpaqueFileHandle, ProviderConnectionInput, RuntimeRequest,
-    RuntimeResponse, RuntimeStatus, DESKTOP_API_VERSION, DESKTOP_COMMAND_EVENT_NAME,
-    WINDOW_STATE_EVENT_NAME,
+    RuntimeResponse, RuntimeStatus, WorkspaceLockStatus, DESKTOP_API_VERSION,
+    DESKTOP_COMMAND_EVENT_NAME, WINDOW_STATE_EVENT_NAME, WORKSPACE_LOCK_EVENT_NAME,
 };
 use crate::state::HostState;
 use crate::url_policy::normalize_external_url;
@@ -14,6 +14,74 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 use zeroize::Zeroizing;
+
+fn emit_workspace_lock(app: &AppHandle, status: &WorkspaceLockStatus) {
+    let _ = app.emit(WORKSPACE_LOCK_EVENT_NAME, status);
+}
+
+#[tauri::command]
+pub fn workspace_lock_status(state: State<'_, HostState>) -> WorkspaceLockStatus {
+    state.workspace_lock.status()
+}
+
+#[tauri::command]
+pub async fn workspace_password_setup(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    password: String,
+) -> HostResult<WorkspaceLockStatus> {
+    let workspace_lock = state.workspace_lock.clone();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        workspace_lock.setup(Zeroizing::new(password))
+    })
+    .await
+    .map_err(|_| HostError::internal("Workspace password setup stopped unexpectedly"))??;
+    emit_workspace_lock(&app, &status);
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn workspace_unlock(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    password: String,
+) -> HostResult<WorkspaceLockStatus> {
+    let workspace_lock = state.workspace_lock.clone();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        workspace_lock.unlock(Zeroizing::new(password))
+    })
+    .await
+    .map_err(|_| HostError::internal("Workspace unlock stopped unexpectedly"))??;
+    emit_workspace_lock(&app, &status);
+    Ok(status)
+}
+
+#[tauri::command]
+pub fn workspace_lock(app: AppHandle, state: State<'_, HostState>) -> WorkspaceLockStatus {
+    let status = state.workspace_lock.lock_workspace();
+    emit_workspace_lock(&app, &status);
+    status
+}
+
+#[tauri::command]
+pub async fn workspace_password_change(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    current_password: String,
+    new_password: String,
+) -> HostResult<WorkspaceLockStatus> {
+    let workspace_lock = state.workspace_lock.clone();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        workspace_lock.change_password(
+            Zeroizing::new(current_password),
+            Zeroizing::new(new_password),
+        )
+    })
+    .await
+    .map_err(|_| HostError::internal("Workspace password change stopped unexpectedly"))??;
+    emit_workspace_lock(&app, &status);
+    Ok(status)
+}
 
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROVIDER_SECRET_BYTES: usize = 16 * 1024;
@@ -467,13 +535,24 @@ pub fn emit_window_state(window: &WebviewWindow) {
 }
 
 pub fn show_main(app: &AppHandle) {
-    if !should_show_main_window(
+    let headless_test = is_headless_test_window(
         std::env::var_os("CUPCAKE_TEST_DATA_DIR").is_some(),
         std::env::var("CUPCAKE_TEST_HEADLESS").ok().as_deref(),
-    ) {
-        return;
-    }
+    );
     if let Some(window) = app.get_webview_window("main") {
+        if headless_test {
+            // A never-shown WebView2 remains at about:blank, which makes real
+            // interaction testing impossible. Show it far outside the virtual
+            // desktop without activation or a taskbar entry so CDP can drive
+            // the production renderer without disturbing the user's screens.
+            let _ = window.set_position(tauri::PhysicalPosition::new(-32_000, -32_000));
+            let _ = window.set_skip_taskbar(true);
+            if let Ok(url) = tauri::Url::parse("https://tauri.localhost/") {
+                let _ = window.navigate(url);
+            }
+            let _ = window.show();
+            return;
+        }
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -481,8 +560,8 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
-fn should_show_main_window(test_profile_present: bool, headless_flag: Option<&str>) -> bool {
-    !(test_profile_present && headless_flag == Some("1"))
+fn is_headless_test_window(test_profile_present: bool, headless_flag: Option<&str>) -> bool {
+    test_profile_present && headless_flag == Some("1")
 }
 
 #[cfg(test)]
@@ -492,10 +571,10 @@ mod tests {
 
     #[test]
     fn headless_window_mode_is_limited_to_explicit_test_profiles() {
-        assert!(!should_show_main_window(true, Some("1")));
-        assert!(should_show_main_window(false, Some("1")));
-        assert!(should_show_main_window(true, Some("0")));
-        assert!(should_show_main_window(true, None));
+        assert!(is_headless_test_window(true, Some("1")));
+        assert!(!is_headless_test_window(false, Some("1")));
+        assert!(!is_headless_test_window(true, Some("0")));
+        assert!(!is_headless_test_window(true, None));
     }
 
     #[test]

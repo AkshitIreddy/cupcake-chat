@@ -417,6 +417,10 @@ impl SidecarSupervisor {
             None,
             None,
         );
+        // `stop` is also used by the app-owned workspace lock. Once shutdown
+        // is complete, a later verified unlock must be allowed to start a new
+        // broker generation in this same desktop process.
+        inner.stopping = false;
     }
 
     fn launch_locked(&self, inner: &mut SupervisorInner) -> HostResult<u64> {

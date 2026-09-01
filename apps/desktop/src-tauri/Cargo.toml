@@ -19,6 +19,7 @@ path = "src/main.rs"
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+argon2 = { version = "0.5", features = ["std"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 cupcake-tool-broker = { path = "../../../crates/tool-broker" }
@@ -37,8 +38,9 @@ zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
-  "Win32_Foundation",
-  "Win32_System_JobObjects",
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
   "Win32_System_Threading",
 ] }
 

@@ -18,6 +18,11 @@ const EXPOSED_COMMANDS: &[&str] = &[
     "window_minimize",
     "window_start_dragging",
     "window_toggle_maximize",
+    "workspace_lock",
+    "workspace_lock_status",
+    "workspace_password_change",
+    "workspace_password_setup",
+    "workspace_unlock",
 ];
 
 fn main() {

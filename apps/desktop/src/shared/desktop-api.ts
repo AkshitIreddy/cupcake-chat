@@ -66,6 +66,14 @@ export interface RuntimeStatus {
   detail?: string;
 }
 
+export type WorkspaceLockState = 'needs_setup' | 'locked' | 'unlocked';
+
+export interface WorkspaceLockStatus {
+  state: WorkspaceLockState;
+  failedAttempts: number;
+  retryAfterMs: number;
+}
+
 export interface ProviderSetupInput {
   provider: string;
   secret: string;
@@ -123,6 +131,14 @@ export interface CupcakeDesktopApi {
   commands: {
     execute(command: DesktopCommand): Promise<void>;
     onCommand(listener: (command: DesktopCommand) => void): Unsubscribe;
+  };
+  workspace: {
+    status(): Promise<WorkspaceLockStatus>;
+    setup(password: string): Promise<WorkspaceLockStatus>;
+    unlock(password: string): Promise<WorkspaceLockStatus>;
+    lock(): Promise<WorkspaceLockStatus>;
+    changePassword(currentPassword: string, newPassword: string): Promise<WorkspaceLockStatus>;
+    onStatus(listener: (status: WorkspaceLockStatus) => void): Unsubscribe;
   };
   runtime: {
     status(): Promise<RuntimeStatus>;

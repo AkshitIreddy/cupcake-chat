@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-lock"
+description = "Enables the workspace_lock command without any pre-configured scope."
+commands.allow = ["workspace_lock"]
+
+[[permission]]
+identifier = "deny-workspace-lock"
+description = "Denies the workspace_lock command without any pre-configured scope."
+commands.deny = ["workspace_lock"]

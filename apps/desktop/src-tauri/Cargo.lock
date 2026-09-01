@@ -823,6 +823,7 @@ dependencies = [
 name = "cupcakeagi-desktop-host"
 version = "2.0.0-rc.1"
 dependencies = [
+ "argon2",
  "base64 0.22.1",
  "chrono",
  "cupcake-tool-broker",

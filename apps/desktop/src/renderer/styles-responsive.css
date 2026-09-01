@@ -255,6 +255,9 @@
   .workspace-unlock__card {
     padding: 28px 22px;
   }
+  .workspace-password-form {
+    grid-template-columns: 1fr;
+  }
   .provider-setup-layer {
     place-items: end center;
     padding: 0;

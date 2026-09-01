@@ -51,6 +51,7 @@ import {
   type StagedAttachmentRecord,
   type ToolActivity,
 } from './workspace';
+import type { WorkspaceLockStatus } from '../shared/desktop-api';
 
 const navItems: { id: View; label: string; icon: IconName; shortcut?: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -5319,6 +5320,11 @@ function SettingsView({
   const [clearPhrase, setClearPhrase] = useState('');
   const [clearPlan, setClearPlan] = useState<Record<string, unknown> | null>(null);
   const [clearUndo, setClearUndo] = useState(false);
+  const [currentWorkspacePassword, setCurrentWorkspacePassword] = useState('');
+  const [newWorkspacePassword, setNewWorkspacePassword] = useState('');
+  const [confirmWorkspacePassword, setConfirmWorkspacePassword] = useState('');
+  const [workspacePasswordBusy, setWorkspacePasswordBusy] = useState(false);
+  const [workspacePasswordMessage, setWorkspacePasswordMessage] = useState('');
   const [preset, setPreset] = useState(cap(workspace.settings.personalityPreset));
   const [values, setValues] = useState({
     Warmth: Math.round(workspace.settings.personality.warmth * 100),
@@ -5606,6 +5612,109 @@ function SettingsView({
         )}
         {tab === 'Privacy' && (
           <>
+            <section className="settings-section">
+              <header>
+                <h2>Workspace password</h2>
+                <p>
+                  CupcakeAI requires this password before starting local models, tools, or cloud
+                  provider connections.
+                </p>
+              </header>
+              <form
+                className="workspace-password-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setWorkspacePasswordMessage('');
+                  if (newWorkspacePassword !== confirmWorkspacePassword) {
+                    setWorkspacePasswordMessage('The new passwords do not match.');
+                    return;
+                  }
+                  if (newWorkspacePassword.length < 15) {
+                    setWorkspacePasswordMessage('Use at least 15 characters.');
+                    return;
+                  }
+                  setWorkspacePasswordBusy(true);
+                  void window.cupcake?.workspace
+                    .changePassword(currentWorkspacePassword, newWorkspacePassword)
+                    .then(() => {
+                      setCurrentWorkspacePassword('');
+                      setNewWorkspacePassword('');
+                      setConfirmWorkspacePassword('');
+                      setWorkspacePasswordMessage('Password changed.');
+                    })
+                    .catch((error: unknown) => setWorkspacePasswordMessage(hostErrorMessage(error)))
+                    .finally(() => setWorkspacePasswordBusy(false));
+                }}
+              >
+                <label>
+                  Current password
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentWorkspacePassword}
+                    onChange={(event) => setCurrentWorkspacePassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  New password
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={15}
+                    maxLength={128}
+                    value={newWorkspacePassword}
+                    onChange={(event) => setNewWorkspacePassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Confirm new password
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={15}
+                    maxLength={128}
+                    value={confirmWorkspacePassword}
+                    onChange={(event) => setConfirmWorkspacePassword(event.target.value)}
+                    required
+                  />
+                </label>
+                {workspacePasswordMessage && (
+                  <p
+                    className={cx(
+                      'field-message',
+                      workspacePasswordMessage !== 'Password changed.' && 'field-error',
+                    )}
+                    role="status"
+                  >
+                    {workspacePasswordMessage}
+                  </p>
+                )}
+                <div className="workspace-password-form__actions">
+                  <button className="button button--primary" disabled={workspacePasswordBusy}>
+                    {workspacePasswordBusy ? 'Changing…' : 'Change password'}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => void window.cupcake?.workspace.lock()}
+                  >
+                    <Icon name="shield" /> Lock now
+                  </button>
+                </div>
+              </form>
+              <div className="security-note">
+                <Icon name="shield" />
+                <div>
+                  <strong>Two local protection layers</strong>
+                  <p>
+                    The app password blocks CupcakeAI itself. Windows DPAPI separately protects the
+                    encrypted workspace key and provider credentials at rest.
+                  </p>
+                </div>
+              </div>
+            </section>
             <section className="settings-section">
               <header>
                 <h2>Data destinations</h2>
@@ -8284,8 +8393,50 @@ function LiveApp() {
   );
 }
 
-function WorkspaceUnlockGate({ unlock }: { unlock: () => void }) {
+function hostErrorMessage(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return 'CupcakeAI could not complete that password request.';
+}
+
+function WorkspaceUnlockGate({
+  status,
+  onUnlocked,
+}: {
+  status: WorkspaceLockStatus | null;
+  onUnlocked: (status: WorkspaceLockStatus) => void;
+}) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [revealed, setRevealed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const needsSetup = status?.state === 'needs_setup';
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!window.cupcake || !status || busy) return;
+    setError('');
+    if (needsSetup && password !== confirmation) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setBusy(true);
+    const request = needsSetup
+      ? window.cupcake.workspace.setup(password)
+      : window.cupcake.workspace.unlock(password);
+    void request
+      .then((next) => {
+        setPassword('');
+        setConfirmation('');
+        onUnlocked(next);
+      })
+      .catch((reason: unknown) => setError(hostErrorMessage(reason)))
+      .finally(() => setBusy(false));
+  };
   return (
     <div className="app-shell app-shell--locked">
       <CupcakeTitlebar />
@@ -8294,36 +8445,90 @@ function WorkspaceUnlockGate({ unlock }: { unlock: () => void }) {
           <div className="workspace-unlock__mark">
             <Icon name="shield" size={30} />
           </div>
-          <span className="eyebrow">Encrypted local workspace</span>
-          <h1>Unlock CupcakeAI</h1>
+          <span className="eyebrow">App-locked local workspace</span>
+          <h1>{needsSetup ? 'Create your CupcakeAI password' : 'Unlock CupcakeAI'}</h1>
           <p>
-            Your workspace key is protected by Windows and can only be opened by this Windows user
-            on this computer.
+            {status === null
+              ? 'Checking this local profile…'
+              : needsSetup
+                ? 'Choose a password for this CupcakeAI profile. You will enter it whenever the app starts.'
+                : 'Enter the password for this CupcakeAI profile. Models, tools, and providers stay stopped until it is accepted.'}
           </p>
+          {status !== null && (
+            <form className="workspace-unlock__form" onSubmit={submit}>
+              <input
+                className="sr-only"
+                type="text"
+                name="username"
+                autoComplete="username"
+                value="CupcakeAI local workspace"
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <label>
+                {needsSetup ? 'New password' : 'Password'}
+                <span className="password-input">
+                  <input
+                    type={revealed ? 'text' : 'password'}
+                    autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                    minLength={15}
+                    maxLength={128}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoFocus
+                    required
+                  />
+                  <button type="button" onClick={() => setRevealed((value) => !value)}>
+                    {revealed ? 'Hide' : 'Show'}
+                  </button>
+                </span>
+              </label>
+              {needsSetup && (
+                <label>
+                  Confirm password
+                  <input
+                    type={revealed ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    minLength={15}
+                    maxLength={128}
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    required
+                  />
+                </label>
+              )}
+              <small>15–128 characters. Spaces and Unicode are welcome.</small>
+              {error && (
+                <p className="field-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <button
+                className="button button--primary workspace-unlock__action"
+                disabled={busy || (status.retryAfterMs ?? 0) > 0}
+              >
+                <Icon name="shield" />
+                {busy ? 'Protecting…' : needsSetup ? 'Create password and open' : 'Unlock workspace'}
+              </button>
+            </form>
+          )}
           <div className="workspace-unlock__actions">
-            <button
-              className="button button--primary workspace-unlock__action"
-              onClick={unlock}
-              autoFocus
-            >
-              <Icon name="shield" /> Unlock with Windows session
-            </button>
             <button
               className="text-button"
               aria-expanded={detailsOpen}
               onClick={() => setDetailsOpen((value) => !value)}
             >
-              Why is there no separate password? <Icon name="chevron" size={13} />
+              How is this protected? <Icon name="chevron" size={13} />
             </button>
           </div>
           {detailsOpen && (
             <div className="workspace-unlock__details">
-              <strong>Your Windows sign-in is the unlock factor.</strong>
+              <strong>The app password and Windows protection do different jobs.</strong>
               <p>
-                CupcakeAI uses Windows Data Protection (DPAPI) for the profile key, then derives
-                separate encryption keys for the SQLCipher database and immutable artifact store. A
-                second app password would be an optional extra lock—not the source of the existing
-                encryption.
+                This password blocks CupcakeAI and its sidecars. Windows Data Protection (DPAPI)
+                separately protects the profile key, which derives encryption keys for SQLCipher
+                data and immutable artifacts.
               </p>
             </div>
           )}
@@ -8349,8 +8554,26 @@ function WorkspaceUnlockGate({ unlock }: { unlock: () => void }) {
 }
 
 export function App() {
-  const [unlocked, setUnlocked] = useState(!window.cupcake);
-  if (!unlocked) return <WorkspaceUnlockGate unlock={() => setUnlocked(true)} />;
+  const [lockStatus, setLockStatus] = useState<WorkspaceLockStatus | null>(
+    window.cupcake
+      ? null
+      : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
+  );
+  useEffect(() => {
+    if (!window.cupcake) return;
+    let active = true;
+    void window.cupcake.workspace.status().then((status) => active && setLockStatus(status));
+    const release = window.cupcake.workspace.onStatus((status) => {
+      if (active) setLockStatus(status);
+    });
+    return () => {
+      active = false;
+      release();
+    };
+  }, []);
+  if (lockStatus?.state !== 'unlocked') {
+    return <WorkspaceUnlockGate status={lockStatus} onUnlocked={setLockStatus} />;
+  }
   return (
     <WorkspaceProvider>
       <LiveApp />

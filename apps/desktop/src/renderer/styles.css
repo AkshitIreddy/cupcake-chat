@@ -1012,6 +1012,65 @@ kbd {
 .workspace-unlock__action {
   margin: 0;
 }
+.workspace-unlock__form {
+  display: grid;
+  gap: 13px;
+  margin-top: 22px;
+}
+.workspace-unlock__form label,
+.workspace-password-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+.workspace-unlock__form input,
+.workspace-password-form input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid color-mix(in srgb, var(--berry) 28%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 96%, var(--berry-soft));
+  color: var(--ink);
+  padding: 0 12px;
+}
+.workspace-unlock__form input.sr-only {
+  width: 1px;
+  min-height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+}
+.workspace-unlock__form input:focus,
+.workspace-password-form input:focus {
+  border-color: var(--berry);
+  outline: 3px solid color-mix(in srgb, var(--berry), transparent 86%);
+}
+.workspace-unlock__form > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.workspace-unlock__form .field-error {
+  margin: 0;
+}
+.password-input {
+  position: relative;
+}
+.password-input input {
+  padding-right: 62px;
+}
+.password-input button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  border: 0;
+  background: none;
+  color: var(--berry);
+  font-size: 10px;
+  font-weight: 700;
+  transform: translateY(-50%);
+}
 .workspace-unlock__actions {
   display: flex;
   flex-wrap: wrap;
@@ -1067,6 +1126,23 @@ kbd {
 .workspace-unlock__aside li svg {
   flex: 0 0 auto;
   color: var(--pistachio);
+}
+.workspace-password-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.workspace-password-form .field-message,
+.workspace-password-form__actions {
+  grid-column: 1 / -1;
+}
+.workspace-password-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.workspace-password-form + .security-note {
+  margin-top: 18px;
 }
 
 /* Home */
