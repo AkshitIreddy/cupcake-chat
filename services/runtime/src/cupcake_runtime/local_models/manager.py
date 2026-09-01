@@ -40,6 +40,8 @@ class LlamaServerConfig:
     parallel: int = 1
     batch_size: int | None = None
     ubatch_size: int | None = None
+    fit: bool = True
+    fit_target_mib: int = 1024
 
     def validate(self) -> None:
         if not 512 <= self.context_size <= 1_048_576:
@@ -58,6 +60,8 @@ class LlamaServerConfig:
                 raise ValueError(f"{name} is outside safe bounds")
         if self.device is not None and any(character in self.device for character in "\r\n\0"):
             raise ValueError("device contains invalid characters")
+        if not 128 <= self.fit_target_mib <= 65_536:
+            raise ValueError("fit_target_mib is outside safe bounds")
 
 
 class LlamaCppSupervisor:
@@ -133,6 +137,8 @@ class LlamaCppSupervisor:
         parallel: int = 1,
         batch_size: int | None = None,
         ubatch_size: int | None = None,
+        fit: bool = True,
+        fit_target_mib: int = 1024,
     ) -> int:
         if self._process and self._process.poll() is None:
             raise RuntimeError("llama.cpp runtime is already running")
@@ -148,6 +154,8 @@ class LlamaCppSupervisor:
             parallel=parallel,
             batch_size=batch_size,
             ubatch_size=ubatch_size,
+            fit=fit,
+            fit_target_mib=fit_target_mib,
         )
         config.validate()
         if self.port == 0:
@@ -168,6 +176,10 @@ class LlamaCppSupervisor:
             str(gpu_layers),
             "--parallel",
             str(parallel),
+            "--fit",
+            "on" if fit else "off",
+            "--fit-target",
+            str(fit_target_mib),
             "--no-ui",
             "--jinja",
         ]

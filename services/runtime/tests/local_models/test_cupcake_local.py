@@ -487,6 +487,8 @@ def test_supervisor_uses_current_safe_server_flags_and_scrubbed_environment(
     assert "--jinja" in process.args
     assert "--n-gpu-layers" in process.args
     assert "auto" in process.args
+    assert process.args[process.args.index("--fit") + 1] == "on"
+    assert process.args[process.args.index("--fit-target") + 1] == "1024"
     assert "--api-key" not in process.args
     assert "LLAMA_API_KEY" in process.kwargs["env"]
     assert process.kwargs["env"]["LLAMA_ARG_API_PREFIX"].startswith("/cupcake-")
