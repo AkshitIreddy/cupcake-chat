@@ -4,7 +4,74 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
+from types import TracebackType
+from typing import Any
+
+_DATABASE_FAILURE_MESSAGES = {
+    "database-busy": "runtime database is busy",
+    "database-not-writable": "runtime database is not writable",
+    "database-integrity": "runtime database could not be authenticated or is damaged",
+    "database-error": "runtime database could not be opened",
+}
+
+
+def runtime_failure_diagnostic(exc: Exception) -> dict[str, Any]:
+    """Return a bounded, secret-free startup diagnostic for the broker log."""
+
+    detail = "runtime startup or protocol failure"
+    diagnostic: dict[str, Any] = {
+        "level": "error",
+        "component": "runtime",
+        "errorType": type(exc).__name__,
+        "message": detail,
+    }
+    if type(exc).__name__ == "DesktopProtocolError":
+        diagnostic["message"] = f"runtime protocol failure: {exc}"
+        return diagnostic
+    if _is_database_error(exc):
+        database_error = str(getattr(exc, "sqlite_errorname", "") or "").upper()
+        message = str(exc).lower()
+        if database_error.startswith(("SQLITE_BUSY", "SQLITE_LOCKED")) or any(
+            marker in message for marker in ("busy", "locked")
+        ):
+            category = "database-busy"
+        elif database_error.startswith(("SQLITE_READONLY", "SQLITE_PERM")) or any(
+            marker in message for marker in ("readonly", "read-only", "permission")
+        ):
+            category = "database-not-writable"
+        elif database_error.startswith(("SQLITE_NOTADB", "SQLITE_CORRUPT")) or any(
+            marker in message for marker in ("not a database", "malformed", "corrupt")
+        ):
+            category = "database-integrity"
+        else:
+            category = "database-error"
+        diagnostic["message"] = _DATABASE_FAILURE_MESSAGES[category]
+        diagnostic["databaseFailure"] = category
+        operation = _traceback_operation(exc.__traceback__)
+        if operation:
+            diagnostic["operation"] = operation
+    return diagnostic
+
+
+def _is_database_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.DatabaseError):
+        return True
+    module = type(exc).__module__
+    return module.startswith("sqlcipher3") and any(
+        base.__name__ in {"DatabaseError", "OperationalError"} for base in type(exc).__mro__
+    )
+
+
+def _traceback_operation(traceback: TracebackType | None) -> str | None:
+    operation = None
+    while traceback is not None:
+        candidate = traceback.tb_frame.f_code.co_name
+        if candidate not in {"main", "<module>"}:
+            operation = candidate
+        traceback = traceback.tb_next
+    return operation
 
 
 def _install_frozen_metadata_fallback() -> None:
@@ -90,18 +157,8 @@ def main() -> int:
         DesktopRuntimeServer.from_environment().run()
         return 0
     except Exception as exc:
-        detail = "runtime startup or protocol failure"
-        if type(exc).__name__ == "DesktopProtocolError":
-            detail = f"runtime protocol failure: {exc}"
         print(
-            json.dumps(
-                {
-                    "level": "error",
-                    "component": "runtime",
-                    "errorType": type(exc).__name__,
-                    "message": detail,
-                }
-            ),
+            json.dumps(runtime_failure_diagnostic(exc), sort_keys=True),
             file=sys.stderr,
             flush=True,
         )
