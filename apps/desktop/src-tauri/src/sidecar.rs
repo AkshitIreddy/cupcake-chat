@@ -707,7 +707,7 @@ fn redact_diagnostic(input: &str) -> String {
 }
 
 fn copy_system_environment(command: &mut Command) {
-    for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
+    for name in ["SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LOCALAPPDATA"] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
@@ -786,6 +786,22 @@ fn object(value: Value) -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn broker_inherits_local_app_data_for_the_dpapi_vault() {
+        let expected =
+            std::env::var_os("LOCALAPPDATA").expect("Windows desktop tests require LOCALAPPDATA");
+        let mut command = Command::new("cupcake-tool-broker.exe");
+
+        copy_system_environment(&mut command);
+
+        let actual = command
+            .get_envs()
+            .find_map(|(name, value)| (name == "LOCALAPPDATA").then(|| value))
+            .flatten();
+        assert_eq!(actual, Some(expected.as_os_str()));
+    }
 
     #[test]
     fn stderr_redaction_never_echoes_plain_text_or_secret_json_fields() {
