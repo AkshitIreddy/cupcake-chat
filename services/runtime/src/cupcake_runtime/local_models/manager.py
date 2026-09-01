@@ -407,7 +407,14 @@ class LlamaCppSupervisor:
             self._cleanup_process()
 
     def _health_request(self) -> tuple[int, Any]:
-        request = Request(f"{self.base_url}/health", headers={"Accept": "application/json"})
+        # The managed server is deliberately protected by a per-process API key.
+        # Health lives behind the same prefix and authentication middleware as its
+        # OpenAI-compatible routes, so an unauthenticated probe would otherwise
+        # mistake a fully loaded model for a failed startup.
+        request = Request(
+            f"{self.base_url}/health",
+            headers={"Accept": "application/json", **self.authorization_headers()},
+        )
         try:
             with urlopen(request, timeout=1.0) as response:
                 data = response.read(1024 * 1024)

@@ -553,6 +553,43 @@ def test_supervisor_benchmark_uses_authenticated_measured_llama_timings(
     assert measurement.measurement_source == "llama.cpp timings"
 
 
+def test_supervisor_health_probe_uses_ephemeral_server_authentication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "llama-server.exe"
+    executable.write_bytes(b"exe")
+    supervisor = LlamaCppSupervisor(executable, port=8123)
+    supervisor._api_key = "ephemeral-health-key"
+    supervisor._api_prefix = "/cupcake-test"
+    captured: list[Any] = []
+
+    class _Response:
+        status = 200
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return b'{"status":"ok"}'
+
+    def fake_urlopen(request: Any, *, timeout: float) -> _Response:
+        captured.append((request, timeout))
+        return _Response()
+
+    monkeypatch.setattr("cupcake_runtime.local_models.manager.urlopen", fake_urlopen)
+    status, payload = supervisor._health_request()
+
+    request, timeout = captured[0]
+    assert status == 200
+    assert payload == {"status": "ok"}
+    assert request.full_url == "http://127.0.0.1:8123/cupcake-test/health"
+    assert request.headers["Authorization"] == "Bearer ephemeral-health-key"
+    assert timeout == 1.0
+
+
 def test_server_configuration_bounds_are_explicit() -> None:
     LlamaServerConfig(gpu_layers="auto", device=None).validate()
     LlamaServerConfig(gpu_layers="all", device=None).validate()
