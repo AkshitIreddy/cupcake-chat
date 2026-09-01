@@ -1,0 +1,44 @@
+{
+  "startedAt": "2026-09-01T11:55:20.175241+00:00",
+  "finishedAt": "2026-09-01T11:55:43.098260+00:00",
+  "runtimeState": "ready",
+  "runtimePid": 19032,
+  "modelBytes": 5027783488,
+  "contextSize": 4096,
+  "gpu": "NVIDIA GeForce RTX 4080 Laptop GPU, 581.29, 5632 MiB, 90 %",
+  "benchmark": {
+    "runtime_id": "llama-b10679-cuda-13",
+    "model_id": "qwen3-8b-q4-k-m",
+    "prompt_tokens": 22,
+    "generated_tokens": 32,
+    "prompt_tokens_per_second": 127.76732408762517,
+    "generated_tokens_per_second": 53.8124434548934,
+    "context_size": 4096,
+    "measured_at": "2026-09-01T11:55:42.748414+00:00",
+    "total_seconds": 0.8120000000017171,
+    "measurement_source": "llama.cpp timings"
+  },
+  "chat": {
+    "expected": "CUPCAKE LOCAL CUDA HEADLESS ACCEPTED",
+    "content": "CUPCAKE LOCAL CUDA HEADLESS ACCEPTED",
+    "usage": {
+      "completion_tokens": 15,
+      "prompt_tokens": 26,
+      "total_tokens": 41,
+      "prompt_tokens_details": {
+        "cached_tokens": 3
+      }
+    },
+    "timings": {
+      "cache_n": 3,
+      "prompt_n": 23,
+      "prompt_ms": 48.283,
+      "prompt_per_token_ms": 2.0992608695652173,
+      "prompt_per_second": 476.35813847523974,
+      "predicted_n": 15,
+      "predicted_ms": 242.394,
+      "predicted_per_token_ms": 17.31385714285714,
+      "predicted_per_second": 57.75720521135011
+    }
+  }
+}
