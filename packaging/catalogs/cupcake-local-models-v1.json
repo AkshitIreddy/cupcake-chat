@@ -2,13 +2,97 @@
   "key_id": "cupcake-local-rc-2026-08",
   "payload": {
     "version": 1,
-    "generated_at": "2026-08-29T16:00:00Z",
+    "generated_at": "2026-09-01T23:45:00Z",
     "provenance": {
       "environment": "local-release-candidate",
       "production_signing": false,
       "catalog_policy": "immutable Hugging Face revision, exact blob size and SHA-256"
     },
     "models": [
+      {
+        "id": "qwen3-0-6b-q8-0",
+        "display_name": "Qwen3 0.6B · Q8_0",
+        "family": "Qwen3",
+        "parameter_billions": 0.6,
+        "quantization": "Q8_0",
+        "size_bytes": 639446688,
+        "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+        "urls": [
+          "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf"
+        ],
+        "filename": "Qwen3-0.6B-Q8_0.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/23749fefcc72300e3a2ad315e1317431b06b590a/LICENSE",
+        "context_window": 32768,
+        "architecture": "qwen3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "Fast, tiny multilingual model for lightweight chat and extraction"
+        },
+        "source": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF",
+        "source_revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+        "context_choices": [2048, 4096, 8192, 16384, 32768],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "extraction", "summarization"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q8_0 support"]
+      },
+      {
+        "id": "qwen3-1-7b-q8-0",
+        "display_name": "Qwen3 1.7B · Q8_0",
+        "family": "Qwen3",
+        "parameter_billions": 1.7,
+        "quantization": "Q8_0",
+        "size_bytes": 1834426016,
+        "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+        "urls": [
+          "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf"
+        ],
+        "filename": "Qwen3-1.7B-Q8_0.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/blob/90862c4b9d2787eaed51d12237eafdfe7c5f6077/LICENSE",
+        "context_window": 32768,
+        "architecture": "qwen3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "Small multilingual reasoning model with higher-precision Q8 weights"
+        },
+        "source": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF",
+        "source_revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+        "context_choices": [2048, 4096, 8192, 16384, 32768],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "writing", "summarization", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q8_0 support"]
+      },
+      {
+        "id": "granite-3-3-2b-instruct-q4-k-m",
+        "display_name": "Granite 3.3 2B Instruct · Q4_K_M",
+        "family": "Granite 3.3",
+        "parameter_billions": 2,
+        "quantization": "Q4_K_M",
+        "size_bytes": 1545303328,
+        "sha256": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852",
+        "urls": [
+          "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF/resolve/7cdf86ccd1f1bb3491c9b7017b033f2e51367397/granite-3.3-2b-instruct-Q4_K_M.gguf"
+        ],
+        "filename": "granite-3.3-2b-instruct-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF/blob/7cdf86ccd1f1bb3491c9b7017b033f2e51367397/LICENSE",
+        "context_window": 131072,
+        "architecture": "granite",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "IBM Granite",
+          "catalog_note": "Efficient enterprise-oriented instruct model with long context"
+        },
+        "source": "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF",
+        "source_revision": "7cdf86ccd1f1bb3491c9b7017b033f2e51367397",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "enterprise", "summarization", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Granite GGUF support"]
+      },
       {
         "id": "qwen3-4b-q4-k-m",
         "display_name": "Qwen3 4B · Q4_K_M",
@@ -92,8 +176,148 @@
         "capability_tags": ["text", "chat", "reasoning", "multilingual"],
         "task_tags": ["general", "writing", "summarization", "code"],
         "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "GGUF Q4_K_M support", "Reduced context or hybrid offload may be required"]
+      },
+      {
+        "id": "granite-3-3-8b-instruct-q4-k-m",
+        "display_name": "Granite 3.3 8B Instruct · Q4_K_M",
+        "family": "Granite 3.3",
+        "parameter_billions": 8,
+        "quantization": "Q4_K_M",
+        "size_bytes": 4942873344,
+        "sha256": "77bcee066a76dcdd10d0d123c87e32c8ec2c74e31b6ffd87ebee49c9ac215dca",
+        "urls": [
+          "https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-GGUF/resolve/e40e9dd739c7be00fa965c16ce167088190ce114/granite-3.3-8b-instruct-Q4_K_M.gguf"
+        ],
+        "filename": "granite-3.3-8b-instruct-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-GGUF/blob/e40e9dd739c7be00fa965c16ce167088190ce114/LICENSE",
+        "context_window": 131072,
+        "architecture": "granite",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "IBM Granite",
+          "catalog_note": "Balanced enterprise, reasoning, multilingual, and code model"
+        },
+        "source": "https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-GGUF",
+        "source_revision": "e40e9dd739c7be00fa965c16ce167088190ce114",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "enterprise", "writing", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Granite GGUF support"]
+      },
+      {
+        "id": "ministral-3-3b-instruct-q4-k-m",
+        "display_name": "Ministral 3 3B Instruct · Q4_K_M",
+        "family": "Ministral 3",
+        "parameter_billions": 3.4,
+        "quantization": "Q4_K_M",
+        "size_bytes": 2147023008,
+        "sha256": "9ed150d4367e68df0ac8e1540f6ddc65b42d0ee26378329d1ecbca60f93fc5f8",
+        "urls": [
+          "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/eb599d408350ea2bb60452cb86be7c7b2fc28227/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf"
+        ],
+        "filename": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/blob/eb599d408350ea2bb60452cb86be7c7b2fc28227/LICENSE",
+        "context_window": 262144,
+        "architecture": "mistral3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Mistral AI",
+          "catalog_note": "Edge-oriented multilingual and agentic text chat model; vision projector is not included"
+        },
+        "source": "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+        "source_revision": "eb599d408350ea2bb60452cb86be7c7b2fc28227",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144],
+        "capability_tags": ["text", "chat", "tools", "multilingual"],
+        "task_tags": ["general", "writing", "summarization", "agents"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Mistral 3 GGUF support", "Text chat only without a vision projector"]
+      },
+      {
+        "id": "ministral-3-8b-instruct-q4-k-m",
+        "display_name": "Ministral 3 8B Instruct · Q4_K_M",
+        "family": "Ministral 3",
+        "parameter_billions": 8.4,
+        "quantization": "Q4_K_M",
+        "size_bytes": 5198911904,
+        "sha256": "33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761",
+        "urls": [
+          "https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/0102285ad796bd99af90f58de616092e5630e970/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf"
+        ],
+        "filename": "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF/blob/0102285ad796bd99af90f58de616092e5630e970/LICENSE",
+        "context_window": 262144,
+        "architecture": "mistral3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Mistral AI",
+          "catalog_note": "Balanced multilingual and agentic text chat model; vision projector is not included"
+        },
+        "source": "https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF",
+        "source_revision": "0102285ad796bd99af90f58de616092e5630e970",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144],
+        "capability_tags": ["text", "chat", "tools", "multilingual"],
+        "task_tags": ["general", "writing", "code", "agents"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Mistral 3 GGUF support", "Text chat only without a vision projector"]
+      },
+      {
+        "id": "phi-4-14b-q4-k-s",
+        "display_name": "Phi-4 14B · Q4_K_S",
+        "family": "Phi-4",
+        "parameter_billions": 14,
+        "quantization": "Q4_K_S",
+        "size_bytes": 8440762560,
+        "sha256": "8a8189132ef70cd737e136d38b706e8cb832f9cdf3c744547694769e9313550e",
+        "urls": [
+          "https://huggingface.co/microsoft/phi-4-gguf/resolve/6edc2ef6664b739a8e11e62f2672ff6afe0c15ac/phi-4-Q4_K_S.gguf"
+        ],
+        "filename": "phi-4-Q4_K_S.gguf",
+        "license": "MIT",
+        "license_url": "https://huggingface.co/microsoft/phi-4-gguf/blob/6edc2ef6664b739a8e11e62f2672ff6afe0c15ac/LICENSE",
+        "context_window": 16384,
+        "architecture": "phi3",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Microsoft Research",
+          "catalog_note": "Dense reasoning, mathematics, and code model with a 16K context window"
+        },
+        "source": "https://huggingface.co/microsoft/phi-4-gguf",
+        "source_revision": "6edc2ef6664b739a8e11e62f2672ff6afe0c15ac",
+        "context_choices": [2048, 4096, 8192, 16384],
+        "capability_tags": ["text", "chat", "reasoning", "code"],
+        "task_tags": ["general", "math", "reasoning", "code"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Phi GGUF support", "Reduced context or hybrid offload may be required"]
+      },
+      {
+        "id": "qwen3-30b-a3b-q4-k-m",
+        "display_name": "Qwen3 30B-A3B · Q4_K_M",
+        "family": "Qwen3 MoE",
+        "parameter_billions": 30.5,
+        "quantization": "Q4_K_M",
+        "size_bytes": 18556685824,
+        "sha256": "0d003f6662faee786ed5da3e31b29c978de5ae5d275c8794c606a7f3c01aa8f5",
+        "urls": [
+          "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/e4d4bafdfb96a411a163846265362aceb0b9c63a/Qwen3-30B-A3B-Q4_K_M.gguf"
+        ],
+        "filename": "Qwen3-30B-A3B-Q4_K_M.gguf",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/blob/e4d4bafdfb96a411a163846265362aceb0b9c63a/LICENSE",
+        "context_window": 131072,
+        "architecture": "qwen3moe",
+        "min_runtime_version": "b10679",
+        "metadata": {
+          "publisher": "Qwen",
+          "catalog_note": "30.5B mixture-of-experts model with 3.3B active parameters; designed for RAM plus GPU hybrid offload"
+        },
+        "source": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF",
+        "source_revision": "e4d4bafdfb96a411a163846265362aceb0b9c63a",
+        "context_choices": [2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "capability_tags": ["text", "chat", "reasoning", "multilingual"],
+        "task_tags": ["general", "writing", "code", "agents"],
+        "runtime_requirements": ["Cupcake Local llama.cpp b10679 or newer", "Qwen3 MoE GGUF support", "System RAM plus hybrid GPU offload is required on 12 GB GPUs"]
       }
     ]
   },
-  "signature": "bdNIVQ1v9phEHUxAQmakWSfVDqLycXrXd8mkLtjWAr2AZeR6KrQhPNS+jogVqsLZcP+veIHI4gKrAFCjaHUVDQ=="
+  "signature": "YOTYJf1oTzLDzN/2kQ8XQMq0p0ECngV7hxIyDWoQKA2Q/BY0NW0vR1oI8LRc6Qi4kAahNiaZ0mfwFDnTp84uBA=="
 }

@@ -42,8 +42,9 @@ activation. TensorRT-RTX/Windows ML remains a researched future ONNX lane, not a
 broad GGUF catalog while its high-level integration and artifacts differ.
 
 Before installation the Models screen detects CPU features, RAM, disk, Windows version, NVIDIA
-GPU/VRAM, and installed acceleration. The initial signed model catalog contains Qwen3 4B, 8B, and
-14B Q4_K_M records pinned to immutable Hugging Face revisions. Verified entries include provenance,
+GPU/VRAM, system RAM, and installed acceleration. The signed catalog contains 11 public GGUF
+artifacts across Qwen3, Granite 3.3, Ministral 3, and Phi-4 pinned to immutable Hugging Face
+revisions. Verified entries include provenance,
 license, parameters, quantization, bytes, checksum, architecture, context choices, capabilities, and
 runtime requirements. Rankings explain Recommended, Fits with reduced context, CPU-only/slow,
 Hybrid, or Incompatible. Download, pause/resume/cancel/retry, checksum, atomic promotion,

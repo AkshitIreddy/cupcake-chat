@@ -136,7 +136,7 @@ try {
   );
   assert(
     Array.isArray(discovery.payload.result?.availableModels) &&
-      discovery.payload.result.availableModels.length === 3,
+      discovery.payload.result.availableModels.length === 11,
     'signed Cupcake Local model catalog is missing',
   );
   assert(

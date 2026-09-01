@@ -30,17 +30,22 @@ local candidate.
 
 ## Installable model catalog
 
-`cupcake-local-models-v1.json` is signed by the same local-candidate key and currently records:
+`cupcake-local-models-v1.json` is signed by the same local-candidate key and currently records 11
+public, directly downloadable artifacts from upstream publishers or the llama.cpp team:
 
-- Qwen3 4B Q4_K_M, 2,497,280,640 bytes;
-- Qwen3 8B Q4_K_M, 5,027,783,488 bytes;
-- Qwen3 14B Q4_K_M, 9,001,752,960 bytes.
+- Qwen3 0.6B Q8_0; Qwen3 1.7B Q8_0; Qwen3 4B, 8B, and 14B Q4_K_M;
+- IBM Granite 3.3 2B and 8B Instruct Q4_K_M;
+- Mistral Ministral 3 3B and 8B Instruct Q4_K_M for text chat;
+- Microsoft Phi-4 14B Q4_K_S;
+- Qwen3 30B-A3B Q4_K_M for system-RAM plus GPU hybrid offload.
 
 Each entry pins an immutable Hugging Face source revision, exact filename/byte length/SHA-256,
 Apache license and source, parameter count, quantization, architecture, context choices, capability
-and task tags, and minimum Cupcake Local runtime requirements. The 14B entry explicitly warns that
-reduced context or hybrid offload may be required. Device ranking remains runtime-derived; catalog
-presence is not a compatibility promise.
+and task tags, and minimum Cupcake Local runtime requirements. Larger entries explicitly warn when
+reduced context or hybrid offload may be required. The Ministral entries do not claim vision because
+their separate projector files are outside this text-model contract. Gated models are omitted until
+the product has explicit upstream-license and token UX. Device ranking remains runtime-derived;
+catalog presence is not a compatibility promise.
 
 ## Optional acceleration packs
 
@@ -48,7 +53,7 @@ The same signed catalog contains three download-only packs. None is copied into 
 
 - **Vulkan:** `llama-b10679-bin-win-vulkan-x64.zip`, SHA-256
   `d288a375a324f650a587d3b876afe692ca3586110f20b863fadbe91dd3b93469`. It requires a Vulkan-capable
-  NVIDIA, AMD, or Intel GPU/iGPU and a current vendor graphics driver. CUPCAKEAGI must successfully
+  NVIDIA, AMD, or Intel GPU/iGPU and a current vendor graphics driver. CupcakeAI must successfully
   run `llama-server.exe --list-devices` before activating it.
 - **CUDA 12.4:** `llama-b10679-bin-win-cuda-12.4-x64.zip`, SHA-256
   `46e8c7f80b540befb10625f20c54b54777857e6c2df51c349312ccfb4a0a83fb`, plus the required
