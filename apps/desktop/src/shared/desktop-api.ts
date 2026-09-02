@@ -24,6 +24,15 @@ export interface AppInfo {
   runtime: RuntimeState;
 }
 
+export interface WindowPreferences {
+  startupBehavior: 'open' | 'minimized' | 'tray';
+  closeBehavior: 'ask' | 'tray' | 'quit';
+  minimizeBehavior: 'taskbar' | 'tray';
+  showInTaskbar: boolean;
+  alwaysOnTop: boolean;
+  launchAtLogin: boolean;
+}
+
 export interface OpaqueFileHandle {
   id: string;
   kind: 'file' | 'directory' | 'save-target';
@@ -121,6 +130,10 @@ export interface CupcakeDesktopApi {
     toggleMaximize(): Promise<boolean>;
     close(): Promise<void>;
     isMaximized(): Promise<boolean>;
+    getPreferences(): Promise<WindowPreferences>;
+    setPreferences(preferences: WindowPreferences): Promise<WindowPreferences>;
+    respondToClose(action: 'cancel' | 'tray' | 'quit'): Promise<void>;
+    onCloseRequested(listener: () => void): Unsubscribe;
   };
   dialog: {
     openFiles(options?: DialogOpenOptions): Promise<OpaqueFileHandle[]>;

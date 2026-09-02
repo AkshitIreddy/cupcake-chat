@@ -446,6 +446,8 @@ class CupcakeLocalManager:
             parallel=selected.parallel,
             batch_size=selected.batch_size,
             ubatch_size=selected.ubatch_size,
+            fit=selected.fit,
+            fit_target_mib=selected.fit_target_mib,
         )
         self._supervisor = supervisor
         self._runtime_id = runtime.id

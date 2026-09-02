@@ -1,6 +1,7 @@
 use crate::file_handles::FileHandleRegistry;
 use crate::sidecar::SidecarSupervisor;
 use crate::workspace_lock::WorkspaceLock;
+use crate::window_preferences::WindowPreferencesStore;
 use crate::{error::HostError, error::HostResult};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,6 +10,7 @@ pub struct HostState {
     pub files: Arc<FileHandleRegistry>,
     pub supervisor: Arc<SidecarSupervisor>,
     pub workspace_lock: Arc<WorkspaceLock>,
+    pub window_preferences: Arc<WindowPreferencesStore>,
 }
 
 /// Resolve a deliberately named disposable profile for package testing.
@@ -27,11 +29,16 @@ pub fn test_profile_directory(value: Option<&Path>) -> HostResult<Option<PathBuf
 }
 
 impl HostState {
-    pub fn new(supervisor: Arc<SidecarSupervisor>, workspace_lock: Arc<WorkspaceLock>) -> Self {
+    pub fn new(
+        supervisor: Arc<SidecarSupervisor>,
+        workspace_lock: Arc<WorkspaceLock>,
+        window_preferences: Arc<WindowPreferencesStore>,
+    ) -> Self {
         Self {
             files: Arc::new(FileHandleRegistry::default()),
             supervisor,
             workspace_lock,
+            window_preferences,
         }
     }
 }

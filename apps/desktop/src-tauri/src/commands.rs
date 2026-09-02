@@ -7,6 +7,9 @@ use crate::models::{
 };
 use crate::state::HostState;
 use crate::url_policy::normalize_external_url;
+use crate::window_preferences::{
+    set_launch_at_login, MinimizeBehavior, WindowPreferences,
+};
 use serde_json::Value;
 use std::collections::HashSet;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -118,8 +121,12 @@ pub fn app_quit(app: AppHandle, state: State<'_, HostState>) {
 }
 
 #[tauri::command]
-pub fn window_minimize(window: WebviewWindow) -> HostResult<()> {
-    window.minimize().map_err(HostError::from)
+pub fn window_minimize(window: WebviewWindow, state: State<'_, HostState>) -> HostResult<()> {
+    if state.window_preferences.get().minimize_behavior == MinimizeBehavior::Tray {
+        window.hide().map_err(HostError::from)
+    } else {
+        window.minimize().map_err(HostError::from)
+    }
 }
 
 #[tauri::command]
@@ -136,6 +143,62 @@ pub fn window_toggle_maximize(window: WebviewWindow) -> HostResult<bool> {
 #[tauri::command]
 pub fn window_close(window: WebviewWindow) -> HostResult<()> {
     window.close().map_err(HostError::from)
+}
+
+#[tauri::command]
+pub fn window_preferences_get(state: State<'_, HostState>) -> WindowPreferences {
+    state.window_preferences.get()
+}
+
+#[tauri::command]
+pub fn window_preferences_set(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    preferences: WindowPreferences,
+) -> HostResult<WindowPreferences> {
+    let previous = state.window_preferences.get();
+    if previous.launch_at_login != preferences.launch_at_login {
+        set_launch_at_login(preferences.launch_at_login)?;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        apply_window_preferences(&window, &preferences)?;
+    }
+    state.window_preferences.set(preferences)
+}
+
+#[tauri::command]
+pub fn window_close_response(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    action: String,
+) -> HostResult<()> {
+    match action.as_str() {
+        "cancel" => Ok(()),
+        "tray" => app
+            .get_webview_window("main")
+            .ok_or_else(|| HostError::internal("The main window is unavailable"))?
+            .hide()
+            .map_err(HostError::from),
+        "quit" => {
+            state.supervisor.stop();
+            state.files.clear();
+            app.exit(0);
+            Ok(())
+        }
+        _ => Err(HostError::invalid("Unknown close response")),
+    }
+}
+
+pub fn apply_window_preferences(
+    window: &WebviewWindow,
+    preferences: &WindowPreferences,
+) -> HostResult<()> {
+    window
+        .set_skip_taskbar(!preferences.show_in_taskbar)
+        .map_err(HostError::from)?;
+    window
+        .set_always_on_top(preferences.always_on_top)
+        .map_err(HostError::from)
 }
 
 #[tauri::command]

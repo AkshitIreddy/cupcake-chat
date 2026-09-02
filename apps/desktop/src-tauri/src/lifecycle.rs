@@ -1,6 +1,9 @@
 use crate::commands::{emit_window_state, show_main};
-use crate::models::{DeepLinkPayload, DEEP_LINK_EVENT_NAME};
+use crate::models::{
+    DeepLinkPayload, DEEP_LINK_EVENT_NAME, WINDOW_CLOSE_REQUESTED_EVENT_NAME,
+};
 use crate::state::HostState;
+use crate::window_preferences::CloseBehavior;
 use crate::url_policy::normalize_deep_link;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
@@ -30,8 +33,25 @@ pub fn handle_deep_links(app: &AppHandle, urls: impl IntoIterator<Item = String>
 pub fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
     match event {
         WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
-            api.prevent_close();
-            let _ = window.hide();
+            let preferences = window.app_handle().state::<HostState>().window_preferences.get();
+            match preferences.close_behavior {
+                CloseBehavior::Quit => {
+                    api.prevent_close();
+                    let app = window.app_handle();
+                    let state = app.state::<HostState>();
+                    state.supervisor.stop();
+                    state.files.clear();
+                    app.exit(0);
+                }
+                CloseBehavior::Tray => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                CloseBehavior::Ask => {
+                    api.prevent_close();
+                    let _ = window.emit(WINDOW_CLOSE_REQUESTED_EVENT_NAME, ());
+                }
+            }
         }
         WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
             if let Some(webview) = window.app_handle().get_webview_window(window.label()) {

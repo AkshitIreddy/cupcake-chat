@@ -1,6 +1,44 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
+test('first-run tour is complete, replayable, and keeps search at the top of the shelf', async ({
+  page,
+}) => {
+  await page.goto('/?onboarding=1');
+  const tour = page.locator('.onboarding-card');
+  await expect(tour).toBeVisible();
+  for (let step = 0; step < 5; step += 1) {
+    await tour.getByRole('button', { name: 'Continue' }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Make CupcakeAI feel like yours' })).toBeVisible();
+  await page.getByRole('button', { name: 'Finish tour' }).click();
+  await expect(tour).toBeHidden();
+  await expect(page.getByRole('button', { name: /Search CupcakeAI/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'General' }).click();
+  await page.getByRole('button', { name: /Replay onboarding/ }).click();
+  await expect(page.getByRole('dialog', { name: 'One calm place for serious work' })).toBeVisible();
+});
+
+test('profile, scrollbar, and RAM fallback controls update the local UI', async ({ page }) => {
+  await page.goto('/?view=settings');
+  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  await page.getByLabel('Display name').fill('Cupcake Tester');
+  await expect(page.getByRole('button', { name: /Cupcake Tester/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Appearance' }).click();
+  await page
+    .getByLabel('Scrollbar visibility')
+    .getByRole('button', { name: 'Minimal', exact: true })
+    .click();
+  await expect(page.locator('html')).toHaveAttribute('data-scrollbars', 'minimal');
+
+  await page.getByRole('button', { name: 'Local models' }).click();
+  await page.getByRole('switch', { name: 'Allow system RAM fallback' }).click();
+  await expect(page.getByText('VRAM-only loading')).toBeVisible();
+});
+
 test('home, navigation, command palette and explicit model picker work', async ({ page }) => {
   await page.goto('/');
   await expect(
@@ -34,6 +72,37 @@ test('chat accepts multiline input and labels deterministic fixture mode', async
   await expect(
     page.getByText(/desktop bridge absent; no provider, file, or tool call can leave/i),
   ).toBeVisible();
+});
+
+test('chat follows new conversation turns and offers a return control when reading history', async ({
+  page,
+}) => {
+  await page.goto('/?view=chat');
+  const scroll = page.locator('.conversation-scroll');
+  await expect
+    .poll(() =>
+      scroll.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThan(80);
+
+  await scroll.evaluate((element) => element.scrollTo({ top: 0 }));
+  await expect(page.getByRole('button', { name: 'Jump to latest' })).toBeVisible();
+  await page.getByRole('button', { name: 'Jump to latest' }).click();
+  await expect
+    .poll(() =>
+      scroll.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThan(80);
+
+  const composer = page.getByLabel('Message Cupcake');
+  await composer.fill('Keep this turn in view');
+  await composer.press('Enter');
+  await expect(page.getByText('Keep this turn in view')).toBeVisible();
+  await expect
+    .poll(() =>
+      scroll.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThan(80);
 });
 
 test('offline mode hard-blocks cloud sends and never invents a local model', async ({ page }) => {
@@ -555,7 +624,7 @@ test('all themes style root and nested WebView scrollbars from explicit tokens',
       nested.remove();
       return result;
     });
-    expect(scrollbar.size).toBe('12px');
+    expect(scrollbar.size).toBe('7px');
     expect(scrollbar.thumbToken).not.toBe('');
     expect(scrollbar.trackToken).not.toBe('');
     expect(scrollbar.thumb).not.toBe('rgba(0, 0, 0, 0)');

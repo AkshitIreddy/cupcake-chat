@@ -48,7 +48,10 @@ export type IconName =
   | 'key'
   | 'palette'
   | 'bell'
-  | 'database';
+  | 'database'
+  | 'user'
+  | 'window'
+  | 'upload';
 
 const paths: Record<IconName, ReactElement> = {
   home: (
@@ -251,6 +254,24 @@ const paths: Record<IconName, ReactElement> = {
     <>
       <ellipse cx="12" cy="5" rx="8" ry="3" />
       <path d="M4 5v7c0 2 4 3 8 3s8-1 8-3V5m-16 7v7c0 2 4 3 8 3s8-1 8-3v-7" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </>
+  ),
+  window: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M7 6.5h.01M10 6.5h.01" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 16V3m0 0L7 8m5-5 5 5" />
+      <path d="M5 14v6h14v-6" />
     </>
   ),
 };

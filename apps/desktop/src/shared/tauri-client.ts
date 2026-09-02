@@ -15,6 +15,7 @@ import {
   type RuntimeStatus,
   type Unsubscribe,
   type WorkspaceLockStatus,
+  type WindowPreferences,
 } from './desktop-api';
 
 function subscribe<T>(event: string, listener: (payload: T) => void): Unsubscribe {
@@ -53,6 +54,11 @@ export function installTauriDesktopApi(): boolean {
       toggleMaximize: () => invoke<boolean>('window_toggle_maximize'),
       close: () => invoke<void>('window_close'),
       isMaximized: () => invoke<boolean>('window_is_maximized'),
+      getPreferences: () => invoke<WindowPreferences>('window_preferences_get'),
+      setPreferences: (preferences) =>
+        invoke<WindowPreferences>('window_preferences_set', { preferences }),
+      respondToClose: (action) => invoke<void>('window_close_response', { action }),
+      onCloseRequested: (listener) => subscribe<void>('cupcake://close-requested', listener),
     },
     dialog: {
       openFiles: (options?: DialogOpenOptions) =>

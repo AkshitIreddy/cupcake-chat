@@ -875,8 +875,25 @@ class RuntimeService:
 
     def _cupcake_local_load(self, params: Mapping[str, Any]) -> Any:
         active_runtime = self.cupcake_local.runtimes.active()
+        model_id = _required_string(params, "modelId")
+        allow_ram_fallback = params.get("allowRamFallback") is not False
+        max_ram_gb = float(params.get("maxRamGb", 24))
+        if not 4 <= max_ram_gb <= 256:
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "The local-model RAM ceiling must be between 4 and 256 GB"
+            )
+        installed_model = self.cupcake_local.models.get(model_id, verify=False)
+        model_bytes = Path(installed_model.path).stat().st_size
+        if allow_ram_fallback and model_bytes > max_ram_gb * 1024**3:
+            raise RuntimeCommandError(
+                "MODEL_EXCEEDS_RAM_POLICY",
+                f"The model weights alone require {model_bytes / 1024**3:.1f} GB, "
+                f"above the configured {max_ram_gb:.0f} GB RAM ceiling",
+            )
         default_gpu_layers: int | str = (
-            "auto" if active_runtime is not None and active_runtime.backend.value != "cpu" else 0
+            ("auto" if allow_ram_fallback else "all")
+            if active_runtime is not None and active_runtime.backend.value != "cpu"
+            else 0
         )
         gpu_layers_value = params.get("gpuLayers", default_gpu_layers)
         gpu_layers: int | str
@@ -894,10 +911,11 @@ class RuntimeService:
             ubatch_size=(
                 int(params["ubatchSize"]) if params.get("ubatchSize") is not None else None
             ),
+            fit=allow_ram_fallback,
         )
         endpoint = asyncio.run(
             self.cupcake_local.load(
-                _required_string(params, "modelId"),
+                model_id,
                 config=config,
                 timeout_seconds=float(params.get("timeoutSeconds", 180)),
             )
@@ -912,8 +930,8 @@ class RuntimeService:
         local_api_key = authorization.removeprefix("Bearer ") or None
         descriptor = self._register_local_endpoint_model(
             endpoint_id="cupcake-local",
-            model=_required_string(params, "modelId"),
-            display_name=f"{_required_string(params, 'modelId')} (Cupcake Local)",
+            model=model_id,
+            display_name=f"{model_id} (Cupcake Local)",
             base_url=endpoint.base_url,
             privacy=PrivacyRoute.LOCAL,
             headers=authorization_headers,
@@ -924,6 +942,12 @@ class RuntimeService:
         return {
             "endpoint": _redact_local_paths(_jsonable(endpoint)),
             "model": _jsonable(descriptor),
+            "memoryPlacement": {
+                "allowRamFallback": allow_ram_fallback,
+                "maxRamGb": max_ram_gb,
+                "gpuLayers": gpu_layers,
+                "mode": "hybrid_allowed" if allow_ram_fallback else "vram_only",
+            },
         }
 
     def _cupcake_local_unload(self, _params: Mapping[str, Any]) -> Any:

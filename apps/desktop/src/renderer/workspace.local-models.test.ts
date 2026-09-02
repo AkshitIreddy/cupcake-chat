@@ -48,6 +48,23 @@ describe('workspace local model integration', () => {
     });
   });
 
+  it('forwards the explicit VRAM and RAM placement policy when loading', () => {
+    expect(
+      localModelActionRequest('load', cupcakeLocal, {
+        allowRamFallback: false,
+        maxRamGb: 20,
+      }),
+    ).toEqual({
+      method: 'local_models.cupcake.load',
+      params: {
+        modelId: 'qwen3-4b-q4-k-m',
+        allowRamFallback: false,
+        maxRamGb: 20,
+        gpuLayers: 'all',
+      },
+    });
+  });
+
   it('normalizes the complete hardware report emitted by Cupcake Local', () => {
     expect(
       normalizeHardware({

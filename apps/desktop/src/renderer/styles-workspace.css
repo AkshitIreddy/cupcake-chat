@@ -80,10 +80,35 @@
   font: 500 9px 'IBM Plex Mono';
 }
 .conversation-scroll {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+.jump-to-latest {
+  position: sticky;
+  z-index: 12;
+  left: 50%;
+  bottom: 18px;
+  display: flex;
+  width: max-content;
+  align-items: center;
+  gap: 7px;
+  margin: -52px auto 14px;
+  padding: 9px 13px;
+  border: 1px solid color-mix(in srgb, var(--berry), var(--line) 58%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper-raised), transparent 4%);
+  color: var(--berry-dark);
+  box-shadow: var(--shadow-soft);
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+}
+.jump-to-latest:hover {
+  border-color: var(--berry);
+  transform: translateY(-1px);
 }
 .conversation {
   width: min(800px, calc(100% - 54px));

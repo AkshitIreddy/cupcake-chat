@@ -17,6 +17,7 @@ import {
   tools as initialTools,
 } from './data';
 import { Icon, type IconName } from './icons';
+import { ConversationScrollController } from './conversation-scroll';
 import { RichMarkdown } from './RichMarkdown';
 import {
   canonicalModelId,
@@ -50,8 +51,9 @@ import {
   type SearchRecord,
   type StagedAttachmentRecord,
   type ToolActivity,
+  type WorkspaceSettings,
 } from './workspace';
-import type { WorkspaceLockStatus } from '../shared/desktop-api';
+import type { WindowPreferences, WorkspaceLockStatus } from '../shared/desktop-api';
 
 const navItems: { id: View; label: string; icon: IconName; shortcut?: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -62,7 +64,6 @@ const navItems: { id: View; label: string; icon: IconName; shortcut?: string }[]
   { id: 'memory', label: 'Memory', icon: 'memory' },
   { id: 'models', label: 'Models', icon: 'model' },
   { id: 'tools', label: 'Tools', icon: 'tool' },
-  { id: 'search', label: 'Search', icon: 'search', shortcut: 'Ctrl⇧F' },
 ];
 
 const pageTitles: Partial<Record<View, string>> = {
@@ -348,6 +349,7 @@ function Shelf({
   activeTaskCount,
   onNewChat,
   onSelectConversation,
+  profile,
 }: {
   view: View;
   setView: (v: View) => void;
@@ -358,6 +360,7 @@ function Shelf({
   activeTaskCount: number;
   onNewChat?: () => void;
   onSelectConversation?: (id: string) => void;
+  profile?: WorkspaceSettings['profile'];
 }) {
   const navigate = (v: View) => {
     setView(v);
@@ -379,6 +382,14 @@ function Shelf({
           <Icon name="x" />
         </button>
       </div>
+      <button className="shelf-search" onClick={() => navigate('search')}>
+        <Icon name="search" size={15} />
+        <span>Search CupcakeAI</span>
+        <span className="shortcut-keycaps" aria-label="Control F">
+          <kbd>Ctrl</kbd>
+          <kbd>F</kbd>
+        </span>
+      </button>
       <button className="new-chat" onClick={() => (onNewChat ? onNewChat() : navigate('chat'))}>
         <span>
           <Icon name="plus" size={17} />
@@ -406,7 +417,7 @@ function Shelf({
                 aria-label={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
                 title={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
               >
-                {activeTaskCount}
+                {activeTaskCount} active
               </em>
             )}
             {item.shortcut && <kbd>{item.shortcut}</kbd>}
@@ -445,11 +456,13 @@ function Shelf({
           <Icon name="settings" />
           <span>Settings</span>
         </button>
-        <button className="profile-row" onClick={() => navigate('about')}>
-          <span className="avatar">AI</span>
+        <button className="profile-row" onClick={() => navigate('settings')}>
+          <span className="avatar">
+            {profile?.avatar ? <img src={profile.avatar} alt="" /> : 'AI'}
+          </span>
           <span>
-            <strong>Akshit</strong>
-            <small>Local profile</small>
+            <strong>{profile?.displayName || 'Akshit'}</strong>
+            <small>{profile?.role || 'Local profile'}</small>
           </span>
           <Icon name="more" />
         </button>
@@ -503,8 +516,10 @@ function Topbar({
 }
 
 function Greeting() {
+  const workspace = useWorkspace();
   const hour = new Date().getHours();
-  return <>{hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, Akshit.</>;
+  const name = workspace.settings.profile.displayName.trim() || 'there';
+  return <>{hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, {name}.</>;
 }
 
 function HomeView({
@@ -1892,6 +1907,24 @@ function ChatView({
   const workspace = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
   const [stopped, setStopped] = useState(false);
+  const [followingLatest, setFollowingLatest] = useState(true);
+  const conversationScrollRef = useRef<HTMLDivElement>(null);
+  const conversationScroll = useRef(new ConversationScrollController());
+  const latestMessage = workspace.messages.at(-1);
+  const followSignal = `${workspace.activeConversationId ?? 'new'}:${workspace.messages.length}:${latestMessage?.content.length ?? 0}:${latestMessage?.streaming ? 'streaming' : 'settled'}`;
+
+  useEffect(() => {
+    const surface = conversationScrollRef.current;
+    if (!surface) return;
+    conversationScroll.current.follow(surface);
+  }, [followSignal]);
+
+  useEffect(() => {
+    const surface = conversationScrollRef.current;
+    if (!surface) return;
+    conversationScroll.current.follow(surface, { force: true });
+    setFollowingLatest(true);
+  }, [workspace.activeConversationId]);
   useEffect(() => {
     const stop = () => setStopped(true);
     window.addEventListener('cupcake:stop', stop);
@@ -1964,7 +1997,13 @@ function ChatView({
             </button>
           </div>
         </header>
-        <div className="conversation-scroll">
+        <div
+          className="conversation-scroll"
+          ref={conversationScrollRef}
+          onScroll={(event) =>
+            setFollowingLatest(conversationScroll.current.observe(event.currentTarget))
+          }
+        >
           {workspace.fixtureMode ? (
             <div className="conversation" aria-label="Deterministic fixture conversation">
               <div className="branch-banner">
@@ -2205,11 +2244,33 @@ function ChatView({
           ) : (
             <LiveConversation selectedModel={selectedModel} />
           )}
+          {!followingLatest && (
+            <button
+              className="jump-to-latest"
+              onClick={() => {
+                const surface = conversationScrollRef.current;
+                if (!surface) return;
+                conversationScroll.current.follow(surface, { force: true, smooth: true });
+                setFollowingLatest(true);
+              }}
+            >
+              <Icon name="chevron" size={14} />
+              Jump to latest
+            </button>
+          )}
         </div>
         <footer className="chat-composer-wrap">
           <Composer
             compact
-            onSend={onSend}
+            onSend={async (input) => {
+              const sent = await onSend(input);
+              if (sent) {
+                const surface = conversationScrollRef.current;
+                if (surface) conversationScroll.current.follow(surface, { force: true });
+                setFollowingLatest(true);
+              }
+              return sent;
+            }}
             onModel={setModelOpen}
             selectedModel={selectedModel}
             offline={offline}
@@ -4014,10 +4075,14 @@ function ModelsView({
           <div className="memory-plan-note">
             <Icon name="info" size={15} />
             <span>
-              <strong>Automatic GPU-first memory plan</strong>
-              llama.cpp reserves 1 GB of VRAM and offloads as many layers as fit. If the full model
-              does not fit, remaining layers stay in system RAM and run CPU-assisted instead of
-              failing the load; expect lower speed.
+              <strong>
+                {workspace.settings.allowRamFallback
+                  ? 'GPU-first with RAM fallback'
+                  : 'VRAM-only placement'}
+              </strong>
+              {workspace.settings.allowRamFallback
+                ? ` llama.cpp offloads as many layers as fit in VRAM, then may use system RAM up to the ${workspace.settings.maxRamGb} GB safety ceiling. Hybrid placement is slower and is never hidden.`
+                : ' Cupcake requests all accelerated layers in VRAM with automatic fitting disabled. A model that does not fit fails clearly instead of spilling into RAM.'}
             </span>
           </div>
         </div>
@@ -5281,6 +5346,28 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
   );
 }
 
+const cupcakeAvatars = [
+  ['/brand/cupcake-2-grown.png', 'Grown Cupcake'],
+  ['/brand/cupcake-classic.png', 'Classic Cupcake'],
+  ['/brand/cupcake-mark.svg', 'Cupcake mark'],
+  ['/brand/cupcake-tray.png', 'Cupcake tray'],
+] as const;
+
+function ProviderLogo({ id, name }: { id: string; name: string }) {
+  if (id === 'openai-compatible') {
+    return (
+      <span className="provider-logo provider-logo--generic" aria-hidden="true">
+        <Icon name="cloud" size={18} />
+      </span>
+    );
+  }
+  return (
+    <span className="provider-logo">
+      <img src={`/providers/${id}.svg`} alt={`${name} logo`} />
+    </span>
+  );
+}
+
 function SettingsView({
   theme,
   setTheme,
@@ -5292,6 +5379,7 @@ function SettingsView({
   openProvider,
   proactiveEnabled,
   setProactiveEnabled,
+  onReplayOnboarding,
 }: {
   theme: Theme;
   setTheme: (t: Theme) => void;
@@ -5303,12 +5391,16 @@ function SettingsView({
   openProvider: (provider: string) => void;
   proactiveEnabled: boolean;
   setProactiveEnabled: (enabled: boolean) => void;
+  onReplayOnboarding?: () => void;
 }) {
   const workspace = useWorkspace();
   const tabs = [
     'General',
+    'Profile',
     'Personality',
     'Appearance',
+    'Window',
+    'Local models',
     'Privacy',
     'Providers',
     'Storage',
@@ -5325,6 +5417,16 @@ function SettingsView({
   const [confirmWorkspacePassword, setConfirmWorkspacePassword] = useState('');
   const [workspacePasswordBusy, setWorkspacePasswordBusy] = useState(false);
   const [workspacePasswordMessage, setWorkspacePasswordMessage] = useState('');
+  const [profileUploadError, setProfileUploadError] = useState('');
+  const [windowPreferences, setWindowPreferences] = useState<WindowPreferences>({
+    startupBehavior: 'open',
+    closeBehavior: 'ask',
+    minimizeBehavior: 'taskbar',
+    showInTaskbar: true,
+    alwaysOnTop: false,
+    launchAtLogin: false,
+  });
+  const [windowPreferencesError, setWindowPreferencesError] = useState('');
   const [preset, setPreset] = useState(cap(workspace.settings.personalityPreset));
   const [values, setValues] = useState({
     Warmth: Math.round(workspace.settings.personality.warmth * 100),
@@ -5345,6 +5447,45 @@ function SettingsView({
     (model) =>
       model.provider === 'NVIDIA NIM' && model.tags.some((tag) => /embed|rerank/i.test(tag)),
   );
+  const updateProfile = (patch: Partial<WorkspaceSettings['profile']>) =>
+    workspace.updateSettings({ profile: { ...workspace.settings.profile, ...patch } });
+  const uploadProfileImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setProfileUploadError('');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setProfileUploadError('Choose a PNG, JPEG, or WebP image.');
+      return;
+    }
+    if (file.size > 750 * 1024) {
+      setProfileUploadError('Keep the profile image under 750 KB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => void updateProfile({ avatar: String(reader.result) });
+    reader.onerror = () => setProfileUploadError('CupcakeAI could not read that image.');
+    reader.readAsDataURL(file);
+  };
+  useEffect(() => {
+    void window.cupcake?.window
+      .getPreferences?.()
+      .then(setWindowPreferences)
+      .catch((error: unknown) => setWindowPreferencesError(hostErrorMessage(error)));
+  }, []);
+  const updateWindowPreferences = (patch: Partial<WindowPreferences>) => {
+    const next = { ...windowPreferences, ...patch };
+    setWindowPreferences(next);
+    setWindowPreferencesError('');
+    if (!window.cupcake?.window.setPreferences) return;
+    void window.cupcake.window
+      .setPreferences(next)
+      .then(setWindowPreferences)
+      .catch((error: unknown) => {
+        setWindowPreferences(windowPreferences);
+        setWindowPreferencesError(hostErrorMessage(error));
+      });
+  };
   return (
     <main className="settings-layout">
       <aside>
@@ -5355,8 +5496,14 @@ function SettingsView({
               name={
                 t === 'Personality'
                   ? 'sparkle'
+                  : t === 'Profile'
+                    ? 'user'
                   : t === 'Appearance'
                     ? 'palette'
+                    : t === 'Window'
+                      ? 'window'
+                      : t === 'Local models'
+                        ? 'local'
                     : t === 'Privacy'
                       ? 'shield'
                       : t === 'Providers'
@@ -5478,15 +5625,45 @@ function SettingsView({
                   Visible communication guidance sent with new agent runs. Never hidden reasoning.
                 </p>
               </header>
-              <label>
-                Instructions
+              <label className="instruction-editor">
+                <span className="instruction-editor__bar">
+                  <span>
+                    <Icon name="edit" size={14} /> Your guidance
+                  </span>
+                  <small>{workspace.settings.personalityInstructions.length}/4,000</small>
+                </span>
                 <textarea
+                  maxLength={4000}
                   value={workspace.settings.personalityInstructions}
                   onChange={(event) =>
                     void workspace.updateSettings({ personalityInstructions: event.target.value })
                   }
                   placeholder="For example: Lead with the decision and show exact tradeoffs."
                 />
+                <span className="instruction-suggestions">
+                  {[
+                    'Lead with the answer',
+                    'Explain unfamiliar terms',
+                    'Point out important risks',
+                  ].map((suggestion) => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() =>
+                        void workspace.updateSettings({
+                          personalityInstructions: [
+                            workspace.settings.personalityInstructions.trim(),
+                            suggestion,
+                          ]
+                            .filter(Boolean)
+                            .join('\n'),
+                        })
+                      }
+                    >
+                      <Icon name="plus" size={11} /> {suggestion}
+                    </button>
+                  ))}
+                </span>
               </label>
               {clearPlan && (
                 <div className="security-note" role="status">
@@ -5571,7 +5748,96 @@ function SettingsView({
                 label="Reduce motion"
               />
             </div>
+            <div className="setting-row">
+              <span>
+                <strong>Scrollbars</strong>
+                <small>Keep them easy to grab, make them minimal, or hide them completely.</small>
+              </span>
+              <div className="segmented-control" aria-label="Scrollbar visibility">
+                {(['slim', 'minimal', 'hidden'] as const).map((mode) => (
+                  <button
+                    className={workspace.settings.scrollbarMode === mode ? 'is-active' : ''}
+                    onClick={() => void workspace.updateSettings({ scrollbarMode: mode })}
+                    key={mode}
+                  >
+                    {cap(mode)}
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
+        )}
+        {tab === 'Profile' && (
+          <>
+            <section className="settings-section profile-editor">
+              <header>
+                <h2>Your local profile</h2>
+                <p>This information personalizes the app and stays in your encrypted workspace.</p>
+              </header>
+              <div className="profile-editor__identity">
+                <span className="profile-editor__portrait">
+                  <img src={workspace.settings.profile.avatar} alt="Current profile" />
+                </span>
+                <div>
+                  <strong>{workspace.settings.profile.displayName || 'Your name'}</strong>
+                  <small>{workspace.settings.profile.role || 'Add what you do'}</small>
+                </div>
+              </div>
+              <div className="profile-fields">
+                <label>
+                  Display name
+                  <input
+                    maxLength={80}
+                    value={workspace.settings.profile.displayName}
+                    onChange={(event) => void updateProfile({ displayName: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Role or focus
+                  <input
+                    maxLength={120}
+                    value={workspace.settings.profile.role}
+                    onChange={(event) => void updateProfile({ role: event.target.value })}
+                    placeholder="Builder, researcher, student…"
+                  />
+                </label>
+                <label className="profile-fields__wide">
+                  A little context for Cupcake
+                  <textarea
+                    maxLength={500}
+                    value={workspace.settings.profile.bio}
+                    onChange={(event) => void updateProfile({ bio: event.target.value })}
+                    placeholder="What are you working toward, and how can Cupcake help?"
+                  />
+                </label>
+              </div>
+            </section>
+            <section className="settings-section">
+              <header>
+                <h2>Profile picture</h2>
+                <p>Pick a Cupcake or upload a small image of your own.</p>
+              </header>
+              <div className="avatar-picker">
+                {cupcakeAvatars.map(([src, label]) => (
+                  <button
+                    className={workspace.settings.profile.avatar === src ? 'is-active' : ''}
+                    onClick={() => void updateProfile({ avatar: src })}
+                    title={label}
+                    key={src}
+                  >
+                    <img src={src} alt={label} />
+                    {workspace.settings.profile.avatar === src && <Icon name="check" />}
+                  </button>
+                ))}
+                <label className="avatar-upload">
+                  <Icon name="upload" />
+                  <span>Upload</span>
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadProfileImage} />
+                </label>
+              </div>
+              {profileUploadError && <p className="field-error">{profileUploadError}</p>}
+            </section>
+          </>
         )}
         {tab === 'General' && (
           <section className="settings-section">
@@ -5608,7 +5874,141 @@ function SettingsView({
                 label="Thoughts and Dreams"
               />
             </div>
+            <div className="setting-row">
+              <span>
+                <strong>Welcome tour</strong>
+                <small>Replay the guided introduction to chats, projects, tasks, models, and privacy.</small>
+              </span>
+              <button className="button" onClick={onReplayOnboarding}>
+                <Icon name="sparkle" /> Replay onboarding
+              </button>
+            </div>
           </section>
+        )}
+        {tab === 'Local models' && (
+          <section className="settings-section">
+            <header>
+              <h2>GPU and system memory</h2>
+              <p>Control what happens when a local model cannot fit entirely in NVIDIA VRAM.</p>
+            </header>
+            <div className="setting-row">
+              <span>
+                <strong>Allow system RAM fallback</strong>
+                <small>
+                  Offload overflow layers to system RAM. This can run larger models, but it is much slower than VRAM.
+                </small>
+              </span>
+              <Toggle
+                checked={workspace.settings.allowRamFallback}
+                onChange={() =>
+                  void workspace.updateSettings({
+                    allowRamFallback: !workspace.settings.allowRamFallback,
+                  })
+                }
+                label="Allow system RAM fallback"
+              />
+            </div>
+            <div className={cx('setting-row', !workspace.settings.allowRamFallback && 'is-disabled')}>
+              <span>
+                <strong>Maximum system RAM for a model</strong>
+                <small>Safety ceiling for model weights and context cache. Cupcake leaves the rest for Windows.</small>
+              </span>
+              <label className="number-setting">
+                <input
+                  type="number"
+                  min="4"
+                  max="256"
+                  step="1"
+                  disabled={!workspace.settings.allowRamFallback}
+                  value={workspace.settings.maxRamGb}
+                  onChange={(event) =>
+                    void workspace.updateSettings({
+                      maxRamGb: Math.max(4, Math.min(256, Number(event.target.value) || 4)),
+                    })
+                  }
+                />
+                <span>GB</span>
+              </label>
+            </div>
+            <div className="security-note">
+              <Icon name="info" />
+              <div>
+                <strong>{workspace.settings.allowRamFallback ? 'Hybrid loading is allowed' : 'VRAM-only loading'}</strong>
+                <p>
+                  {workspace.settings.allowRamFallback
+                    ? 'Cupcake may use both VRAM and RAM when the runtime supports layer offload. The Models page reports the active placement.'
+                    : 'Cupcake asks the runtime to keep all accelerated layers in VRAM and fails clearly if the selected model does not fit.'}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+        {tab === 'Window' && (
+          <>
+            <section className="settings-section">
+              <header>
+                <h2>Startup and Windows</h2>
+                <p>Choose where CupcakeAI appears and how it behaves with the Windows session.</p>
+              </header>
+              <div className="setting-row">
+                <span>
+                  <strong>Open at sign-in</strong>
+                  <small>Register CupcakeAI for the current Windows user.</small>
+                </span>
+                <Toggle
+                  checked={windowPreferences.launchAtLogin}
+                  onChange={() => updateWindowPreferences({ launchAtLogin: !windowPreferences.launchAtLogin })}
+                  label="Open CupcakeAI at sign-in"
+                />
+              </div>
+              <div className="setting-row">
+                <span>
+                  <strong>When CupcakeAI starts</strong>
+                  <small>Open the window, minimize it, or remain quietly in the tray.</small>
+                </span>
+                <div className="segmented-control" aria-label="Startup behavior">
+                  {(['open', 'minimized', 'tray'] as const).map((behavior) => (
+                    <button className={windowPreferences.startupBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ startupBehavior: behavior })} key={behavior}>
+                      {behavior === 'open' ? 'Open' : behavior === 'minimized' ? 'Minimized' : 'Tray'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="setting-row">
+                <span>
+                  <strong>Show on the taskbar</strong>
+                  <small>Turn this off for a tray-first workspace.</small>
+                </span>
+                <Toggle checked={windowPreferences.showInTaskbar} onChange={() => updateWindowPreferences({ showInTaskbar: !windowPreferences.showInTaskbar })} label="Show on taskbar" />
+              </div>
+              <div className="setting-row">
+                <span>
+                  <strong>Always on top</strong>
+                  <small>Keep the CupcakeAI window above ordinary desktop windows.</small>
+                </span>
+                <Toggle checked={windowPreferences.alwaysOnTop} onChange={() => updateWindowPreferences({ alwaysOnTop: !windowPreferences.alwaysOnTop })} label="Always on top" />
+              </div>
+            </section>
+            <section className="settings-section">
+              <header>
+                <h2>Minimize and close</h2>
+                <p>These choices are enforced by the native desktop host.</p>
+              </header>
+              <div className="setting-row">
+                <span><strong>Minimize button</strong><small>Send the window to the taskbar or hide it in the tray.</small></span>
+                <div className="segmented-control" aria-label="Minimize behavior">
+                  {(['taskbar', 'tray'] as const).map((behavior) => <button className={windowPreferences.minimizeBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ minimizeBehavior: behavior })} key={behavior}>{cap(behavior)}</button>)}
+                </div>
+              </div>
+              <div className="setting-row">
+                <span><strong>Close button</strong><small>Ask each time, keep running in the tray, or fully quit.</small></span>
+                <div className="segmented-control" aria-label="Close behavior">
+                  {(['ask', 'tray', 'quit'] as const).map((behavior) => <button className={windowPreferences.closeBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ closeBehavior: behavior })} key={behavior}>{cap(behavior)}</button>)}
+                </div>
+              </div>
+              {windowPreferencesError && <p className="field-error" role="alert">{windowPreferencesError}</p>}
+            </section>
+          </>
         )}
         {tab === 'Privacy' && (
           <>
@@ -5825,8 +6225,8 @@ function SettingsView({
               </p>
             </header>
             {providers.map(([name, id]) => (
-              <div className="provider-row" key={id}>
-                <span className="provider-logo">{name.charAt(0)}</span>
+              <div className={cx('provider-row', providerStates[id] && 'is-connected')} key={id}>
+                <ProviderLogo id={id} name={name} />
                 <span>
                   <strong>{name}</strong>
                   <small>
@@ -5834,6 +6234,9 @@ function SettingsView({
                       ? 'Connected · protected by Windows DPAPI'
                       : 'Not connected'}
                   </small>
+                </span>
+                <span className={cx('provider-status', providerStates[id] && 'is-connected')}>
+                  <i /> {providerStates[id] ? 'Connected' : 'Not connected'}
                 </span>
                 <RouteBadge route="Cloud" />
                 <button className="button" onClick={() => openProvider(id)}>
@@ -5887,7 +6290,7 @@ function SettingsView({
               ['Command palette', 'Ctrl', 'K'],
               ['New chat', 'Ctrl', 'N'],
               ['Focus composer', '/', ''],
-              ['Global search', 'Ctrl + Shift', 'F'],
+              ['Global search', 'Ctrl', 'F'],
               ['Model picker', 'Ctrl', 'M'],
               ['Attach file', 'Ctrl', 'U'],
               ['Stop generation', 'Ctrl', '.'],
@@ -7351,7 +7754,7 @@ function CommandPalette({
       detail: 'Chats, projects, files, tasks, and memory',
       icon: 'search',
       action: () => setView('search'),
-      key: 'Ctrl Shift F',
+      key: 'Ctrl F',
     },
     {
       label: 'Open memory',
@@ -7508,7 +7911,7 @@ function LegacyFixtureApp() {
       } else if (meta && event.key.toLowerCase() === 'm') {
         event.preventDefault();
         setModelOpen(true);
-      } else if (meta && event.shiftKey && event.key.toLowerCase() === 'f') {
+      } else if (meta && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         navigate('search');
       } else if (!editing && !meta && event.key === '/') {
@@ -8006,6 +8409,108 @@ function LegacyMigrationDialog() {
   );
 }
 
+const onboardingSteps = [
+  {
+    eyebrow: 'Welcome to CupcakeAI',
+    title: 'One calm place for serious work',
+    body: 'Chat with cloud or local models, let durable tasks continue in the background, and keep the resulting files, decisions, and memories organized.',
+    icon: 'sparkle' as IconName,
+    points: ['Encrypted local workspace', 'Cloud destinations are labeled', 'Your projects stay isolated'],
+  },
+  {
+    eyebrow: 'Conversations',
+    title: 'Ask, attach, branch, and keep context',
+    body: 'Use @ references to include a project, memory, task, or artifact. Long answers stream into the Frosting Thread, and you can branch from any message without losing the original.',
+    icon: 'chat' as IconName,
+    points: ['Ctrl N starts a chat', 'Ctrl F searches everything', 'Ctrl M changes the active model'],
+  },
+  {
+    eyebrow: 'Projects and tasks',
+    title: 'Separate quick questions from durable work',
+    body: 'Projects are privacy and retrieval boundaries. Tasks checkpoint multi-step work so a model or app restart does not erase useful progress.',
+    icon: 'task' as IconName,
+    points: ['Projects contain chats and artifacts', 'Tasks show approvals and checkpoints', 'Artifacts keep revision history'],
+  },
+  {
+    eyebrow: 'Models and providers',
+    title: 'Choose local privacy or connected capability',
+    body: 'CupcakeAI can use app-managed local models or providers you connect. Local model cards explain fit, runtime, download state, and whether weights can spill from VRAM into RAM.',
+    icon: 'model' as IconName,
+    points: ['Local means content stays on this PC', 'Cloud routes name the provider', 'Offline mode blocks cloud routes'],
+  },
+  {
+    eyebrow: 'Permission policy',
+    title: 'You decide how much autonomy to grant',
+    body: 'Guarded mode asks before sensitive effects. Full Freedom removes routine confirmations, while destructive and irreversible boundaries remain clearly surfaced.',
+    icon: 'shield' as IconName,
+    points: ['Review tool effects in context', 'Stop active generation with Ctrl .', 'Lock the workspace from Privacy settings'],
+  },
+  {
+    eyebrow: 'Ready when you are',
+    title: 'Make CupcakeAI feel like yours',
+    body: 'Set your profile, communication style, theme, window behavior, model memory policy, and scrollbars in Settings. You can replay this tour there at any time.',
+    icon: 'check' as IconName,
+    points: ['Profile and cupcake avatars', 'Personality and custom instructions', 'Startup, taskbar, close, GPU and RAM controls'],
+  },
+] as const;
+
+function OnboardingTour({
+  open,
+  close,
+  navigate,
+}: {
+  open: boolean;
+  close: (completed: boolean) => void;
+  navigate: (view: View) => void;
+}) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (open) setStep(0);
+  }, [open]);
+  if (!open) return null;
+  const item = onboardingSteps[step]!;
+  const last = step === onboardingSteps.length - 1;
+  return (
+    <div className="onboarding-layer" role="presentation">
+      <section className="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+        <aside className="onboarding-art" aria-hidden="true">
+          <span className="onboarding-orbit onboarding-orbit--one" />
+          <span className="onboarding-orbit onboarding-orbit--two" />
+          <img src="/brand/cupcake-2-grown.png" alt="" />
+          <span className="onboarding-step-icon"><Icon name={item.icon} size={22} /></span>
+        </aside>
+        <div className="onboarding-copy">
+          <header>
+            <span className="eyebrow">{item.eyebrow}</span>
+            <button className="icon-button" onClick={() => close(true)} aria-label="Skip onboarding"><Icon name="x" /></button>
+          </header>
+          <h1 id="onboarding-title">{item.title}</h1>
+          <p>{item.body}</p>
+          <div className="onboarding-points">
+            {item.points.map((point) => <span key={point}><Icon name="check" size={13} /> {point}</span>)}
+          </div>
+          {last && (
+            <div className="onboarding-destinations">
+              <button onClick={() => { navigate('chat'); close(true); }}><Icon name="chat" /><span><strong>Start chatting</strong><small>Ask CupcakeAI anything</small></span></button>
+              <button onClick={() => { navigate('settings'); close(true); }}><Icon name="settings" /><span><strong>Personalize first</strong><small>Profile, models, and window</small></span></button>
+            </div>
+          )}
+          <footer>
+            <div className="onboarding-progress" aria-label={`Step ${step + 1} of ${onboardingSteps.length}`}>
+              {onboardingSteps.map((_, index) => <i className={index === step ? 'is-active' : index < step ? 'is-done' : ''} key={index} />)}
+            </div>
+            <span />
+            {step > 0 && <button className="button" onClick={() => setStep((value) => value - 1)}>Back</button>}
+            <button className="button button--primary" onClick={() => last ? close(true) : setStep((value) => value + 1)}>
+              {last ? 'Finish tour' : 'Continue'}
+            </button>
+          </footer>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LiveApp() {
   const workspace = useWorkspace();
   const [view, setView] = useState<View>(initialView);
@@ -8016,6 +8521,10 @@ function LiveApp() {
   const [providerDialog, setProviderDialog] = useState<string | null>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    new URLSearchParams(window.location.search).get('onboarding') === '1',
+  );
+  const [closeRequested, setCloseRequested] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
   const [memoryRecords, setMemoryRecords] = useState(workspace.memories);
   const [toolRecords, setToolRecords] = useState(workspace.tools);
@@ -8026,6 +8535,15 @@ function LiveApp() {
   const activeTask = workspace.tasks.find((task) => task.id === activeTaskId) ?? workspace.tasks[0];
   useEffect(() => setMemoryRecords(workspace.memories), [workspace.memories]);
   useEffect(() => setToolRecords(workspace.tools), [workspace.tools]);
+  useEffect(
+    () => window.cupcake?.window.onCloseRequested?.(() => setCloseRequested(true)),
+    [],
+  );
+  useEffect(() => {
+    const nativeDesktop = '__TAURI_INTERNALS__' in window;
+    if (nativeDesktop && workspace.ready && !workspace.settings.onboardingCompleted)
+      setOnboardingOpen(true);
+  }, [workspace.ready, workspace.settings.onboardingCompleted]);
   useEffect(() => {
     const configured = workspace.settings.theme;
     const urlTheme = new URLSearchParams(window.location.search).get('theme');
@@ -8033,11 +8551,12 @@ function LiveApp() {
   }, [workspace.settings.theme]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.scrollbars = workspace.settings.scrollbarMode;
     document.documentElement.dataset.reducedMotion = workspace.settings.reducedMotion
       ? 'true'
       : 'false';
     localStorage.setItem('cupcake-theme', theme);
-  }, [theme, workspace.settings.reducedMotion]);
+  }, [theme, workspace.settings.reducedMotion, workspace.settings.scrollbarMode]);
   const setTheme = (next: Theme) => {
     setThemeState(next);
     void workspace.updateSettings({ theme: next });
@@ -8064,7 +8583,7 @@ function LiveApp() {
       } else if (meta && event.key.toLowerCase() === 'm') {
         event.preventDefault();
         setModelOpen(true);
-      } else if (meta && event.shiftKey && event.key.toLowerCase() === 'f') {
+      } else if (meta && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         navigate('search');
       } else if (!editing && !meta && event.key === '/') {
@@ -8240,6 +8759,7 @@ function LiveApp() {
         openProvider={setProviderDialog}
         proactiveEnabled={workspace.settings.proactiveEnabled}
         setProactiveEnabled={(value) => void workspace.updateSettings({ proactiveEnabled: value })}
+        onReplayOnboarding={() => setOnboardingOpen(true)}
       />
     );
   else if (view === 'developer' && workspace.settings.developerMode)
@@ -8275,6 +8795,7 @@ function LiveApp() {
         onSelectConversation={(id) =>
           void workspace.selectConversation(id).then(() => navigate('chat'))
         }
+        profile={workspace.settings.profile}
       />
       <section
         className={cx('app-content', view === 'chat' && 'app-content--chat')}
@@ -8339,6 +8860,34 @@ function LiveApp() {
       />
       <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
       <LegacyMigrationDialog />
+      <OnboardingTour
+        open={onboardingOpen && workspace.ready}
+        navigate={navigate}
+        close={(completed) => {
+          setOnboardingOpen(false);
+          if (completed && !workspace.settings.onboardingCompleted)
+            void workspace.updateSettings({ onboardingCompleted: true });
+        }}
+      />
+      {closeRequested && (
+        <div className="popover-layer">
+          <section className="provider-dialog close-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
+            <header>
+              <div><span className="eyebrow">Before you go</span><h2 id="close-dialog-title">What should CupcakeAI do?</h2></div>
+              <button className="icon-button" onClick={() => setCloseRequested(false)} aria-label="Cancel closing"><Icon name="x" /></button>
+            </header>
+            <div className="close-dialog__choices">
+              <button onClick={() => { setCloseRequested(false); void window.cupcake?.window.respondToClose('tray'); }}>
+                <Icon name="bell" /><span><strong>Keep running in tray</strong><small>Tasks and local services can stay available.</small></span>
+              </button>
+              <button onClick={() => { setCloseRequested(false); void window.cupcake?.window.respondToClose('quit'); }}>
+                <Icon name="x" /><span><strong>Quit CupcakeAI</strong><small>Stop the runtime and close the workspace.</small></span>
+              </button>
+            </div>
+            <footer><button className="button" onClick={() => setCloseRequested(false)}>Cancel</button><span /></footer>
+          </section>
+        </div>
+      )}
       {shortcutOpen && (
         <div
           className="popover-layer"
@@ -8554,23 +9103,24 @@ function WorkspaceUnlockGate({
 }
 
 export function App() {
+  const workspaceLockApi = window.cupcake?.workspace;
   const [lockStatus, setLockStatus] = useState<WorkspaceLockStatus | null>(
-    window.cupcake
+    workspaceLockApi
       ? null
       : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
   );
   useEffect(() => {
-    if (!window.cupcake) return;
+    if (!workspaceLockApi) return;
     let active = true;
-    void window.cupcake.workspace.status().then((status) => active && setLockStatus(status));
-    const release = window.cupcake.workspace.onStatus((status) => {
+    void workspaceLockApi.status().then((status) => active && setLockStatus(status));
+    const release = workspaceLockApi.onStatus((status) => {
       if (active) setLockStatus(status);
     });
     return () => {
       active = false;
       release();
     };
-  }, []);
+  }, [workspaceLockApi]);
   if (lockStatus?.state !== 'unlocked') {
     return <WorkspaceUnlockGate status={lockStatus} onUnlocked={setLockStatus} />;
   }

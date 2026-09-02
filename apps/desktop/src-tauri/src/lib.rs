@@ -11,10 +11,12 @@ mod state;
 mod tray;
 mod url_policy;
 mod workspace_lock;
+mod window_preferences;
 
 use crate::commands::*;
 use crate::state::HostState;
 use tauri::Manager;
+use std::sync::Arc;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
@@ -48,8 +50,11 @@ pub fn run() {
             runtime_request,
             runtime_status,
             window_close,
+            window_close_response,
             window_is_maximized,
             window_minimize,
+            window_preferences_get,
+            window_preferences_set,
             window_start_dragging,
             window_toggle_maximize,
             workspace_lock,
@@ -73,7 +78,11 @@ pub fn run() {
             );
             let workspace_lock =
                 workspace_lock::WorkspaceLock::load(&data_directory, supervisor.clone())?;
-            app.manage(HostState::new(supervisor, workspace_lock));
+            let window_preferences = Arc::new(
+                window_preferences::WindowPreferencesStore::load(&data_directory)?,
+            );
+            let startup_preferences = window_preferences.get();
+            app.manage(HostState::new(supervisor, workspace_lock, window_preferences));
             tray::install(app)?;
 
             let deep_link_handle = app.handle().clone();
@@ -86,7 +95,25 @@ pub fn run() {
 
             // The runtime and provider sidecars remain stopped until an app-owned
             // password is created or verified for this launch.
-            commands::show_main(app.handle());
+            if let Some(window) = app.get_webview_window("main") {
+                commands::apply_window_preferences(&window, &startup_preferences)?;
+            }
+            let headless_test = std::env::var_os("CUPCAKE_TEST_DATA_DIR").is_some()
+                && std::env::var("CUPCAKE_TEST_HEADLESS").ok().as_deref() == Some("1");
+            if headless_test {
+                commands::show_main(app.handle());
+            } else {
+                match startup_preferences.startup_behavior {
+                    window_preferences::StartupBehavior::Open => commands::show_main(app.handle()),
+                    window_preferences::StartupBehavior::Minimized => {
+                        commands::show_main(app.handle());
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.minimize();
+                        }
+                    }
+                    window_preferences::StartupBehavior::Tray => {}
+                }
+            }
             Ok(())
         })
         .on_window_event(lifecycle::handle_window_event)

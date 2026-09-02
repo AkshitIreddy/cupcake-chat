@@ -219,6 +219,14 @@ export interface WorkspaceSettings {
   proactiveEnabled: boolean;
   developerMode: boolean;
   reducedMotion: boolean;
+  scrollbarMode: 'slim' | 'minimal' | 'hidden';
+  onboardingCompleted: boolean;
+  profile: {
+    displayName: string;
+    role: string;
+    bio: string;
+    avatar: string;
+  };
   reasoningEffort: ReasoningEffort;
   enabledToolIds: string[];
   personalityPreset: 'balanced' | 'concise' | 'warm' | 'analytical' | 'custom';
@@ -230,6 +238,8 @@ export interface WorkspaceSettings {
   personalityInstructions: string;
   semanticEnrichment: { enabled: boolean; provider: string | null; modelId: string | null };
   permissionMode: 'guarded' | 'full-freedom';
+  allowRamFallback: boolean;
+  maxRamGb: number;
 }
 
 interface RuntimeProject {
@@ -1237,6 +1247,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
 export function localModelActionRequest(
   action: ModelAction,
   model: ModelDescriptor,
+  policy?: { allowRamFallback: boolean; maxRamGb: number },
 ): { method: string; params: Record<string, unknown> } {
   const nativeModel = model.runtimeModelId ?? model.id;
   if (model.provider !== 'Cupcake Local')
@@ -1264,6 +1275,16 @@ export function localModelActionRequest(
       params: { artifactId: nativeModel },
     };
   if (action === 'unload') return { method: 'local_models.cupcake.unload', params: {} };
+  if (action === 'load' && policy)
+    return {
+      method: 'local_models.cupcake.load',
+      params: {
+        modelId: nativeModel,
+        allowRamFallback: policy.allowRamFallback,
+        maxRamGb: policy.maxRamGb,
+        ...(policy.allowRamFallback ? {} : { gpuLayers: 'all' }),
+      },
+    };
   return {
     method: `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`,
     params: { modelId: nativeModel },
@@ -1317,6 +1338,14 @@ const fallbackSettings: WorkspaceSettings = {
   proactiveEnabled: false,
   developerMode: false,
   reducedMotion: false,
+  scrollbarMode: 'slim',
+  onboardingCompleted: false,
+  profile: {
+    displayName: 'Akshit',
+    role: '',
+    bio: '',
+    avatar: '/brand/cupcake-2-grown.png',
+  },
   reasoningEffort: 'high',
   enabledToolIds: fixtureTools.filter((tool) => tool.enabled).map((tool) => tool.id),
   personalityPreset: 'balanced',
@@ -1324,7 +1353,22 @@ const fallbackSettings: WorkspaceSettings = {
   personalityInstructions: '',
   semanticEnrichment: { enabled: false, provider: null, modelId: null },
   permissionMode: 'guarded',
+  allowRamFallback: true,
+  maxRamGb: 24,
 };
+
+function normalizeSettings(value: Partial<WorkspaceSettings>): WorkspaceSettings {
+  return {
+    ...fallbackSettings,
+    ...value,
+    personality: { ...fallbackSettings.personality, ...value.personality },
+    semanticEnrichment: {
+      ...fallbackSettings.semanticEnrichment,
+      ...value.semanticEnrichment,
+    },
+    profile: { ...fallbackSettings.profile, ...value.profile },
+  };
+}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const fixtureMode = !window.cupcake;
@@ -1362,9 +1406,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [legacyMigration, setLegacyMigration] = useState<LegacyMigrationState | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings>(() => {
     const stored = localStorage.getItem('cupcake-workspace-settings');
-    if (!stored) return fallbackSettings;
+    const fixtureOnboardingComplete =
+      fixtureMode && new URLSearchParams(window.location.search).get('onboarding') !== '1';
+    if (!stored)
+      return fixtureOnboardingComplete
+        ? { ...fallbackSettings, onboardingCompleted: true }
+        : fallbackSettings;
     try {
-      return { ...fallbackSettings, ...(JSON.parse(stored) as Partial<WorkspaceSettings>) };
+      const normalized = normalizeSettings(JSON.parse(stored) as Partial<WorkspaceSettings>);
+      return fixtureOnboardingComplete
+        ? { ...normalized, onboardingCompleted: true }
+        : normalized;
     } catch {
       return fallbackSettings;
     }
@@ -1682,6 +1734,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             : (bootstrap.suggestionsEnabled ?? false),
         developerMode: runtimeSettings['developer.enabled'] === true,
         reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
+        scrollbarMode:
+          runtimeSettings['appearance.scrollbars'] === 'minimal' ||
+          runtimeSettings['appearance.scrollbars'] === 'hidden'
+            ? runtimeSettings['appearance.scrollbars']
+            : 'slim',
+        onboardingCompleted: runtimeSettings['onboarding.completed_v1'] === true,
+        profile: {
+          displayName: textValue(
+            runtimeSettings['profile.display_name'],
+            current.profile.displayName,
+          ),
+          role: textValue(runtimeSettings['profile.role'], current.profile.role),
+          bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
+          avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
+        },
         personalityPreset:
           (runtimeSettings['personality.preset'] as WorkspaceSettings['personalityPreset']) ??
           current.personalityPreset,
@@ -1710,7 +1777,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         enabledToolIds: Array.isArray(runtimeSettings['tools.enabled'])
           ? (runtimeSettings['tools.enabled'] as string[])
           : current.enabledToolIds,
-        permissionMode: permissionPolicy.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
+        permissionMode: permissionPolicy?.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
+        allowRamFallback: runtimeSettings['models.local.allow_ram_fallback'] !== false,
+        maxRamGb: Math.max(
+          4,
+          Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
+        ),
       }));
       void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
         .then((items) =>
@@ -2473,7 +2545,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         (model) => model.id === modelId || model.runtimeModelId === modelId,
       );
       if (!target) throw new Error('The selected local model is no longer available.');
-      const operation = localModelActionRequest(action, target);
+      const operation = localModelActionRequest(action, target, {
+        allowRamFallback: settings.allowRamFallback,
+        maxRamGb: settings.maxRamGb,
+      });
       if (action === 'download' || action === 'resume') {
         setError(null);
         setModels((items) =>
@@ -2513,7 +2588,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [fixtureMode, guard, models, refresh, request],
+    [fixtureMode, guard, models, refresh, request, settings.allowRamFallback, settings.maxRamGb],
   );
   const installRuntimePack = useCallback(
     async (runtimeId: string, acceptedLicenseUrls: string[]) => {
@@ -2648,6 +2723,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           entries.push(['developer.enabled', patch.developerMode]);
         if (patch.reducedMotion !== undefined)
           entries.push(['accessibility.reduced_motion', patch.reducedMotion]);
+        if (patch.scrollbarMode !== undefined)
+          entries.push(['appearance.scrollbars', patch.scrollbarMode]);
+        if (patch.onboardingCompleted !== undefined)
+          entries.push(['onboarding.completed_v1', patch.onboardingCompleted]);
+        if (patch.profile !== undefined)
+          entries.push(
+            ['profile.display_name', patch.profile.displayName],
+            ['profile.role', patch.profile.role],
+            ['profile.bio', patch.profile.bio],
+            ['profile.avatar', patch.profile.avatar],
+          );
         if (patch.reasoningEffort !== undefined)
           entries.push(['models.reasoning_effort', patch.reasoningEffort]);
         if (patch.enabledToolIds !== undefined)
@@ -2671,6 +2757,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
         if (patch.permissionMode !== undefined)
           await request('broker.permission_mode.set', { mode: patch.permissionMode });
+        if (patch.allowRamFallback !== undefined)
+          entries.push(['models.local.allow_ram_fallback', patch.allowRamFallback]);
+        if (patch.maxRamGb !== undefined)
+          entries.push(['models.local.max_ram_gb', patch.maxRamGb]);
         await Promise.all(entries.map(([key, value]) => request('settings.set', { key, value })));
         if (patch.proactiveEnabled !== undefined)
           await request('memory.suggestions.enable', { enabled: patch.proactiveEnabled });

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-window-preferences-set"
+description = "Enables the window_preferences_set command without any pre-configured scope."
+commands.allow = ["window_preferences_set"]
+
+[[permission]]
+identifier = "deny-window-preferences-set"
+description = "Denies the window_preferences_set command without any pre-configured scope."
+commands.deny = ["window_preferences_set"]
