@@ -1,11 +1,67 @@
 # CupcakeAI 2.0 — Tauri overhaul and corrective review handoff
 
-**Updated:** 2026-08-29 UTC
+**Updated:** 2026-09-02 IST
 **Repository:** `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi`
 **Final local branch:** `master` (consolidate locally after verified implementation; do not push)
 **Target:** Windows 10/11 x64, local single-user application
 **Release policy:** local testing only. Do not push, publish, create a release, distribute an
 artifact, or configure an updater without explicit owner approval.
+
+## 2026-09-02 owner-ready Windows/NVIDIA continuation
+
+The current owner-test profile is ready for immediate use without a terminal:
+
+- launch `Launch CupcakeAI Test.vbs` from the repository root;
+- unlock with the owner-supplied test password;
+- the isolated profile is `E:\temp\cupcakeai-owner-test-20260902`, with WebView2 data and the
+  4.68 GiB Qwen weight also kept off `C:`;
+- Cohere and NVIDIA NIM credentials are connected through DPAPI, the app-managed Qwen3 8B
+  Q4_K_M model is installed and selected, and the verified active local runtime is
+  `llama.cpp:b10679:windows-x64-cuda-13.3`;
+- hosted and local chats both passed against this exact profile. Provision evidence is at
+  `E:\temp\cupcakeai-owner-test-20260902-evidence.json`.
+
+This continuation changes startup and product behavior rather than only adding fixtures:
+
+- encrypted history and the shell now open first; hardware inspection, provider hydration, task
+  recovery, model loading, and local acceleration wake only when the relevant feature is used;
+- selecting an installed local model triggers a just-in-time safe load, idle models can auto-evict,
+  and the UI exposes RAM fallback, system-RAM reserve, VRAM reserve, and idle-time controls;
+- the Models screen includes a live, read-only Hugging Face GGUF discovery surface and an expanded
+  NVIDIA NIM hosted catalog. Discovery results remain outside the checksum-pinned install pipeline;
+- the unlock and opening states use randomized generated dreamscapes and meaningful progress,
+  onboarding is an interactive six-step spotlight tour, and setup completion is reflected when the
+  tour is replayed;
+- twenty generated cupcake profile portraits and twenty selectable assistant portraits replaced
+  the placeholder avatars. The chosen assistant portrait is used on Home;
+- settings navigation is sticky, model license/provider filters were removed, provider cards use
+  recognizable marks and connected-state color, and the final dark-theme active-navigation
+  contrast passes the shipped WCAG AA gate;
+- close now defaults to immediate quit, performs a fast sidecar shutdown, and shows no confirmation
+  popup. Close-to-tray remains an explicit setting. Two packaged, CDP-attached acceptance runs
+  measured 1.3–3.8 seconds from click to full process exit; the sidecar itself is killed immediately.
+
+Current visual evidence was captured and inspected under `E:\temp\cupcakeai-ui-pass2` and
+`E:\temp\cupcakeai-owner-test-20260902-ui`. The native owner profile reached an unlocked ready
+workspace with no renderer error and a real SVG settings icon. Generated app art is compressed to
+about 1.1 MiB total under `apps/desktop/public/art`; stale sidecar staging directories are now
+pruned safely, and only the verified final sidecar set remains under `E:\temp\cupcakeagi-out`.
+
+Final gates for this continuation:
+
+- ESLint and workspace TypeScript typecheck pass;
+- Vitest: 10 files, 118 tests pass;
+- Python runtime: 389 pass, 1 skip;
+- Rust host: 25 tests pass; Clippy passes with warnings denied;
+- Playwright Windows desktop: 17 scenarios pass after the dark-theme contrast correction;
+- native close acceptance passes with no popup;
+- GPU ownership marker is restored to `no`, and no CupcakeAI, runtime, broker, or llama process is
+  intentionally left running.
+
+The runtime-selection research and official-source rationale are recorded in
+`docs/research/windows-nvidia-model-runtime-20260902.md`. Nothing from this continuation is pushed,
+published, or released. Keep subsequent work on local `master` unless the owner explicitly asks for
+another branch.
 
 ## 2026-09-01 headless continuation
 
