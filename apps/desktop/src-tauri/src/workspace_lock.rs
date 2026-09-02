@@ -1,5 +1,5 @@
 use crate::error::{HostError, HostResult};
-use crate::models::{WorkspaceLockState, WorkspaceLockStatus};
+use crate::models::{WorkspaceLockState, WorkspaceLockStatus, WorkspaceUnlockMode};
 use crate::sidecar::SidecarSupervisor;
 use argon2::password_hash::{rand_core::OsRng, PasswordHash, SaltString};
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
@@ -16,6 +16,7 @@ use zeroize::Zeroizing;
 const PASSWORD_MIN_CHARACTERS: usize = 15;
 const PASSWORD_MAX_CHARACTERS: usize = 128;
 const PASSWORD_MAX_BYTES: usize = 512;
+const WINDOWS_PROTECTION_ALGORITHM: &str = "WindowsDPAPI";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,12 +59,15 @@ impl WorkspaceLock {
         } else {
             None
         };
+        let unlocked = record
+            .as_ref()
+            .is_some_and(|item| item.algorithm == WINDOWS_PROTECTION_ALGORITHM);
         Ok(Arc::new(Self {
             record_path,
             supervisor,
             inner: Mutex::new(LockInner {
                 record,
-                unlocked: false,
+                unlocked,
                 failed_attempts: 0,
                 retry_at: None,
             }),
@@ -75,12 +79,18 @@ impl WorkspaceLock {
     }
 
     pub fn setup(&self, password: Zeroizing<String>) -> HostResult<WorkspaceLockStatus> {
-        validate_password(&password)?;
+        if !password.is_empty() {
+            validate_password(&password)?;
+        }
         let mut inner = self.lock();
         if inner.record.is_some() {
             return Err(HostError::invalid("A workspace password already exists"));
         }
-        let record = hash_password(&password, None)?;
+        let record = if password.is_empty() {
+            windows_protected_record(None)
+        } else {
+            hash_password(&password, None)?
+        };
         write_record(&self.record_path, &record)?;
         inner.record = Some(record);
         inner.unlocked = true;
@@ -92,17 +102,19 @@ impl WorkspaceLock {
     }
 
     pub fn unlock(&self, password: Zeroizing<String>) -> HostResult<WorkspaceLockStatus> {
-        let verifier = {
+        let (verifier, windows_protected) = {
             let inner = self.lock();
             enforce_retry_boundary(&inner)?;
-            inner
+            let record = inner
                 .record
                 .as_ref()
-                .ok_or_else(|| HostError::invalid("Create a workspace password first"))?
-                .verifier
-                .clone()
+                .ok_or_else(|| HostError::invalid("Create a workspace profile first"))?;
+            (
+                record.verifier.clone(),
+                record.algorithm == WINDOWS_PROTECTION_ALGORITHM,
+            )
         };
-        let verified = verify_password(&password, &verifier);
+        let verified = windows_protected || verify_password(&password, &verifier);
         let mut inner = self.lock();
         if !verified {
             inner.failed_attempts = inner.failed_attempts.saturating_add(1);
@@ -202,8 +214,21 @@ fn hash_password(password: &str, created_at: Option<String>) -> HostResult<Passw
     })
 }
 
+fn windows_protected_record(created_at: Option<String>) -> PasswordRecord {
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    PasswordRecord {
+        version: 2,
+        algorithm: WINDOWS_PROTECTION_ALGORITHM.to_owned(),
+        verifier: String::new(),
+        created_at: created_at.unwrap_or_else(|| now.clone()),
+        updated_at: now,
+    }
+}
+
 fn verify_password(password: &str, verifier: &str) -> bool {
-    PasswordHash::new(verifier).ok().zip(argon2id().ok())
+    PasswordHash::new(verifier)
+        .ok()
+        .zip(argon2id().ok())
         .is_some_and(|(parsed, hasher)| {
             hasher.verify_password(password.as_bytes(), &parsed).is_ok()
         })
@@ -223,10 +248,13 @@ fn validate_password(password: &str) -> HostResult<()> {
 }
 
 fn validate_record(record: &PasswordRecord) -> HostResult<()> {
-    if record.version != 1
-        || record.algorithm != "Argon2id"
-        || PasswordHash::new(&record.verifier).is_err()
-    {
+    let password_record = record.version == 1
+        && record.algorithm == "Argon2id"
+        && PasswordHash::new(&record.verifier).is_ok();
+    let windows_record = record.version == 2
+        && record.algorithm == WINDOWS_PROTECTION_ALGORITHM
+        && record.verifier.is_empty();
+    if !password_record && !windows_record {
         return Err(HostError::internal(
             "The workspace password record is damaged or unsupported",
         ));
@@ -262,6 +290,13 @@ fn status_for(inner: &LockInner) -> WorkspaceLockStatus {
         .unwrap_or(0);
     WorkspaceLockStatus {
         state,
+        unlock_mode: inner.record.as_ref().map(|record| {
+            if record.algorithm == WINDOWS_PROTECTION_ALGORITHM {
+                WorkspaceUnlockMode::Windows
+            } else {
+                WorkspaceUnlockMode::Password
+            }
+        }),
         failed_attempts: inner.failed_attempts,
         retry_after_ms,
     }
@@ -334,7 +369,10 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_password, validate_password, verify_password};
+    use super::{
+        hash_password, validate_password, validate_record, verify_password,
+        windows_protected_record,
+    };
 
     #[test]
     fn password_policy_accepts_long_unicode_passphrases() {
@@ -354,5 +392,13 @@ mod tests {
             "incorrect password value",
             &record.verifier
         ));
+    }
+
+    #[test]
+    fn windows_protected_profile_has_no_app_password_verifier() {
+        let record = windows_protected_record(None);
+        assert_eq!(record.version, 2);
+        assert!(record.verifier.is_empty());
+        assert!(validate_record(&record).is_ok());
     }
 }

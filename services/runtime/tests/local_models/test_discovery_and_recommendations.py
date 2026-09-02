@@ -70,7 +70,24 @@ def test_huggingface_discovery_is_bounded_and_read_only() -> None:
         "fitReason": "Choose a quantization on the model card to estimate device fit.",
     }
     assert captured["timeout"] == 12
-    assert "limit=40" in captured["request"].full_url  # type: ignore[union-attr]
+    assert "limit=120" in captured["request"].full_url  # type: ignore[union-attr]
+
+
+def test_huggingface_discovery_accepts_a_model_url() -> None:
+    captured: dict[str, object] = {}
+
+    def open_request(request: object, *, timeout: int) -> _Response:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return _Response([])
+
+    result = search_huggingface_gguf(
+        "https://huggingface.co/bartowski/Qwen2.5-Coder-7B-GGUF",
+        opener=open_request,
+    )
+
+    assert result["query"] == "bartowski/Qwen2.5-Coder-7B-GGUF"
+    assert "search=bartowski%2FQwen2.5-Coder-7B-GGUF" in captured["request"].full_url  # type: ignore[union-attr]
 
 
 def test_12gb_vram_recommends_7_to_9b_q4_k_m() -> None:

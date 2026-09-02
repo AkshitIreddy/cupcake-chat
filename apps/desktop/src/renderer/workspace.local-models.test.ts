@@ -29,6 +29,21 @@ describe('workspace local model integration', () => {
     );
   });
 
+  it('keeps an incomplete live catalog row from crashing the Models page', () => {
+    expect(
+      mapModel({
+        id: 'nvidia-nim:publisher/model-with-partial-metadata',
+        model: 'publisher/model-with-partial-metadata',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'nvidia-nim:publisher/model-with-partial-metadata',
+        provider: 'Unknown',
+        name: 'publisher/model-with-partial-metadata',
+      }),
+    );
+  });
+
   it('routes load and unload through the app-managed Cupcake Local lifecycle', () => {
     expect(localModelActionRequest('load', cupcakeLocal)).toEqual({
       method: 'local_models.cupcake.load',

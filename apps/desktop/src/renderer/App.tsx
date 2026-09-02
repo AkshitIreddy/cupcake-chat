@@ -116,8 +116,9 @@ interface RuntimeTaskRecord {
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
 }
-function cap(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+function cap(value: string | null | undefined, fallback = 'Unknown') {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : fallback;
 }
 function initialView(): View {
   const candidate = new URLSearchParams(window.location.search).get('view');
@@ -216,7 +217,7 @@ function OnboardingStoryArt({ step }: { step: number }) {
   return (
     <span
       className="onboarding-story-art"
-      style={atlasStyle(step, 3, 2, '/art/onboarding-story-atlas-v1.webp')}
+      style={atlasStyle(step % 6, 3, 2, '/art/onboarding-story-atlas-v1.webp')}
       aria-hidden="true"
     />
   );
@@ -547,7 +548,11 @@ function Shelf({
             }
           >
             <span>{chat.title}</span>
-            {chat.unread && <i />}
+            {chat.unread && (
+              <span className="recent-unread" aria-label="Unread conversation">
+                <Icon name="sparkle" size={10} />
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -670,7 +675,7 @@ function HomeView({
             value={workspace.settings.assistantAvatar}
             label="Selected CupcakeAI assistant"
           />
-          <span />
+          <span className="home-hero__halo" aria-hidden="true" />
         </div>
         <p className="eyebrow">Your workbench is ready</p>
         <h1>
@@ -1168,7 +1173,11 @@ function Composer({
         </div>
         <div className="composer__send">
           <button className="model-chip" onClick={onModel}>
-            <span className="provider-mark">O</span>
+            <ProviderLogo
+              id={providerDialogId(selectedModel.provider)}
+              name={selectedModel.provider}
+              className="composer-model-logo"
+            />
             <span>
               {offline && selectedModel.route !== 'Local'
                 ? 'Choose a local model'
@@ -1215,9 +1224,9 @@ function Composer({
         <div className="composer__hint">
           <RouteBadge route={offline ? 'Local' : selectedModel.route} />
           <span>
-            {offline
-              ? 'Everything in this message stays on your computer.'
-              : `Message content may be sent to ${selectedModel.provider}.`}
+            {offline || selectedModel.route === 'Local'
+              ? 'Runs privately on this computer. Nothing is sent to a model provider.'
+              : `Sent to ${selectedModel.provider} only when you press Send.`}
           </span>
           <span className="composer__keys">
             <kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> newline
@@ -3937,6 +3946,7 @@ function ModelsView({
   const [sizeFilter, setSizeFilter] = useState('all');
   const [fitFilter, setFitFilter] = useState('all');
   const [communityModels, setCommunityModels] = useState<ModelDescriptor[]>([]);
+  const [visibleCommunityCount, setVisibleCommunityCount] = useState(24);
   const [communityLoading, setCommunityLoading] = useState(true);
   const [communityError, setCommunityError] = useState<string | null>(null);
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
@@ -3972,7 +3982,7 @@ function ModelsView({
     const timer = window.setTimeout(
       () => {
         void workspace
-          .discoverCommunityModels(modelQuery)
+          .discoverCommunityModels(modelQuery, 120)
           .then((items) => {
             if (!active) return;
             setCommunityModels(items);
@@ -3996,6 +4006,11 @@ function ModelsView({
     };
   }, [modelQuery, workspace.discoverCommunityModels]);
 
+  useEffect(
+    () => setVisibleCommunityCount(24),
+    [modelQuery, tab, taskFilter, sizeFilter, fitFilter],
+  );
+
   const rankedModels = useMemo(
     () =>
       [...models, ...communityModels]
@@ -4017,9 +4032,9 @@ function ModelsView({
         }),
     [communityModels, models, workspace.hardware],
   );
-  const shown = rankedModels.filter((model) => {
+  const filteredModels = rankedModels.filter((model) => {
     const searchable =
-      `${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''}`.toLowerCase();
+      `${model.provider} ${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''}`.toLowerCase();
     return (
       (tab === 'all' || model.route.toLowerCase() === tab) &&
       (taskFilter === 'all' || model.tags.some((tag) => tag.toLowerCase() === taskFilter)) &&
@@ -4028,6 +4043,19 @@ function ModelsView({
       searchable.includes(modelQuery.trim().toLowerCase())
     );
   });
+  let communitySeen = 0;
+  const shown = filteredModels.filter((model) => {
+    if (model.status !== 'community') return true;
+    communitySeen += 1;
+    return communitySeen <= visibleCommunityCount;
+  });
+  const filteredCommunityCount = filteredModels.filter(
+    (model) => model.status === 'community',
+  ).length;
+  const hiddenCommunityCount = Math.max(0, filteredCommunityCount - visibleCommunityCount);
+  const nimModels = models.filter(
+    (model) => model.provider === 'NVIDIA NIM' && model.status !== 'setup',
+  );
   const installedLocal = rankedModels.find(
     (model) =>
       model.route === 'Local' &&
@@ -4322,7 +4350,7 @@ function ModelsView({
                         ? 'Installed'
                         : runtime.recommended
                           ? 'Recommended for this device'
-                          : cap(runtime.status.replace('-', ' '))}
+                          : cap(runtime.status?.replace('-', ' '), 'Available')}
                   </small>
                 </span>
               </div>
@@ -4356,6 +4384,33 @@ function ModelsView({
         </div>
       </section>
 
+      {workspace.providers['nvidia-nim'] && (
+        <section className="community-model-intro community-model-intro--nim" aria-live="polite">
+          <ProviderLogo id="nvidia-nim" name="NVIDIA NIM" />
+          <div>
+            <span className="eyebrow">NVIDIA NIM connected</span>
+            <h3>
+              {nimModels.length
+                ? `${nimModels.length} live NIM ${nimModels.length === 1 ? 'model is' : 'models are'} ready to choose`
+                : 'Refreshing your live NIM catalog…'}
+            </h3>
+            <p>
+              This catalog comes from your connected NIM endpoint. It refreshes independently from
+              local downloads and Hugging Face discovery.
+            </p>
+          </div>
+          <button
+            className="button"
+            onClick={() => {
+              setTab('cloud');
+              setModelQuery('NVIDIA NIM');
+            }}
+          >
+            Show NIM models
+          </button>
+        </section>
+      )}
+
       <section className="community-model-intro" aria-live="polite">
         <div className="community-model-intro__mark">HF</div>
         <div>
@@ -4369,7 +4424,7 @@ function ModelsView({
         <span className={cx('community-model-intro__state', communityError && 'is-error')}>
           {communityLoading
             ? 'Searching Hub…'
-            : (communityError ?? `${communityModels.length} community results`)}
+            : (communityError ?? `${communityModels.length} loaded from Hugging Face`)}
         </span>
       </section>
 
@@ -4445,206 +4500,219 @@ function ModelsView({
         </p>
       )}
       {shown.length ? (
-        <div className="model-grid">
-          {shown.map((model) => {
-            const fit = model.fit ?? 'pending';
-            const progress = model.download?.totalBytes
-              ? Math.min(
-                  100,
-                  Math.round((model.download.bytesReceived / model.download.totalBytes) * 100),
-                )
-              : 0;
-            const removable =
-              model.route === 'Local' &&
-              ![
-                'catalog',
-                'community',
-                'download',
-                'paused',
-                'verifying',
-                'loading',
-                'unloading',
-                'removing',
-              ].includes(model.status);
-            return (
-              <article
-                className={cx(
-                  'model-card',
-                  model.selected && 'is-selected',
-                  model.fit === 'incompatible' && 'is-incompatible',
-                )}
-                key={model.id}
-              >
-                <header>
-                  <span
-                    className={cx(
-                      'provider-logo',
-                      model.route === 'Local' && 'provider-logo--cupcake-local',
-                    )}
-                  >
-                    {model.provider === 'Hugging Face' ? (
-                      <span className="hugging-face-mark" aria-label="Hugging Face">
-                        🤗
-                      </span>
-                    ) : model.route === 'Local' ? (
-                      <Icon name="local" />
-                    ) : (
-                      <img
-                        src={`/providers/${providerDialogId(model.provider)}.svg`}
-                        alt={`${model.provider} logo`}
-                      />
-                    )}
-                  </span>
-                  <div>
-                    <span>{model.provider}</span>
-                    <h3>{model.name}</h3>
-                  </div>
-                  <RouteBadge route={model.route} />
-                </header>
-                {model.route === 'Local' && (
-                  <div className={cx('model-fit', `model-fit--${fit}`)}>
-                    <strong>
-                      {model.status === 'community'
-                        ? 'Fit after quantization choice'
-                        : fit === 'pending'
-                          ? 'Device scan pending'
-                          : cap(fit.replace('-', ' '))}
-                    </strong>
-                    <span>{model.fitReason}</span>
-                  </div>
-                )}
-                <p>{model.description}</p>
-                <div className="model-tags">
-                  {model.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                  {model.quantization && <em>{model.quantization}</em>}
-                  {model.parameters && <em>{model.parameters}</em>}
-                </div>
-                <dl className="model-specs">
-                  <div>
-                    <dt>Context</dt>
-                    <dd>{model.context}</dd>
-                  </div>
-                  <div>
-                    <dt>{model.route === 'Local' ? 'Download' : 'Cost'}</dt>
-                    <dd>
-                      {model.route === 'Local'
-                        ? model.status === 'community'
-                          ? `${(model.downloads ?? 0).toLocaleString()} downloads`
-                          : formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
-                        : model.cost}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>
-                      <StatusDot status={model.status} />
-                      {modelStatusLabel(model.status)}
-                    </dd>
-                  </div>
-                  {model.status === 'community' ? (
-                    <>
-                      <div>
-                        <dt>Source</dt>
-                        <dd>Hugging Face</dd>
-                      </div>
-                      <div>
-                        <dt>License</dt>
-                        <dd>{model.license ?? 'Review card'}</dd>
-                      </div>
-                      <div>
-                        <dt>Access</dt>
-                        <dd>{model.gated ? 'Gated' : 'Public card'}</dd>
-                      </div>
-                    </>
-                  ) : model.route === 'Local' ? (
-                    <>
-                      <div>
-                        <dt>RAM estimate</dt>
-                        <dd>{formatStorage(model.estimatedRamBytes)}</dd>
-                      </div>
-                      <div>
-                        <dt>VRAM estimate</dt>
-                        <dd>{formatStorage(model.estimatedVramBytes)}</dd>
-                      </div>
-                      <div>
-                        <dt>License</dt>
-                        <dd>{model.license ?? 'See catalog'}</dd>
-                      </div>
-                    </>
-                  ) : null}
-                </dl>
-                {['download', 'paused', 'verifying'].includes(model.status) &&
-                  model.download &&
-                  model.download.totalBytes > 0 && (
-                    <div className="download-progress" aria-label={`${model.name} download`}>
-                      <div
-                        role="progressbar"
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={progress}
-                      >
-                        <i style={{ width: `${progress}%` }} />
-                      </div>
-                      <span>
-                        {progress}% · {formatStorage(model.download.bytesReceived)} of{' '}
-                        {formatStorage(model.download.totalBytes)}
-                        {model.download.bytesPerSecond
-                          ? ` · ${formatStorage(model.download.bytesPerSecond)}/s`
-                          : ''}
-                        <br />
-                        Checksum: {model.download.checksumState ?? 'pending'}
-                      </span>
-                      <button
-                        aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
-                        onClick={() =>
-                          void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
-                        }
-                      >
-                        <Icon name={model.status === 'paused' ? 'play' : 'pause'} />
-                      </button>
-                      <button
-                        aria-label={`Cancel download for ${model.name}`}
-                        onClick={() => void runAction('cancel', model)}
-                      >
-                        <Icon name="x" />
-                      </button>
+        <>
+          <div className="model-grid">
+            {shown.map((model) => {
+              const fit = model.fit ?? 'pending';
+              const progress = model.download?.totalBytes
+                ? Math.min(
+                    100,
+                    Math.round((model.download.bytesReceived / model.download.totalBytes) * 100),
+                  )
+                : 0;
+              const removable =
+                model.route === 'Local' &&
+                ![
+                  'catalog',
+                  'community',
+                  'download',
+                  'paused',
+                  'verifying',
+                  'loading',
+                  'unloading',
+                  'removing',
+                ].includes(model.status);
+              return (
+                <article
+                  className={cx(
+                    'model-card',
+                    model.selected && 'is-selected',
+                    model.fit === 'incompatible' && 'is-incompatible',
+                  )}
+                  key={model.id}
+                >
+                  <header>
+                    <span
+                      className={cx(
+                        'provider-logo',
+                        model.route === 'Local' && 'provider-logo--cupcake-local',
+                      )}
+                    >
+                      {model.provider === 'Hugging Face' ? (
+                        <span className="hugging-face-mark" aria-label="Hugging Face">
+                          🤗
+                        </span>
+                      ) : model.route === 'Local' ? (
+                        <Icon name="local" />
+                      ) : (
+                        <img
+                          src={`/providers/${providerDialogId(model.provider)}.svg`}
+                          alt={`${model.provider} logo`}
+                        />
+                      )}
+                    </span>
+                    <div>
+                      <span>{model.provider}</span>
+                      <h3>{model.name}</h3>
+                    </div>
+                    <RouteBadge route={model.route} />
+                  </header>
+                  {model.route === 'Local' && (
+                    <div className={cx('model-fit', `model-fit--${fit}`)}>
+                      <strong>
+                        {model.status === 'community'
+                          ? 'Fit after quantization choice'
+                          : fit === 'pending'
+                            ? 'Device scan pending'
+                            : cap(fit.replace('-', ' '))}
+                      </strong>
+                      <span>{model.fitReason}</span>
                     </div>
                   )}
-                {model.benchmark && (
-                  <p className="benchmark-result">
-                    <strong>{model.benchmark.tokensPerSecond.toFixed(1)} tok/s</strong> ·{' '}
-                    {model.benchmark.contextTokens.toLocaleString()} token test ·{' '}
-                    {new Date(model.benchmark.measuredAt).toLocaleDateString()}
-                  </p>
-                )}
-                <footer>
-                  <div className="model-actions">
-                    {primaryAction(model)}
-                    {['ready', 'benchmarked'].includes(model.status) && model.route === 'Local' && (
-                      <button
-                        className="button button--quiet"
-                        disabled={workingId === model.id}
-                        onClick={() => void runAction('unload', model)}
-                      >
-                        Unload
-                      </button>
-                    )}
+                  <p>{model.description}</p>
+                  <div className="model-tags">
+                    {model.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                    {model.quantization && <em>{model.quantization}</em>}
+                    {model.parameters && <em>{model.parameters}</em>}
                   </div>
-                  <button
-                    className="icon-button"
-                    aria-label={`Remove ${model.name}`}
-                    onClick={() => setPendingRemove(model)}
-                    disabled={!removable}
-                  >
-                    <Icon name="trash" />
-                  </button>
-                </footer>
-              </article>
-            );
-          })}
-        </div>
+                  <dl className="model-specs">
+                    <div>
+                      <dt>Context</dt>
+                      <dd>{model.context}</dd>
+                    </div>
+                    <div>
+                      <dt>{model.route === 'Local' ? 'Download' : 'Cost'}</dt>
+                      <dd>
+                        {model.route === 'Local'
+                          ? model.status === 'community'
+                            ? `${(model.downloads ?? 0).toLocaleString()} downloads`
+                            : formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
+                          : model.cost}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>
+                        <StatusDot status={model.status} />
+                        {modelStatusLabel(model.status)}
+                      </dd>
+                    </div>
+                    {model.status === 'community' ? (
+                      <>
+                        <div>
+                          <dt>Source</dt>
+                          <dd>Hugging Face</dd>
+                        </div>
+                        <div>
+                          <dt>License</dt>
+                          <dd>{model.license ?? 'Review card'}</dd>
+                        </div>
+                        <div>
+                          <dt>Access</dt>
+                          <dd>{model.gated ? 'Gated' : 'Public card'}</dd>
+                        </div>
+                      </>
+                    ) : model.route === 'Local' ? (
+                      <>
+                        <div>
+                          <dt>RAM estimate</dt>
+                          <dd>{formatStorage(model.estimatedRamBytes)}</dd>
+                        </div>
+                        <div>
+                          <dt>VRAM estimate</dt>
+                          <dd>{formatStorage(model.estimatedVramBytes)}</dd>
+                        </div>
+                        <div>
+                          <dt>License</dt>
+                          <dd>{model.license ?? 'See catalog'}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                  </dl>
+                  {['download', 'paused', 'verifying'].includes(model.status) &&
+                    model.download &&
+                    model.download.totalBytes > 0 && (
+                      <div className="download-progress" aria-label={`${model.name} download`}>
+                        <div
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={progress}
+                        >
+                          <i style={{ width: `${progress}%` }} />
+                        </div>
+                        <span>
+                          {progress}% · {formatStorage(model.download.bytesReceived)} of{' '}
+                          {formatStorage(model.download.totalBytes)}
+                          {model.download.bytesPerSecond
+                            ? ` · ${formatStorage(model.download.bytesPerSecond)}/s`
+                            : ''}
+                          <br />
+                          Checksum: {model.download.checksumState ?? 'pending'}
+                        </span>
+                        <button
+                          aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
+                          onClick={() =>
+                            void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
+                          }
+                        >
+                          <Icon name={model.status === 'paused' ? 'play' : 'pause'} />
+                        </button>
+                        <button
+                          aria-label={`Cancel download for ${model.name}`}
+                          onClick={() => void runAction('cancel', model)}
+                        >
+                          <Icon name="x" />
+                        </button>
+                      </div>
+                    )}
+                  {model.benchmark && (
+                    <p className="benchmark-result">
+                      <strong>{model.benchmark.tokensPerSecond.toFixed(1)} tok/s</strong> ·{' '}
+                      {model.benchmark.contextTokens.toLocaleString()} token test ·{' '}
+                      {new Date(model.benchmark.measuredAt).toLocaleDateString()}
+                    </p>
+                  )}
+                  <footer>
+                    <div className="model-actions">
+                      {primaryAction(model)}
+                      {['ready', 'benchmarked'].includes(model.status) &&
+                        model.route === 'Local' && (
+                          <button
+                            className="button button--quiet"
+                            disabled={workingId === model.id}
+                            onClick={() => void runAction('unload', model)}
+                          >
+                            Unload
+                          </button>
+                        )}
+                    </div>
+                    <button
+                      className="icon-button"
+                      aria-label={`Remove ${model.name}`}
+                      onClick={() => setPendingRemove(model)}
+                      disabled={!removable}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  </footer>
+                </article>
+              );
+            })}
+          </div>
+          {hiddenCommunityCount > 0 && (
+            <div className="model-grid-more">
+              <button
+                className="button"
+                onClick={() => setVisibleCommunityCount((count) => count + 24)}
+              >
+                Show more community models ({hiddenCommunityCount} remaining)
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <section className="empty-state model-empty">
           <Icon name="model" size={30} />
@@ -5553,16 +5621,16 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
   );
 }
 
-function ProviderLogo({ id, name }: { id: string; name: string }) {
+function ProviderLogo({ id, name, className }: { id: string; name: string; className?: string }) {
   if (id === 'openai-compatible') {
     return (
-      <span className="provider-logo provider-logo--generic" aria-hidden="true">
+      <span className={cx('provider-logo provider-logo--generic', className)} aria-hidden="true">
         <Icon name="cloud" size={18} />
       </span>
     );
   }
   return (
-    <span className="provider-logo">
+    <span className={cx('provider-logo', className)}>
       <img src={`/providers/${id}.svg`} alt={`${name} logo`} />
     </span>
   );
@@ -5938,6 +6006,38 @@ function SettingsView({
                     {t === 'light' ? 'Cupcake Light' : t === 'dark' ? 'Cupcake Dark' : cap(t)}
                   </strong>
                   {theme === t && <Icon name="check" />}
+                </button>
+              ))}
+            </div>
+            <header className="settings-subheading">
+              <h2>Workspace wallpaper</h2>
+              <p>Artwork is softened behind app surfaces so text and controls stay readable.</p>
+            </header>
+            <div className="wallpaper-grid">
+              {(
+                [
+                  ['none', 'Quiet paper'],
+                  ['moonlit-archive', 'Moonlit archive'],
+                  ['pistachio-atelier', 'Pistachio atelier'],
+                  ['blueberry-observatory', 'Blueberry observatory'],
+                  ['copper-workshop', 'Copper workshop'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  className={workspace.settings.wallpaper === value ? 'is-active' : ''}
+                  onClick={() => void workspace.updateSettings({ wallpaper: value })}
+                  key={value}
+                >
+                  <span
+                    className={cx('wallpaper-sample', value === 'none' && 'is-none')}
+                    style={
+                      value === 'none'
+                        ? undefined
+                        : { backgroundImage: `url(/wallpapers/${value}.webp)` }
+                    }
+                  />
+                  <strong>{label}</strong>
+                  {workspace.settings.wallpaper === value && <Icon name="check" size={14} />}
                 </button>
               ))}
             </div>
@@ -8822,6 +8922,19 @@ const onboardingSteps = [
     target: null,
   },
   {
+    eyebrow: 'Your profile',
+    title: 'Choose how CupcakeAI greets you',
+    body: 'Your display name and cupcake portrait stay in this protected profile. You can change either now or any time from Settings.',
+    icon: 'user' as IconName,
+    points: [
+      'More portraits available in Settings',
+      'Custom uploads in Settings',
+      'Stored only in this profile',
+    ],
+    view: 'home' as View,
+    target: null,
+  },
+  {
     eyebrow: 'Conversations',
     title: 'Ask, attach, branch, and keep context',
     body: 'Use @ references to include a project, memory, task, or artifact. Long answers stream into the Frosting Thread, and you can branch from any message without losing the original.',
@@ -8874,6 +8987,19 @@ const onboardingSteps = [
     target: 'settings',
   },
   {
+    eyebrow: 'Appearance',
+    title: 'Set the atmosphere for your workspace',
+    body: 'Choose a theme, wallpaper, motion level, scrollbar style, startup behavior, and whether closing the window quits or sends CupcakeAI to the tray.',
+    icon: 'sparkle' as IconName,
+    points: [
+      'Readable themes and wallpapers',
+      'Slim or hidden scrollbars',
+      'Window behavior under your control',
+    ],
+    view: 'settings' as View,
+    target: null,
+  },
+  {
     eyebrow: 'Ready when you are',
     title: 'Make CupcakeAI feel like yours',
     body: 'Set your profile, communication style, theme, window behavior, model memory policy, and scrollbars in Settings. You can replay this tour there at any time.',
@@ -8899,10 +9025,14 @@ function OnboardingTour({
 }) {
   const workspace = useWorkspace();
   const [step, setStep] = useState(0);
+  const [profileName, setProfileName] = useState(workspace.settings.profile.displayName);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   useEffect(() => {
-    if (open) setStep(0);
-  }, [open]);
+    if (open) {
+      setStep(0);
+      setProfileName(workspace.settings.profile.displayName);
+    }
+  }, [open, workspace.settings.profile.displayName]);
   const item = onboardingSteps[step]!;
   const last = step === onboardingSteps.length - 1;
   useEffect(() => {
@@ -8926,7 +9056,8 @@ function OnboardingTour({
   }, [item.target, item.view, navigate, open]);
   const configuredProviderCount = Object.values(workspace.providers).filter(Boolean).length;
   const setupChecks = [
-    { label: 'Encrypted profile', done: true },
+    { label: 'Windows-protected profile', done: true },
+    { label: 'Name and cupcake portrait', done: Boolean(workspace.settings.profile.displayName) },
     {
       label: 'At least one model route',
       done: workspace.models.some((model) => model.status !== 'setup'),
@@ -8965,7 +9096,7 @@ function OnboardingTour({
             <span className="eyebrow">{item.eyebrow}</span>
             <button
               className="icon-button"
-              onClick={() => close(true)}
+              onClick={() => close(false)}
               aria-label="Skip onboarding"
             >
               <Icon name="x" />
@@ -8973,6 +9104,44 @@ function OnboardingTour({
           </header>
           <h1 id="onboarding-title">{item.title}</h1>
           <p>{item.body}</p>
+          {step === 1 && (
+            <div className="onboarding-profile-editor">
+              <label>
+                What should CupcakeAI call you?
+                <input
+                  value={profileName}
+                  maxLength={60}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  onBlur={() =>
+                    void workspace.updateSettings({
+                      profile: {
+                        ...workspace.settings.profile,
+                        displayName: profileName.trim() || workspace.settings.profile.displayName,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <div className="onboarding-avatar-grid" aria-label="Choose your cupcake portrait">
+                {Array.from({ length: 8 }, (_, index) => `atlas:${index}`).map((avatar) => (
+                  <button
+                    type="button"
+                    className={workspace.settings.profile.avatar === avatar ? 'is-selected' : ''}
+                    aria-label={`Cupcake portrait ${Number(avatar.split(':')[1]) + 1}`}
+                    aria-pressed={workspace.settings.profile.avatar === avatar}
+                    onClick={() =>
+                      void workspace.updateSettings({
+                        profile: { ...workspace.settings.profile, avatar },
+                      })
+                    }
+                    key={avatar}
+                  >
+                    <CupcakePortrait value={avatar} label="" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="onboarding-points">
             {item.points.map((point) => (
               <span key={point}>
@@ -8980,7 +9149,7 @@ function OnboardingTour({
               </span>
             ))}
           </div>
-          {step === 3 && (
+          {item.eyebrow === 'Models and providers' && (
             <div className="onboarding-setup-checks" aria-label="Configuration status">
               {setupChecks.map((check) => (
                 <span className={check.done ? 'is-done' : ''} key={check.label}>
@@ -8989,8 +9158,14 @@ function OnboardingTour({
                   <small>{check.done ? 'Ready' : 'Optional'}</small>
                 </span>
               ))}
-              <button className="text-button" onClick={() => navigate('settings')}>
-                Configure what remains <Icon name="chevron" size={13} />
+              <button
+                className="text-button"
+                onClick={() => {
+                  close(false);
+                  navigate('models');
+                }}
+              >
+                Configure models and runtimes <Icon name="chevron" size={13} />
               </button>
             </div>
           )}
@@ -9055,6 +9230,7 @@ function OnboardingTour({
 
 function LiveApp() {
   const workspace = useWorkspace();
+  const onboardingRequested = new URLSearchParams(window.location.search).get('onboarding') === '1';
   const [view, setView] = useState<View>(initialView);
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -9063,13 +9239,13 @@ function LiveApp() {
   const [providerDialog, setProviderDialog] = useState<string | null>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
-  const [onboardingOpen, setOnboardingOpen] = useState(
-    new URLSearchParams(window.location.search).get('onboarding') === '1',
-  );
+  const [onboardingOpen, setOnboardingOpen] = useState(onboardingRequested);
+  const onboardingAutoShown = useRef(onboardingRequested);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
   const [memoryRecords, setMemoryRecords] = useState(workspace.memories);
   const [toolRecords, setToolRecords] = useState(workspace.tools);
   const stopRunRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const pendingProfileApplied = useRef(false);
   stopRunRef.current = () => workspace.stopRun();
   const selectedModel =
     workspace.models.find((model) => model.selected) ?? workspace.models[0] ?? initialModels[0]!;
@@ -9077,10 +9253,43 @@ function LiveApp() {
   useEffect(() => setMemoryRecords(workspace.memories), [workspace.memories]);
   useEffect(() => setToolRecords(workspace.tools), [workspace.tools]);
   useEffect(() => {
+    if (!workspace.ready || !workspace.configurationReady || pendingProfileApplied.current) return;
+    const pending = window.sessionStorage.getItem('cupcake-pending-profile');
+    if (!pending) return;
+    pendingProfileApplied.current = true;
+    try {
+      const profile = JSON.parse(pending) as { displayName?: string; avatar?: string };
+      void workspace
+        .updateSettings({
+          profile: {
+            ...workspace.settings.profile,
+            displayName: profile.displayName?.trim() || workspace.settings.profile.displayName,
+            avatar: profile.avatar || workspace.settings.profile.avatar,
+          },
+        })
+        .finally(() => window.sessionStorage.removeItem('cupcake-pending-profile'));
+    } catch {
+      window.sessionStorage.removeItem('cupcake-pending-profile');
+    }
+  }, [
+    workspace.configurationReady,
+    workspace.ready,
+    workspace.settings.profile,
+    workspace.updateSettings,
+  ]);
+  useEffect(() => {
     const nativeDesktop = '__TAURI_INTERNALS__' in window;
-    if (nativeDesktop && workspace.ready && !workspace.settings.onboardingCompleted)
+    if (
+      nativeDesktop &&
+      workspace.ready &&
+      workspace.configurationReady &&
+      !workspace.settings.onboardingCompleted &&
+      !onboardingAutoShown.current
+    ) {
+      onboardingAutoShown.current = true;
       setOnboardingOpen(true);
-  }, [workspace.ready, workspace.settings.onboardingCompleted]);
+    }
+  }, [workspace.configurationReady, workspace.ready, workspace.settings.onboardingCompleted]);
   useEffect(() => {
     const configured = workspace.settings.theme;
     const urlTheme = new URLSearchParams(window.location.search).get('theme');
@@ -9203,7 +9412,9 @@ function LiveApp() {
     />
   );
   let content: ReactNode;
-  if (!workspace.ready && !workspace.fixtureMode) content = <WorkspaceOpening />;
+  const forceOpening =
+    workspace.fixtureMode && new URLSearchParams(window.location.search).get('opening') === '1';
+  if ((!workspace.ready && !workspace.fixtureMode) || forceOpening) content = <WorkspaceOpening />;
   else if (view === 'home')
     content = (
       <HomeView
@@ -9302,8 +9513,17 @@ function LiveApp() {
     'developer',
     'about',
   ].includes(view);
+  const wallpaperUrl =
+    workspace.settings.wallpaper === 'none'
+      ? undefined
+      : `url(/wallpapers/${workspace.settings.wallpaper}.webp)`;
   return (
-    <div className="app-shell">
+    <div
+      className={cx('app-shell', wallpaperUrl && 'app-shell--wallpaper')}
+      style={
+        wallpaperUrl ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties) : undefined
+      }
+    >
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -9330,7 +9550,7 @@ function LiveApp() {
         id="main-content"
         tabIndex={-1}
       >
-        {workspace.fixtureMode && (
+        {workspace.fixtureMode && !forceOpening && (
           <div className="fixture-banner" role="status">
             <Icon name="info" />
             Deterministic fixture — desktop bridge absent; no provider, file, or tool call can leave
@@ -9471,21 +9691,33 @@ function WorkspaceUnlockGate({
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [revealed, setRevealed] = useState(false);
+  const [securityMode, setSecurityMode] = useState<'windows' | 'password'>('windows');
+  const [displayName, setDisplayName] = useState('');
+  const [avatar, setAvatar] = useState('atlas:0');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [dreamscape] = useState(() => Math.floor(Math.random() * 4));
   const needsSetup = status?.state === 'needs_setup';
+  const windowsProtected = status?.unlockMode === 'windows';
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!window.cupcake || !status || busy) return;
     setError('');
-    if (needsSetup && password !== confirmation) {
+    if (needsSetup && securityMode === 'password' && password !== confirmation) {
       setError('The passwords do not match.');
       return;
     }
+    if (needsSetup) {
+      window.sessionStorage.setItem(
+        'cupcake-pending-profile',
+        JSON.stringify({ displayName: displayName.trim() || 'CupcakeAI user', avatar }),
+      );
+    }
     setBusy(true);
     const request = needsSetup
-      ? window.cupcake.workspace.setup(password)
+      ? securityMode === 'windows'
+        ? window.cupcake.workspace.setupWithoutPassword()
+        : window.cupcake.workspace.setup(password)
       : window.cupcake.workspace.unlock(password);
     void request
       .then((next) => {
@@ -9505,14 +9737,28 @@ function WorkspaceUnlockGate({
           <div className="workspace-unlock__mark">
             <Icon name="shield" size={30} />
           </div>
-          <span className="eyebrow">App-locked local workspace</span>
-          <h1>{needsSetup ? 'Create your CupcakeAI password' : 'Unlock CupcakeAI'}</h1>
+          <span className="eyebrow">
+            {needsSetup
+              ? 'Personal setup'
+              : windowsProtected
+                ? 'Windows-protected profile'
+                : 'App-locked local workspace'}
+          </span>
+          <h1>
+            {needsSetup
+              ? 'Make this CupcakeAI yours'
+              : windowsProtected
+                ? 'Open CupcakeAI'
+                : 'Unlock CupcakeAI'}
+          </h1>
           <p>
             {status === null
               ? 'Checking this local profile…'
               : needsSetup
-                ? 'Choose a password for this CupcakeAI profile. You will enter it whenever the app starts.'
-                : 'Enter the password for this CupcakeAI profile. Models, tools, and providers stay stopped until it is accepted.'}
+                ? 'Choose your name, cupcake portrait, and whether you want an extra password at startup.'
+                : windowsProtected
+                  ? 'This profile uses your Windows account protection and does not require a separate app password.'
+                  : 'Enter the password for this CupcakeAI profile. Models, tools, and providers stay stopped until it is accepted.'}
           </p>
           {status !== null && (
             <form className="workspace-unlock__form" onSubmit={submit}>
@@ -9526,25 +9772,87 @@ function WorkspaceUnlockGate({
                 tabIndex={-1}
                 aria-hidden="true"
               />
-              <label>
-                {needsSetup ? 'New password' : 'Password'}
-                <span className="password-input">
-                  <input
-                    type={revealed ? 'text' : 'password'}
-                    autoComplete={needsSetup ? 'new-password' : 'current-password'}
-                    minLength={15}
-                    maxLength={128}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoFocus
-                    required
-                  />
-                  <button type="button" onClick={() => setRevealed((value) => !value)}>
-                    {revealed ? 'Hide' : 'Show'}
-                  </button>
-                </span>
-              </label>
               {needsSetup && (
+                <div className="workspace-first-profile">
+                  <label>
+                    Your name
+                    <input
+                      value={displayName}
+                      placeholder="Your name"
+                      maxLength={60}
+                      onChange={(event) => setDisplayName(event.target.value)}
+                      autoFocus
+                    />
+                  </label>
+                  <div className="workspace-avatar-picker" aria-label="Choose a cupcake portrait">
+                    {Array.from({ length: 8 }, (_, index) => `atlas:${index}`).map((value) => (
+                      <button
+                        type="button"
+                        className={avatar === value ? 'is-selected' : ''}
+                        aria-label={`Cupcake portrait ${Number(value.split(':')[1]) + 1}`}
+                        aria-pressed={avatar === value}
+                        onClick={() => setAvatar(value)}
+                        key={value}
+                      >
+                        <CupcakePortrait value={value} label="" />
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="workspace-security-choice"
+                    role="radiogroup"
+                    aria-label="Startup security"
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={securityMode === 'windows'}
+                      className={securityMode === 'windows' ? 'is-selected' : ''}
+                      onClick={() => setSecurityMode('windows')}
+                    >
+                      <Icon name="sparkle" />
+                      <span>
+                        <strong>Open with Windows</strong>
+                        <small>No separate app password</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={securityMode === 'password'}
+                      className={securityMode === 'password' ? 'is-selected' : ''}
+                      onClick={() => setSecurityMode('password')}
+                    >
+                      <Icon name="shield" />
+                      <span>
+                        <strong>Require a password</strong>
+                        <small>Extra gate every launch</small>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              {(!needsSetup || securityMode === 'password') && !windowsProtected && (
+                <label>
+                  {needsSetup ? 'New password' : 'Password'}
+                  <span className="password-input">
+                    <input
+                      type={revealed ? 'text' : 'password'}
+                      autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                      minLength={15}
+                      maxLength={128}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      autoFocus={!needsSetup}
+                      required
+                    />
+                    <button type="button" onClick={() => setRevealed((value) => !value)}>
+                      {revealed ? 'Hide' : 'Show'}
+                    </button>
+                  </span>
+                </label>
+              )}
+              {needsSetup && securityMode === 'password' && (
                 <label>
                   Confirm password
                   <input
@@ -9558,7 +9866,9 @@ function WorkspaceUnlockGate({
                   />
                 </label>
               )}
-              <small>15–128 characters. Spaces and Unicode are welcome.</small>
+              {(!needsSetup || securityMode === 'password') && !windowsProtected && (
+                <small>15–128 characters. Spaces and Unicode are welcome.</small>
+              )}
               {error && (
                 <p className="field-error" role="alert">
                   {error}
@@ -9572,8 +9882,12 @@ function WorkspaceUnlockGate({
                 {busy
                   ? 'Protecting…'
                   : needsSetup
-                    ? 'Create password and open'
-                    : 'Unlock workspace'}
+                    ? securityMode === 'windows'
+                      ? 'Save profile and open'
+                      : 'Create password and open'
+                    : windowsProtected
+                      ? 'Open workspace'
+                      : 'Unlock workspace'}
               </button>
               {busy && (
                 <div className="workspace-unlock__progress" role="status">
@@ -9599,11 +9913,12 @@ function WorkspaceUnlockGate({
           </div>
           {detailsOpen && (
             <div className="workspace-unlock__details">
-              <strong>The app password and Windows protection do different jobs.</strong>
+              <strong>An app password is optional; Windows protection is always active.</strong>
               <p>
-                This password blocks CupcakeAI and its sidecars. Windows Data Protection (DPAPI)
-                separately protects the profile key, which derives encryption keys for SQLCipher
-                data and immutable artifacts.
+                A separate password can block CupcakeAI and its sidecars at launch. With quick-open,
+                the current Windows account is the gate. In both modes, Windows Data Protection
+                (DPAPI) protects the profile key used for encrypted SQLCipher data and immutable
+                artifacts.
               </p>
             </div>
           )}

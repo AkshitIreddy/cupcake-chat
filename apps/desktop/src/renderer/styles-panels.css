@@ -832,6 +832,28 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 12px;
 }
+.model-grid-more {
+  display: grid;
+  place-items: center;
+  padding: 20px 0 4px;
+}
+.community-model-intro--nim {
+  border-color: color-mix(in srgb, #76b900, var(--line) 48%);
+  background:
+    radial-gradient(
+      circle at 92% 12%,
+      color-mix(in srgb, #76b900, transparent 84%),
+      transparent 34%
+    ),
+    var(--paper);
+}
+.community-model-intro--nim > .provider-logo {
+  width: 42px;
+  height: 42px;
+  padding: 8px;
+  border-radius: 13px;
+  background: #111;
+}
 .model-card {
   display: flex;
   flex-direction: column;
@@ -2057,6 +2079,57 @@
 .theme-card--classic .theme-sample em {
   background: #dff6e8;
 }
+.settings-subheading {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 9px;
+}
+.wallpaper-grid > button {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+}
+.wallpaper-grid > button.is-active {
+  border-color: var(--berry);
+  box-shadow: 0 0 0 2px var(--berry-soft);
+}
+.wallpaper-grid > button > svg {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px;
+  border-radius: 99px;
+  background: var(--berry);
+  color: #fff;
+}
+.wallpaper-grid strong {
+  padding: 0 3px 3px;
+  font-size: 10px;
+}
+.wallpaper-sample {
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background-position: center;
+  background-size: cover;
+}
+.wallpaper-sample.is-none {
+  background:
+    radial-gradient(circle at 22% 22%, var(--berry-soft), transparent 42%),
+    linear-gradient(145deg, var(--paper), var(--crumb));
+}
 .setting-row {
   display: flex;
   align-items: center;
@@ -2185,7 +2258,8 @@
   pointer-events: none;
 }
 .onboarding-layer.has-target {
-  place-items: end;
+  align-items: center;
+  justify-items: end;
   background: transparent;
   backdrop-filter: none;
 }
@@ -2221,7 +2295,7 @@
 .onboarding-layer.has-target .onboarding-card {
   width: min(780px, calc(100vw - 56px));
   min-height: min(500px, calc(100vh - var(--titlebar-height) - 56px));
-  margin: 0 20px 20px 0;
+  margin: 0 20px 0 0;
   grid-template-columns: minmax(220px, 0.72fr) minmax(380px, 1.28fr);
 }
 .onboarding-art {
@@ -2229,6 +2303,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
+  padding: 24px;
   background:
     radial-gradient(
       circle at 50% 45%,
@@ -2240,9 +2315,12 @@
 .onboarding-story-art {
   position: relative;
   z-index: 2;
-  width: 100%;
-  height: 100%;
+  width: min(100%, 310px);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 24px;
   background-repeat: no-repeat;
+  box-shadow: 0 22px 55px rgba(30, 18, 23, 0.2);
   filter: saturate(0.94) contrast(0.98);
 }
 .onboarding-orbit {
@@ -2317,6 +2395,43 @@
   border-radius: 50%;
   background: var(--pistachio-soft);
   color: var(--pistachio-ink);
+}
+.onboarding-profile-editor {
+  display: grid;
+  gap: 13px;
+  margin: 20px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--crumb);
+}
+.onboarding-profile-editor label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.onboarding-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.onboarding-avatar-grid button {
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: var(--paper);
+}
+.onboarding-avatar-grid button.is-selected {
+  border-color: var(--berry);
+  box-shadow: 0 0 0 2px var(--berry-soft);
+}
+.onboarding-avatar-grid .cupcake-portrait {
+  width: 100%;
+  height: 100%;
 }
 .onboarding-setup-checks {
   display: grid;
@@ -2425,9 +2540,10 @@
   }
   .onboarding-art {
     min-height: 150px;
+    padding: 12px;
   }
-  .onboarding-art > img {
-    width: 130px;
+  .onboarding-story-art {
+    width: 138px;
   }
   .onboarding-copy {
     padding: 27px;

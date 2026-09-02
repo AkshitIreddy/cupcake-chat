@@ -76,6 +76,8 @@ export function installTauriDesktopApi(): boolean {
     workspace: {
       status: () => invoke<WorkspaceLockStatus>('workspace_lock_status'),
       setup: (password) => invoke<WorkspaceLockStatus>('workspace_password_setup', { password }),
+      setupWithoutPassword: () =>
+        invoke<WorkspaceLockStatus>('workspace_password_setup', { password: '' }),
       unlock: (password) => invoke<WorkspaceLockStatus>('workspace_unlock', { password }),
       lock: () => invoke<WorkspaceLockStatus>('workspace_lock'),
       changePassword: (currentPassword, newPassword) =>
@@ -83,8 +85,7 @@ export function installTauriDesktopApi(): boolean {
           currentPassword,
           newPassword,
         }),
-      onStatus: (listener) =>
-        subscribe<WorkspaceLockStatus>('cupcake://workspace-lock', listener),
+      onStatus: (listener) => subscribe<WorkspaceLockStatus>('cupcake://workspace-lock', listener),
     },
     runtime: {
       status: () => invoke<RuntimeStatus>('runtime_status'),

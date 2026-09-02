@@ -11,11 +11,12 @@ import json
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 HUGGING_FACE_API = "https://huggingface.co/api/models"
-MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_RESPONSE_BYTES = 6 * 1024 * 1024
+MAX_RESULTS = 120
 _PARAMETERS = re.compile(r"(?:^|[-_/ ])(\d+(?:\.\d+)?)\s*[bB](?:[-_/ ]|$)")
 
 
@@ -27,8 +28,8 @@ def search_huggingface_gguf(
 ) -> dict[str, Any]:
     """Return popular Hugging Face GGUF model cards with strict I/O bounds."""
 
-    clean_query = " ".join(str(query).strip().split())[:80]
-    clean_limit = max(1, min(int(limit), 40))
+    clean_query = _normalize_query(query)
+    clean_limit = max(1, min(int(limit), MAX_RESULTS))
     parameters = {
         "filter": "gguf",
         "sort": "downloads",
@@ -107,5 +108,19 @@ def search_huggingface_gguf(
         "source": "huggingface",
         "query": clean_query,
         "count": len(items),
+        "limit": clean_limit,
+        "hasMore": len(items) == clean_limit,
         "models": items,
     }
+
+
+def _normalize_query(query: object) -> str:
+    """Accept keywords, publisher/model IDs, and pasted Hugging Face URLs."""
+
+    clean = " ".join(str(query).strip().split())
+    if clean.startswith(("https://huggingface.co/", "http://huggingface.co/")):
+        parsed = urlparse(clean)
+        segments = [unquote(part) for part in parsed.path.split("/") if part]
+        if len(segments) >= 2:
+            clean = "/".join(segments[:2])
+    return clean[:120]

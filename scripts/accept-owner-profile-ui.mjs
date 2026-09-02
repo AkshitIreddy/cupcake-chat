@@ -125,14 +125,16 @@ try {
   if (result.workspaceReady) {
     const button = page.getByRole('button', { name: 'Settings', exact: true });
     const svg = button.locator('svg');
-    await svg.screenshot({ path: join(output, 'settings-icon.png') });
-    result.settingsIcon = {
-      box: await svg.boundingBox(),
-      viewBox: await svg.getAttribute('viewBox'),
-      paths: await svg
-        .locator('path')
-        .evaluateAll((items) => items.map((item) => item.getAttribute('d'))),
-    };
+    if ((await svg.count()) > 0) {
+      await svg.screenshot({ path: join(output, 'settings-icon.png') });
+      result.settingsIcon = {
+        box: await svg.boundingBox(),
+        viewBox: await svg.getAttribute('viewBox'),
+        paths: await svg
+          .locator('path')
+          .evaluateAll((items) => items.map((item) => item.getAttribute('d'))),
+      };
+    }
   }
 } finally {
   password.fill(0);

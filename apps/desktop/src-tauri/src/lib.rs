@@ -10,13 +10,13 @@ mod sidecar;
 mod state;
 mod tray;
 mod url_policy;
-mod workspace_lock;
 mod window_preferences;
+mod workspace_lock;
 
 use crate::commands::*;
 use crate::state::HostState;
-use tauri::Manager;
 use std::sync::Arc;
+use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
@@ -78,11 +78,18 @@ pub fn run() {
             );
             let workspace_lock =
                 workspace_lock::WorkspaceLock::load(&data_directory, supervisor.clone())?;
-            let window_preferences = Arc::new(
-                window_preferences::WindowPreferencesStore::load(&data_directory)?,
-            );
+            if workspace_lock.status().state == models::WorkspaceLockState::Unlocked {
+                let _ = supervisor.start();
+            }
+            let window_preferences = Arc::new(window_preferences::WindowPreferencesStore::load(
+                &data_directory,
+            )?);
             let startup_preferences = window_preferences.get();
-            app.manage(HostState::new(supervisor, workspace_lock, window_preferences));
+            app.manage(HostState::new(
+                supervisor,
+                workspace_lock,
+                window_preferences,
+            ));
             tray::install(app)?;
 
             let deep_link_handle = app.handle().clone();
@@ -93,8 +100,8 @@ pub fn run() {
                 );
             });
 
-            // The runtime and provider sidecars remain stopped until an app-owned
-            // password is created or verified for this launch.
+            // Password-gated profiles start after verification. Windows quick-open profiles
+            // already passed their OS account boundary while loading the DPAPI-backed profile.
             if let Some(window) = app.get_webview_window("main") {
                 commands::apply_window_preferences(&window, &startup_preferences)?;
             }

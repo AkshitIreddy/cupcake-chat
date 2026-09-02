@@ -1,7 +1,7 @@
 use crate::file_handles::FileHandleRegistry;
 use crate::sidecar::SidecarSupervisor;
-use crate::workspace_lock::WorkspaceLock;
 use crate::window_preferences::WindowPreferencesStore;
+use crate::workspace_lock::WorkspaceLock;
 use crate::{error::HostError, error::HostResult};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

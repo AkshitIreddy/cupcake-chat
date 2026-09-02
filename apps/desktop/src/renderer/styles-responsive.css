@@ -244,6 +244,15 @@
     left: 50%;
   }
 }
+
+@media (max-width: 640px) {
+  .workspace-opening {
+    padding: 16px;
+  }
+  .workspace-opening__card {
+    padding: 24px;
+  }
+}
 @media (max-width: 719px) {
   .workspace-unlock {
     grid-template-columns: 1fr;

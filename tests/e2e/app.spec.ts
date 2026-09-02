@@ -1,13 +1,98 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
+test('workspace opening composition stays optically centered', async ({ page }) => {
+  await page.goto('/?opening=1');
+  const card = page.locator('.workspace-opening__card');
+  await expect(card).toBeVisible();
+  const geometry = await card.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      cardCenterX: rect.left + rect.width / 2,
+      cardCenterY: rect.top + rect.height / 2,
+      hostCenterX: (() => {
+        const host = document.querySelector('.app-content')?.getBoundingClientRect();
+        return host ? host.left + host.width / 2 : window.innerWidth / 2;
+      })(),
+      hostCenterY: (() => {
+        const host = document.querySelector('.app-content')?.getBoundingClientRect();
+        return host ? host.top + host.height / 2 : window.innerHeight / 2;
+      })(),
+    };
+  });
+  expect(Math.abs(geometry.cardCenterX - geometry.hostCenterX)).toBeLessThanOrEqual(8);
+  expect(Math.abs(geometry.cardCenterY - geometry.hostCenterY)).toBeLessThanOrEqual(8);
+});
+
+test('fresh Windows profile can choose quick-open without creating a password', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __quickSetupCalled?: boolean; cupcake?: unknown };
+    target.__quickSetupCalled = false;
+    target.cupcake = {
+      apiVersion: 1,
+      platform: 'win32',
+      workspace: {
+        status: () => Promise.resolve({ state: 'needs_setup', failedAttempts: 0, retryAfterMs: 0 }),
+        setup: () =>
+          Promise.resolve({
+            state: 'unlocked',
+            unlockMode: 'password',
+            failedAttempts: 0,
+            retryAfterMs: 0,
+          }),
+        setupWithoutPassword: () => {
+          target.__quickSetupCalled = true;
+          return Promise.resolve({ state: 'needs_setup', failedAttempts: 0, retryAfterMs: 0 });
+        },
+        unlock: () => Promise.resolve({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 }),
+        onStatus: () => () => undefined,
+      },
+      window: {
+        isMaximized: () => Promise.resolve(false),
+        minimize: () => Promise.resolve(),
+        toggleMaximize: () => Promise.resolve(false),
+        close: () => Promise.resolve(),
+        onCloseRequested: () => () => undefined,
+      },
+    };
+  });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Make this CupcakeAI yours' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: /Open with Windows/ })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(page.getByLabel('New password')).toHaveCount(0);
+  await page.getByLabel('Your name').fill('Fresh user');
+  await page.getByRole('button', { name: 'Save profile and open' }).click();
+  await page.waitForFunction(() =>
+    Boolean((window as typeof window & { __quickSetupCalled?: boolean }).__quickSetupCalled),
+  );
+});
+
 test('first-run tour is complete, replayable, and keeps search at the top of the shelf', async ({
   page,
 }) => {
   await page.goto('/?onboarding=1');
   const tour = page.locator('.onboarding-card');
   await expect(tour).toBeVisible();
-  for (let step = 0; step < 5; step += 1) {
+  const art = page.locator('.onboarding-story-art');
+  const artBox = await art.boundingBox();
+  expect(artBox).not.toBeNull();
+  expect(Math.abs((artBox?.width ?? 0) - (artBox?.height ?? 0))).toBeLessThanOrEqual(3);
+  await tour.getByRole('button', { name: 'Continue' }).click();
+  const targetedBox = await tour.boundingBox();
+  expect(targetedBox).not.toBeNull();
+  expect(
+    Math.abs(
+      (targetedBox?.y ?? 0) +
+        (targetedBox?.height ?? 0) / 2 -
+        (44 + ((page.viewportSize()?.height ?? 900) - 44) / 2),
+    ),
+  ).toBeLessThanOrEqual(12);
+  for (let step = 1; step < 7; step += 1) {
     await tour.getByRole('button', { name: 'Continue' }).click();
   }
   await expect(page.getByRole('heading', { name: 'Make CupcakeAI feel like yours' })).toBeVisible();
@@ -15,10 +100,56 @@ test('first-run tour is complete, replayable, and keeps search at the top of the
   await expect(tour).toBeHidden();
   await expect(page.getByRole('button', { name: /Search CupcakeAI/ })).toBeVisible();
 
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('button', { name: 'General' }).click();
   await page.getByRole('button', { name: /Replay onboarding/ }).click();
   await expect(page.getByRole('dialog', { name: 'One calm place for serious work' })).toBeVisible();
+});
+
+test('model discovery exposes a broad Hub result set with progressive disclosure', async ({
+  page,
+}) => {
+  await page.goto('/?view=models');
+  const state = page.locator('.community-model-intro__state');
+  await expect(state).toContainText(/community results|loaded from Hugging Face/i);
+  const count = Number((await state.textContent())?.match(/\d+/)?.[0] ?? 0);
+  expect(count).toBeGreaterThan(30);
+  await expect(page.getByRole('button', { name: /Show more community models/i })).toBeVisible();
+});
+
+test('Home uses intentional aligned marks instead of bare status dots', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.shelf__recent button > i')).toHaveCount(0);
+  await expect(page.locator('.composer-model-logo')).toBeVisible();
+  const alignment = await page.locator('.composer-model-logo').evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const parent = element.parentElement?.getBoundingClientRect();
+    return parent ? Math.abs(rect.y + rect.height / 2 - (parent.y + parent.height / 2)) : 999;
+  });
+  expect(alignment).toBeLessThanOrEqual(1);
+  const portrait = page.locator('.home-hero__mascot > .cupcake-portrait');
+  await expect(portrait).toBeVisible();
+  expect(await portrait.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain(
+    'cupcake-avatar-atlas-v1.webp',
+  );
+});
+
+test('Appearance offers generated wallpapers and applies one to the workspace', async ({
+  page,
+}) => {
+  await page.goto('/?view=settings');
+  await page.getByRole('button', { name: 'Appearance' }).click();
+  const choice = page.getByRole('button', { name: /Blueberry observatory/ });
+  await expect(choice).toBeVisible();
+  await choice.click();
+  await expect(choice).toHaveClass(/is-active/);
+  await expect(page.locator('.app-shell')).toHaveClass(/app-shell--wallpaper/);
+  const background = await page
+    .locator('.app-shell')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(background).toContain('blueberry-observatory.webp');
 });
 
 test('profile, scrollbar, and RAM fallback controls update the local UI', async ({ page }) => {
@@ -469,19 +600,16 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
                 providers: [{ provider: 'nvidia-nim', configured: true }],
               },
               'providers.catalog.refresh': {
-                catalog: {
-                  models: [
-                    {
-                      id: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
-                      provider: 'nvidia-nim',
-                      model: 'nvidia/nemotron-3-nano-30b-a3b',
-                      display_name: 'Nemotron 3 Nano',
-                      privacy_route: 'cloud',
-                      capabilities: { streaming: true },
-                      metadata: { chat_compatibility: 'unknown' },
-                    },
-                  ],
-                },
+                models: [
+                  {
+                    id: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+                    model: 'nvidia/nemotron-3-nano-30b-a3b',
+                    display_name: 'Nemotron 3 Nano',
+                    privacy_route: 'cloud',
+                    capabilities: { streaming: true },
+                    metadata: { chat_compatibility: 'unknown' },
+                  },
+                ],
               },
               'settings.list': {},
               'migration.detect': { state: 'not_found', available: false },
@@ -495,6 +623,12 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   });
 
   await page.goto('/');
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  await page.getByRole('button', { name: 'Models', exact: true }).click();
+  await expect(page.locator('.community-model-intro--nim h3')).toHaveText(
+    '1 live NIM model is ready to choose',
+  );
   await page.keyboard.press('Control+M');
   const picker = page.getByRole('dialog', { name: 'Choose model' });
   const nim = picker.getByRole('button', { name: /NVIDIA NIM/ });

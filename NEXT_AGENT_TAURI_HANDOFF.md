@@ -1,11 +1,53 @@
 # CupcakeAI 2.0 — Tauri overhaul and corrective review handoff
 
-**Updated:** 2026-09-02 IST
+**Updated:** 2026-09-03 IST
 **Repository:** `C:\Users\akshi\Desktop\Code Palace\Cupcakeagi`
 **Final local branch:** `master` (consolidate locally after verified implementation; do not push)
 **Target:** Windows 10/11 x64, local single-user application
 **Release policy:** local testing only. Do not push, publish, create a release, distribute an
 artifact, or configure an updater without explicit owner approval.
+
+## 2026-09-03 first-run, discovery, and visual continuation
+
+This continuation is implemented locally on `master` and is not pushed. The owner-test launcher
+remains `Launch CupcakeAI Test.vbs`; it starts the real `CupcakeAI.exe` without a console and points
+it at `E:\temp\cupcakeai-owner-test-20260902`.
+
+Implemented product changes:
+
+- first setup now asks for the user's name and cupcake portrait and offers either Windows-protected
+  quick-open or an extra app password. Quick-open still uses DPAPI plus the existing encrypted
+  SQLCipher/artifact stores; it only removes the separate password prompt;
+- the post-unlock history loader is centered at desktop and narrow sizes and uses randomized
+  generated artwork. Optional services remain lazy rather than blocking old-chat access;
+- onboarding is now an eight-step, replayable, interactive tutorial with unsquashed square art,
+  profile editing, readiness checks for providers/local models/runtimes, and links to unfinished
+  setup. Dismissing it no longer lets later configuration updates reopen it during the session;
+- Home's assistant portrait, unread treatment, model/provider mark, and local/cloud privacy copy
+  were corrected. Appearance includes four generated selectable workspace wallpapers;
+- the Models screen requests up to 120 read-only Hugging Face GGUF results, progressively reveals
+  them, accepts pasted Hugging Face model URLs, and separately identifies the connected live NVIDIA
+  NIM catalog. Live NIM rows without a provider field are normalized at the trusted response
+  boundary instead of crashing the page or appearing as `Unknown`;
+- large generated Tauri sidecar inputs now live under `E:\temp\cupcakeagi-tauri-inputs` through
+  junctions. `scripts/package-sidecars.mjs` resolves junction targets before atomic promotion, and
+  the freshly frozen packaged runtime contains the expanded discovery implementation.
+
+Fresh packaged native acceptance against the owner profile reports 65 live NVIDIA NIM models,
+120 Hugging Face results, 106 initially rendered model cards, and zero WebView errors. The inspected
+native screenshot is `E:\temp\cupcakeai-owner-test-20260903-ui\native-models-nim.png`; broader
+visual evidence is under `E:\temp\cupcakeai-visual-20260903`.
+
+Verification for this continuation:
+
+- ESLint and workspace TypeScript typecheck pass;
+- Vitest: 10 files, 119 tests pass;
+- Python runtime: 390 pass, 1 expected skip;
+- Rust host: 26 tests pass; Clippy passes with warnings denied;
+- package smoke and frozen-sidecar verification pass;
+- Playwright's 44-check desktop/narrow matrix passes after the narrow loader correction;
+- CUDA 13 remains the active owner-profile runtime, but no GPU inference was needed for this
+  continuation. Recheck `gpu use.txt` and task-owned processes before claiming a clean final state.
 
 ## 2026-09-02 owner-ready Windows/NVIDIA continuation
 

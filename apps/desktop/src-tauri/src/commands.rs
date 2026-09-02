@@ -7,9 +7,7 @@ use crate::models::{
 };
 use crate::state::HostState;
 use crate::url_policy::normalize_external_url;
-use crate::window_preferences::{
-    set_launch_at_login, MinimizeBehavior, WindowPreferences,
-};
+use crate::window_preferences::{set_launch_at_login, MinimizeBehavior, WindowPreferences};
 use serde_json::Value;
 use std::collections::HashSet;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};

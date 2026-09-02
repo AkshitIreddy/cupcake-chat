@@ -215,6 +215,8 @@ export interface LegacyMigrationState {
 
 export interface WorkspaceSettings {
   theme: 'light' | 'dark' | 'minimal' | 'classic';
+  wallpaper:
+    'none' | 'moonlit-archive' | 'pistachio-atelier' | 'blueberry-observatory' | 'copper-workshop';
   offline: boolean;
   proactiveEnabled: boolean;
   developerMode: boolean;
@@ -312,7 +314,7 @@ interface RuntimeTask {
 interface RuntimeModel {
   id?: string;
   model_id?: string;
-  provider: string;
+  provider?: string;
   model?: string;
   display_name?: string;
   privacy_route?: string;
@@ -371,6 +373,7 @@ interface RuntimeArtifact {
 interface WorkspaceContextValue {
   fixtureMode: boolean;
   ready: boolean;
+  configurationReady: boolean;
   busy: boolean;
   error: string | null;
   runtimeEvents: RuntimeEvent[];
@@ -457,7 +460,7 @@ interface WorkspaceContextValue {
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
   installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<void>;
   activateRuntimePack(runtime: LocalRuntimeRecord): Promise<void>;
-  discoverCommunityModels: (query?: string) => Promise<ModelDescriptor[]>;
+  discoverCommunityModels: (query?: string, limit?: number) => Promise<ModelDescriptor[]>;
   setToolEnabled(toolId: string, enabled: boolean): Promise<void>;
   connectMcp(input: {
     name: string;
@@ -467,7 +470,7 @@ interface WorkspaceContextValue {
   disconnectMcp(connectionId: string): Promise<void>;
   preflightTool(tool: ToolDescriptor): Promise<void>;
   resolveApproval(activity: ToolActivity, approved: boolean): Promise<void>;
-  updateSettings(patch: Partial<WorkspaceSettings>): Promise<void>;
+  updateSettings: (patch: Partial<WorkspaceSettings>) => Promise<void>;
   chooseLegacySource(): Promise<void>;
   executeLegacyMigration(): Promise<void>;
   declineLegacyMigration(): Promise<void>;
@@ -487,8 +490,9 @@ function displayDate(value?: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function cap(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1).replaceAll('_', ' ');
+function cap(value: unknown, fallback = 'Unknown'): string {
+  const text = textValue(value).trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1).replaceAll('_', ' ') : fallback;
 }
 
 function textValue(value: unknown, fallback = ''): string {
@@ -1139,11 +1143,13 @@ export function mapCupcakeRuntimePacks(status: CupcakeLocalStatus): LocalRuntime
 }
 
 export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
-  const id = item.id ?? item.model_id ?? `${item.provider}:${item.model ?? 'model'}`;
+  const provider = textValue(item.provider ?? item.metadata?.provider, 'unknown');
+  const id =
+    textValue(item.id ?? item.model_id) || `${provider}:${textValue(item.model, 'model')}`;
   const kind = runtimeKind(item);
   const local =
     item.privacy_route === 'local' ||
-    ['local', 'cupcake_local', 'cupcake_llama_cpp'].includes(kind ?? item.provider);
+    ['local', 'cupcake_local', 'cupcake_llama_cpp'].includes(kind ?? provider);
   const providerNames: Record<string, string> = {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
@@ -1205,7 +1211,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
   return {
     id,
     runtimeModelId: kind && item.model ? item.model : id,
-    provider: providerNames[kind ?? item.provider] ?? cap(item.provider),
+    provider: providerNames[kind ?? provider] ?? cap(provider),
     name: item.display_name ?? item.model ?? id.split(':').at(-1) ?? id,
     route: local || item.privacy_route === 'local' ? 'Local' : 'Cloud',
     tags: capabilityTags.slice(0, 4),
@@ -1288,7 +1294,7 @@ function mapCommunityModel(item: Record<string, unknown>): ModelDescriptor | nul
   };
 }
 
-const fixtureCommunityModels = [
+const fixtureCommunityRepositories = [
   'Qwen/Qwen3-4B-GGUF',
   'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF',
   'unsloth/gemma-3-4b-it-GGUF',
@@ -1301,22 +1307,62 @@ const fixtureCommunityModels = [
   'bartowski/Aya-Expanse-8B-GGUF',
   'bartowski/LFM2-1.2B-GGUF',
   'bartowski/Ministral-3-3B-Instruct-GGUF',
-].map((repository, index): ModelDescriptor => ({
-  id: `hf:${repository}`,
-  provider: 'Hugging Face',
-  name: repository.split('/')[1]!.replace('-GGUF', '').replaceAll('-', ' '),
-  route: 'Local',
-  tags: index % 3 === 1 ? ['GGUF', 'coding'] : ['GGUF', 'text-generation'],
-  context: 'See model card',
-  cost: 'Local',
-  status: 'community',
-  description: `Community GGUF listing by ${repository.split('/')[0]}. Review upstream files and terms before importing.`,
-  fit: 'pending',
-  fitReason: 'Choose a quantization on the model card to estimate device fit.',
-  source: 'Hugging Face Hub',
-  sourceUrl: `https://huggingface.co/${repository}`,
-  downloads: 980_000 - index * 43_000,
-}));
+  'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF',
+  'unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF',
+  'bartowski/Qwen3-14B-GGUF',
+  'bartowski/Qwen3-8B-GGUF',
+  'bartowski/Qwen2.5-Coder-32B-Instruct-GGUF',
+  'bartowski/Qwen2.5-Coder-14B-Instruct-GGUF',
+  'bartowski/Qwen2.5-Coder-3B-Instruct-GGUF',
+  'google/gemma-3-27b-it-qat-q4_0-gguf',
+  'google/gemma-3-12b-it-qat-q4_0-gguf',
+  'google/gemma-3-4b-it-qat-q4_0-gguf',
+  'bartowski/Llama-3.2-3B-Instruct-GGUF',
+  'bartowski/Llama-3.2-1B-Instruct-GGUF',
+  'bartowski/Mistral-Small-3.1-24B-Instruct-2503-GGUF',
+  'bartowski/Ministral-8B-Instruct-2410-GGUF',
+  'unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF',
+  'bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF',
+  'bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF',
+  'ggml-org/gpt-oss-20b-GGUF',
+  'ggml-org/gpt-oss-120b-GGUF',
+  'bartowski/granite-3.3-2b-instruct-GGUF',
+  'bartowski/granite-3.2-8b-instruct-GGUF',
+  'bartowski/Aya-Expanse-32B-GGUF',
+  'bartowski/Command-R7B-12-2024-GGUF',
+  'bartowski/Command-R-35B-v0.1-GGUF',
+  'bartowski/SmolLM2-1.7B-Instruct-GGUF',
+  'bartowski/Phi-4-reasoning-plus-GGUF',
+  'bartowski/Phi-4-mini-reasoning-GGUF',
+  'bartowski/OLMo-2-1124-13B-Instruct-GGUF',
+  'bartowski/EXAONE-3.5-7.8B-Instruct-GGUF',
+  'bartowski/Yi-1.5-9B-Chat-GGUF',
+  'bartowski/StarCoder2-7B-GGUF',
+  'bartowski/CodeGemma-7B-it-GGUF',
+  'bartowski/InternLM2.5-7B-Chat-GGUF',
+  'bartowski/Nemotron-Mini-4B-Instruct-GGUF',
+  'bartowski/Falcon3-7B-Instruct-GGUF',
+  'bartowski/StableLM-2-1_6B-Chat-GGUF',
+];
+
+const fixtureCommunityModels = fixtureCommunityRepositories.map(
+  (repository, index): ModelDescriptor => ({
+    id: `hf:${repository}`,
+    provider: 'Hugging Face',
+    name: repository.split('/')[1]!.replace('-GGUF', '').replaceAll('-', ' '),
+    route: 'Local',
+    tags: index % 3 === 1 ? ['GGUF', 'coding'] : ['GGUF', 'text-generation'],
+    context: 'See model card',
+    cost: 'Local',
+    status: 'community',
+    description: `Community GGUF listing by ${repository.split('/')[0]}. Review upstream files and terms before importing.`,
+    fit: 'pending',
+    fitReason: 'Choose a quantization on the model card to estimate device fit.',
+    source: 'Hugging Face Hub',
+    sourceUrl: `https://huggingface.co/${repository}`,
+    downloads: Math.max(1_200, 2_800_000 - index * 51_000),
+  }),
+);
 
 export function localModelActionRequest(
   action: ModelAction,
@@ -1390,7 +1436,9 @@ function mapTool(item: RuntimeTool): ToolDescriptor {
       ? 'Cloud'
       : 'Local',
     enabled: item.enabled ?? true,
-    permissions: [...(item.required_grants ?? []), ...effects].slice(0, 4).map(cap),
+    permissions: [...(item.required_grants ?? []), ...effects]
+      .slice(0, 4)
+      .map((value) => cap(value)),
     lastUsed: 'not yet',
     kind,
   };
@@ -1415,6 +1463,7 @@ function fixtureProjects(): ProjectRecord[] {
 
 const fallbackSettings: WorkspaceSettings = {
   theme: 'light',
+  wallpaper: 'none',
   offline: false,
   proactiveEnabled: false,
   developerMode: false,
@@ -1459,6 +1508,7 @@ function normalizeSettings(value: Partial<WorkspaceSettings>): WorkspaceSettings
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const fixtureMode = !window.cupcake;
   const [ready, setReady] = useState(fixtureMode);
+  const [configurationReady, setConfigurationReady] = useState(fixtureMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runtimeEvents, setRuntimeEvents] = useState<RuntimeEvent[]>([]);
@@ -1729,12 +1779,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setModels((current) => {
         const mappedRuntimeModels = uniqueRuntimeModels.map((item) => {
           const mapped = mapModel(item, bootstrap.selectedModelId);
+          const provider = textValue(item.provider ?? item.metadata?.provider);
           return {
             ...mapped,
             status:
               mapped.route === 'Local'
                 ? mapped.status
-                : configuredProviders[item.provider]
+                : provider && configuredProviders[provider]
                   ? ('ready' as const)
                   : ('setup' as const),
           };
@@ -1761,18 +1812,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             120_000,
           )
             .then((result) => {
-              const catalog = result.catalog;
-              const catalogModels =
-                catalog &&
-                typeof catalog === 'object' &&
-                Array.isArray((catalog as Record<string, unknown>).models)
-                  ? ((catalog as Record<string, unknown>).models as Array<Record<string, unknown>>)
+              const catalog = recordValue(result.catalog);
+              const catalogModels = Array.isArray(result.models)
+                ? (result.models as Array<Record<string, unknown>>)
+                : Array.isArray(catalog?.models)
+                  ? (catalog.models as Array<Record<string, unknown>>)
                   : [];
               if (!catalogModels.length) return;
               setModels((current) => {
                 const incoming = catalogModels.map((item) => ({
                   ...mapModel(
-                    item as unknown as RuntimeModel,
+                    {
+                      ...item,
+                      provider: textValue(item.provider, 'nvidia-nim'),
+                    },
                     selectedModelIdRef.current ?? undefined,
                   ),
                   status: 'ready' as const,
@@ -1816,6 +1869,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : runtimeSettings['appearance.theme'] === 'classic'
                 ? 'classic'
                 : 'light',
+        wallpaper:
+          runtimeSettings['appearance.wallpaper'] === 'moonlit-archive' ||
+          runtimeSettings['appearance.wallpaper'] === 'pistachio-atelier' ||
+          runtimeSettings['appearance.wallpaper'] === 'blueberry-observatory' ||
+          runtimeSettings['appearance.wallpaper'] === 'copper-workshop'
+            ? runtimeSettings['appearance.wallpaper']
+            : 'none',
         offline: runtimeSettings['privacy.default_mode'] === 'offline',
         proactiveEnabled:
           typeof runtimeSettings['proactive.enabled'] === 'boolean'
@@ -1898,6 +1958,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         ),
       }));
+      setConfigurationReady(true);
       void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
         .then((items) =>
           setRuntimeEvents(
@@ -2840,6 +2901,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 ? 'cupcake-dark'
                 : patch.theme,
           ]);
+        if (patch.wallpaper !== undefined) entries.push(['appearance.wallpaper', patch.wallpaper]);
         if (patch.offline !== undefined)
           entries.push(['privacy.default_mode', patch.offline ? 'offline' : 'connected']);
         if (patch.proactiveEnabled !== undefined)
@@ -2955,7 +3017,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [request]);
   const discoverCommunityModels = useCallback(
-    async (query = ''): Promise<ModelDescriptor[]> => {
+    async (query = '', limit = 120): Promise<ModelDescriptor[]> => {
       const cleanQuery = query.trim().toLowerCase();
       if (fixtureMode)
         return fixtureCommunityModels.filter((model) =>
@@ -2963,7 +3025,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       const result = await request<{ models?: Array<Record<string, unknown>> }>(
         'local_models.discovery.search',
-        { query: query.trim(), limit: 30 },
+        { query: query.trim(), limit },
         20_000,
       );
       return (result.models ?? [])
@@ -2977,6 +3039,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       fixtureMode,
       ready,
+      configurationReady,
       busy,
       error,
       runtimeEvents,
@@ -3047,6 +3110,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [
       fixtureMode,
       ready,
+      configurationReady,
       busy,
       error,
       runtimeEvents,

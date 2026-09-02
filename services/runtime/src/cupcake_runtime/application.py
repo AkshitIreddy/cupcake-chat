@@ -124,6 +124,7 @@ EventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 SETTING_DEFAULTS: dict[str, Any] = {
     "appearance.theme": "cupcake-light",
+    "appearance.wallpaper": "none",
     "models.default": "mock:cupcake-deterministic",
     "models.fallback": {"enabled": False, "modelId": None},
     "models.reasoning_effort": "none",
@@ -140,7 +141,7 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "accessibility.reduced_motion": False,
     "appearance.scrollbars": "slim",
     "onboarding.completed_v1": False,
-    "profile.display_name": "Akshit",
+    "profile.display_name": "",
     "profile.role": "",
     "profile.bio": "",
     "profile.avatar": "atlas:16",
@@ -795,7 +796,7 @@ class RuntimeService:
 
     def _local_models_discovery_search(self, params: Mapping[str, Any]) -> Any:
         query = str(params.get("query") or "")
-        limit_value = params.get("limit", 24)
+        limit_value = params.get("limit", 120)
         if isinstance(limit_value, bool) or not isinstance(limit_value, (int, float)):
             raise RuntimeCommandError("INVALID_ARGUMENT", "limit must be a number")
         try:
@@ -3815,6 +3816,16 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
     if key == "appearance.theme":
         if value not in {"cupcake-light", "cupcake-dark", "minimal", "classic"}:
             raise RuntimeCommandError("INVALID_SETTING", "Unknown theme")
+        return value
+    if key == "appearance.wallpaper":
+        if value not in {
+            "none",
+            "moonlit-archive",
+            "pistachio-atelier",
+            "blueberry-observatory",
+            "copper-workshop",
+        }:
+            raise RuntimeCommandError("INVALID_SETTING", "Unknown wallpaper")
         return value
     if key == "appearance.scrollbars":
         if value not in {"slim", "minimal", "hidden"}:

@@ -47,3 +47,33 @@ model hub, lazy startup, memory safety, and local-runtime settings.
   discovery;
 - community search is response-size, timeout, query-length, and result-count bounded;
 - the encrypted unlock and workspace-opening states explain which resources are still asleep.
+
+## 2026-09-03 discovery and onboarding pass
+
+The follow-up compared the rendered CupcakeAI flows with additional first-party material rather than
+treating one search page or one screenshot as the full benchmark:
+
+- [LM Studio: discover and download models](https://beta.lmstudio.ai/docs/app/basics/download-model)
+- [LM Studio: model catalog](https://lmstudio.ai/models)
+- [LM Studio CLI: search](https://lmstudio.ai/docs/cli/local-models/get)
+- [LM Studio CLI: list installed models](https://lmstudio.ai/docs/cli/local-models/ls)
+- [LM Studio REST: list models](https://beta.lmstudio.ai/docs/developer/rest/list)
+- [LM Studio: model.yaml metadata](https://beta.lmstudio.ai/docs/app/modelyaml)
+- [Hugging Face Hub: model repository documentation](https://huggingface.co/docs/hub/models)
+- [Hugging Face Hub: model cards](https://huggingface.co/docs/hub/model-cards)
+- [NVIDIA NIM: OpenAI-compatible API reference](https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html)
+- [NVIDIA NIM: getting started](https://docs.nvidia.com/nim/large-language-models/latest/get-started/index.html)
+- [NVIDIA NIM: architecture](https://docs.nvidia.com/nim/large-language-models/latest/reference/architecture.html)
+- [Microsoft Windows apps: usability](https://learn.microsoft.com/en-us/windows/apps/design/usability/)
+- [Microsoft Windows apps: accessibility overview](https://learn.microsoft.com/en-us/windows/apps/design/accessibility/accessibility-overview)
+- [Microsoft Windows apps: dialogs and flyouts](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/)
+- [Microsoft Windows apps: in-app help](https://learn.microsoft.com/en-us/windows/apps/design/in-app-help/guidelines-for-app-help)
+
+This pass changed the implementation in four specific ways. Hub discovery now accepts family
+keywords, publisher/model identifiers, and pasted Hugging Face URLs, retrieves up to 120 bounded
+results, and renders them progressively instead of implying that the first 30 are the entire Hub.
+Connected NVIDIA NIM inventory is presented separately and consumes the top-level `models` payload
+returned by the native provider bridge. First-run setup uses a replayable, state-aware walkthrough
+with profile and route readiness instead of a static slideshow. Finally, customization and modal
+composition follow Windows guidance: centered predictable dialogs, restrained overlays, explicit
+security choices, reduced-motion support, and wallpapers that preserve readable negative space.

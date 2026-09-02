@@ -17,10 +17,19 @@ pub enum WorkspaceLockState {
     Unlocked,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceUnlockMode {
+    Password,
+    Windows,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceLockStatus {
     pub state: WorkspaceLockState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unlock_mode: Option<WorkspaceUnlockMode>,
     pub failed_attempts: u32,
     pub retry_after_ms: u32,
 }
