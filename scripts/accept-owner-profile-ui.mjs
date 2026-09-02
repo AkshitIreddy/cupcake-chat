@@ -76,7 +76,8 @@ try {
     if (message.type() === 'error') browserErrors.push(sanitize(message.text()));
   });
   await page.screenshot({ path: join(output, 'owner-profile-before-unlock.png') });
-  const passwordInput = page.locator('input[type="password"]').first();
+  const passwordInputs = page.locator('input[type="password"]');
+  const passwordInput = passwordInputs.first();
   try {
     await passwordInput.waitFor({ timeout: 30_000 });
   } catch (error) {
@@ -95,8 +96,11 @@ try {
     });
   }
   await passwordInput.fill(password.toString('utf8'));
+  if ((await passwordInputs.count()) > 1) {
+    await passwordInputs.nth(1).fill(password.toString('utf8'));
+  }
   password.fill(0);
-  await page.getByRole('button', { name: 'Unlock workspace' }).click();
+  await page.getByRole('button', { name: /Unlock workspace|Create password and open/ }).click();
 
   const ready = page.locator('.home-hero').filter({ hasText: 'Your workbench is ready' });
   const failure = page.locator('[role="alert"]').first();

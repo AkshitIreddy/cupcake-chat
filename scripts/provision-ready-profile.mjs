@@ -121,19 +121,14 @@ try {
   );
   evidence.hostedChat = hosted.events.some((event) => event.payload?.type === 'message.completed');
 
-  let localStatus = (await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000))
-    .result;
+  let localStatus = (
+    await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000)
+  ).result;
   const installedBackends = () => new Set((localStatus.runtimes ?? []).map((item) => item.backend));
   const runtimeInstalls = [
     ['llama.cpp:b10679:windows-x64-vulkan', []],
-    [
-      'llama.cpp:b10679:windows-x64-cuda-12.4',
-      ['https://docs.nvidia.com/cuda/eula/index.html'],
-    ],
-    [
-      'llama.cpp:b10679:windows-x64-cuda-13.3',
-      ['https://docs.nvidia.com/cuda/eula/index.html'],
-    ],
+    ['llama.cpp:b10679:windows-x64-cuda-12.4', ['https://docs.nvidia.com/cuda/eula/index.html']],
+    ['llama.cpp:b10679:windows-x64-cuda-13.3', ['https://docs.nvidia.com/cuda/eula/index.html']],
   ];
   for (const [artifactId, acceptedLicenseUrls] of runtimeInstalls) {
     const backend = artifactId.endsWith('vulkan')
@@ -147,8 +142,9 @@ try {
       { artifactId, artifactKind: 'runtime', activate: false, acceptedLicenseUrls },
       3_600_000,
     );
-    localStatus = (await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000))
-      .result;
+    localStatus = (
+      await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000)
+    ).result;
   }
   await expectOk(
     'local_models.cupcake.runtime.activate',
@@ -157,6 +153,25 @@ try {
   );
   localStatus = (await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000))
     .result;
+  if (
+    !(localStatus.models ?? []).some(
+      (model) => model.id === 'qwen3-8b-q4-k-m' && model.integrity_verified,
+    )
+  ) {
+    await expectOk(
+      'local_models.cupcake.download',
+      {
+        artifactId: 'qwen3-8b-q4-k-m',
+        artifactKind: 'model',
+        activate: false,
+        acceptedLicenseUrls: [],
+      },
+      3_600_000,
+    );
+    localStatus = (
+      await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000)
+    ).result;
+  }
   evidence.installedRuntimes = (localStatus.runtimes ?? []).map((item) => ({
     version: item.version,
     backend: item.backend,
@@ -217,7 +232,9 @@ try {
   assert(shutdown.type === 'response' && shutdown.payload?.ok === true, 'broker shutdown failed');
 } catch (error) {
   const diagnostics = sanitizeDiagnostic(stderr);
-  throw new Error(`${error.message}; broker diagnostics: ${diagnostics || 'empty'}`);
+  throw new Error(`${error.message}; broker diagnostics: ${diagnostics || 'empty'}`, {
+    cause: error,
+  });
 } finally {
   providerKeys.clear();
   secret.fill(0);
@@ -232,8 +249,7 @@ try {
 }
 
 assert(
-  evidence.hostedChat &&
-    (skipLocalModelTest || (evidence.localChat && evidence.localDefault)),
+  evidence.hostedChat && (skipLocalModelTest || (evidence.localChat && evidence.localDefault)),
   'chat acceptance incomplete',
 );
 process.stdout.write(
@@ -270,7 +286,10 @@ function send(type, correlationId, payload, timeoutMs = 180_000) {
 
 async function expectOk(method, params, timeoutMs) {
   const frame = await requestRuntime(method, params, timeoutMs);
-  assert(frame.payload?.ok === true, `${method} failed (${frame.payload?.error?.code ?? 'unknown'})`);
+  assert(
+    frame.payload?.ok === true,
+    `${method} failed (${frame.payload?.error?.code ?? 'unknown'})`,
+  );
   return frame.payload;
 }
 
@@ -363,16 +382,10 @@ async function nextFrame(timeoutMs) {
       callback(value);
     };
     const deliver = (value) => finish(resolveFrame, value);
-    const timer = setTimeout(
-      () => finish(rejectFrame, new Error('protocol timeout')),
-      timeoutMs,
-    );
+    const timer = setTimeout(() => finish(rejectFrame, new Error('protocol timeout')), timeoutMs);
     frames.waiting.push(deliver);
     void processTermination.then(({ kind, detail }) =>
-      finish(
-        rejectFrame,
-        new Error(`broker ${kind} before protocol response (${detail})`),
-      ),
+      finish(rejectFrame, new Error(`broker ${kind} before protocol response (${detail})`)),
     );
   });
 }
@@ -384,7 +397,7 @@ function assert(condition, message) {
 function sanitizeDiagnostic(value) {
   return value
     .replace(/Bearer\s+\S+/giu, 'Bearer [redacted]')
-    .replace(/[A-Za-z0-9_+\/-]{32,}={0,2}/gu, '[redacted]')
+    .replace(/[A-Za-z0-9_+/-]{32,}={0,2}/gu, '[redacted]')
     .replace(/[\r\n]+/gu, ' ')
     .trim()
     .slice(-1000);

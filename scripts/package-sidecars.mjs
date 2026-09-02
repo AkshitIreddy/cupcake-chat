@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFile, cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promoteDirectory } from './lib/atomic-directory.mjs';
 import {
@@ -65,6 +65,26 @@ const descriptor = await readJson(descriptorPath);
 const tauriRoot = join(repoRoot, 'apps', 'desktop', 'src-tauri');
 const tauriBinaryDir = join(tauriRoot, 'binaries');
 const tauriResourceDir = join(tauriRoot, 'resources', 'sidecars');
+
+async function cleanStaleStagingDirectories() {
+  const parent = dirname(finalOutputDir);
+  const resolvedParent = resolve(parent);
+  const prefix = `.${basename(finalOutputDir)}.staging-`;
+  const entries = await readdir(parent, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+    const candidate = resolve(parent, entry.name);
+    if (dirname(candidate) !== resolvedParent || !basename(candidate).startsWith(prefix)) {
+      throw new Error(`Refusing to clean unsafe sidecar staging path: ${candidate}`);
+    }
+    const details = await stat(candidate);
+    if (Date.now() - details.mtimeMs < 6 * 60 * 60 * 1000) continue;
+    await rm(candidate, { recursive: true, force: true });
+    process.stdout.write(
+      `Removed stale sidecar staging directory ${relative(repoRoot, candidate)}.\n`,
+    );
+  }
+}
 
 async function pythonCommand() {
   const localVenv = join(repoRoot, 'services', 'runtime', '.venv', 'Scripts', 'python.exe');
@@ -361,6 +381,8 @@ async function stageTauriBundleInputs() {
     `Staged Tauri externalBin inputs for ${targetTriple} and verified resources/sidecars.\n`,
   );
 }
+
+await cleanStaleStagingDirectories();
 
 if (verifyOnly) {
   if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
