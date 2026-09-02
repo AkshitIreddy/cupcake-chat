@@ -46,7 +46,7 @@ impl Default for WindowPreferences {
     fn default() -> Self {
         Self {
             startup_behavior: StartupBehavior::Open,
-            close_behavior: CloseBehavior::Ask,
+            close_behavior: CloseBehavior::Quit,
             minimize_behavior: MinimizeBehavior::Taskbar,
             show_in_taskbar: true,
             always_on_top: false,
@@ -136,7 +136,9 @@ pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
         )
     };
     if result != ERROR_SUCCESS {
-        return Err(HostError::internal("Windows startup registration could not be opened"));
+        return Err(HostError::internal(
+            "Windows startup registration could not be opened",
+        ));
     }
     let operation = if enabled {
         let executable = std::env::current_exe().map_err(preferences_io)?;
@@ -155,8 +157,10 @@ pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
         unsafe { RegDeleteValueW(key, name.as_ptr()) }
     };
     unsafe { RegCloseKey(key) };
-    if operation != ERROR_SUCCESS && !(operation == 2 && !enabled) {
-        return Err(HostError::internal("Windows startup registration could not be updated"));
+    if operation != ERROR_SUCCESS && (operation != 2 || enabled) {
+        return Err(HostError::internal(
+            "Windows startup registration could not be updated",
+        ));
     }
     Ok(())
 }
@@ -185,7 +189,9 @@ mod tests {
         store.set(preferences.clone()).unwrap();
         assert_eq!(store.get(), preferences);
         assert_eq!(
-            WindowPreferencesStore::load(directory.path()).unwrap().get(),
+            WindowPreferencesStore::load(directory.path())
+                .unwrap()
+                .get(),
             preferences
         );
     }

@@ -203,9 +203,7 @@ fn hash_password(password: &str, created_at: Option<String>) -> HostResult<Passw
 }
 
 fn verify_password(password: &str, verifier: &str) -> bool {
-    PasswordHash::new(verifier)
-        .ok()
-        .and_then(|parsed| argon2id().ok().map(|hasher| (parsed, hasher)))
+    PasswordHash::new(verifier).ok().zip(argon2id().ok())
         .is_some_and(|(parsed, hasher)| {
             hasher.verify_password(password.as_bytes(), &parsed).is_ok()
         })

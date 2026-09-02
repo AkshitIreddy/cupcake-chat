@@ -8,7 +8,6 @@ pub const DESKTOP_COMMAND_EVENT_NAME: &str = "cupcake://command";
 pub const WINDOW_STATE_EVENT_NAME: &str = "cupcake://window-state";
 pub const DEEP_LINK_EVENT_NAME: &str = "cupcake://deep-link";
 pub const WORKSPACE_LOCK_EVENT_NAME: &str = "cupcake://workspace-lock";
-pub const WINDOW_CLOSE_REQUESTED_EVENT_NAME: &str = "cupcake://close-requested";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

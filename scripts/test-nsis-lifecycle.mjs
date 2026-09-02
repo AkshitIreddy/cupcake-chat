@@ -8,8 +8,6 @@ const option = (name, fallback = undefined) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : fallback;
 };
-const repoRoot = resolve('.');
-const outRoot = join(repoRoot, 'out');
 const installer = resolve(
   option(
     '--installer',

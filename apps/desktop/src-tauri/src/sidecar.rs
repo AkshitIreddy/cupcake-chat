@@ -423,6 +423,26 @@ impl SidecarSupervisor {
         inner.stopping = false;
     }
 
+    /// Terminate the app-owned broker without waiting for its graceful
+    /// acknowledgement. Window close must feel immediate; durable runtime
+    /// state is already checkpointed and the child process is never shared.
+    pub fn stop_fast(&self) {
+        let mut inner = self.lock();
+        if let Some(mut connection) = inner.connection.take() {
+            let _ = connection.child.kill();
+            let _ = connection.child.wait();
+        }
+        inner.grants.clear();
+        inner.stopping = false;
+        self.set_status_locked(
+            &mut inner,
+            RuntimeState::Stopped,
+            RuntimeMode::Disabled,
+            None,
+            None,
+        );
+    }
+
     fn launch_locked(&self, inner: &mut SupervisorInner) -> HostResult<u64> {
         let verified = verify_sidecar_directory(&self.sidecar_directory)?;
         std::fs::create_dir_all(&self.data_directory)
@@ -798,7 +818,7 @@ mod tests {
 
         let actual = command
             .get_envs()
-            .find_map(|(name, value)| (name == "LOCALAPPDATA").then(|| value))
+            .find_map(|(name, value)| (name == "LOCALAPPDATA").then_some(value))
             .flatten();
         assert_eq!(actual, Some(expected.as_os_str()));
     }
