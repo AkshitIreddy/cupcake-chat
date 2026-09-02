@@ -480,3 +480,42 @@ issue the owner has accepted. The final handoff must lead with:
 
 The owner—not an automated test suite—decides whether this corrective Tauri build becomes the
 CupcakeAI 2.0 release candidate.
+
+## 2026-09-02 native-Windows customization checkpoint
+
+Commit `bf8827a` on local `master` completes the owner-requested interaction and customization
+pass. It adds pinned-to-latest chat scrolling with reader detachment and a Jump to latest control;
+moves global search to a real top-of-shelf search field on `Ctrl+F`; provides slim, minimal, and
+hidden scrollbar modes; adds a six-stage first-run/replayable onboarding tour; replaces the raw
+custom-instructions textarea with a designed editor; adds encrypted local profile fields, four
+Cupcake avatar choices, and bounded custom-image upload; and replaces provider initials with local
+brand marks plus an explicit connected state.
+
+The same commit adds native Tauri window preferences for Windows sign-in launch, open/minimized/
+tray startup, taskbar presence, always-on-top, taskbar/tray minimization, and ask/tray/quit close
+behavior. Quit paths stop the sidecar supervisor and clear temporary file grants. The local-model
+settings now expose RAM fallback and a RAM ceiling. Loads pass this policy to the app-managed
+llama.cpp runtime: VRAM-only requests all accelerated layers with automatic fitting disabled;
+hybrid mode allows fitting and rejects model weights already above the configured RAM ceiling. The
+Models page states the active policy rather than always promising RAM spill.
+
+Verified headlessly after the change:
+
+- renderer Vitest: 44/44;
+- Windows Chromium Playwright: 17/17, including new onboarding/profile/scrollbar/RAM and chat-follow
+  interactions, serious/critical axe checks, and all-theme AA checks;
+- Rust desktop host: 25/25;
+- runtime application plus Cupcake Local tests: 42/42 using `services/runtime/.venv`;
+- Tauri package smoke: passed with both sidecars and the Cupcake Local CPU baseline.
+
+The rebuilt test executable is
+`apps/desktop/src-tauri/target/release/CupcakeAI.exe` (9,869,824 bytes, SHA-256
+`53B976F497CB56CC0455854BE181D7027C115847A3287D9F3D0703317A66620B`). Headless visual-review
+frames are under `E:\temp\cupcakeai-ui-qa\` for Profile, Providers, and Window; the onboarding
+failure-capture frame was also opened and inspected before its selector-only test failure was fixed.
+
+This checkpoint did not run a new live hosted-provider conversation, download/load a real local
+model, exercise GPU inference, build a new NSIS installer, or repeat the complete installer/update/
+uninstall and performance matrix above. Do not call the overall handoff RC-ready on the strength of
+this checkpoint alone. The GPU marker was not acquired for this work and remained `no`; no model
+runtime was launched. Nothing was pushed, published, released, or connected to an updater.
