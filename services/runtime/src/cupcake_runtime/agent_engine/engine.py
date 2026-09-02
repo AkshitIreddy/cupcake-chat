@@ -142,15 +142,15 @@ class CupcakeAgentEngine:
         # Third-party model subclasses are not fully typed at this reflection
         # boundary. Keep the dynamic comparison local instead of letting an
         # unknown member type contaminate the product-owned result path.
-        supports_streaming = cast(Any, type(model)).request_stream is not cast(
-            Any, Model
-        ).request_stream
+        supports_streaming = (
+            cast(Any, type(model)).request_stream is not cast(Any, Model).request_stream
+        )
         toolsets = [BrokerDeferredToolset(request.tools)] if request.tools else []
         agent: Agent[object, Any] = Agent(
             model,
             output_type=[str, DeferredToolRequests],
             name="cupcake_agent",
-            description="CUPCAKEAGI provider-neutral text agent",
+            description="CupcakeAI provider-neutral text agent",
             toolsets=toolsets,
             retries={"tools": 0, "output": 1},
         )

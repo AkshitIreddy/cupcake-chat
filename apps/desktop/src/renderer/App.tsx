@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -149,6 +150,86 @@ function initialTheme(): Theme {
     return requested;
   const stored = localStorage.getItem('cupcake-theme');
   return stored === 'dark' || stored === 'minimal' || stored === 'classic' ? stored : 'light';
+}
+
+const CUPCAKE_AVATARS = Array.from({ length: 20 }, (_, index) => ({
+  value: `atlas:${index}`,
+  label: [
+    'Astronomer',
+    'Garden keeper',
+    'Pixel explorer',
+    'Paper librarian',
+    'Folk musician',
+    'Glass alchemist',
+    'Pastry engineer',
+    'Ink detective',
+    'Comic pilot',
+    'Enamel botanist',
+    'Pastel dreamer',
+    'Woodblock navigator',
+    'Plush baker',
+    'Mosaic oceanographer',
+    'Pencil architect',
+    'Synthwave DJ',
+    'Art nouveau naturalist',
+    'Storybook wizard',
+    'Low-poly helper',
+    'Gouache historian',
+  ][index]!,
+}));
+
+function atlasStyle(index: number, columns: number, rows: number, image: string): CSSProperties {
+  const column = index % columns;
+  const row = Math.floor(index / columns);
+  return {
+    backgroundImage: `url(${image})`,
+    backgroundSize: `${columns * 100}% ${rows * 100}%`,
+    backgroundPosition: `${columns === 1 ? 0 : (column / (columns - 1)) * 100}% ${rows === 1 ? 0 : (row / (rows - 1)) * 100}%`,
+  };
+}
+
+function CupcakePortrait({
+  value,
+  className,
+  label = 'Cupcake portrait',
+}: {
+  value?: string;
+  className?: string;
+  label?: string;
+}) {
+  const match = /^atlas:(\d+)$/.exec(value ?? '');
+  if (match) {
+    const index = Math.max(0, Math.min(19, Number(match[1])));
+    return (
+      <span
+        className={cx('cupcake-portrait', className)}
+        style={atlasStyle(index, 5, 4, '/art/cupcake-avatar-atlas-v1.webp')}
+        role="img"
+        aria-label={label}
+      />
+    );
+  }
+  return <img className={className} src={value || '/brand/cupcake-mark.svg'} alt={label} />;
+}
+
+function OnboardingStoryArt({ step }: { step: number }) {
+  return (
+    <span
+      className="onboarding-story-art"
+      style={atlasStyle(step, 3, 2, '/art/onboarding-story-atlas-v1.webp')}
+      aria-hidden="true"
+    />
+  );
+}
+
+function Dreamscape({ scene, className }: { scene: number; className?: string }) {
+  return (
+    <span
+      className={cx('workspace-dreamscape', className)}
+      style={atlasStyle(scene % 4, 2, 2, '/art/workspace-dreamscapes-v1.webp')}
+      aria-hidden="true"
+    />
+  );
 }
 
 function Brand({ large = false }: { large?: boolean }) {
@@ -339,6 +420,37 @@ function EmptyState({
   );
 }
 
+function WorkspaceOpening() {
+  const [scene] = useState(() => Math.floor(Math.random() * 4));
+  return (
+    <main className="workspace-opening" aria-live="polite">
+      <Dreamscape scene={scene} />
+      <section className="workspace-opening__card">
+        <span className="eyebrow">Encrypted workspace</span>
+        <h2>Bringing your history into view</h2>
+        <p>
+          Your conversations open first. Hardware scans, catalogs, and local models stay asleep
+          until their page or a message needs them.
+        </p>
+        <div className="workspace-opening__meter" aria-label="Opening workspace">
+          <i />
+        </div>
+        <div className="workspace-opening__stages">
+          <span className="is-done">
+            <Icon name="check" /> Key accepted
+          </span>
+          <span className="is-active">
+            <i /> Opening recent chats
+          </span>
+          <span>
+            <i /> Optional services on demand
+          </span>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function Shelf({
   view,
   setView,
@@ -409,6 +521,7 @@ function Shelf({
                 'is-active',
             )}
             onClick={() => navigate(item.id)}
+            data-tour={item.id}
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
@@ -451,14 +564,18 @@ function Shelf({
         )}
         <button
           className={cx('nav-item', view === 'settings' && 'is-active')}
+          data-tour="settings"
           onClick={() => navigate('settings')}
         >
           <Icon name="settings" />
           <span>Settings</span>
         </button>
-        <button className="profile-row" onClick={() => navigate('settings')}>
+        <button className="profile-row" data-tour="profile" onClick={() => navigate('settings')}>
           <span className="avatar">
-            {profile?.avatar ? <img src={profile.avatar} alt="" /> : 'AI'}
+            <CupcakePortrait
+              value={profile?.avatar}
+              label={`${profile?.displayName || 'Local'} profile`}
+            />
           </span>
           <span>
             <strong>{profile?.displayName || 'Akshit'}</strong>
@@ -519,7 +636,11 @@ function Greeting() {
   const workspace = useWorkspace();
   const hour = new Date().getHours();
   const name = workspace.settings.profile.displayName.trim() || 'there';
-  return <>{hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, {name}.</>;
+  return (
+    <>
+      {hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, {name}.
+    </>
+  );
 }
 
 function HomeView({
@@ -545,7 +666,10 @@ function HomeView({
     <main className="page page--home">
       <section className="home-hero">
         <div className="home-hero__mascot">
-          <img src="/brand/cupcake-2-grown.png" alt="CupcakeAI mascot" />
+          <CupcakePortrait
+            value={workspace.settings.assistantAvatar}
+            label="Selected CupcakeAI assistant"
+          />
           <span />
         </div>
         <p className="eyebrow">Your workbench is ready</p>
@@ -3771,6 +3895,7 @@ function modelStatusLabel(status: ModelDescriptor['status']) {
     unloading: 'Unloading',
     removing: 'Removing',
     offline: 'Not loaded',
+    community: 'Community listing',
     error: 'Needs recovery',
   };
   return labels[status];
@@ -3811,7 +3936,9 @@ function ModelsView({
   const [taskFilter, setTaskFilter] = useState('all');
   const [sizeFilter, setSizeFilter] = useState('all');
   const [fitFilter, setFitFilter] = useState('all');
-  const [licenseFilter, setLicenseFilter] = useState('all');
+  const [communityModels, setCommunityModels] = useState<ModelDescriptor[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(true);
+  const [communityError, setCommunityError] = useState<string | null>(null);
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [pendingRemove, setPendingRemove] = useState<ModelDescriptor | null>(null);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
@@ -3839,9 +3966,39 @@ function ModelsView({
   useModalFocusTrap(Boolean(pendingRemove), removeRef, closeRemove);
   useModalFocusTrap(Boolean(pendingRuntime), runtimeInstallRef, closeRuntimeInstall);
 
+  useEffect(() => {
+    let active = true;
+    setCommunityLoading(true);
+    const timer = window.setTimeout(
+      () => {
+        void workspace
+          .discoverCommunityModels(modelQuery)
+          .then((items) => {
+            if (!active) return;
+            setCommunityModels(items);
+            setCommunityError(null);
+          })
+          .catch(() => {
+            if (active)
+              setCommunityError(
+                'Community search is offline. Managed and provider models remain available.',
+              );
+          })
+          .finally(() => {
+            if (active) setCommunityLoading(false);
+          });
+      },
+      modelQuery ? 420 : 40,
+    );
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [modelQuery, workspace.discoverCommunityModels]);
+
   const rankedModels = useMemo(
     () =>
-      models
+      [...models, ...communityModels]
         .map((model) => ({
           ...model,
           ...(model.route === 'Local' ? deviceFit(model, workspace.hardware) : {}),
@@ -3858,18 +4015,16 @@ function ModelsView({
           }
           return a.name.localeCompare(b.name);
         }),
-    [models, workspace.hardware],
+    [communityModels, models, workspace.hardware],
   );
   const shown = rankedModels.filter((model) => {
     const searchable =
-      `${model.name} ${model.provider} ${model.tags.join(' ')} ${model.license ?? ''}`.toLowerCase();
+      `${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''}`.toLowerCase();
     return (
       (tab === 'all' || model.route.toLowerCase() === tab) &&
       (taskFilter === 'all' || model.tags.some((tag) => tag.toLowerCase() === taskFilter)) &&
       (sizeFilter === 'all' || modelSize(model) === sizeFilter) &&
       (fitFilter === 'all' || model.route !== 'Local' || model.fit === fitFilter) &&
-      (licenseFilter === 'all' ||
-        (model.license ?? '').toLowerCase().includes(licenseFilter.toLowerCase())) &&
       searchable.includes(modelQuery.trim().toLowerCase())
     );
   });
@@ -3932,6 +4087,19 @@ function ModelsView({
 
   const primaryAction = (model: ModelDescriptor) => {
     const busy = workingId === model.id;
+    if (model.status === 'community')
+      return (
+        <button
+          className="button"
+          onClick={() => {
+            if (!model.sourceUrl) return;
+            if (window.cupcake?.app) void window.cupcake.app.openExternal(model.sourceUrl);
+            else window.open(model.sourceUrl, '_blank', 'noopener,noreferrer');
+          }}
+        >
+          View model card
+        </button>
+      );
     if (model.selected)
       return (
         <span className="selected-label">
@@ -4188,6 +4356,23 @@ function ModelsView({
         </div>
       </section>
 
+      <section className="community-model-intro" aria-live="polite">
+        <div className="community-model-intro__mark">HF</div>
+        <div>
+          <span className="eyebrow">Live Hugging Face discovery</span>
+          <h3>Explore the wider GGUF community</h3>
+          <p>
+            Popular community model cards appear beside Cupcake's verified catalog. Search stays
+            read-only: review upstream files, terms, and quantization before importing anything.
+          </p>
+        </div>
+        <span className={cx('community-model-intro__state', communityError && 'is-error')}>
+          {communityLoading
+            ? 'Searching Hub…'
+            : (communityError ?? `${communityModels.length} community results`)}
+        </span>
+      </section>
+
       <div className="toolbar model-toolbar">
         <div className="segmented" aria-label="Model location">
           {(['all', 'cloud', 'local'] as const).map((value) => (
@@ -4231,23 +4416,13 @@ function ModelsView({
             <option value="pending">Scan pending</option>
           </select>
         </label>
-        <label className="filter-field">
-          <span>License</span>
-          <select value={licenseFilter} onChange={(event) => setLicenseFilter(event.target.value)}>
-            <option value="all">Any license</option>
-            <option value="Apache-2.0">Apache 2.0</option>
-            <option value="MIT">MIT</option>
-            <option value="Llama">Llama community</option>
-            <option value="Gemma">Gemma terms</option>
-          </select>
-        </label>
         <label className="filter-field model-search-field">
           <span>Find a model</span>
           <div className="search-field">
             <Icon name="search" />
             <input
               aria-label="Find a model"
-              placeholder="Search by name, provider, capability, or license"
+              placeholder="Search model families, capabilities, or parameter sizes"
               value={modelQuery}
               onChange={(event) => setModelQuery(event.target.value)}
             />
@@ -4283,6 +4458,7 @@ function ModelsView({
               model.route === 'Local' &&
               ![
                 'catalog',
+                'community',
                 'download',
                 'paused',
                 'verifying',
@@ -4306,7 +4482,18 @@ function ModelsView({
                       model.route === 'Local' && 'provider-logo--cupcake-local',
                     )}
                   >
-                    {model.route === 'Local' ? <Icon name="local" /> : model.provider.charAt(0)}
+                    {model.provider === 'Hugging Face' ? (
+                      <span className="hugging-face-mark" aria-label="Hugging Face">
+                        🤗
+                      </span>
+                    ) : model.route === 'Local' ? (
+                      <Icon name="local" />
+                    ) : (
+                      <img
+                        src={`/providers/${providerDialogId(model.provider)}.svg`}
+                        alt={`${model.provider} logo`}
+                      />
+                    )}
                   </span>
                   <div>
                     <span>{model.provider}</span>
@@ -4317,7 +4504,11 @@ function ModelsView({
                 {model.route === 'Local' && (
                   <div className={cx('model-fit', `model-fit--${fit}`)}>
                     <strong>
-                      {fit === 'pending' ? 'Device scan pending' : cap(fit.replace('-', ' '))}
+                      {model.status === 'community'
+                        ? 'Fit after quantization choice'
+                        : fit === 'pending'
+                          ? 'Device scan pending'
+                          : cap(fit.replace('-', ' '))}
                     </strong>
                     <span>{model.fitReason}</span>
                   </div>
@@ -4339,7 +4530,9 @@ function ModelsView({
                     <dt>{model.route === 'Local' ? 'Download' : 'Cost'}</dt>
                     <dd>
                       {model.route === 'Local'
-                        ? formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
+                        ? model.status === 'community'
+                          ? `${(model.downloads ?? 0).toLocaleString()} downloads`
+                          : formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
                         : model.cost}
                     </dd>
                   </div>
@@ -4350,7 +4543,22 @@ function ModelsView({
                       {modelStatusLabel(model.status)}
                     </dd>
                   </div>
-                  {model.route === 'Local' && (
+                  {model.status === 'community' ? (
+                    <>
+                      <div>
+                        <dt>Source</dt>
+                        <dd>Hugging Face</dd>
+                      </div>
+                      <div>
+                        <dt>License</dt>
+                        <dd>{model.license ?? 'Review card'}</dd>
+                      </div>
+                      <div>
+                        <dt>Access</dt>
+                        <dd>{model.gated ? 'Gated' : 'Public card'}</dd>
+                      </div>
+                    </>
+                  ) : model.route === 'Local' ? (
                     <>
                       <div>
                         <dt>RAM estimate</dt>
@@ -4365,7 +4573,7 @@ function ModelsView({
                         <dd>{model.license ?? 'See catalog'}</dd>
                       </div>
                     </>
-                  )}
+                  ) : null}
                 </dl>
                 {['download', 'paused', 'verifying'].includes(model.status) &&
                   model.download &&
@@ -4452,7 +4660,6 @@ function ModelsView({
               setTaskFilter('all');
               setSizeFilter('all');
               setFitFilter('all');
-              setLicenseFilter('all');
               setModelQuery('');
             }}
           >
@@ -5346,13 +5553,6 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
   );
 }
 
-const cupcakeAvatars = [
-  ['/brand/cupcake-2-grown.png', 'Grown Cupcake'],
-  ['/brand/cupcake-classic.png', 'Classic Cupcake'],
-  ['/brand/cupcake-mark.svg', 'Cupcake mark'],
-  ['/brand/cupcake-tray.png', 'Cupcake tray'],
-] as const;
-
 function ProviderLogo({ id, name }: { id: string; name: string }) {
   if (id === 'openai-compatible') {
     return (
@@ -5420,7 +5620,7 @@ function SettingsView({
   const [profileUploadError, setProfileUploadError] = useState('');
   const [windowPreferences, setWindowPreferences] = useState<WindowPreferences>({
     startupBehavior: 'open',
-    closeBehavior: 'ask',
+    closeBehavior: 'quit',
     minimizeBehavior: 'taskbar',
     showInTaskbar: true,
     alwaysOnTop: false,
@@ -5463,7 +5663,10 @@ function SettingsView({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => void updateProfile({ avatar: String(reader.result) });
+    reader.onload = () => {
+      if (typeof reader.result === 'string') void updateProfile({ avatar: reader.result });
+      else setProfileUploadError('CupcakeAI could not read that image.');
+    };
     reader.onerror = () => setProfileUploadError('CupcakeAI could not read that image.');
     reader.readAsDataURL(file);
   };
@@ -5491,28 +5694,33 @@ function SettingsView({
       <aside>
         <h2>Settings</h2>
         {tabs.map((t) => (
-          <button className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)} key={t}>
+          <button
+            className={tab === t ? 'is-active' : ''}
+            onClick={() => setTab(t)}
+            data-tour={t === 'Profile' ? 'profile' : t === 'Privacy' ? 'permissions' : undefined}
+            key={t}
+          >
             <Icon
               name={
                 t === 'Personality'
                   ? 'sparkle'
                   : t === 'Profile'
                     ? 'user'
-                  : t === 'Appearance'
-                    ? 'palette'
-                    : t === 'Window'
-                      ? 'window'
-                      : t === 'Local models'
-                        ? 'local'
-                    : t === 'Privacy'
-                      ? 'shield'
-                      : t === 'Providers'
-                        ? 'key'
-                        : t === 'Storage'
-                          ? 'database'
-                          : t === 'Shortcuts'
-                            ? 'command'
-                            : 'settings'
+                    : t === 'Appearance'
+                      ? 'palette'
+                      : t === 'Window'
+                        ? 'window'
+                        : t === 'Local models'
+                          ? 'local'
+                          : t === 'Privacy'
+                            ? 'shield'
+                            : t === 'Providers'
+                              ? 'key'
+                              : t === 'Storage'
+                                ? 'database'
+                                : t === 'Shortcuts'
+                                  ? 'command'
+                                  : 'settings'
               }
             />
             {t}
@@ -5776,7 +5984,10 @@ function SettingsView({
               </header>
               <div className="profile-editor__identity">
                 <span className="profile-editor__portrait">
-                  <img src={workspace.settings.profile.avatar} alt="Current profile" />
+                  <CupcakePortrait
+                    value={workspace.settings.profile.avatar}
+                    label="Current profile"
+                  />
                 </span>
                 <div>
                   <strong>{workspace.settings.profile.displayName || 'Your name'}</strong>
@@ -5818,24 +6029,57 @@ function SettingsView({
                 <p>Pick a Cupcake or upload a small image of your own.</p>
               </header>
               <div className="avatar-picker">
-                {cupcakeAvatars.map(([src, label]) => (
+                {CUPCAKE_AVATARS.map(({ value, label }) => (
                   <button
-                    className={workspace.settings.profile.avatar === src ? 'is-active' : ''}
-                    onClick={() => void updateProfile({ avatar: src })}
+                    className={workspace.settings.profile.avatar === value ? 'is-active' : ''}
+                    onClick={() => void updateProfile({ avatar: value })}
                     title={label}
-                    key={src}
+                    key={value}
                   >
-                    <img src={src} alt={label} />
-                    {workspace.settings.profile.avatar === src && <Icon name="check" />}
+                    <CupcakePortrait value={value} label={label} />
+                    {workspace.settings.profile.avatar === value && <Icon name="check" />}
                   </button>
                 ))}
                 <label className="avatar-upload">
                   <Icon name="upload" />
                   <span>Upload</span>
-                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadProfileImage} />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={uploadProfileImage}
+                  />
                 </label>
               </div>
               {profileUploadError && <p className="field-error">{profileUploadError}</p>}
+            </section>
+            <section className="settings-section assistant-identity-editor">
+              <header>
+                <h2>Your CupcakeAI assistant</h2>
+                <p>Choose the Cupcake who appears on Home and beside assistant messages.</p>
+              </header>
+              <div className="assistant-identity-preview">
+                <CupcakePortrait
+                  value={workspace.settings.assistantAvatar}
+                  label="Selected CupcakeAI assistant"
+                />
+                <span>
+                  <strong>This is your Cupcake</strong>
+                  <small>The portrait changes the character you see, not model behavior.</small>
+                </span>
+              </div>
+              <div className="avatar-picker avatar-picker--assistant">
+                {CUPCAKE_AVATARS.map(({ value, label }) => (
+                  <button
+                    className={workspace.settings.assistantAvatar === value ? 'is-active' : ''}
+                    onClick={() => void workspace.updateSettings({ assistantAvatar: value })}
+                    title={label}
+                    key={`assistant-${value}`}
+                  >
+                    <CupcakePortrait value={value} label={`${label} assistant`} />
+                    {workspace.settings.assistantAvatar === value && <Icon name="check" />}
+                  </button>
+                ))}
+              </div>
             </section>
           </>
         )}
@@ -5877,7 +6121,9 @@ function SettingsView({
             <div className="setting-row">
               <span>
                 <strong>Welcome tour</strong>
-                <small>Replay the guided introduction to chats, projects, tasks, models, and privacy.</small>
+                <small>
+                  Replay the guided introduction to chats, projects, tasks, models, and privacy.
+                </small>
               </span>
               <button className="button" onClick={onReplayOnboarding}>
                 <Icon name="sparkle" /> Replay onboarding
@@ -5895,7 +6141,8 @@ function SettingsView({
               <span>
                 <strong>Allow system RAM fallback</strong>
                 <small>
-                  Offload overflow layers to system RAM. This can run larger models, but it is much slower than VRAM.
+                  Offload overflow layers to system RAM. This can run larger models, but it is much
+                  slower than VRAM.
                 </small>
               </span>
               <Toggle
@@ -5908,10 +6155,15 @@ function SettingsView({
                 label="Allow system RAM fallback"
               />
             </div>
-            <div className={cx('setting-row', !workspace.settings.allowRamFallback && 'is-disabled')}>
+            <div
+              className={cx('setting-row', !workspace.settings.allowRamFallback && 'is-disabled')}
+            >
               <span>
                 <strong>Maximum system RAM for a model</strong>
-                <small>Safety ceiling for model weights and context cache. Cupcake leaves the rest for Windows.</small>
+                <small>
+                  Safety ceiling for model weights and context cache. Cupcake leaves the rest for
+                  Windows.
+                </small>
               </span>
               <label className="number-setting">
                 <input
@@ -5930,10 +6182,103 @@ function SettingsView({
                 <span>GB</span>
               </label>
             </div>
+            <div className="setting-row">
+              <span>
+                <strong>Unload idle local models</strong>
+                <small>Release RAM and VRAM automatically after the selected idle period.</small>
+              </span>
+              <Toggle
+                checked={workspace.settings.autoEvictLocalModels}
+                onChange={() =>
+                  void workspace.updateSettings({
+                    autoEvictLocalModels: !workspace.settings.autoEvictLocalModels,
+                  })
+                }
+                label="Unload idle local models"
+              />
+            </div>
+            <div
+              className={cx(
+                'setting-row',
+                !workspace.settings.autoEvictLocalModels && 'is-disabled',
+              )}
+            >
+              <span>
+                <strong>Idle time before unload</strong>
+                <small>Each local chat resets this timer.</small>
+              </span>
+              <label className="number-setting">
+                <input
+                  type="number"
+                  min="1"
+                  max="240"
+                  disabled={!workspace.settings.autoEvictLocalModels}
+                  value={workspace.settings.localModelIdleMinutes}
+                  onChange={(event) =>
+                    void workspace.updateSettings({
+                      localModelIdleMinutes: Math.max(
+                        1,
+                        Math.min(240, Number(event.target.value) || 1),
+                      ),
+                    })
+                  }
+                />
+                <span>min</span>
+              </label>
+            </div>
+            <div className="setting-row">
+              <span>
+                <strong>Keep RAM free for Windows</strong>
+                <small>Cupcake subtracts this reserve from the live available-memory budget.</small>
+              </span>
+              <label className="number-setting">
+                <input
+                  type="number"
+                  min="2"
+                  max="64"
+                  step="1"
+                  value={workspace.settings.reserveSystemRamGb}
+                  onChange={(event) =>
+                    void workspace.updateSettings({
+                      reserveSystemRamGb: Math.max(
+                        2,
+                        Math.min(64, Number(event.target.value) || 2),
+                      ),
+                    })
+                  }
+                />
+                <span>GB</span>
+              </label>
+            </div>
+            <div className="setting-row">
+              <span>
+                <strong>Keep VRAM free for the desktop</strong>
+                <small>Leaves headroom for WebView2, displays, and other GPU applications.</small>
+              </span>
+              <label className="number-setting">
+                <input
+                  type="number"
+                  min="0.5"
+                  max="16"
+                  step="0.5"
+                  value={workspace.settings.reserveVramGb}
+                  onChange={(event) =>
+                    void workspace.updateSettings({
+                      reserveVramGb: Math.max(0.5, Math.min(16, Number(event.target.value) || 0.5)),
+                    })
+                  }
+                />
+                <span>GB</span>
+              </label>
+            </div>
             <div className="security-note">
               <Icon name="info" />
               <div>
-                <strong>{workspace.settings.allowRamFallback ? 'Hybrid loading is allowed' : 'VRAM-only loading'}</strong>
+                <strong>
+                  {workspace.settings.allowRamFallback
+                    ? 'Hybrid loading is allowed'
+                    : 'VRAM-only loading'}
+                </strong>
                 <p>
                   {workspace.settings.allowRamFallback
                     ? 'Cupcake may use both VRAM and RAM when the runtime supports layer offload. The Models page reports the active placement.'
@@ -5957,7 +6302,9 @@ function SettingsView({
                 </span>
                 <Toggle
                   checked={windowPreferences.launchAtLogin}
-                  onChange={() => updateWindowPreferences({ launchAtLogin: !windowPreferences.launchAtLogin })}
+                  onChange={() =>
+                    updateWindowPreferences({ launchAtLogin: !windowPreferences.launchAtLogin })
+                  }
                   label="Open CupcakeAI at sign-in"
                 />
               </div>
@@ -5968,8 +6315,16 @@ function SettingsView({
                 </span>
                 <div className="segmented-control" aria-label="Startup behavior">
                   {(['open', 'minimized', 'tray'] as const).map((behavior) => (
-                    <button className={windowPreferences.startupBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ startupBehavior: behavior })} key={behavior}>
-                      {behavior === 'open' ? 'Open' : behavior === 'minimized' ? 'Minimized' : 'Tray'}
+                    <button
+                      className={windowPreferences.startupBehavior === behavior ? 'is-active' : ''}
+                      onClick={() => updateWindowPreferences({ startupBehavior: behavior })}
+                      key={behavior}
+                    >
+                      {behavior === 'open'
+                        ? 'Open'
+                        : behavior === 'minimized'
+                          ? 'Minimized'
+                          : 'Tray'}
                     </button>
                   ))}
                 </div>
@@ -5979,14 +6334,26 @@ function SettingsView({
                   <strong>Show on the taskbar</strong>
                   <small>Turn this off for a tray-first workspace.</small>
                 </span>
-                <Toggle checked={windowPreferences.showInTaskbar} onChange={() => updateWindowPreferences({ showInTaskbar: !windowPreferences.showInTaskbar })} label="Show on taskbar" />
+                <Toggle
+                  checked={windowPreferences.showInTaskbar}
+                  onChange={() =>
+                    updateWindowPreferences({ showInTaskbar: !windowPreferences.showInTaskbar })
+                  }
+                  label="Show on taskbar"
+                />
               </div>
               <div className="setting-row">
                 <span>
                   <strong>Always on top</strong>
                   <small>Keep the CupcakeAI window above ordinary desktop windows.</small>
                 </span>
-                <Toggle checked={windowPreferences.alwaysOnTop} onChange={() => updateWindowPreferences({ alwaysOnTop: !windowPreferences.alwaysOnTop })} label="Always on top" />
+                <Toggle
+                  checked={windowPreferences.alwaysOnTop}
+                  onChange={() =>
+                    updateWindowPreferences({ alwaysOnTop: !windowPreferences.alwaysOnTop })
+                  }
+                  label="Always on top"
+                />
               </div>
             </section>
             <section className="settings-section">
@@ -5995,18 +6362,51 @@ function SettingsView({
                 <p>These choices are enforced by the native desktop host.</p>
               </header>
               <div className="setting-row">
-                <span><strong>Minimize button</strong><small>Send the window to the taskbar or hide it in the tray.</small></span>
+                <span>
+                  <strong>Minimize button</strong>
+                  <small>Send the window to the taskbar or hide it in the tray.</small>
+                </span>
                 <div className="segmented-control" aria-label="Minimize behavior">
-                  {(['taskbar', 'tray'] as const).map((behavior) => <button className={windowPreferences.minimizeBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ minimizeBehavior: behavior })} key={behavior}>{cap(behavior)}</button>)}
+                  {(['taskbar', 'tray'] as const).map((behavior) => (
+                    <button
+                      className={windowPreferences.minimizeBehavior === behavior ? 'is-active' : ''}
+                      onClick={() => updateWindowPreferences({ minimizeBehavior: behavior })}
+                      key={behavior}
+                    >
+                      {cap(behavior)}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="setting-row">
-                <span><strong>Close button</strong><small>Ask each time, keep running in the tray, or fully quit.</small></span>
+                <span>
+                  <strong>Close button</strong>
+                  <small>
+                    Quit immediately by default, or explicitly keep CupcakeAI running in the tray.
+                  </small>
+                </span>
                 <div className="segmented-control" aria-label="Close behavior">
-                  {(['ask', 'tray', 'quit'] as const).map((behavior) => <button className={windowPreferences.closeBehavior === behavior ? 'is-active' : ''} onClick={() => updateWindowPreferences({ closeBehavior: behavior })} key={behavior}>{cap(behavior)}</button>)}
+                  {(['quit', 'tray'] as const).map((behavior) => (
+                    <button
+                      className={
+                        windowPreferences.closeBehavior === behavior ||
+                        (behavior === 'quit' && windowPreferences.closeBehavior === 'ask')
+                          ? 'is-active'
+                          : ''
+                      }
+                      onClick={() => updateWindowPreferences({ closeBehavior: behavior })}
+                      key={behavior}
+                    >
+                      {behavior === 'quit' ? 'Close app' : 'Close to tray'}
+                    </button>
+                  ))}
                 </div>
               </div>
-              {windowPreferencesError && <p className="field-error" role="alert">{windowPreferencesError}</p>}
+              {windowPreferencesError && (
+                <p className="field-error" role="alert">
+                  {windowPreferencesError}
+                </p>
+              )}
             </section>
           </>
         )}
@@ -6493,9 +6893,7 @@ function DeveloperView({ modelName }: { modelName: string }) {
         .includes(eventQuery.trim().toLowerCase())
     );
   });
-  const selectedEvent = events.find(
-    (event) => `${event.time}:${event.type}` === selectedEventKey,
-  );
+  const selectedEvent = events.find((event) => `${event.time}:${event.type}` === selectedEventKey);
   const exportTrace = () => {
     const blob = new Blob([`${JSON.stringify(workspace.runtimeEvents, null, 2)}\n`], {
       type: 'application/json',
@@ -8415,42 +8813,78 @@ const onboardingSteps = [
     title: 'One calm place for serious work',
     body: 'Chat with cloud or local models, let durable tasks continue in the background, and keep the resulting files, decisions, and memories organized.',
     icon: 'sparkle' as IconName,
-    points: ['Encrypted local workspace', 'Cloud destinations are labeled', 'Your projects stay isolated'],
+    points: [
+      'Encrypted local workspace',
+      'Cloud destinations are labeled',
+      'Your projects stay isolated',
+    ],
+    view: 'home' as View,
+    target: null,
   },
   {
     eyebrow: 'Conversations',
     title: 'Ask, attach, branch, and keep context',
     body: 'Use @ references to include a project, memory, task, or artifact. Long answers stream into the Frosting Thread, and you can branch from any message without losing the original.',
     icon: 'chat' as IconName,
-    points: ['Ctrl N starts a chat', 'Ctrl F searches everything', 'Ctrl M changes the active model'],
+    points: [
+      'Ctrl N starts a chat',
+      'Ctrl F searches everything',
+      'Ctrl M changes the active model',
+    ],
+    view: 'chat' as View,
+    target: 'chats',
   },
   {
     eyebrow: 'Projects and tasks',
     title: 'Separate quick questions from durable work',
     body: 'Projects are privacy and retrieval boundaries. Tasks checkpoint multi-step work so a model or app restart does not erase useful progress.',
     icon: 'task' as IconName,
-    points: ['Projects contain chats and artifacts', 'Tasks show approvals and checkpoints', 'Artifacts keep revision history'],
+    points: [
+      'Projects contain chats and artifacts',
+      'Tasks show approvals and checkpoints',
+      'Artifacts keep revision history',
+    ],
+    view: 'projects' as View,
+    target: 'projects',
   },
   {
     eyebrow: 'Models and providers',
     title: 'Choose local privacy or connected capability',
     body: 'CupcakeAI can use app-managed local models or providers you connect. Local model cards explain fit, runtime, download state, and whether weights can spill from VRAM into RAM.',
     icon: 'model' as IconName,
-    points: ['Local means content stays on this PC', 'Cloud routes name the provider', 'Offline mode blocks cloud routes'],
+    points: [
+      'Local means content stays on this PC',
+      'Cloud routes name the provider',
+      'Offline mode blocks cloud routes',
+    ],
+    view: 'models' as View,
+    target: 'models',
   },
   {
     eyebrow: 'Permission policy',
     title: 'You decide how much autonomy to grant',
     body: 'Guarded mode asks before sensitive effects. Full Freedom removes routine confirmations, while destructive and irreversible boundaries remain clearly surfaced.',
     icon: 'shield' as IconName,
-    points: ['Review tool effects in context', 'Stop active generation with Ctrl .', 'Lock the workspace from Privacy settings'],
+    points: [
+      'Review tool effects in context',
+      'Stop active generation with Ctrl .',
+      'Lock the workspace from Privacy settings',
+    ],
+    view: 'settings' as View,
+    target: 'settings',
   },
   {
     eyebrow: 'Ready when you are',
     title: 'Make CupcakeAI feel like yours',
     body: 'Set your profile, communication style, theme, window behavior, model memory policy, and scrollbars in Settings. You can replay this tour there at any time.',
     icon: 'check' as IconName,
-    points: ['Profile and cupcake avatars', 'Personality and custom instructions', 'Startup, taskbar, close, GPU and RAM controls'],
+    points: [
+      'Profile and cupcake avatars',
+      'Personality and custom instructions',
+      'Startup, taskbar, close, GPU and RAM controls',
+    ],
+    view: 'settings' as View,
+    target: 'profile',
   },
 ] as const;
 
@@ -8463,45 +8897,153 @@ function OnboardingTour({
   close: (completed: boolean) => void;
   navigate: (view: View) => void;
 }) {
+  const workspace = useWorkspace();
   const [step, setStep] = useState(0);
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   useEffect(() => {
     if (open) setStep(0);
   }, [open]);
-  if (!open) return null;
   const item = onboardingSteps[step]!;
   const last = step === onboardingSteps.length - 1;
+  useEffect(() => {
+    if (!open) return;
+    navigate(item.view);
+    setTargetRect(null);
+    let target: HTMLElement | null = null;
+    const advance = () => setStep((value) => Math.min(onboardingSteps.length - 1, value + 1));
+    const timer = window.setTimeout(() => {
+      target = item.target
+        ? document.querySelector<HTMLElement>(`[data-tour="${item.target}"]`)
+        : null;
+      if (!target) return;
+      setTargetRect(target.getBoundingClientRect());
+      target.addEventListener('click', advance, { once: true });
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      target?.removeEventListener('click', advance);
+    };
+  }, [item.target, item.view, navigate, open]);
+  const configuredProviderCount = Object.values(workspace.providers).filter(Boolean).length;
+  const setupChecks = [
+    { label: 'Encrypted profile', done: true },
+    {
+      label: 'At least one model route',
+      done: workspace.models.some((model) => model.status !== 'setup'),
+    },
+    { label: 'Provider connected', done: configuredProviderCount > 0 },
+    { label: 'Hardware profile scanned', done: Boolean(workspace.hardware?.ramBytes) },
+    {
+      label: 'Local acceleration ready',
+      done: workspace.localRuntimes.some((runtime) => runtime.active),
+    },
+  ];
+  if (!open) return null;
   return (
-    <div className="onboarding-layer" role="presentation">
-      <section className="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div className={cx('onboarding-layer', targetRect && 'has-target')} role="presentation">
+      {targetRect && (
+        <span
+          className="onboarding-spotlight"
+          style={{
+            left: targetRect.left - 7,
+            top: targetRect.top - 7,
+            width: targetRect.width + 14,
+            height: targetRect.height + 14,
+          }}
+          aria-hidden="true"
+        />
+      )}
+      <section className="onboarding-card" role="dialog" aria-labelledby="onboarding-title">
         <aside className="onboarding-art" aria-hidden="true">
-          <span className="onboarding-orbit onboarding-orbit--one" />
-          <span className="onboarding-orbit onboarding-orbit--two" />
-          <img src="/brand/cupcake-2-grown.png" alt="" />
-          <span className="onboarding-step-icon"><Icon name={item.icon} size={22} /></span>
+          <OnboardingStoryArt step={step} />
+          <span className="onboarding-step-icon">
+            <Icon name={item.icon} size={22} />
+          </span>
         </aside>
         <div className="onboarding-copy">
           <header>
             <span className="eyebrow">{item.eyebrow}</span>
-            <button className="icon-button" onClick={() => close(true)} aria-label="Skip onboarding"><Icon name="x" /></button>
+            <button
+              className="icon-button"
+              onClick={() => close(true)}
+              aria-label="Skip onboarding"
+            >
+              <Icon name="x" />
+            </button>
           </header>
           <h1 id="onboarding-title">{item.title}</h1>
           <p>{item.body}</p>
           <div className="onboarding-points">
-            {item.points.map((point) => <span key={point}><Icon name="check" size={13} /> {point}</span>)}
+            {item.points.map((point) => (
+              <span key={point}>
+                <Icon name="check" size={13} /> {point}
+              </span>
+            ))}
           </div>
+          {step === 3 && (
+            <div className="onboarding-setup-checks" aria-label="Configuration status">
+              {setupChecks.map((check) => (
+                <span className={check.done ? 'is-done' : ''} key={check.label}>
+                  <Icon name={check.done ? 'check' : 'more'} size={13} />
+                  {check.label}
+                  <small>{check.done ? 'Ready' : 'Optional'}</small>
+                </span>
+              ))}
+              <button className="text-button" onClick={() => navigate('settings')}>
+                Configure what remains <Icon name="chevron" size={13} />
+              </button>
+            </div>
+          )}
           {last && (
             <div className="onboarding-destinations">
-              <button onClick={() => { navigate('chat'); close(true); }}><Icon name="chat" /><span><strong>Start chatting</strong><small>Ask CupcakeAI anything</small></span></button>
-              <button onClick={() => { navigate('settings'); close(true); }}><Icon name="settings" /><span><strong>Personalize first</strong><small>Profile, models, and window</small></span></button>
+              <button
+                onClick={() => {
+                  navigate('chat');
+                  close(true);
+                }}
+              >
+                <Icon name="chat" />
+                <span>
+                  <strong>Start chatting</strong>
+                  <small>Ask CupcakeAI anything</small>
+                </span>
+              </button>
+              <button
+                onClick={() => {
+                  navigate('settings');
+                  close(true);
+                }}
+              >
+                <Icon name="settings" />
+                <span>
+                  <strong>Personalize first</strong>
+                  <small>Profile, models, and window</small>
+                </span>
+              </button>
             </div>
           )}
           <footer>
-            <div className="onboarding-progress" aria-label={`Step ${step + 1} of ${onboardingSteps.length}`}>
-              {onboardingSteps.map((_, index) => <i className={index === step ? 'is-active' : index < step ? 'is-done' : ''} key={index} />)}
+            <div
+              className="onboarding-progress"
+              aria-label={`Step ${step + 1} of ${onboardingSteps.length}`}
+            >
+              {onboardingSteps.map((_, index) => (
+                <i
+                  className={index === step ? 'is-active' : index < step ? 'is-done' : ''}
+                  key={index}
+                />
+              ))}
             </div>
             <span />
-            {step > 0 && <button className="button" onClick={() => setStep((value) => value - 1)}>Back</button>}
-            <button className="button button--primary" onClick={() => last ? close(true) : setStep((value) => value + 1)}>
+            {step > 0 && (
+              <button className="button" onClick={() => setStep((value) => value - 1)}>
+                Back
+              </button>
+            )}
+            <button
+              className="button button--primary"
+              onClick={() => (last ? close(true) : setStep((value) => value + 1))}
+            >
               {last ? 'Finish tour' : 'Continue'}
             </button>
           </footer>
@@ -8524,7 +9066,6 @@ function LiveApp() {
   const [onboardingOpen, setOnboardingOpen] = useState(
     new URLSearchParams(window.location.search).get('onboarding') === '1',
   );
-  const [closeRequested, setCloseRequested] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
   const [memoryRecords, setMemoryRecords] = useState(workspace.memories);
   const [toolRecords, setToolRecords] = useState(workspace.tools);
@@ -8535,10 +9076,6 @@ function LiveApp() {
   const activeTask = workspace.tasks.find((task) => task.id === activeTaskId) ?? workspace.tasks[0];
   useEffect(() => setMemoryRecords(workspace.memories), [workspace.memories]);
   useEffect(() => setToolRecords(workspace.tools), [workspace.tools]);
-  useEffect(
-    () => window.cupcake?.window.onCloseRequested?.(() => setCloseRequested(true)),
-    [],
-  );
   useEffect(() => {
     const nativeDesktop = '__TAURI_INTERNALS__' in window;
     if (nativeDesktop && workspace.ready && !workspace.settings.onboardingCompleted)
@@ -8561,10 +9098,10 @@ function LiveApp() {
     setThemeState(next);
     void workspace.updateSettings({ theme: next });
   };
-  const navigate = (next: View) => {
+  const navigate = useCallback((next: View) => {
     setView(next);
     window.scrollTo(0, 0);
-  };
+  }, []);
   const startNewChat = () => {
     void workspace.createConversation().then(() => navigate('chat'));
   };
@@ -8666,16 +9203,7 @@ function LiveApp() {
     />
   );
   let content: ReactNode;
-  if (!workspace.ready && !workspace.fixtureMode)
-    content = (
-      <main className="page">
-        <EmptyState
-          icon="local"
-          title="Opening the encrypted workspace"
-          body="Starting the local broker and product runtime…"
-        />
-      </main>
-    );
+  if (!workspace.ready && !workspace.fixtureMode) content = <WorkspaceOpening />;
   else if (view === 'home')
     content = (
       <HomeView
@@ -8869,25 +9397,6 @@ function LiveApp() {
             void workspace.updateSettings({ onboardingCompleted: true });
         }}
       />
-      {closeRequested && (
-        <div className="popover-layer">
-          <section className="provider-dialog close-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
-            <header>
-              <div><span className="eyebrow">Before you go</span><h2 id="close-dialog-title">What should CupcakeAI do?</h2></div>
-              <button className="icon-button" onClick={() => setCloseRequested(false)} aria-label="Cancel closing"><Icon name="x" /></button>
-            </header>
-            <div className="close-dialog__choices">
-              <button onClick={() => { setCloseRequested(false); void window.cupcake?.window.respondToClose('tray'); }}>
-                <Icon name="bell" /><span><strong>Keep running in tray</strong><small>Tasks and local services can stay available.</small></span>
-              </button>
-              <button onClick={() => { setCloseRequested(false); void window.cupcake?.window.respondToClose('quit'); }}>
-                <Icon name="x" /><span><strong>Quit CupcakeAI</strong><small>Stop the runtime and close the workspace.</small></span>
-              </button>
-            </div>
-            <footer><button className="button" onClick={() => setCloseRequested(false)}>Cancel</button><span /></footer>
-          </section>
-        </div>
-      )}
       {shortcutOpen && (
         <div
           className="popover-layer"
@@ -8964,6 +9473,7 @@ function WorkspaceUnlockGate({
   const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [dreamscape] = useState(() => Math.floor(Math.random() * 4));
   const needsSetup = status?.state === 'needs_setup';
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -8990,6 +9500,7 @@ function WorkspaceUnlockGate({
     <div className="app-shell app-shell--locked">
       <CupcakeTitlebar />
       <main className="workspace-unlock">
+        <Dreamscape scene={dreamscape} />
         <section className="workspace-unlock__card">
           <div className="workspace-unlock__mark">
             <Icon name="shield" size={30} />
@@ -9058,8 +9569,23 @@ function WorkspaceUnlockGate({
                 disabled={busy || (status.retryAfterMs ?? 0) > 0}
               >
                 <Icon name="shield" />
-                {busy ? 'Protecting…' : needsSetup ? 'Create password and open' : 'Unlock workspace'}
+                {busy
+                  ? 'Protecting…'
+                  : needsSetup
+                    ? 'Create password and open'
+                    : 'Unlock workspace'}
               </button>
+              {busy && (
+                <div className="workspace-unlock__progress" role="status">
+                  <span>
+                    <i />
+                  </span>
+                  <small>
+                    Opening encrypted history first. Models and optional services will wake only
+                    when needed.
+                  </small>
+                </div>
+              )}
             </form>
           )}
           <div className="workspace-unlock__actions">
@@ -9105,9 +9631,7 @@ function WorkspaceUnlockGate({
 export function App() {
   const workspaceLockApi = window.cupcake?.workspace;
   const [lockStatus, setLockStatus] = useState<WorkspaceLockStatus | null>(
-    workspaceLockApi
-      ? null
-      : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
+    workspaceLockApi ? null : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
   );
   useEffect(() => {
     if (!workspaceLockApi) return;

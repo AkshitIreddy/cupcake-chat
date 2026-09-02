@@ -77,7 +77,7 @@ def test_composed_runtime_bootstrap_and_persistence(tmp_path: Path) -> None:
     reopened.close()
 
 
-def test_bootstrap_autoloads_an_explicitly_selected_cupcake_local_model(
+def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runtime = service(tmp_path)
@@ -92,16 +92,12 @@ def test_bootstrap_autoloads_an_explicitly_selected_cupcake_local_model(
     monkeypatch.setattr(runtime, "_cupcake_local_load", load)
     bootstrap, _ = runtime.handle("app.bootstrap")
 
-    assert captured == {
-        "modelId": "qwen3-8b-q4-k-m",
-        "contextSize": 4096,
-        "gpuLayers": "auto",
-        "timeoutSeconds": 180,
-    }
+    assert captured == {}
     assert bootstrap["selectedModelId"] == selected
     assert bootstrap["localModelAutoload"] == {
-        "attempted": True,
-        "loaded": True,
+        "attempted": False,
+        "loaded": False,
+        "deferredUntilUse": True,
         "errorType": None,
     }
     runtime.close()

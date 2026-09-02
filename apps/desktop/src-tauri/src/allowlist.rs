@@ -115,6 +115,7 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "local_models.cupcake.runtime_version",
     "local_models.cupcake.status",
     "local_models.cupcake.unload",
+    "local_models.discovery.search",
     "local_models.hardware",
     "mcp.connect",
     "mcp.disconnect",

@@ -235,7 +235,7 @@ describe('workspace local model integration', () => {
     expect(runtime?.status).toBe('catalog');
   });
 
-  it('uses the registered endpoint model id only while a local model is loaded', () => {
+  it('uses the registered endpoint model id while a local model is loaded', () => {
     const [model] = mapCupcakeLocalModels({
       activeModelId: 'qwen3-4b-q4-k-m',
       availableModels: [
@@ -252,5 +252,27 @@ describe('workspace local model integration', () => {
     expect(model.id).toBe('openai-compatible:cupcake-local/qwen3-4b-q4-k-m');
     expect(model.runtimeModelId).toBe('qwen3-4b-q4-k-m');
     expect(model.status).toBe('ready');
+  });
+
+  it('preserves a selected local route while its model waits for just-in-time loading', () => {
+    const routeId = 'openai-compatible:cupcake-local/qwen3-4b-q4-k-m';
+    const [model] = mapCupcakeLocalModels(
+      {
+        activeModelId: null,
+        availableModels: [
+          {
+            id: 'qwen3-4b-q4-k-m',
+            display_name: 'Qwen3 4B',
+            context_window: 8192,
+          },
+        ],
+        models: [{ id: 'qwen3-4b-q4-k-m' }],
+      },
+      routeId,
+    );
+
+    expect(model).toEqual(
+      expect.objectContaining({ id: routeId, selected: true, status: 'installed' }),
+    );
   });
 });

@@ -61,6 +61,7 @@ from cupcake_runtime.local_models import (
     LlamaServerConfig,
     detect_hardware,
 )
+from cupcake_runtime.local_models.discovery import search_huggingface_gguf
 from cupcake_runtime.local_models.types import RuntimeBackend
 from cupcake_runtime.mcp import (
     MCPCallBrokerRequest,
@@ -137,6 +138,19 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "personality.custom_instructions": "",
     "developer.enabled": False,
     "accessibility.reduced_motion": False,
+    "appearance.scrollbars": "slim",
+    "onboarding.completed_v1": False,
+    "profile.display_name": "Akshit",
+    "profile.role": "",
+    "profile.bio": "",
+    "profile.avatar": "atlas:16",
+    "assistant.avatar": "atlas:0",
+    "models.local.allow_ram_fallback": True,
+    "models.local.max_ram_gb": 24.0,
+    "models.local.auto_evict": True,
+    "models.local.idle_minutes": 30.0,
+    "models.local.reserve_system_ram_gb": 4.0,
+    "models.local.reserve_vram_gb": 1.5,
     "proactive.enabled": False,
     "cost.monthly_limit_usd": None,
     "privacy.default_mode": "direct",
@@ -247,6 +261,7 @@ class RuntimeService:
         self._memory_confirmations: dict[str, MemoryConfirmation] = {}
         self._outbound_confirmations: dict[str, OutboundConfirmation] = {}
         self._migration_cleanup: dict[str, Path] = {}
+        self._local_model_idle_timer: threading.Timer | None = None
         self._closed = False
         self._recover_on_startup()
 
@@ -283,6 +298,9 @@ class RuntimeService:
                 active.agent_cancellation.cancel()
                 active.loop.call_soon_threadsafe(active.task.cancel)
             self._active_cancellations.clear()
+            if self._local_model_idle_timer is not None:
+                self._local_model_idle_timer.cancel()
+                self._local_model_idle_timer = None
         if self.task_runtime is not None:
             self.task_runtime.shutdown()
         asyncio.run(self.cupcake_local.close())
@@ -312,6 +330,7 @@ class RuntimeService:
             "settings.list": self._settings_list,
             "settings.set": self._settings_set,
             "local_models.hardware": self._local_models_hardware,
+            "local_models.discovery.search": self._local_models_discovery_search,
             "local_models.cupcake.status": self._cupcake_local_status,
             "local_models.cupcake.download": self._cupcake_local_download,
             "local_models.cupcake.download.status": self._cupcake_local_download_status,
@@ -548,11 +567,8 @@ class RuntimeService:
         projects = self.repository.list_projects()
         conversations = self.repository.list_conversations(limit=100)
         selected = str(
-            self.repository.get_setting(
-                "models.default", default="mock:cupcake-deterministic"
-            )
+            self.repository.get_setting("models.default", default="mock:cupcake-deterministic")
         )
-        local_autoload = self._ensure_selected_local_model_loaded(selected)
         return {
             "mode": "runtime",
             "features": [
@@ -567,15 +583,19 @@ class RuntimeService:
                 "developer",
             ],
             "selectedModelId": selected,
-            "localModelAutoload": local_autoload,
+            "localModelAutoload": {
+                "attempted": False,
+                "loaded": False,
+                "deferredUntilUse": selected.startswith("openai-compatible:cupcake-local/"),
+                "errorType": None,
+            },
             "models": _jsonable(self.providers.catalog.list()),
-            "hardware": _jsonable(detect_hardware(self.data_dir)),
             "localRuntimes": ["cupcake-local"],
             "projects": _jsonable(projects),
             "conversations": _jsonable(conversations),
             "tools": _jsonable(self.tools.list()),
             "suggestionsEnabled": self.memory.suggestions_enabled(),
-            "recoveredRuns": _jsonable(self.tasks.recover(resume=False)),
+            "recoveredRuns": [],
         }
 
     def _ensure_selected_local_model_loaded(self, selected: str) -> dict[str, Any]:
@@ -594,6 +614,18 @@ class RuntimeService:
                     "modelId": artifact_id,
                     "contextSize": 4096,
                     "gpuLayers": "auto",
+                    "allowRamFallback": self.repository.get_setting(
+                        "models.local.allow_ram_fallback", default=True
+                    ),
+                    "maxRamGb": self.repository.get_setting(
+                        "models.local.max_ram_gb", default=24.0
+                    ),
+                    "reserveSystemRamGb": self.repository.get_setting(
+                        "models.local.reserve_system_ram_gb", default=4.0
+                    ),
+                    "reserveVramGb": self.repository.get_setting(
+                        "models.local.reserve_vram_gb", default=1.5
+                    ),
                     "timeoutSeconds": 180,
                 }
             )
@@ -761,6 +793,19 @@ class RuntimeService:
     def _local_models_hardware(self, _params: Mapping[str, Any]) -> Any:
         return _jsonable(detect_hardware(self.data_dir))
 
+    def _local_models_discovery_search(self, params: Mapping[str, Any]) -> Any:
+        query = str(params.get("query") or "")
+        limit_value = params.get("limit", 24)
+        if isinstance(limit_value, bool) or not isinstance(limit_value, (int, float)):
+            raise RuntimeCommandError("INVALID_ARGUMENT", "limit must be a number")
+        try:
+            return search_huggingface_gguf(query, limit=int(limit_value))
+        except (OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeCommandError(
+                "MODEL_DISCOVERY_UNAVAILABLE",
+                "Hugging Face model discovery is temporarily unavailable",
+            ) from exc
+
     def _cupcake_local_status(self, params: Mapping[str, Any]) -> Any:
         status = self.cupcake_local.status(verify_integrity=bool(params.get("verifyIntegrity")))
         return _redact_local_paths(status)
@@ -878,17 +923,28 @@ class RuntimeService:
         model_id = _required_string(params, "modelId")
         allow_ram_fallback = params.get("allowRamFallback") is not False
         max_ram_gb = float(params.get("maxRamGb", 24))
+        reserve_system_ram_gb = float(params.get("reserveSystemRamGb", 4))
+        reserve_vram_gb = float(params.get("reserveVramGb", 1.5))
         if not 4 <= max_ram_gb <= 256:
             raise RuntimeCommandError(
                 "INVALID_ARGUMENT", "The local-model RAM ceiling must be between 4 and 256 GB"
             )
         installed_model = self.cupcake_local.models.get(model_id, verify=False)
         model_bytes = Path(installed_model.path).stat().st_size
-        if allow_ram_fallback and model_bytes > max_ram_gb * 1024**3:
+        hardware = detect_hardware(self.data_dir)
+        safe_ram_gb = max(0.0, min(max_ram_gb, hardware.available_ram_gb - reserve_system_ram_gb))
+        if allow_ram_fallback and model_bytes > safe_ram_gb * 1024**3:
             raise RuntimeCommandError(
                 "MODEL_EXCEEDS_RAM_POLICY",
                 f"The model weights alone require {model_bytes / 1024**3:.1f} GB, "
-                f"above the configured {max_ram_gb:.0f} GB RAM ceiling",
+                f"above the current {safe_ram_gb:.1f} GB safe RAM budget after reserves",
+            )
+        safe_vram_gb = max(0.0, (hardware.vram_gb or 0.0) - reserve_vram_gb)
+        if not allow_ram_fallback and model_bytes > safe_vram_gb * 1024**3:
+            raise RuntimeCommandError(
+                "MODEL_EXCEEDS_VRAM_POLICY",
+                f"The model weights require {model_bytes / 1024**3:.1f} GB, above the "
+                f"current {safe_vram_gb:.1f} GB VRAM budget after reserves",
             )
         default_gpu_layers: int | str = (
             ("auto" if allow_ram_fallback else "all")
@@ -939,19 +995,48 @@ class RuntimeService:
             runtime_kind="cupcake_llama_cpp",
             runtime_loaded=True,
         )
+        self._touch_local_model_idle_timer(descriptor.id)
         return {
             "endpoint": _redact_local_paths(_jsonable(endpoint)),
             "model": _jsonable(descriptor),
             "memoryPlacement": {
                 "allowRamFallback": allow_ram_fallback,
                 "maxRamGb": max_ram_gb,
+                "safeRamGb": safe_ram_gb,
+                "reserveSystemRamGb": reserve_system_ram_gb,
+                "reserveVramGb": reserve_vram_gb,
                 "gpuLayers": gpu_layers,
                 "mode": "hybrid_allowed" if allow_ram_fallback else "vram_only",
             },
         }
 
     def _cupcake_local_unload(self, _params: Mapping[str, Any]) -> Any:
+        with self._state_lock:
+            if self._local_model_idle_timer is not None:
+                self._local_model_idle_timer.cancel()
+                self._local_model_idle_timer = None
         return _jsonable(asyncio.run(self.cupcake_local.unload()))
+
+    def _touch_local_model_idle_timer(self, model_id: str) -> None:
+        if not model_id.startswith("openai-compatible:cupcake-local/"):
+            return
+        if not self.repository.get_setting("models.local.auto_evict", default=True):
+            return
+        idle_minutes = float(self.repository.get_setting("models.local.idle_minutes", default=30.0))
+        with self._state_lock:
+            if self._local_model_idle_timer is not None:
+                self._local_model_idle_timer.cancel()
+            timer = threading.Timer(idle_minutes * 60.0, self._unload_idle_local_model)
+            timer.daemon = True
+            self._local_model_idle_timer = timer
+            timer.start()
+
+    def _unload_idle_local_model(self) -> None:
+        try:
+            asyncio.run(self.cupcake_local.unload())
+        finally:
+            with self._state_lock:
+                self._local_model_idle_timer = None
 
     def _cupcake_local_benchmark(self, params: Mapping[str, Any]) -> Any:
         max_tokens = int(params.get("maxTokens", 32))
@@ -1409,6 +1494,8 @@ class RuntimeService:
 
     def _chat_preflight(self, params: Mapping[str, Any]) -> Any:
         model_id = _required_string(params, "modelId")
+        self._ensure_selected_local_model_loaded(model_id)
+        self._touch_local_model_idle_timer(model_id)
         descriptor = self.providers.catalog.select(model_id)
         content = str(params.get("content") or "")
         confirmation_params = self._confirmation_bound_params(params)
@@ -2381,6 +2468,8 @@ class RuntimeService:
     def _enforce_model_policy(
         self, model_id: str, params: Mapping[str, Any], *, content: str
     ) -> None:
+        self._ensure_selected_local_model_loaded(model_id)
+        self._touch_local_model_idle_timer(model_id)
         descriptor = self.providers.catalog.select(model_id)
         if _requires_model_compatibility_confirmation(
             descriptor
@@ -3708,6 +3797,9 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
         "accessibility.reduced_motion",
         "proactive.enabled",
         "retrieval.semantic.enabled",
+        "onboarding.completed_v1",
+        "models.local.allow_ram_fallback",
+        "models.local.auto_evict",
     }:
         if not isinstance(value, bool):
             raise RuntimeCommandError("INVALID_SETTING", f"{key} must be boolean")
@@ -3724,6 +3816,50 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
         if value not in {"cupcake-light", "cupcake-dark", "minimal", "classic"}:
             raise RuntimeCommandError("INVALID_SETTING", "Unknown theme")
         return value
+    if key == "appearance.scrollbars":
+        if value not in {"slim", "minimal", "hidden"}:
+            raise RuntimeCommandError("INVALID_SETTING", "Unknown scrollbar mode")
+        return value
+    if key in {
+        "profile.display_name",
+        "profile.role",
+        "profile.bio",
+        "profile.avatar",
+        "assistant.avatar",
+    }:
+        if not isinstance(value, str):
+            raise RuntimeCommandError("INVALID_SETTING", f"{key} must be text")
+        limit = 2_000_000 if key in {"profile.avatar", "assistant.avatar"} else 2_000
+        if len(value) > limit:
+            raise RuntimeCommandError("INVALID_SETTING", f"{key} is too long")
+        if key.endswith("avatar") and not (
+            value.startswith("atlas:")
+            or value.startswith("/brand/")
+            or value.startswith("data:image/")
+        ):
+            raise RuntimeCommandError("INVALID_SETTING", "Avatar source is not allowed")
+        return value
+    if key in {
+        "models.local.max_ram_gb",
+        "models.local.idle_minutes",
+        "models.local.reserve_system_ram_gb",
+        "models.local.reserve_vram_gb",
+    }:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise RuntimeCommandError("INVALID_SETTING", f"{key} must be numeric")
+        amount = float(value)
+        ranges = {
+            "models.local.max_ram_gb": (4.0, 256.0),
+            "models.local.idle_minutes": (1.0, 240.0),
+            "models.local.reserve_system_ram_gb": (2.0, 64.0),
+            "models.local.reserve_vram_gb": (0.5, 16.0),
+        }
+        minimum, maximum = ranges[key]
+        if not minimum <= amount <= maximum:
+            raise RuntimeCommandError(
+                "INVALID_SETTING", f"{key} must be between {minimum:g} and {maximum:g}"
+            )
+        return amount
     if key == "models.default":
         if not isinstance(value, str):
             raise RuntimeCommandError("INVALID_SETTING", "Default model must be a model ID")

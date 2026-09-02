@@ -77,6 +77,7 @@ export interface ModelDescriptor {
     | 'unloading'
     | 'removing'
     | 'offline'
+    | 'community'
     | 'error';
   description: string;
   selected?: boolean;
@@ -96,6 +97,11 @@ export interface ModelDescriptor {
   fit?: 'pending' | 'recommended' | 'reduced-context' | 'cpu-slow' | 'hybrid' | 'incompatible';
   fitReason?: string;
   source?: string;
+  sourceUrl?: string;
+  downloads?: number;
+  likes?: number;
+  lastModified?: string;
+  gated?: boolean;
   license?: string;
   parameters?: string;
   quantization?: string;

@@ -227,6 +227,7 @@ export interface WorkspaceSettings {
     bio: string;
     avatar: string;
   };
+  assistantAvatar: string;
   reasoningEffort: ReasoningEffort;
   enabledToolIds: string[];
   personalityPreset: 'balanced' | 'concise' | 'warm' | 'analytical' | 'custom';
@@ -240,6 +241,10 @@ export interface WorkspaceSettings {
   permissionMode: 'guarded' | 'full-freedom';
   allowRamFallback: boolean;
   maxRamGb: number;
+  autoEvictLocalModels: boolean;
+  localModelIdleMinutes: number;
+  reserveSystemRamGb: number;
+  reserveVramGb: number;
 }
 
 interface RuntimeProject {
@@ -452,6 +457,7 @@ interface WorkspaceContextValue {
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
   installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<void>;
   activateRuntimePack(runtime: LocalRuntimeRecord): Promise<void>;
+  discoverCommunityModels: (query?: string) => Promise<ModelDescriptor[]>;
   setToolEnabled(toolId: string, enabled: boolean): Promise<void>;
   connectMcp(input: {
     name: string;
@@ -1024,9 +1030,10 @@ export function mapCupcakeLocalModels(
           : download && isActiveDownload(downloadState)
             ? localDownloadState(downloadState, textValue(download.error_code))
             : 'catalog';
+    const loadedRouteId = `openai-compatible:cupcake-local/${artifactId}`;
     const selectableId =
-      status.activeModelId === artifactId
-        ? `openai-compatible:cupcake-local/${artifactId}`
+      status.activeModelId === artifactId || selectedId === loadedRouteId
+        ? loadedRouteId
         : `cupcake-local:${artifactId}`;
     const reasons = stringValues(recommendation?.reasons);
     const mapped = mapModel(
@@ -1244,10 +1251,82 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
   };
 }
 
+function mapCommunityModel(item: Record<string, unknown>): ModelDescriptor | null {
+  const id = typeof item.id === 'string' ? item.id : '';
+  const name = typeof item.name === 'string' ? item.name : '';
+  const sourceUrl = typeof item.sourceUrl === 'string' ? item.sourceUrl : undefined;
+  if (!id.startsWith('hf:') || !name || !sourceUrl?.startsWith('https://huggingface.co/'))
+    return null;
+  return {
+    id,
+    provider: 'Hugging Face',
+    name,
+    route: 'Local',
+    tags: Array.isArray(item.tags)
+      ? item.tags.filter((tag): tag is string => typeof tag === 'string').slice(0, 5)
+      : ['GGUF'],
+    context: typeof item.context === 'string' ? item.context : 'See model card',
+    cost: 'Local',
+    status: 'community',
+    description:
+      typeof item.description === 'string'
+        ? item.description
+        : 'Community GGUF listing from Hugging Face.',
+    fit: 'pending',
+    fitReason:
+      typeof item.fitReason === 'string'
+        ? item.fitReason
+        : 'Choose a quantization to estimate device fit.',
+    source: 'Hugging Face Hub',
+    sourceUrl,
+    license: typeof item.license === 'string' ? item.license : undefined,
+    parameters: typeof item.parameters === 'string' ? item.parameters : undefined,
+    downloads: typeof item.downloads === 'number' ? item.downloads : undefined,
+    likes: typeof item.likes === 'number' ? item.likes : undefined,
+    lastModified: typeof item.lastModified === 'string' ? item.lastModified : undefined,
+    gated: Boolean(item.gated),
+  };
+}
+
+const fixtureCommunityModels = [
+  'Qwen/Qwen3-4B-GGUF',
+  'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF',
+  'unsloth/gemma-3-4b-it-GGUF',
+  'microsoft/Phi-4-mini-instruct-GGUF',
+  'bartowski/Meta-Llama-3.1-8B-Instruct-GGUF',
+  'bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF',
+  'bartowski/Mistral-7B-Instruct-v0.3-GGUF',
+  'bartowski/SmolLM3-3B-GGUF',
+  'bartowski/granite-3.3-8b-instruct-GGUF',
+  'bartowski/Aya-Expanse-8B-GGUF',
+  'bartowski/LFM2-1.2B-GGUF',
+  'bartowski/Ministral-3-3B-Instruct-GGUF',
+].map((repository, index): ModelDescriptor => ({
+  id: `hf:${repository}`,
+  provider: 'Hugging Face',
+  name: repository.split('/')[1]!.replace('-GGUF', '').replaceAll('-', ' '),
+  route: 'Local',
+  tags: index % 3 === 1 ? ['GGUF', 'coding'] : ['GGUF', 'text-generation'],
+  context: 'See model card',
+  cost: 'Local',
+  status: 'community',
+  description: `Community GGUF listing by ${repository.split('/')[0]}. Review upstream files and terms before importing.`,
+  fit: 'pending',
+  fitReason: 'Choose a quantization on the model card to estimate device fit.',
+  source: 'Hugging Face Hub',
+  sourceUrl: `https://huggingface.co/${repository}`,
+  downloads: 980_000 - index * 43_000,
+}));
+
 export function localModelActionRequest(
   action: ModelAction,
   model: ModelDescriptor,
-  policy?: { allowRamFallback: boolean; maxRamGb: number },
+  policy?: {
+    allowRamFallback: boolean;
+    maxRamGb: number;
+    reserveSystemRamGb?: number;
+    reserveVramGb?: number;
+  },
 ): { method: string; params: Record<string, unknown> } {
   const nativeModel = model.runtimeModelId ?? model.id;
   if (model.provider !== 'Cupcake Local')
@@ -1282,6 +1361,8 @@ export function localModelActionRequest(
         modelId: nativeModel,
         allowRamFallback: policy.allowRamFallback,
         maxRamGb: policy.maxRamGb,
+        reserveSystemRamGb: policy.reserveSystemRamGb,
+        reserveVramGb: policy.reserveVramGb,
         ...(policy.allowRamFallback ? {} : { gpuLayers: 'all' }),
       },
     };
@@ -1344,8 +1425,9 @@ const fallbackSettings: WorkspaceSettings = {
     displayName: 'Akshit',
     role: '',
     bio: '',
-    avatar: '/brand/cupcake-2-grown.png',
+    avatar: 'atlas:16',
   },
+  assistantAvatar: 'atlas:0',
   reasoningEffort: 'high',
   enabledToolIds: fixtureTools.filter((tool) => tool.enabled).map((tool) => tool.id),
   personalityPreset: 'balanced',
@@ -1355,6 +1437,10 @@ const fallbackSettings: WorkspaceSettings = {
   permissionMode: 'guarded',
   allowRamFallback: true,
   maxRamGb: 24,
+  autoEvictLocalModels: true,
+  localModelIdleMinutes: 30,
+  reserveSystemRamGb: 4,
+  reserveVramGb: 1.5,
 };
 
 function normalizeSettings(value: Partial<WorkspaceSettings>): WorkspaceSettings {
@@ -1414,9 +1500,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         : fallbackSettings;
     try {
       const normalized = normalizeSettings(JSON.parse(stored) as Partial<WorkspaceSettings>);
-      return fixtureOnboardingComplete
-        ? { ...normalized, onboardingCompleted: true }
-        : normalized;
+      return fixtureOnboardingComplete ? { ...normalized, onboardingCompleted: true } : normalized;
     } catch {
       return fallbackSettings;
     }
@@ -1567,6 +1651,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ? activeProjectId
           : (projectRecords[0]?.id ?? null);
       setActiveProjectId(selectedProject);
+      // The encrypted navigation shell and conversation list are now useful.
+      // Optional models, hardware, tasks, memory, providers, migration and
+      // developer diagnostics hydrate below without holding the first
+      // interactive frame hostage.
+      setReady(true);
       const auxiliaryFailures: string[] = [];
       const recover = async <T,>(label: string, operation: Promise<T>, fallback: T): Promise<T> => {
         const result = await recoverWorkspaceSupportRequest(label, operation, fallback);
@@ -1749,6 +1838,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
           avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
         },
+        assistantAvatar: textValue(runtimeSettings['assistant.avatar'], current.assistantAvatar),
         personalityPreset:
           (runtimeSettings['personality.preset'] as WorkspaceSettings['personalityPreset']) ??
           current.personalityPreset,
@@ -1783,6 +1873,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           4,
           Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
         ),
+        autoEvictLocalModels: runtimeSettings['models.local.auto_evict'] !== false,
+        localModelIdleMinutes: Math.max(
+          1,
+          Math.min(
+            240,
+            Number(runtimeSettings['models.local.idle_minutes'] ?? current.localModelIdleMinutes),
+          ),
+        ),
+        reserveSystemRamGb: Math.max(
+          2,
+          Math.min(
+            64,
+            Number(
+              runtimeSettings['models.local.reserve_system_ram_gb'] ?? current.reserveSystemRamGb,
+            ),
+          ),
+        ),
+        reserveVramGb: Math.max(
+          0.5,
+          Math.min(
+            16,
+            Number(runtimeSettings['models.local.reserve_vram_gb'] ?? current.reserveVramGb),
+          ),
+        ),
       }));
       void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
         .then((items) =>
@@ -1797,7 +1911,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         )
         .catch(() => undefined);
       await loadArtifacts(selectedProject);
-      setReady(true);
     });
   }, [activeProjectId, fixtureMode, guard, loadArtifacts, request]);
 
@@ -2548,6 +2661,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const operation = localModelActionRequest(action, target, {
         allowRamFallback: settings.allowRamFallback,
         maxRamGb: settings.maxRamGb,
+        reserveSystemRamGb: settings.reserveSystemRamGb,
+        reserveVramGb: settings.reserveVramGb,
       });
       if (action === 'download' || action === 'resume') {
         setError(null);
@@ -2588,7 +2703,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [fixtureMode, guard, models, refresh, request, settings.allowRamFallback, settings.maxRamGb],
+    [
+      fixtureMode,
+      guard,
+      models,
+      refresh,
+      request,
+      settings.allowRamFallback,
+      settings.maxRamGb,
+      settings.reserveSystemRamGb,
+      settings.reserveVramGb,
+    ],
   );
   const installRuntimePack = useCallback(
     async (runtimeId: string, acceptedLicenseUrls: string[]) => {
@@ -2734,6 +2859,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ['profile.bio', patch.profile.bio],
             ['profile.avatar', patch.profile.avatar],
           );
+        if (patch.assistantAvatar !== undefined)
+          entries.push(['assistant.avatar', patch.assistantAvatar]);
         if (patch.reasoningEffort !== undefined)
           entries.push(['models.reasoning_effort', patch.reasoningEffort]);
         if (patch.enabledToolIds !== undefined)
@@ -2759,8 +2886,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           await request('broker.permission_mode.set', { mode: patch.permissionMode });
         if (patch.allowRamFallback !== undefined)
           entries.push(['models.local.allow_ram_fallback', patch.allowRamFallback]);
-        if (patch.maxRamGb !== undefined)
-          entries.push(['models.local.max_ram_gb', patch.maxRamGb]);
+        if (patch.maxRamGb !== undefined) entries.push(['models.local.max_ram_gb', patch.maxRamGb]);
+        if (patch.autoEvictLocalModels !== undefined)
+          entries.push(['models.local.auto_evict', patch.autoEvictLocalModels]);
+        if (patch.localModelIdleMinutes !== undefined)
+          entries.push(['models.local.idle_minutes', patch.localModelIdleMinutes]);
+        if (patch.reserveSystemRamGb !== undefined)
+          entries.push(['models.local.reserve_system_ram_gb', patch.reserveSystemRamGb]);
+        if (patch.reserveVramGb !== undefined)
+          entries.push(['models.local.reserve_vram_gb', patch.reserveVramGb]);
         await Promise.all(entries.map(([key, value]) => request('settings.set', { key, value })));
         if (patch.proactiveEnabled !== undefined)
           await request('memory.suggestions.enable', { enabled: patch.proactiveEnabled });
@@ -2820,6 +2954,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       await window.cupcake?.dialog.releaseHandle(target.id);
     }
   }, [request]);
+  const discoverCommunityModels = useCallback(
+    async (query = ''): Promise<ModelDescriptor[]> => {
+      const cleanQuery = query.trim().toLowerCase();
+      if (fixtureMode)
+        return fixtureCommunityModels.filter((model) =>
+          `${model.name} ${model.tags.join(' ')}`.toLowerCase().includes(cleanQuery),
+        );
+      const result = await request<{ models?: Array<Record<string, unknown>> }>(
+        'local_models.discovery.search',
+        { query: query.trim(), limit: 30 },
+        20_000,
+      );
+      return (result.models ?? [])
+        .map(mapCommunityModel)
+        .filter((model): model is ModelDescriptor => Boolean(model));
+    },
+    [fixtureMode, request],
+  );
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -2876,6 +3028,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runModelAction,
       installRuntimePack,
       activateRuntimePack,
+      discoverCommunityModels,
       setToolEnabled,
       connectMcp,
       disconnectMcp,
@@ -2945,6 +3098,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runModelAction,
       installRuntimePack,
       activateRuntimePack,
+      discoverCommunityModels,
       setToolEnabled,
       connectMcp,
       disconnectMcp,
