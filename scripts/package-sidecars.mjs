@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFile, cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promoteDirectory } from './lib/atomic-directory.mjs';
 import {
@@ -338,13 +338,18 @@ async function verifyManifest() {
 }
 
 async function stageTauriBundleInputs() {
+  // Large generated sidecars may live behind an E:\temp junction on Windows.
+  // Resolve those destinations first so atomic staging remains on the same
+  // volume and promotion replaces the junction target, not the junction.
+  const binaryDestination = await realpath(tauriBinaryDir).catch(() => tauriBinaryDir);
+  const resourceDestination = await realpath(tauriResourceDir).catch(() => tauriResourceDir);
   const binaryStaging = join(
-    dirname(tauriBinaryDir),
-    `.${basename(tauriBinaryDir)}.staging-${String(process.pid)}`,
+    dirname(binaryDestination),
+    `.${basename(binaryDestination)}.staging-${String(process.pid)}`,
   );
   const resourceStaging = join(
-    dirname(tauriResourceDir),
-    `.${basename(tauriResourceDir)}.staging-${String(process.pid)}`,
+    dirname(resourceDestination),
+    `.${basename(resourceDestination)}.staging-${String(process.pid)}`,
   );
   await rm(binaryStaging, { recursive: true, force: true });
   await rm(resourceStaging, { recursive: true, force: true });
@@ -373,10 +378,10 @@ async function stageTauriBundleInputs() {
     });
   }
 
-  await ensureDir(dirname(tauriBinaryDir));
-  await ensureDir(dirname(tauriResourceDir));
-  await promoteDirectory(binaryStaging, tauriBinaryDir);
-  await promoteDirectory(resourceStaging, tauriResourceDir);
+  await ensureDir(dirname(binaryDestination));
+  await ensureDir(dirname(resourceDestination));
+  await promoteDirectory(binaryStaging, binaryDestination);
+  await promoteDirectory(resourceStaging, resourceDestination);
   process.stdout.write(
     `Staged Tauri externalBin inputs for ${targetTriple} and verified resources/sidecars.\n`,
   );
