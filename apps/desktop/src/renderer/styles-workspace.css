@@ -15,9 +15,9 @@
   background-image:
     linear-gradient(
       110deg,
-      color-mix(in srgb, var(--paper), transparent 5%) 0%,
-      color-mix(in srgb, var(--paper), transparent 20%) 52%,
-      color-mix(in srgb, var(--paper), transparent 34%) 100%
+      color-mix(in srgb, var(--paper), transparent 28%) 0%,
+      color-mix(in srgb, var(--paper), transparent 48%) 52%,
+      color-mix(in srgb, var(--paper), transparent 64%) 100%
     ),
     var(--workspace-wallpaper);
   background-position: center;
@@ -28,13 +28,13 @@
 }
 .app-content--wallpaper .chat-main,
 .app-content--wallpaper .context-panel {
-  background: color-mix(in srgb, var(--paper), transparent 22%);
-  backdrop-filter: blur(8px) saturate(0.92);
+  background: color-mix(in srgb, var(--paper), transparent 48%);
+  backdrop-filter: blur(6px) saturate(0.96);
 }
 .app-content--wallpaper .chat-header,
 .app-content--wallpaper .composer-wrap {
-  background: color-mix(in srgb, var(--paper-raised), transparent 10%);
-  backdrop-filter: blur(13px) saturate(0.96);
+  background: color-mix(in srgb, var(--paper-raised), transparent 24%);
+  backdrop-filter: blur(10px) saturate(0.98);
 }
 .app-content--chat > .chat-layout {
   flex: 1 1 auto;
