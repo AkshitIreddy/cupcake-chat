@@ -75,7 +75,8 @@ def test_discovery_filters_non_chat_and_does_not_invent_unknown_capabilities() -
     assert unknown.metadata["max_output_tokens_known"] is False
     assert unknown.capabilities.tools is False
     assert unknown.capabilities.reasoning is False
-    assert "unverified" in unknown.display_name
+    assert unknown.display_name == "vendor/new-model"
+    assert unknown.metadata["verification_state"] == "account_discoverable"
 
 
 def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
@@ -111,7 +112,10 @@ def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
     assert len(result.models) == 20
     assert result.unknown_chat_compatibility == 0
     assert all(model.metadata["chat_compatibility"] == "chat" for model in result.models)
-    assert all(model.metadata["verification_state"] == "docs_verified_chat" for model in result.models)
+    assert all(
+        model.metadata["verification_state"] == "docs_verified_chat"
+        for model in result.models
+    )
     assert all(
         str(model.metadata["compatibility_source_url"]).startswith("https://build.nvidia.com/")
         for model in result.models

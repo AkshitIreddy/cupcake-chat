@@ -4,11 +4,11 @@
 
 NVIDIA publishes several overlapping catalogs, so one number cannot truthfully represent every
 NVIDIA model. The public Models page currently exposes 98 mixed-purpose entries, while the
-authenticated OpenAI-compatible `GET /v1/models` probe for the configured test account returned 82
-raw IDs on 2026-09-03. CupcakeAI conservatively removes known embedding, reranking, guard, vision,
-image, audio, and other specialized endpoints from its text-chat picker; this explains why the old
-UI showed 65 candidates. The product now labels that count **account-discoverable NIM chat
-candidates**, not “all NVIDIA models.”
+authenticated OpenAI-compatible `GET /v1/models` qualification for the configured test account
+returned 64 bounded text candidates on 2026-09-03. CupcakeAI conservatively removes known
+embedding, reranking, guard, image-generation, audio, and other specialized endpoints. The default
+product surface no longer shows that whole account inventory: it shows only the small qualified
+shortlist described below.
 
 Primary catalog references:
 
@@ -19,10 +19,10 @@ Primary catalog references:
 - [NVIDIA API trial terms](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-api-trial-terms-of-service/)
 
 Hugging Face is different: it is an open Hub with hundreds of thousands of repositories, not a
-curated list of models guaranteed to run in Cupcake Local. CupcakeAI requests up to 240 current GGUF
-search results per query, can accept up to 500 from the runtime, progressively renders 60 at a time,
-and keeps gated/license/download metadata visible. This gives broad search without pretending every
-repository is compatible or benchmarked.
+curated list of models guaranteed to run in Cupcake Local. CupcakeAI now keeps Hub search off by
+default. A user must enable **Search Hugging Face too** and type at least two characters; the app
+then requests at most 48 current GGUF cards. These remain model-card links rather than pretending
+every community repository is compatible, complete, or installable.
 
 - [Hugging Face Hub model search API](https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.list_models)
 - [Hugging Face model cards](https://huggingface.co/docs/hub/model-cards)
@@ -33,11 +33,11 @@ repository is compatible or benchmarked.
 ## Verification policy
 
 `/v1/models` identifies models but does not declare endpoint compatibility. CupcakeAI therefore does
-not infer chat support merely from a fashionable model name. A NIM model is marked “Chat documented”
-only when its exact current ID has an official NVIDIA Build model card/playground that uses the
-hosted chat-completions route. Twenty current account IDs are pinned with their evidence URLs in
-`providers/nvidia_nim.py`; unknown rows remain discoverable in Models but are hidden from the chat
-picker by default.
+not infer chat support merely from a fashionable model name. Twenty exact IDs retain official model
+card evidence in `providers/nvidia_nim.py`, but documentation is not called an endpoint test. The
+ordinary Models page and picker expose only IDs that also passed the bounded connected-account chat
+probe. Unknown rows remain internal catalog metadata and never receive an “unverified” suffix in a
+user-facing name.
 
 The twenty documented IDs cover DeepSeek V4 Flash/Pro, Gemma 4, MiniMax M3, Mistral Large and
 Mistral-Nemotron, Kimi K2.6/K3, the current Nemotron families, GPT-OSS 20B/120B, and Poolside
@@ -58,41 +58,20 @@ Laguna. Representative exact evidence:
 - [GPT-OSS 20B](https://build.nvidia.com/openai/gpt-oss-20b/modelcard)
 - [Poolside Laguna XS 2.1](https://build.nvidia.com/poolside/laguna-xs-2.1/modelcard)
 
-## Cupcake ratings
+## Qualification result and why the cupcake score was removed
 
-Cupcakes are an evidence display, not a universal leaderboard. Comparing raw scores from different
-harnesses as though they were one scalar would be misleading. Each capability keeps the benchmark
-name and raw reported score in the UI tooltip. Ratings are capability-specific and provisional when
-only one benchmark family is available.
+A one-token chat probe ran against every proposed NIM shortlist entry through the configured owner
+account. Eight passed and are allowed into the default UI: Nemotron 3 Ultra, Nemotron 3 Super,
+Nemotron 3.5 Lightning, Nemotron 3 Nano Omni, GPT-OSS 20B, Laguna XS 2.1, Muse Glimmer 30B, and
+Mistral-Nemotron. Kimi K3, DeepSeek V4 Pro/Flash, and Gemma 4 timed out during this bounded run;
+Kimi K2.6 returned 404; GPT-OSS 120B was not in the connected catalog. Those entries remain useful
+research evidence but are excluded from the ordinary picker until they pass a later qualification.
 
-The current mapping is intentionally coarse:
-
-- 5 cupcakes: frontier result in the cited model-card cohort, usually around the top decile.
-- 4.5 cupcakes: excellent, broadly competitive result.
-- 4 cupcakes: strong result suitable for demanding work.
-- 3–3.5 cupcakes: capable but with material gaps or mixed benchmark evidence.
-- No rating: insufficient comparable evidence; absence is not a zero.
-
-The first evidence-backed set covers DeepSeek V4 Pro/Flash, Gemma 4 31B, Mistral-Nemotron, Kimi
-K2.6/K3, Nemotron 3 Super/Ultra, Nemotron 3.5 Lightning, Nemotron 3 Nano Omni, GPT-OSS 20B/120B, and
-Laguna XS 2.1. It spans chat/instruction following, reasoning, coding, mathematics, tool use,
-agentic work, vision, documents, computer use, speech, and long context. MiniMax M3 is classified by
-documented capability but deliberately receives no cupcake score because its NVIDIA card says the
-evaluation score is undisclosed.
-
-Benchmark interpretation references:
-
-- [SWE-bench](https://www.swebench.com/)
-- [SWE-bench Verified](https://openai.com/index/introducing-swe-bench-verified/)
-- [Terminal-Bench](https://www.tbench.ai/)
-- [LiveCodeBench](https://livecodebench.github.io/)
-- [GPQA paper](https://arxiv.org/abs/2311.12022)
-- [MMLU-Pro paper](https://arxiv.org/abs/2406.01574)
-- [MMMU benchmark](https://mmmu-benchmark.github.io/)
-- [OSWorld benchmark](https://os-world.github.io/)
-- [RULER long-context benchmark](https://arxiv.org/abs/2404.06654)
-- [IFEval paper](https://arxiv.org/abs/2311.07911)
-- [Tau-bench paper](https://arxiv.org/abs/2406.12045)
+The synthetic cupcake benchmark score has been removed. The upstream cards use different harness
+versions, prompting, tool policies, and model configurations, so collapsing those values into one
+decorative scalar looked more precise than the evidence permits. Cards now show plain task labels,
+size tier, route, complete curated descriptions, and an explicit endpoint-tested badge where the
+bounded probe passed.
 
 ## Runtime and memory decision
 

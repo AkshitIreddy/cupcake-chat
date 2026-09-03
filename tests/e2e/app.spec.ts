@@ -26,7 +26,11 @@ test('workspace opening composition stays optically centered', async ({ page }) 
   const shelfBackground = await page
     .locator('.shelf')
     .evaluate((element) => getComputedStyle(element).backgroundColor);
+  const titlebarBackground = await page
+    .locator('.cupcake-titlebar')
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(shelfBackground).not.toBe('rgb(246, 242, 235)');
+  expect(titlebarBackground).not.toBe('rgb(246, 242, 235)');
 });
 
 test('fresh Windows profile can choose quick-open without creating a password', async ({
@@ -113,16 +117,16 @@ test('first-run tour is complete, replayable, centered, and keeps search in the 
   await expect(page.getByRole('dialog', { name: 'One calm place for serious work' })).toBeVisible();
 });
 
-test('model discovery exposes a broad Hub result set with progressive disclosure', async ({
-  page,
-}) => {
+test('model discovery starts curated and only searches the Hub on request', async ({ page }) => {
   await page.goto('/?view=models');
   const state = page.locator('.model-catalog-summary');
-  await expect(state).toContainText(/Hugging Face GGUF results/i);
-  const hubState = state.getByText(/Hugging Face GGUF results/i);
-  const count = Number((await hubState.textContent())?.match(/\d+/)?.[0] ?? 0);
-  expect(count).toBeGreaterThan(30);
-  await expect(page.getByRole('button', { name: /Show more community models/i })).toBeVisible();
+  await expect(state).toContainText(/carefully selected matches/i);
+  await expect(state).not.toContainText(/community results/i);
+  await page.getByRole('button', { name: /Refine results/i }).click();
+  await page.getByLabel(/Search Hugging Face too/i).check();
+  await page.getByLabel('Find a model').fill('qwen');
+  await expect(state).toContainText(/optional community results/i);
+  await expect(page.getByRole('button', { name: /Show more community models/i })).toHaveCount(0);
 });
 
 test('Home uses intentional aligned marks instead of bare status dots', async ({ page }) => {
@@ -189,7 +193,7 @@ test('home, navigation, command palette and explicit model picker work', async (
   }
   await page.getByRole('button', { name: 'Models' }).click();
   await expect(page.getByRole('heading', { name: 'Models', exact: true }).last()).toBeVisible();
-  await expect(page.getByRole('button', { name: /Filters/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Refine results/ })).toBeVisible();
   await expect(page.locator('.community-model-intro')).toHaveCount(0);
 
   await page.keyboard.press('Control+K');
@@ -588,7 +592,7 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
             calls.push({ method, params });
             const result: Record<string, unknown> = {
               'app.bootstrap': {
-                selectedModelId: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+                selectedModelId: 'nvidia-nim:openai/gpt-oss-20b',
                 projects: [],
                 conversations: [],
                 models: [
@@ -614,9 +618,9 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
               'providers.catalog.refresh': {
                 models: [
                   {
-                    id: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
-                    model: 'nvidia/nemotron-3-nano-30b-a3b',
-                    display_name: 'Nemotron 3 Nano',
+                    id: 'nvidia-nim:openai/gpt-oss-20b',
+                    model: 'openai/gpt-oss-20b',
+                    display_name: 'GPT-OSS 20B',
                     privacy_route: 'cloud',
                     capabilities: { streaming: true },
                     metadata: { chat_compatibility: 'unknown' },
@@ -639,7 +643,7 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   if (await openNavigation.isVisible()) await openNavigation.click();
   await page.getByRole('button', { name: 'Models', exact: true }).click();
   await expect(page.locator('.model-catalog-summary')).toContainText(
-    '1 account-discoverable NIM chat candidates',
+    '1 curated NVIDIA NIM routes available',
   );
   await page.keyboard.press('Control+M');
   const picker = page.getByRole('dialog', { name: 'Choose model' });
@@ -656,7 +660,7 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   expect(calls).toContainEqual({
     method: 'models.select',
     params: {
-      modelId: 'nvidia-nim:nvidia/nemotron-3-nano-30b-a3b',
+      modelId: 'nvidia-nim:openai/gpt-oss-20b',
       compatibilityConfirmed: true,
     },
   });
@@ -695,13 +699,13 @@ test('custom titlebar reserves normal flow and exposes semantic window controls'
       controlsWidth: controls.getBoundingClientRect().width,
     };
   });
-  expect(geometry.titleHeight).toBe(38);
+  expect(geometry.titleHeight).toBe(32);
   expect(geometry.shelfTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
   expect(geometry.directDrag).toBe(true);
   expect(geometry.dragChildren).toBe(0);
   expect(geometry.dragWidth).toBeGreaterThan(20);
   expect(geometry.searchWidth).toBeGreaterThan(180);
-  expect(geometry.controlsWidth).toBe((page.viewportSize()?.width ?? 1440) < 640 ? 120 : 138);
+  expect(geometry.controlsWidth).toBe((page.viewportSize()?.width ?? 1440) <= 420 ? 120 : 126);
 });
 
 test('provider setup stays in-app, traps focus, supports Escape, and reviews a masked key', async ({
@@ -774,6 +778,7 @@ test('managed local catalog stays Cupcake-owned and explains pending hardware de
   await page.goto('/?view=models');
   const localCards = page.locator('.model-card').filter({ hasText: 'Cupcake Local' });
   await expect(localCards).toHaveCount(3);
+  await page.getByText('Local system & acceleration').click();
   await expect(page.getByRole('heading', { name: 'Scanning device compatibility' })).toBeVisible();
   await expect(page.getByText('RAM pending')).toBeVisible();
   await expect(page.getByText(/LM Studio|Ollama|vLLM/i)).toHaveCount(0);

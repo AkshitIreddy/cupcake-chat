@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import re
 import sys
@@ -29,6 +30,23 @@ PREFERRED_MODELS = (
     "google/gemma-3-4b-it",
     "mistralai/mistral-7b-instruct-v0.3",
     "meta/llama-3.1-8b-instruct",
+)
+
+CURATED_CHAT_MODELS = (
+    "moonshotai/kimi-k3",
+    "deepseek-ai/deepseek-v4-pro-0813",
+    "deepseek-ai/deepseek-v4-flash-0731",
+    "moonshotai/kimi-k2.6",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "poolside/laguna-xs-2.1",
+    "google/gemma-4-31b-it",
+    "meta/muse-glimmer-30b",
+    "mistralai/mistral-nemotron",
 )
 
 
@@ -152,14 +170,67 @@ async def smoke() -> None:
     await client.close()
 
 
+async def smoke_curated() -> None:
+    """Exercise every model visible in CupcakeAI's curated NIM shortlist.
+
+    The output is deliberately limited to model IDs and classified status. No
+    key, prompt, response content, or raw provider error is emitted.
+    """
+    from openai import AsyncOpenAI
+
+    key = load_key()
+    client = AsyncOpenAI(api_key=key, base_url=NVIDIA_NIM_BASE_URL, timeout=45.0)
+    discovery = NvidiaNimCatalogDiscovery(ttl_seconds=0)
+    catalog = await discovery.discover(
+        ProviderConfig(api_key=key, timeout_seconds=45.0), force=True
+    )
+    available = {descriptor.model for descriptor in catalog.models}
+    semaphore = asyncio.Semaphore(3)
+
+    async def check(model_id: str) -> tuple[str, str, str]:
+        if model_id not in available:
+            return model_id, "not-listed", "catalog"
+        async with semaphore:
+            try:
+                response = await client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": "Reply OK"}],
+                    max_tokens=1,
+                    temperature=0,
+                )
+                has_choice = bool(response.choices)
+                return model_id, ("passed" if has_choice else "empty"), "chat"
+            except Exception as exc:  # noqa: BLE001 - report only classified fields.
+                status = getattr(exc, "status_code", None)
+                return model_id, "failed", str(status) if isinstance(status, int) else type(exc).__name__
+
+    results = await asyncio.gather(*(check(model_id) for model_id in CURATED_CHAT_MODELS))
+    passed = 0
+    for model_id, state, detail in results:
+        if state == "passed":
+            passed += 1
+        print(f"NVIDIA_NIM_CURATED model={model_id} state={state} detail={detail}")
+    print(
+        "NVIDIA_NIM_CURATED_SUMMARY "
+        f"passed={passed} total={len(results)} catalog_models={len(catalog.models)}"
+    )
+    await client.close()
+    if passed != len(results):
+        raise RuntimeError("one or more curated NVIDIA NIM models did not pass")
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--curated", action="store_true")
+    arguments = parser.parse_args()
     try:
-        asyncio.run(smoke())
+        asyncio.run(smoke_curated() if arguments.curated else smoke())
     except Exception as exc:  # noqa: BLE001 - CLI boundary emits only classified safe fields.
         status = getattr(exc, "status_code", None)
         safe_status = str(status) if isinstance(status, int) else "unavailable"
+        label = "NVIDIA_NIM_CURATED" if arguments.curated else "NVIDIA_NIM_SMOKE"
         print(
-            "NVIDIA_NIM_SMOKE=failed "
+            f"{label}=failed "
             f"error_type={type(exc).__name__} status={safe_status}",
             file=sys.stderr,
         )

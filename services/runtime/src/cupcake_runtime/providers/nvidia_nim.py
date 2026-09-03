@@ -402,7 +402,10 @@ def _descriptor_from_record(
     tools = bool(declared & {"tools", "tool-calling", "function-calling"})
     structured = bool(declared & {"structured-output", "json-schema", "json-mode"})
     verified_chat = compatibility is ChatCompatibility.CHAT
-    display = model_id if verified_chat else f"{model_id} · compatibility unverified"
+    # Compatibility uncertainty remains structured metadata. It must not be
+    # welded into the user-facing model name, where it becomes stale and makes
+    # the catalog impossible to scan.
+    display = model_id
     publisher_id = model_id.split("/", 1)[0]
     verification_url = _VERIFIED_HOSTED_CHAT_MODELS.get(model_id)
     reasoning_efforts = (
@@ -446,7 +449,9 @@ def _descriptor_from_record(
             "compatibility_evidence": evidence,
             "compatibility_source_url": verification_url,
             "compatibility_verified_at": "2026-09-03" if verification_url else None,
-            "verification_state": "docs_verified_chat" if verification_url else "unverified",
+            "verification_state": (
+                "docs_verified_chat" if verification_url else "account_discoverable"
+            ),
             "publisher_id": publisher_id,
             "requires_compatibility_confirmation": not verified_chat,
             "context_window_known": context is not None,

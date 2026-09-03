@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  benchmarkRatingsForModel,
+  completeModelDescriptor,
   modelIsAvailableInChat,
+  modelIsCurated,
+  modelSize,
+  modelTasks,
   publisherForModel,
+  publisherLogoAsset,
 } from './model-intelligence';
 import type { ModelDescriptor } from './types';
 
 function model(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
   return {
-    id: 'nvidia-nim:moonshotai/kimi-k2.6',
-    runtimeModelId: 'nvidia-nim:moonshotai/kimi-k2.6',
+    id: 'nvidia-nim:openai/gpt-oss-20b',
+    runtimeModelId: 'nvidia-nim:openai/gpt-oss-20b',
     provider: 'NVIDIA NIM',
-    name: 'Kimi K2.6',
+    name: 'GPT-OSS 20B',
     route: 'Cloud',
     tags: ['reasoning'],
     context: '1m',
@@ -26,18 +30,21 @@ function model(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
 
 describe('model intelligence', () => {
   it('groups a hosted route by the company that released the model', () => {
-    expect(publisherForModel(model())).toBe('Moonshot AI');
+    expect(publisherForModel(model())).toBe('OpenAI');
   });
 
-  it('keeps raw benchmark names beside capability-specific cupcake ratings', () => {
-    const ratings = benchmarkRatingsForModel(model()) ?? [];
-    expect(ratings.find((rating) => rating.capability === 'coding')).toMatchObject({
-      cupcakes: 5,
-      confidence: 'medium',
-    });
-    expect(ratings.flatMap((rating) => rating.benchmarks)).toContain(
-      'SWE-Bench Verified 80.2',
-    );
+  it('uses curated task and size metadata without synthetic ratings', () => {
+    expect(modelIsCurated(model())).toBe(true);
+    expect(modelTasks(model())).toEqual(expect.arrayContaining(['coding', 'reasoning', 'tools']));
+    expect(modelSize(model())).toBe('compact');
+    expect(
+      completeModelDescriptor(model({ description: 'Explicitly selected model' })).description,
+    ).toContain('open-weight reasoning');
+  });
+
+  it('uses publisher branding instead of the NVIDIA route logo', () => {
+    expect(publisherLogoAsset(publisherForModel(model()))).toBe('/providers/openai.svg');
+    expect(publisherLogoAsset('NVIDIA')).toBe('/providers/nvidia-nim.svg');
   });
 
   it('hides disconnected and specialized routes from the picker by default', () => {

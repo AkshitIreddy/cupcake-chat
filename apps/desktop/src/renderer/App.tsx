@@ -21,10 +21,21 @@ import { Icon, type IconName } from './icons';
 import { ConversationScrollController } from './conversation-scroll';
 import { RichMarkdown } from './RichMarkdown';
 import {
-  benchmarkRatingsForModel,
+  MODEL_SIZE_OPTIONS,
+  MODEL_TASK_OPTIONS,
+  completeModelDescriptor,
+  curatedProfileForModel,
   modelIsAvailableInChat,
-  modelVerificationLabel,
+  modelIsCurated,
+  modelPriority,
+  modelSize,
+  modelTasks,
+  modelWasOperationallyTested,
   publisherForModel,
+  publisherLogoAsset,
+  publisherMonogram,
+  type ModelSize,
+  type ModelTask,
 } from './model-intelligence';
 import { canonicalModelId, modelSelectionParams } from './model-selection';
 import type {
@@ -3942,42 +3953,6 @@ function providerDialogId(provider: string) {
   return ids[provider] ?? 'openai-compatible';
 }
 
-function CupcakeRating({
-  rating,
-}: {
-  rating: NonNullable<ModelDescriptor['capabilityRatings']>[number];
-}) {
-  return (
-    <span
-      className="cupcake-rating"
-      title={`${rating.benchmarks.join(' · ')} · ${rating.confidence} confidence`}
-    >
-      <span>{cap(rating.capability)}</span>
-      <span
-        className="cupcake-rating__cakes"
-        aria-label={`${rating.cupcakes} out of 5 cupcakes for ${rating.capability}`}
-      >
-        {Array.from({ length: 5 }, (_, index) => (
-          <i
-            className={
-              rating.cupcakes >= index + 1
-                ? 'is-full'
-                : rating.cupcakes >= index + 0.5
-                  ? 'is-half'
-                  : ''
-            }
-            aria-hidden="true"
-            key={index}
-          >
-            🧁
-          </i>
-        ))}
-      </span>
-      <strong>{rating.cupcakes.toFixed(1)}</strong>
-    </span>
-  );
-}
-
 function ModelsView({
   models,
   selectModel,
@@ -3988,22 +3963,16 @@ function ModelsView({
   openProvider: (provider: string) => void;
 }) {
   const workspace = useWorkspace();
-  const [tab, setTab] = useState<'all' | 'cloud' | 'local'>('all');
   const [modelQuery, setModelQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState<ModelTask[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<ModelSize[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<Array<'cloud' | 'local'>>([]);
   const [publisherFilter, setPublisherFilter] = useState('all');
-  const [includeTags, setIncludeTags] = useState('');
-  const [excludeTags, setExcludeTags] = useState('');
-  const [minimumParameters, setMinimumParameters] = useState('');
-  const [maximumParameters, setMaximumParameters] = useState('');
-  const [minimumCupcakes, setMinimumCupcakes] = useState('0');
-  const [benchmarkOnly, setBenchmarkOnly] = useState(false);
-  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [availableOnly, setAvailableOnly] = useState(false);
-  const [hideGated, setHideGated] = useState(false);
+  const [includeCommunity, setIncludeCommunity] = useState(false);
   const [communityModels, setCommunityModels] = useState<ModelDescriptor[]>([]);
-  const [visibleCommunityCount, setVisibleCommunityCount] = useState(60);
-  const [communityLoading, setCommunityLoading] = useState(true);
+  const [communityLoading, setCommunityLoading] = useState(false);
   const [communityError, setCommunityError] = useState<string | null>(null);
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [pendingRemove, setPendingRemove] = useState<ModelDescriptor | null>(null);
@@ -4031,12 +4000,18 @@ function ModelsView({
   useModalFocusTrap(Boolean(pendingRuntime), runtimeInstallRef, closeRuntimeInstall);
 
   useEffect(() => {
+    if (!includeCommunity || modelQuery.trim().length < 2) {
+      setCommunityModels([]);
+      setCommunityLoading(false);
+      setCommunityError(null);
+      return;
+    }
     let active = true;
     setCommunityLoading(true);
     const timer = window.setTimeout(
       () => {
         void workspace
-          .discoverCommunityModels(modelQuery, 240)
+          .discoverCommunityModels(modelQuery, 48)
           .then((items) => {
             if (!active) return;
             setCommunityModels(items);
@@ -4058,35 +4033,22 @@ function ModelsView({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [modelQuery, workspace.discoverCommunityModels]);
-
-  useEffect(
-    () => setVisibleCommunityCount(60),
-    [
-      modelQuery,
-      tab,
-      publisherFilter,
-      includeTags,
-      excludeTags,
-      minimumParameters,
-      maximumParameters,
-      minimumCupcakes,
-      benchmarkOnly,
-      verifiedOnly,
-      availableOnly,
-      hideGated,
-    ],
-  );
+  }, [includeCommunity, modelQuery, workspace.discoverCommunityModels]);
 
   const rankedModels = useMemo(
     () =>
       [...models, ...communityModels]
-        .map((model) => ({
-          ...model,
-          ...(model.route === 'Local' ? deviceFit(model, workspace.hardware) : {}),
-        }))
+        .filter((model) => model.status === 'community' || modelIsCurated(model))
+        .map((model) => {
+          const complete = completeModelDescriptor(model);
+          return {
+            ...complete,
+            ...(complete.route === 'Local' ? deviceFit(complete, workspace.hardware) : {}),
+          };
+        })
         .sort((a, b) => {
-          if (a.route !== b.route) return a.route === 'Local' ? -1 : 1;
+          const priorityDifference = modelPriority(b) - modelPriority(a);
+          if (priorityDifference) return priorityDifference;
           const fitDifference = fitRank[a.fit ?? 'pending'] - fitRank[b.fit ?? 'pending'];
           if (fitDifference) return fitDifference;
           if (a.route === 'Local' && b.route === 'Local') {
@@ -4102,51 +4064,24 @@ function ModelsView({
   const publishers = [...new Set(rankedModels.map(publisherForModel))].sort((a, b) =>
     a.localeCompare(b),
   );
-  const filterTokens = (value: string) =>
-    value
-      .split(/[ ,]+/u)
-      .map((token) => token.trim().toLowerCase())
-      .filter(Boolean);
-  const included = filterTokens(includeTags);
-  const excluded = filterTokens(excludeTags);
-  const minParams = Number.parseFloat(minimumParameters);
-  const maxParams = Number.parseFloat(maximumParameters);
-  const minRating = Number.parseFloat(minimumCupcakes) || 0;
   const filteredModels = rankedModels.filter((model) => {
     const publisher = publisherForModel(model);
-    const ratings = benchmarkRatingsForModel(model) ?? [];
-    const parameterBillions = Number.parseFloat(model.parameters ?? '');
     const searchable =
-      `${model.provider} ${publisher} ${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''} ${ratings.flatMap((rating) => [rating.capability, ...rating.benchmarks]).join(' ')}`.toLowerCase();
+      `${model.provider} ${publisher} ${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''} ${model.description}`.toLowerCase();
+    const tasks = modelTasks(model);
     return (
-      (tab === 'all' || model.route.toLowerCase() === tab) &&
+      (selectedLocations.length === 0 ||
+        selectedLocations.includes(model.route.toLowerCase() as 'cloud' | 'local')) &&
+      (selectedTasks.length === 0 || selectedTasks.some((task) => tasks.includes(task))) &&
+      (selectedSizes.length === 0 || selectedSizes.includes(modelSize(model))) &&
       (publisherFilter === 'all' || publisher === publisherFilter) &&
-      included.every((token) => searchable.includes(token)) &&
-      excluded.every((token) => !searchable.includes(token)) &&
-      (!Number.isFinite(minParams) ||
-        (Number.isFinite(parameterBillions) && parameterBillions >= minParams)) &&
-      (!Number.isFinite(maxParams) ||
-        (Number.isFinite(parameterBillions) && parameterBillions <= maxParams)) &&
-      (minRating <= 0 || ratings.some((rating) => rating.cupcakes >= minRating)) &&
-      (!benchmarkOnly || ratings.length > 0) &&
-      (!verifiedOnly || model.chatCompatibility === 'chat') &&
       (!availableOnly || modelIsAvailableInChat(model)) &&
-      (!hideGated || !model.gated) &&
       searchable.includes(modelQuery.trim().toLowerCase())
     );
   });
-  let communitySeen = 0;
-  const shown = filteredModels.filter((model) => {
-    if (model.status !== 'community') return true;
-    communitySeen += 1;
-    return communitySeen <= visibleCommunityCount;
-  });
-  const filteredCommunityCount = filteredModels.filter(
-    (model) => model.status === 'community',
-  ).length;
-  const hiddenCommunityCount = Math.max(0, filteredCommunityCount - visibleCommunityCount);
+  const shown = filteredModels;
   const nimModels = models.filter(
-    (model) => model.provider === 'NVIDIA NIM' && model.status !== 'setup',
+    (model) => model.provider === 'NVIDIA NIM' && model.status !== 'setup' && modelIsCurated(model),
   );
   const installedLocal = rankedModels.find(
     (model) =>
@@ -4158,29 +4093,29 @@ function ModelsView({
     workspace.settings.reserveSystemRamGb,
   );
   const activeFilterCount = [
+    selectedTasks.length > 0,
+    selectedSizes.length > 0,
+    selectedLocations.length > 0,
     publisherFilter !== 'all',
-    Boolean(includeTags),
-    Boolean(excludeTags),
-    Boolean(minimumParameters),
-    Boolean(maximumParameters),
-    Number(minimumCupcakes) > 0,
-    benchmarkOnly,
-    verifiedOnly,
     availableOnly,
-    hideGated,
+    includeCommunity,
   ].filter(Boolean).length;
   const clearAdvancedFilters = () => {
+    setSelectedTasks([]);
+    setSelectedSizes([]);
+    setSelectedLocations([]);
     setPublisherFilter('all');
-    setIncludeTags('');
-    setExcludeTags('');
-    setMinimumParameters('');
-    setMaximumParameters('');
-    setMinimumCupcakes('0');
-    setBenchmarkOnly(false);
-    setVerifiedOnly(false);
     setAvailableOnly(false);
-    setHideGated(false);
+    setIncludeCommunity(false);
   };
+  const toggleListValue = <T extends string>(
+    value: T,
+    selected: T[],
+    setSelected: (items: T[]) => void,
+  ) =>
+    setSelected(
+      selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value],
+    );
 
   const runAction = async (
     action:
@@ -4315,10 +4250,11 @@ function ModelsView({
     <main className="page models-page">
       <div className="page-intro">
         <div>
-          <p className="eyebrow">Cloud, local, and community model intelligence</p>
+          <p className="eyebrow">A small, qualified model collection</p>
           <h2>Models</h2>
           <p>
-            Compare capability evidence, connect a cloud route, or install a signed local model.
+            Choose what you want to do and where it should run. Cupcake shows a short list that fits
+            instead of making you decode a giant catalog.
           </p>
         </div>
         <div className="page-intro__actions">
@@ -4337,195 +4273,230 @@ function ModelsView({
         </div>
       </div>
 
-      <section
-        className={cx('hardware-card', !workspace.hardware?.ramBytes && 'is-pending')}
-        aria-live="polite"
-      >
-        <div className="hardware-card__art">
-          <span className="chip-lines" />
-          <Icon name="local" size={34} />
-        </div>
-        <div>
-          <span className="eyebrow">This computer</span>
-          <h3>
-            {workspace.hardware?.ramBytes
-              ? 'Device profile detected'
-              : 'Scanning device compatibility'}
-          </h3>
-          <p>
-            {workspace.hardware?.cpu ?? 'Processor detection pending'}
-            {workspace.hardware?.cpuArchitecture
-              ? ` · ${workspace.hardware.cpuArchitecture}`
-              : ''}{' '}
-            · {workspace.hardware?.gpu ?? 'GPU detection pending'}
-          </p>
-          <div className="hardware-tags">
-            <span>
-              {workspace.hardware?.ramBytes
-                ? `${formatStorage(workspace.hardware.ramBytes)} RAM`
-                : 'RAM pending'}
-            </span>
-            <span>
-              {workspace.hardware?.vramBytes
-                ? `${formatStorage(workspace.hardware.vramBytes)} VRAM`
-                : 'Dedicated VRAM not reported'}
-            </span>
-            <span>
-              {workspace.hardware?.diskAvailableBytes
-                ? `${formatStorage(workspace.hardware.diskAvailableBytes)} disk free`
-                : 'Disk scan pending'}
-            </span>
-            {(workspace.hardware?.acceleration ?? []).map((item) => (
-              <span key={item}>{item}</span>
-            ))}
-          </div>
-          <div className="memory-plan-note">
-            <Icon name="info" size={15} />
-            <span>
-              <strong>
-                {workspace.settings.allowRamFallback
-                  ? 'GPU-first with RAM fallback'
-                  : 'VRAM-only placement'}
-              </strong>
-              {workspace.settings.allowRamFallback
-                ? workspace.settings.ramLimitMode === 'auto'
-                  ? ` llama.cpp uses live available memory and currently allows up to ${automaticRamBudget?.toFixed(1) ?? 'a detected'} GB after the Windows reserve. The budget adapts whenever system memory changes.`
-                  : ` llama.cpp offloads as many layers as fit in VRAM, then may use system RAM up to the manual ${workspace.settings.maxRamGb} GB safety ceiling.`
-                : ' Cupcake requests all accelerated layers in VRAM with automatic fitting disabled. A model that does not fit fails clearly instead of spilling into RAM.'}
-            </span>
-          </div>
-        </div>
-        <div className="hardware-meter">
-          <span>
-            <strong>
-              {workspace.hardware?.vramBytes ? formatStorage(workspace.hardware.vramBytes) : '—'}
-            </strong>{' '}
-            detected VRAM
-          </span>
-          <div>
-            <i
-              style={{
-                width:
-                  workspace.hardware?.vramBytes && workspace.hardware?.ramBytes
-                    ? `${Math.min(100, Math.round((workspace.hardware.vramBytes / workspace.hardware.ramBytes) * 100))}%`
-                    : '0%',
-              }}
-            />
-          </div>
-          <small>
-            {workspace.hardware?.windowsVersion ??
-              workspace.hardware?.os ??
-              'Waiting for the runtime hardware report.'}
-          </small>
-        </div>
-        <button
-          className="button"
-          disabled={!installedLocal || Boolean(workingId)}
-          onClick={() => installedLocal && void runAction('benchmark', installedLocal)}
-        >
-          {workingId === installedLocal?.id
-            ? 'Benchmarking…'
-            : installedLocal
-              ? `Benchmark ${installedLocal.name}`
-              : 'Install a model to benchmark'}
-        </button>
-      </section>
-
-      <section className="runtime-packs" aria-labelledby="runtime-packs-title">
+      <section className="model-finder" aria-labelledby="model-finder-title">
         <header>
           <div>
-            <span className="eyebrow">App-managed acceleration</span>
-            <h3 id="runtime-packs-title">Local inference runtime</h3>
+            <span className="eyebrow">Start with the job, not a model name</span>
+            <h3 id="model-finder-title">What do you want Cupcake to help with?</h3>
           </div>
-          <p>
-            The signed CPU baseline is always available. Optional GPU packs are verified and kept
-            inside Cupcake—no third-party model server is required.
-          </p>
+          {selectedTasks.length > 0 && (
+            <button className="text-button" onClick={() => setSelectedTasks([])}>
+              Show every task
+            </button>
+          )}
         </header>
-        <div className="runtime-pack-grid">
-          {workspace.localRuntimes.map((runtime) => (
-            <article
-              className={cx(
-                'runtime-pack',
-                runtime.active && 'is-active',
-                runtime.compatible === false && 'is-incompatible',
-              )}
-              key={runtime.id}
+        <div className="model-goal-grid">
+          {MODEL_TASK_OPTIONS.map((option) => (
+            <label
+              className={selectedTasks.includes(option.id) ? 'is-checked' : ''}
+              key={option.id}
             >
-              <div>
-                <Icon name={runtime.backend?.startsWith('cuda') ? 'sparkle' : 'local'} />
-                <span>
-                  <strong>{runtime.name}</strong>
-                  <small>
-                    {runtime.active
-                      ? 'Active runtime'
-                      : runtime.status === 'installed'
-                        ? 'Installed'
-                        : runtime.recommended
-                          ? 'Recommended for this device'
-                          : cap(runtime.status?.replace('-', ' '), 'Available')}
-                  </small>
-                </span>
-              </div>
-              <p>{runtime.detail || 'Verified against the detected Windows hardware profile.'}</p>
-              <footer>
-                <span>{formatStorage(runtime.totalDownloadBytes ?? runtime.sizeBytes)}</span>
-                {runtime.active ? (
-                  <span className="selected-label">
-                    <Icon name="check" /> Active
-                  </span>
-                ) : runtime.status === 'installed' ? (
-                  <button
-                    className="button"
-                    disabled={workspace.busy}
-                    onClick={() => void workspace.activateRuntimePack(runtime)}
-                  >
-                    Activate
-                  </button>
-                ) : (
-                  <button
-                    className="button"
-                    disabled={runtime.compatible === false || workspace.busy}
-                    onClick={() => setPendingRuntime(runtime)}
-                  >
-                    Review pack
-                  </button>
-                )}
-              </footer>
-            </article>
+              <input
+                type="checkbox"
+                checked={selectedTasks.includes(option.id)}
+                onChange={() => toggleListValue(option.id, selectedTasks, setSelectedTasks)}
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.detail}</small>
+              </span>
+              <Icon name={selectedTasks.includes(option.id) ? 'check' : 'chevron'} size={14} />
+            </label>
           ))}
         </div>
       </section>
 
-      <div className="toolbar model-toolbar">
-        <div className="segmented" aria-label="Model location">
-          {(['all', 'cloud', 'local'] as const).map((value) => (
+      <details className="model-system-details">
+        <summary>
+          <span>
+            <Icon name="local" size={18} />
+            <span>
+              <strong>Local system & acceleration</strong>
+              <small>
+                {workspace.hardware?.gpu ?? 'Detecting GPU'} ·{' '}
+                {workspace.settings.allowRamFallback ? 'RAM fallback allowed' : 'VRAM only'}
+              </small>
+            </span>
+          </span>
+          <span>
+            Hardware, memory, and runtime packs <Icon name="chevron" size={14} />
+          </span>
+        </summary>
+        <div className="model-system-details__body">
+          <section
+            className={cx('hardware-card', !workspace.hardware?.ramBytes && 'is-pending')}
+            aria-live="polite"
+          >
+            <div className="hardware-card__art">
+              <span className="chip-lines" />
+              <Icon name="local" size={34} />
+            </div>
+            <div>
+              <span className="eyebrow">This computer</span>
+              <h3>
+                {workspace.hardware?.ramBytes
+                  ? 'Device profile detected'
+                  : 'Scanning device compatibility'}
+              </h3>
+              <p>
+                {workspace.hardware?.cpu ?? 'Processor detection pending'}
+                {workspace.hardware?.cpuArchitecture
+                  ? ` · ${workspace.hardware.cpuArchitecture}`
+                  : ''}{' '}
+                · {workspace.hardware?.gpu ?? 'GPU detection pending'}
+              </p>
+              <div className="hardware-tags">
+                <span>
+                  {workspace.hardware?.ramBytes
+                    ? `${formatStorage(workspace.hardware.ramBytes)} RAM`
+                    : 'RAM pending'}
+                </span>
+                <span>
+                  {workspace.hardware?.vramBytes
+                    ? `${formatStorage(workspace.hardware.vramBytes)} VRAM`
+                    : 'Dedicated VRAM not reported'}
+                </span>
+                <span>
+                  {workspace.hardware?.diskAvailableBytes
+                    ? `${formatStorage(workspace.hardware.diskAvailableBytes)} disk free`
+                    : 'Disk scan pending'}
+                </span>
+                {(workspace.hardware?.acceleration ?? []).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+              <div className="memory-plan-note">
+                <Icon name="info" size={15} />
+                <span>
+                  <strong>
+                    {workspace.settings.allowRamFallback
+                      ? 'GPU-first with RAM fallback'
+                      : 'VRAM-only placement'}
+                  </strong>
+                  {workspace.settings.allowRamFallback
+                    ? workspace.settings.ramLimitMode === 'auto'
+                      ? ` llama.cpp uses live available memory and currently allows up to ${automaticRamBudget?.toFixed(1) ?? 'a detected'} GB after the Windows reserve. The budget adapts whenever system memory changes.`
+                      : ` llama.cpp offloads as many layers as fit in VRAM, then may use system RAM up to the manual ${workspace.settings.maxRamGb} GB safety ceiling.`
+                    : ' Cupcake requests all accelerated layers in VRAM with automatic fitting disabled. A model that does not fit fails clearly instead of spilling into RAM.'}
+                </span>
+              </div>
+            </div>
+            <div className="hardware-meter">
+              <span>
+                <strong>
+                  {workspace.hardware?.vramBytes
+                    ? formatStorage(workspace.hardware.vramBytes)
+                    : '—'}
+                </strong>{' '}
+                detected VRAM
+              </span>
+              <div>
+                <i
+                  style={{
+                    width:
+                      workspace.hardware?.vramBytes && workspace.hardware?.ramBytes
+                        ? `${Math.min(100, Math.round((workspace.hardware.vramBytes / workspace.hardware.ramBytes) * 100))}%`
+                        : '0%',
+                  }}
+                />
+              </div>
+              <small>
+                {workspace.hardware?.windowsVersion ??
+                  workspace.hardware?.os ??
+                  'Waiting for the runtime hardware report.'}
+              </small>
+            </div>
             <button
-              className={tab === value ? 'is-active' : ''}
-              aria-pressed={tab === value}
-              onClick={() => setTab(value)}
-              key={value}
+              className="button"
+              disabled={!installedLocal || Boolean(workingId)}
+              onClick={() => installedLocal && void runAction('benchmark', installedLocal)}
             >
-              {value === 'all' ? 'All models' : cap(value)}
+              {workingId === installedLocal?.id
+                ? 'Benchmarking…'
+                : installedLocal
+                  ? `Benchmark ${installedLocal.name}`
+                  : 'Install a model to benchmark'}
             </button>
-          ))}
+          </section>
+
+          <section className="runtime-packs" aria-labelledby="runtime-packs-title">
+            <header>
+              <div>
+                <span className="eyebrow">App-managed acceleration</span>
+                <h3 id="runtime-packs-title">Local inference runtime</h3>
+              </div>
+              <p>
+                The signed CPU baseline is always available. Optional GPU packs are verified and
+                kept inside Cupcake—no third-party model server is required.
+              </p>
+            </header>
+            <div className="runtime-pack-grid">
+              {workspace.localRuntimes.map((runtime) => (
+                <article
+                  className={cx(
+                    'runtime-pack',
+                    runtime.active && 'is-active',
+                    runtime.compatible === false && 'is-incompatible',
+                  )}
+                  key={runtime.id}
+                >
+                  <div>
+                    <Icon name={runtime.backend?.startsWith('cuda') ? 'sparkle' : 'local'} />
+                    <span>
+                      <strong>{runtime.name}</strong>
+                      <small>
+                        {runtime.active
+                          ? 'Active runtime'
+                          : runtime.status === 'installed'
+                            ? 'Installed'
+                            : runtime.recommended
+                              ? 'Recommended for this device'
+                              : cap(runtime.status?.replace('-', ' '), 'Available')}
+                      </small>
+                    </span>
+                  </div>
+                  <p>
+                    {runtime.detail || 'Verified against the detected Windows hardware profile.'}
+                  </p>
+                  <footer>
+                    <span>{formatStorage(runtime.totalDownloadBytes ?? runtime.sizeBytes)}</span>
+                    {runtime.active ? (
+                      <span className="selected-label">
+                        <Icon name="check" /> Active
+                      </span>
+                    ) : runtime.status === 'installed' ? (
+                      <button
+                        className="button"
+                        disabled={workspace.busy}
+                        onClick={() => void workspace.activateRuntimePack(runtime)}
+                      >
+                        Activate
+                      </button>
+                    ) : (
+                      <button
+                        className="button"
+                        disabled={runtime.compatible === false || workspace.busy}
+                        onClick={() => setPendingRuntime(runtime)}
+                      >
+                        Review pack
+                      </button>
+                    )}
+                  </footer>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
-        <button
-          type="button"
-          className={cx('button model-filter-trigger', filterOpen && 'is-active')}
-          aria-expanded={filterOpen}
-          onClick={() => setFilterOpen((value) => !value)}
-        >
-          <Icon name="filter" /> Filters
-          {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
-        </button>
+      </details>
+
+      <div className="toolbar model-toolbar">
         <label className="filter-field model-search-field">
-          <span>Find a model</span>
+          <span>Find within the shortlist</span>
           <div className="search-field">
             <Icon name="search" />
             <input
               aria-label="Find a model"
-              placeholder="Search model families, capabilities, or parameter sizes"
+              placeholder="Search a model, company, or capability"
               value={modelQuery}
               onChange={(event) => setModelQuery(event.target.value)}
             />
@@ -4540,114 +4511,112 @@ function ModelsView({
             )}
           </div>
         </label>
+        <button
+          type="button"
+          className={cx('button model-filter-trigger', filterOpen && 'is-active')}
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((value) => !value)}
+        >
+          <Icon name="filter" /> Refine results
+          {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+        </button>
       </div>
       <div className={cx('model-catalog-summary', communityError && 'is-error')} aria-live="polite">
         <span>
-          <strong>{shown.length}</strong> shown
+          <strong>{shown.length}</strong> carefully selected matches
         </span>
         <span>
-          <strong>{nimModels.length}</strong> account-discoverable NIM chat candidates
+          <strong>{nimModels.length}</strong> curated NVIDIA NIM routes available
         </span>
-        <span>
-          <strong>{communityLoading ? '…' : communityModels.length}</strong> Hugging Face GGUF
-          results
-        </span>
+        {includeCommunity && (
+          <span>
+            <strong>{communityLoading ? '…' : communityModels.length}</strong> optional community
+            results
+          </span>
+        )}
         {communityError && <span>{communityError}</span>}
       </div>
       {filterOpen && (
-        <section className="model-filter-panel" aria-label="Advanced model filters">
+        <section className="model-filter-panel" aria-label="Model filters">
           <header>
             <div>
-              <span className="eyebrow">Include, exclude, and compare</span>
-              <h3>Model filters</h3>
+              <span className="eyebrow">Plain-language choices</span>
+              <h3>Refine the shortlist</h3>
             </div>
             <button type="button" className="text-button" onClick={clearAdvancedFilters}>
               Reset all
             </button>
           </header>
-          <div className="model-filter-grid">
-            <label>
-              Releasing company
-              <select
-                value={publisherFilter}
-                onChange={(event) => setPublisherFilter(event.target.value)}
-              >
-                <option value="all">All companies</option>
-                {publishers.map((publisher) => (
-                  <option value={publisher} key={publisher}>
-                    {publisher}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Include words or tags
-              <input
-                value={includeTags}
-                onChange={(event) => setIncludeTags(event.target.value)}
-                placeholder="coding, vision, tools"
-              />
-            </label>
-            <label>
-              Exclude words or tags
-              <input
-                value={excludeTags}
-                onChange={(event) => setExcludeTags(event.target.value)}
-                placeholder="gated, safety, embed"
-              />
-            </label>
-            <label>
-              Minimum benchmark rating
-              <select
-                value={minimumCupcakes}
-                onChange={(event) => setMinimumCupcakes(event.target.value)}
-              >
-                <option value="0">Any rating</option>
-                <option value="3">3+ cupcakes</option>
-                <option value="4">4+ cupcakes</option>
-                <option value="4.5">4.5+ cupcakes</option>
-                <option value="5">5 cupcakes</option>
-              </select>
-            </label>
-            <label>
-              Minimum parameters (B)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={minimumParameters}
-                onChange={(event) => setMinimumParameters(event.target.value)}
-                placeholder="0"
-              />
-            </label>
-            <label>
-              Maximum parameters (B)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={maximumParameters}
-                onChange={(event) => setMaximumParameters(event.target.value)}
-                placeholder="No maximum"
-              />
-            </label>
-          </div>
-          <div className="model-filter-checks">
-            {[
-              ['benchmarkOnly', 'Has benchmark evidence', benchmarkOnly, setBenchmarkOnly],
-              ['verifiedOnly', 'Chat compatibility verified', verifiedOnly, setVerifiedOnly],
-              ['availableOnly', 'Available to use now', availableOnly, setAvailableOnly],
-              ['hideGated', 'Exclude gated community cards', hideGated, setHideGated],
-            ].map(([id, label, checked, setter]) => (
-              <label key={String(id)}>
+          <div className="model-filter-groups">
+            <fieldset>
+              <legend>Where should it run?</legend>
+              {(['cloud', 'local'] as const).map((location) => (
+                <label key={location}>
+                  <input
+                    type="checkbox"
+                    checked={selectedLocations.includes(location)}
+                    onChange={() =>
+                      toggleListValue(location, selectedLocations, setSelectedLocations)
+                    }
+                  />
+                  <span>
+                    {location === 'local' ? 'On this computer · private' : 'Cloud provider'}
+                  </span>
+                </label>
+              ))}
+              <label>
                 <input
                   type="checkbox"
-                  checked={Boolean(checked)}
-                  onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)}
+                  checked={availableOnly}
+                  onChange={(event) => setAvailableOnly(event.target.checked)}
                 />
-                <span>{String(label)}</span>
+                <span>Ready to use now</span>
               </label>
-            ))}
+            </fieldset>
+            <fieldset>
+              <legend>How large a model?</legend>
+              {MODEL_SIZE_OPTIONS.map((option) => (
+                <label key={option.id} title={option.detail}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSizes.includes(option.id)}
+                    onChange={() => toggleListValue(option.id, selectedSizes, setSelectedSizes)}
+                  />
+                  <span>
+                    {option.label}
+                    <small>{option.detail}</small>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <fieldset>
+              <legend>Source</legend>
+              <label className="model-filter-select">
+                <span>Releasing company</span>
+                <select
+                  value={publisherFilter}
+                  onChange={(event) => setPublisherFilter(event.target.value)}
+                >
+                  <option value="all">Every curated company</option>
+                  {publishers.map((publisher) => (
+                    <option value={publisher} key={publisher}>
+                      {publisher}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={includeCommunity}
+                  onChange={(event) => setIncludeCommunity(event.target.checked)}
+                />
+                <span>
+                  Search Hugging Face too
+                  <small>Only runs after you type at least two characters</small>
+                </span>
+              </label>
+            </fieldset>
           </div>
         </section>
       )}
@@ -4662,7 +4631,7 @@ function ModelsView({
           <div className="model-grid">
             {shown.map((model) => {
               const publisher = publisherForModel(model);
-              const capabilityRatings = benchmarkRatingsForModel(model) ?? [];
+              const profile = curatedProfileForModel(model);
               const progress = model.download?.totalBytes
                 ? Math.min(
                     100,
@@ -4691,25 +4660,7 @@ function ModelsView({
                   key={model.id}
                 >
                   <header>
-                    <span
-                      className={cx(
-                        'provider-logo',
-                        model.route === 'Local' && 'provider-logo--cupcake-local',
-                      )}
-                    >
-                      {model.provider === 'Hugging Face' ? (
-                        <span className="hugging-face-mark" aria-label="Hugging Face">
-                          🤗
-                        </span>
-                      ) : model.route === 'Local' ? (
-                        <Icon name="local" />
-                      ) : (
-                        <img
-                          src={`/providers/${providerDialogId(model.provider)}.svg`}
-                          alt={`${model.provider} logo`}
-                        />
-                      )}
-                    </span>
+                    <PublisherLogo publisher={publisher} />
                     <div>
                       <span>
                         {publisher}
@@ -4719,50 +4670,38 @@ function ModelsView({
                     </div>
                     <RouteBadge route={model.route} />
                   </header>
-                  {model.provider === 'NVIDIA NIM' && (
-                    <a
-                      className={cx(
-                        'model-verification',
-                        model.chatCompatibility === 'chat' && 'is-verified',
-                      )}
-                      href={model.verificationSourceUrl}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        if (model.verificationSourceUrl)
-                          void window.cupcake?.app.openExternal(model.verificationSourceUrl);
-                      }}
-                    >
-                      <Icon
-                        name={model.chatCompatibility === 'chat' ? 'check' : 'info'}
-                        size={12}
-                      />
-                      {modelVerificationLabel(model)}
-                      {model.verificationDate ? ` · ${model.verificationDate}` : ''}
-                    </a>
-                  )}
                   <p>{model.description}</p>
+                  <div className="model-evidence-row">
+                    {profile && (
+                      <span>
+                        <Icon name="sparkle" size={12} /> Best for{' '}
+                        {profile.tasks
+                          .slice(0, 3)
+                          .map((task) => cap(task))
+                          .join(', ')}
+                      </span>
+                    )}
+                    <span>
+                      <Icon name="model" size={12} /> {cap(modelSize(model))} tier
+                    </span>
+                    {model.provider === 'NVIDIA NIM' && (
+                      <span>
+                        <Icon
+                          name={modelWasOperationallyTested(model) ? 'check' : 'cloud'}
+                          size={12}
+                        />
+                        {modelWasOperationallyTested(model)
+                          ? 'Endpoint smoke-tested · Sep 3'
+                          : 'Served via NVIDIA NIM'}
+                      </span>
+                    )}
+                  </div>
                   <div className="model-tags">
                     {model.tags.map((tag) => (
                       <span key={tag}>{tag}</span>
                     ))}
                     {model.quantization && <em>{model.quantization}</em>}
                     {model.parameters && <em>{model.parameters}</em>}
-                  </div>
-                  <div
-                    className={cx(
-                      'model-capability-ratings',
-                      capabilityRatings.length > 0 && 'has-ratings',
-                    )}
-                  >
-                    {capabilityRatings.length ? (
-                      capabilityRatings
-                        .slice(0, 4)
-                        .map((rating) => <CupcakeRating rating={rating} key={rating.capability} />)
-                    ) : (
-                      <span className="model-not-rated">
-                        Benchmark rating not available · raw model card still matters
-                      </span>
-                    )}
                   </div>
                   <dl className="model-specs">
                     <div>
@@ -4778,6 +4717,10 @@ function ModelsView({
                             : formatStorage(model.fileSizeBytes ?? model.estimatedDiskBytes)
                           : model.cost}
                       </dd>
+                    </div>
+                    <div>
+                      <dt>Size tier</dt>
+                      <dd>{cap(modelSize(model))}</dd>
                     </div>
                     <div>
                       <dt>Status</dt>
@@ -4889,16 +4832,6 @@ function ModelsView({
               );
             })}
           </div>
-          {hiddenCommunityCount > 0 && (
-            <div className="model-grid-more">
-              <button
-                className="button"
-                onClick={() => setVisibleCommunityCount((count) => count + 60)}
-              >
-                Show more community models ({hiddenCommunityCount} remaining)
-              </button>
-            </div>
-          )}
         </>
       ) : (
         <section className="empty-state model-empty">
@@ -4911,7 +4844,6 @@ function ModelsView({
           <button
             className="button"
             onClick={() => {
-              setTab('all');
               setModelQuery('');
               clearAdvancedFilters();
             }}
@@ -5724,6 +5656,22 @@ function ProviderLogo({ id, name, className }: { id: string; name: string; class
   return (
     <span className={cx('provider-logo', className)}>
       <img src={`/providers/${id}.svg`} alt={`${name} logo`} />
+    </span>
+  );
+}
+
+function PublisherLogo({ publisher, className }: { publisher: string; className?: string }) {
+  const asset = publisherLogoAsset(publisher);
+  return (
+    <span
+      className={cx('provider-logo', !asset && 'provider-logo--publisher-monogram', className)}
+      title={publisher}
+    >
+      {asset ? (
+        <img src={asset} alt={`${publisher} logo`} />
+      ) : (
+        <span aria-label={`${publisher} mark`}>{publisherMonogram(publisher)}</span>
+      )}
     </span>
   );
 }
@@ -6635,8 +6583,7 @@ function SettingsView({
               <header>
                 <h2>Workspace password</h2>
                 <p>
-                  CupcakeAI requires this password before starting local models, tools, or cloud
-                  provider connections.
+                  Keep an app password, or use Windows protection for quick-open on this account.
                 </p>
               </header>
               <form
@@ -6703,7 +6650,9 @@ function SettingsView({
                   <p
                     className={cx(
                       'field-message',
-                      workspacePasswordMessage !== 'Password changed.' && 'field-error',
+                      !workspacePasswordMessage.startsWith('Password changed') &&
+                        !workspacePasswordMessage.startsWith('App password removed') &&
+                        'field-error',
                     )}
                     role="status"
                   >
@@ -6713,6 +6662,31 @@ function SettingsView({
                 <div className="workspace-password-form__actions">
                   <button className="button button--primary" disabled={workspacePasswordBusy}>
                     {workspacePasswordBusy ? 'Changing…' : 'Change password'}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={workspacePasswordBusy || !currentWorkspacePassword}
+                    onClick={() => {
+                      setWorkspacePasswordBusy(true);
+                      setWorkspacePasswordMessage('');
+                      void window.cupcake?.workspace
+                        .useWindowsProtection(currentWorkspacePassword)
+                        .then(() => {
+                          setCurrentWorkspacePassword('');
+                          setNewWorkspacePassword('');
+                          setConfirmWorkspacePassword('');
+                          setWorkspacePasswordMessage(
+                            'App password removed. Windows protection will quick-open this workspace.',
+                          );
+                        })
+                        .catch((error: unknown) =>
+                          setWorkspacePasswordMessage(hostErrorMessage(error)),
+                        )
+                        .finally(() => setWorkspacePasswordBusy(false));
+                    }}
+                  >
+                    Use Windows quick-open
                   </button>
                   <button
                     className="button"
@@ -6728,8 +6702,8 @@ function SettingsView({
                 <div>
                   <strong>Two local protection layers</strong>
                   <p>
-                    The app password blocks CupcakeAI itself. Windows DPAPI separately protects the
-                    encrypted workspace key and provider credentials at rest.
+                    Windows DPAPI protects the encrypted workspace key and provider credentials at
+                    rest. An optional CupcakeAI password can add a second gate before startup.
                   </p>
                 </div>
               </div>
@@ -7471,12 +7445,15 @@ function ModelPicker({
   const [selectionError, setSelectionError] = useState<string | null>(null);
   if (!open) return null;
   const search = query.trim().toLowerCase();
-  const searched = models.filter((model) => {
-    const publisher = publisherForModel(model);
-    return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')}`
-      .toLowerCase()
-      .includes(search);
-  });
+  const searched = models
+    .filter(modelIsCurated)
+    .map(completeModelDescriptor)
+    .filter((model) => {
+      const publisher = publisherForModel(model);
+      return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')}`
+        .toLowerCase()
+        .includes(search);
+    });
   const shown = searched.filter((model) => showUnavailable || modelIsAvailableInChat(model));
   const grouped = new Map<string, ModelDescriptor[]>();
   shown.forEach((model) => {
@@ -7559,13 +7536,7 @@ function ModelPicker({
                     onClick={() => void selectFromPicker(model)}
                     key={model.id}
                   >
-                    <span className="provider-logo">
-                      {model.route === 'Local' ? (
-                        <Icon name="local" />
-                      ) : (
-                        <img src={`/providers/${providerDialogId(model.provider)}.svg`} alt="" />
-                      )}
-                    </span>
+                    <PublisherLogo publisher={publisher} />
                     <span>
                       <strong>{model.name}</strong>
                       <small>

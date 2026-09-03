@@ -222,7 +222,10 @@
   .model-toolbar .model-search-field {
     grid-column: 1 / -1;
   }
-  .model-filter-grid {
+  .model-filter-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .model-goal-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hardware-meter {
@@ -546,7 +549,8 @@
   .model-toolbar .segmented button {
     flex: 1;
   }
-  .model-filter-grid {
+  .model-filter-groups,
+  .model-goal-grid {
     grid-template-columns: 1fr;
   }
   .model-filter-trigger {

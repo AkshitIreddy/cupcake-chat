@@ -101,12 +101,6 @@ export interface ModelDescriptor {
     | 'stale';
   verificationSourceUrl?: string;
   verificationDate?: string;
-  capabilityRatings?: Array<{
-    capability: string;
-    cupcakes: number;
-    benchmarks: string[];
-    confidence: 'high' | 'medium' | 'provisional';
-  }>;
   privacyLabel?: string;
   pricingProvenance?: string;
   fit?: 'pending' | 'recommended' | 'reduced-context' | 'cpu-slow' | 'hybrid' | 'incompatible';
