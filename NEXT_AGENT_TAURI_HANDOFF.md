@@ -661,3 +661,37 @@ model, exercise GPU inference, build a new NSIS installer, or repeat the complet
 uninstall and performance matrix above. Do not call the overall handoff RC-ready on the strength of
 this checkpoint alone. The GPU marker was not acquired for this work and remained `no`; no model
 runtime was launched. Nothing was pushed, published, released, or connected to an updater.
+
+## 2026-09-03 qualified-model and quick-open checkpoint
+
+The owner test profile at `E:\temp\cupcakeai-owner-test-20260902` now uses the supported version 2
+Windows DPAPI workspace lock. The prior password was authenticated once by the migration command;
+subsequent packaged-app acceptance supplied no password and reported `unlocked: true`,
+`workspaceReady: true`, `unlockMode: windows`, a ready broker runtime, and no browser errors. The
+workspace's existing chats and projects were visibly retained. Evidence is under
+`E:\temp\cupcakeai-owner-final-20260903`.
+
+The Models page and chat picker now expose a small curated catalog organized by task, size tier,
+publisher, local/cloud route, and current availability. Hugging Face discovery is explicit opt-in,
+synthetic cupcake benchmark ratings are gone, compatibility-unverified is not shown, and publisher
+marks are no longer conflated with the NVIDIA NIM serving route. Eight authenticated one-token NIM
+probes passed and form the default NIM shortlist; failed, missing, or timed-out candidates remain
+excluded. The current NVIDIA account catalog exposed 64 text candidates, so the UI intentionally
+does not pretend that every catalog entry is qualified or useful.
+
+The custom titlebar is 32 px and shares the randomized opening palette with the shelf. Chat-only
+wallpapers are now visibly rendered. The task-first filter UI uses discoverable checkboxes and puts
+results before collapsed system details. Visual frames inspected during the pass are:
+
+- `E:\temp\cupcake-models-curated-v2.png`
+- `E:\temp\cupcake-models-filters-v2.png`
+- `E:\temp\cupcake-models-narrow-v2.png`
+- `E:\temp\cupcake-chat-wallpaper.png`
+- `E:\temp\cupcake-opening-titlebar.png`
+- `E:\temp\cupcakeai-owner-final-20260903\owner-profile-after-unlock.png`
+
+Fresh validation: TypeScript passed; renderer Vitest 52/52; Rust host/security 26/26; the full
+Python runtime suite passed; Playwright 44/44 across desktop and narrow projects; ESLint, Ruff, and
+Prettier passed. Native packaged acceptance was headless. No GPU-model lease was acquired, the
+shared GPU marker remained `no`, and no local model/runtime was left running. Nothing was pushed,
+published, released, or wired to an updater.
