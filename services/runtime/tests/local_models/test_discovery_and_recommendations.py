@@ -70,7 +70,7 @@ def test_huggingface_discovery_is_bounded_and_read_only() -> None:
         "fitReason": "Choose a quantization on the model card to estimate device fit.",
     }
     assert captured["timeout"] == 12
-    assert "limit=120" in captured["request"].full_url  # type: ignore[union-attr]
+    assert "limit=500" in captured["request"].full_url  # type: ignore[union-attr]
 
 
 def test_huggingface_discovery_accepts_a_model_url() -> None:

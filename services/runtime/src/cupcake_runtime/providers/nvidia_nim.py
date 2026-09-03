@@ -87,6 +87,38 @@ _NON_CHAT_MARKERS = frozenset(
     }
 )
 
+# NVIDIA's hosted ``/v1/models`` payload currently exposes only OpenAI-style
+# identity fields, so it cannot prove endpoint compatibility by itself. These
+# exact IDs have official NVIDIA model-card/playground pages for chat
+# completions. Keeping the evidence URL beside the ID makes the claim auditable
+# and prevents broad identifier heuristics from turning embeddings or guards
+# into chat models.
+_VERIFIED_HOSTED_CHAT_MODELS: dict[str, str] = {
+    model_id: f"https://build.nvidia.com/{model_id}/modelcard"
+    for model_id in (
+        "deepseek-ai/deepseek-v4-flash-0731",
+        "deepseek-ai/deepseek-v4-pro-0813",
+        "google/diffusiongemma-26b-a4b-it",
+        "google/gemma-4-31b-it",
+        "meta/muse-glimmer-30b",
+        "minimaxai/minimax-m3",
+        "mistralai/mistral-large-2-instruct",
+        "mistralai/mistral-nemotron",
+        "moonshotai/kimi-k2.6",
+        "moonshotai/kimi-k3",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nvidia/nemotron-nano-3-30b-a3b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "poolside/laguna-xs-2.1",
+    )
+}
+
 
 class ChatCompatibility(StrEnum):
     CHAT = "chat"
@@ -318,6 +350,8 @@ def _classify_chat_compatibility(
         return ChatCompatibility.CHAT, "provider-declared task/capability", markers
     if markers & _NON_CHAT_MARKERS:
         return ChatCompatibility.NON_CHAT, "provider-declared non-chat task/capability", markers
+    if model_id in _VERIFIED_HOSTED_CHAT_MODELS:
+        return ChatCompatibility.CHAT, "official NVIDIA hosted chat model card", markers
 
     # Identifiers are only used to exclude unmistakable non-text surfaces.  An
     # identifier is never enough to claim that a model supports chat.
@@ -369,6 +403,8 @@ def _descriptor_from_record(
     structured = bool(declared & {"structured-output", "json-schema", "json-mode"})
     verified_chat = compatibility is ChatCompatibility.CHAT
     display = model_id if verified_chat else f"{model_id} · compatibility unverified"
+    publisher_id = model_id.split("/", 1)[0]
+    verification_url = _VERIFIED_HOSTED_CHAT_MODELS.get(model_id)
     reasoning_efforts = (
         (ReasoningEffort.NONE, ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH)
         if reasoning
@@ -408,6 +444,10 @@ def _descriptor_from_record(
             "api_base": NVIDIA_NIM_BASE_URL,
             "chat_compatibility": compatibility.value,
             "compatibility_evidence": evidence,
+            "compatibility_source_url": verification_url,
+            "compatibility_verified_at": "2026-09-03" if verification_url else None,
+            "verification_state": "docs_verified_chat" if verification_url else "unverified",
+            "publisher_id": publisher_id,
             "requires_compatibility_confirmation": not verified_chat,
             "context_window_known": context is not None,
             "max_output_tokens_known": output is not None,

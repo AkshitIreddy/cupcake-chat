@@ -273,7 +273,7 @@ export const models: ModelDescriptor[] = [
     provider: 'Cupcake Local',
     name: 'Qwen3 8B · Q4_K_M',
     route: 'Local',
-    tags: ['Coding', 'Private', '12 GB friendly'],
+    tags: ['Coding', 'Private'],
     context: '131k',
     cost: 'Free',
     status: 'catalog',

@@ -39,12 +39,14 @@ const child = spawn(executable, [], {
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+const processStartedAt = Date.now();
 
 let browser;
 let page;
 const errors = [];
 try {
   await waitForDevtools(port, child, 90_000);
+  const devtoolsReadyAt = Date.now();
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = await waitForPage(browser, 30_000);
   page.on('pageerror', (error) => errors.push(error.message));
@@ -56,9 +58,11 @@ try {
   await passwordInput.waitFor({ timeout: 30_000 });
   await passwordInput.fill(password.toString('utf8'));
   password.fill(0);
+  const unlockClickedAt = Date.now();
   await page.getByRole('button', { name: 'Unlock workspace', exact: true }).click();
   const openingCard = page.locator('.workspace-opening__card');
   await openingCard.waitFor({ timeout: 30_000 });
+  const openingVisibleAt = Date.now();
   const openingGeometry = await openingCard.evaluate((element) => {
     const card = element.getBoundingClientRect();
     const host = document.querySelector('.app-content')?.getBoundingClientRect();
@@ -77,32 +81,36 @@ try {
   }
   await page.screenshot({ path: join(output, 'native-opening-centered.png') });
   await page.locator('.home-hero').waitFor({ timeout: 240_000 });
+  const homeVisibleAt = Date.now();
   const skipOnboarding = page.getByRole('button', { name: 'Skip onboarding', exact: true });
   await skipOnboarding.waitFor({ timeout: 45_000 }).catch(() => undefined);
   if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
   await page.locator('[data-tour="models"]').click();
   await page.locator('.models-page').waitFor({ timeout: 30_000 });
 
-  const nimHeading = page.locator('.community-model-intro--nim h3');
-  await nimHeading.waitFor({ timeout: catalogTimeout });
-  await page
-    .locator('.community-model-intro__state')
-    .filter({ hasText: /loaded from Hugging Face/u })
-    .waitFor({ timeout: catalogTimeout });
+  const catalogSummary = page.locator('.model-catalog-summary');
+  await catalogSummary.waitFor({ timeout: catalogTimeout });
   await page.waitForFunction(
-    () => /\d+ live NIM models are ready to choose/u.test(
-      document.querySelector('.community-model-intro--nim h3')?.textContent ?? '',
-    ),
+    () =>
+      /\d+ account-discoverable NIM chat candidates/u.test(
+        document.querySelector('.model-catalog-summary')?.textContent ?? '',
+      ) &&
+      /\d+ Hugging Face GGUF results/u.test(
+        document.querySelector('.model-catalog-summary')?.textContent ?? '',
+      ),
     undefined,
     { timeout: catalogTimeout },
   );
 
+  const summaryText = (await catalogSummary.innerText()).trim();
   const result = {
     opening: openingGeometry,
-    nim: (await nimHeading.innerText()).trim(),
-    huggingFace: (
-      await page.locator('.community-model-intro__state').filter({ hasText: /Hugging Face/u }).innerText()
-    ).trim(),
+    timingsMs: {
+      processToDevtools: devtoolsReadyAt - processStartedAt,
+      unlockToOpening: openingVisibleAt - unlockClickedAt,
+      unlockToInteractive: homeVisibleAt - unlockClickedAt,
+    },
+    catalogSummary: summaryText,
     modelCards: await page.locator('.model-card').count(),
     errors: errors.map(sanitize),
   };

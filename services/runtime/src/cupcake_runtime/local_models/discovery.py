@@ -15,8 +15,8 @@ from urllib.parse import quote, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 HUGGING_FACE_API = "https://huggingface.co/api/models"
-MAX_RESPONSE_BYTES = 6 * 1024 * 1024
-MAX_RESULTS = 120
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_RESULTS = 500
 _PARAMETERS = re.compile(r"(?:^|[-_/ ])(\d+(?:\.\d+)?)\s*[bB](?:[-_/ ]|$)")
 
 

@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 test('workspace opening composition stays optically centered', async ({ page }) => {
-  await page.goto('/?opening=1');
+  await page.goto('/?opening=1&openingScene=0');
   const card = page.locator('.workspace-opening__card');
   await expect(card).toBeVisible();
   const geometry = await card.evaluate((element) => {
@@ -22,6 +22,11 @@ test('workspace opening composition stays optically centered', async ({ page }) 
   });
   expect(Math.abs(geometry.cardCenterX - geometry.hostCenterX)).toBeLessThanOrEqual(8);
   expect(Math.abs(geometry.cardCenterY - geometry.hostCenterY)).toBeLessThanOrEqual(8);
+  await expect(page.locator('html')).toHaveAttribute('data-opening-scene', '0');
+  const shelfBackground = await page
+    .locator('.shelf')
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(shelfBackground).not.toBe('rgb(246, 242, 235)');
 });
 
 test('fresh Windows profile can choose quick-open without creating a password', async ({
@@ -72,7 +77,7 @@ test('fresh Windows profile can choose quick-open without creating a password', 
   );
 });
 
-test('first-run tour is complete, replayable, and keeps search at the top of the shelf', async ({
+test('first-run tour is complete, replayable, centered, and keeps search in the titlebar', async ({
   page,
 }) => {
   await page.goto('/?onboarding=1');
@@ -112,9 +117,10 @@ test('model discovery exposes a broad Hub result set with progressive disclosure
   page,
 }) => {
   await page.goto('/?view=models');
-  const state = page.locator('.community-model-intro__state');
-  await expect(state).toContainText(/community results|loaded from Hugging Face/i);
-  const count = Number((await state.textContent())?.match(/\d+/)?.[0] ?? 0);
+  const state = page.locator('.model-catalog-summary');
+  await expect(state).toContainText(/Hugging Face GGUF results/i);
+  const hubState = state.getByText(/Hugging Face GGUF results/i);
+  const count = Number((await hubState.textContent())?.match(/\d+/)?.[0] ?? 0);
   expect(count).toBeGreaterThan(30);
   await expect(page.getByRole('button', { name: /Show more community models/i })).toBeVisible();
 });
@@ -136,18 +142,21 @@ test('Home uses intentional aligned marks instead of bare status dots', async ({
   );
 });
 
-test('Appearance offers generated wallpapers and applies one to the workspace', async ({
-  page,
-}) => {
+test('Appearance offers generated wallpapers and applies one only to chat', async ({ page }) => {
   await page.goto('/?view=settings');
   await page.getByRole('button', { name: 'Appearance' }).click();
   const choice = page.getByRole('button', { name: /Blueberry observatory/ });
   await expect(choice).toBeVisible();
   await choice.click();
   await expect(choice).toHaveClass(/is-active/);
-  await expect(page.locator('.app-shell')).toHaveClass(/app-shell--wallpaper/);
+  await expect(page.locator('.app-shell')).not.toHaveClass(/app-shell--wallpaper/);
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  await page.locator('.new-chat').click();
+  const chatSurface = page.locator('.app-content--chat');
+  await expect(chatSurface).toHaveClass(/app-content--wallpaper/);
   const background = await page
-    .locator('.app-shell')
+    .locator('.app-content--chat')
     .evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(background).toContain('blueberry-observatory.webp');
 });
@@ -180,14 +189,17 @@ test('home, navigation, command palette and explicit model picker work', async (
   }
   await page.getByRole('button', { name: 'Models' }).click();
   await expect(page.getByRole('heading', { name: 'Models', exact: true }).last()).toBeVisible();
-  await expect(page.getByText(/Cupcake never changes routes automatically/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Filters/ })).toBeVisible();
+  await expect(page.locator('.community-model-intro')).toHaveCount(0);
 
   await page.keyboard.press('Control+K');
   await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
   await page.getByPlaceholder('What would you like to do?').fill('Change model');
   await page.getByRole('button', { name: /Change model/ }).click();
   await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible();
-  await expect(page.getByText('There is no Auto mode.')).toBeVisible();
+  await expect(page.getByText('There is no Auto mode.')).toHaveCount(0);
+  await expect(page.getByText('Show unavailable')).toBeVisible();
+  await expect(page.locator('.model-picker__group').first()).toBeVisible();
 });
 
 test('chat accepts multiline input and labels deterministic fixture mode', async ({ page }) => {
@@ -626,8 +638,8 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   const openNavigation = page.getByRole('button', { name: 'Open navigation' });
   if (await openNavigation.isVisible()) await openNavigation.click();
   await page.getByRole('button', { name: 'Models', exact: true }).click();
-  await expect(page.locator('.community-model-intro--nim h3')).toHaveText(
-    '1 live NIM model is ready to choose',
+  await expect(page.locator('.model-catalog-summary')).toContainText(
+    '1 account-discoverable NIM chat candidates',
   );
   await page.keyboard.press('Control+M');
   const picker = page.getByRole('dialog', { name: 'Choose model' });
@@ -635,22 +647,6 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   await expect(nim).toBeEnabled();
   await expect(nim).toHaveClass(/is-active/);
   await nim.click();
-
-  const compatibility = page.getByRole('dialog', {
-    name: 'Confirm unverified model compatibility',
-  });
-  await expect(compatibility).toBeVisible();
-  const confirm = compatibility.getByRole('button', { name: 'Confirm and select' });
-  await expect(confirm).toBeDisabled();
-  const acknowledgement = compatibility.getByRole('checkbox', {
-    name: /I checked the model information and accept the unverified compatibility/,
-  });
-  await acknowledgement.check();
-  await expect(acknowledgement).toBeChecked();
-  await expect(confirm).toBeEnabled();
-  await confirm.click();
-
-  await expect(compatibility).toBeHidden();
   await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeHidden();
   const calls = await page.evaluate(
     () =>
@@ -683,23 +679,29 @@ test('custom titlebar reserves normal flow and exposes semantic window controls'
   const geometry = await page.evaluate(() => {
     const title = document.querySelector<HTMLElement>('.cupcake-titlebar');
     const shelf = document.querySelector<HTMLElement>('.shelf');
-    const drag = title?.querySelector<HTMLElement>(':scope > .cupcake-titlebar__drag');
+    const drag = title?.querySelector<HTMLElement>('.cupcake-titlebar__drag');
+    const search = title?.querySelector<HTMLElement>('.cupcake-titlebar__search');
     const controls = title?.querySelector<HTMLElement>('.cupcake-titlebar__controls');
-    if (!title || !shelf || !drag || !controls) throw new Error('Titlebar geometry is unavailable');
+    if (!title || !shelf || !drag || !search || !controls)
+      throw new Error('Titlebar geometry is unavailable');
     return {
+      titleHeight: title.getBoundingClientRect().height,
       titleBottom: title.getBoundingClientRect().bottom,
       shelfTop: shelf.getBoundingClientRect().top,
-      directDrag: drag.parentElement === title,
+      directDrag: drag.parentElement?.classList.contains('cupcake-titlebar__center') ?? false,
       dragChildren: drag.childElementCount,
       dragWidth: drag.getBoundingClientRect().width,
+      searchWidth: search.getBoundingClientRect().width,
       controlsWidth: controls.getBoundingClientRect().width,
     };
   });
+  expect(geometry.titleHeight).toBe(38);
   expect(geometry.shelfTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
   expect(geometry.directDrag).toBe(true);
   expect(geometry.dragChildren).toBe(0);
   expect(geometry.dragWidth).toBeGreaterThan(20);
-  expect(geometry.controlsWidth).toBe(138);
+  expect(geometry.searchWidth).toBeGreaterThan(180);
+  expect(geometry.controlsWidth).toBe((page.viewportSize()?.width ?? 1440) < 640 ? 120 : 138);
 });
 
 test('provider setup stays in-app, traps focus, supports Escape, and reviews a masked key', async ({
@@ -766,13 +768,14 @@ test('all themes style root and nested WebView scrollbars from explicit tokens',
   }
 });
 
-test('fresh model catalog is Cupcake Local only and explains pending device fit', async ({
+test('managed local catalog stays Cupcake-owned and explains pending hardware detection', async ({
   page,
 }) => {
   await page.goto('/?view=models');
   const localCards = page.locator('.model-card').filter({ hasText: 'Cupcake Local' });
   await expect(localCards).toHaveCount(3);
-  await expect(page.getByText('Device scan pending').first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Scanning device compatibility' })).toBeVisible();
+  await expect(page.getByText('RAM pending')).toBeVisible();
   await expect(page.getByText(/LM Studio|Ollama|vLLM/i)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Install a model to benchmark' })).toBeDisabled();
   const install = localCards.first().getByRole('button', { name: 'Review install' });

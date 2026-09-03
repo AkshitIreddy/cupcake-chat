@@ -136,6 +136,7 @@ export interface HardwareRecord {
   cpuArchitecture?: string;
   cpuFeatures?: string[];
   ramBytes?: number;
+  availableRamBytes?: number;
   vramBytes?: number;
   gpu?: string;
   diskAvailableBytes?: number;
@@ -242,6 +243,7 @@ export interface WorkspaceSettings {
   semanticEnrichment: { enabled: boolean; provider: string | null; modelId: string | null };
   permissionMode: 'guarded' | 'full-freedom';
   allowRamFallback: boolean;
+  ramLimitMode: 'auto' | 'manual';
   maxRamGb: number;
   autoEvictLocalModels: boolean;
   localModelIdleMinutes: number;
@@ -937,6 +939,12 @@ export function normalizeHardware(value: unknown): HardwareRecord | null {
   if (Number.isFinite(ramBytes) && ramBytes > 0) result.ramBytes = ramBytes;
   else if (Number.isFinite(systemRamGb) && systemRamGb > 0)
     result.ramBytes = systemRamGb * 1024 ** 3;
+  const availableRamBytes = Number(record.availableRamBytes);
+  const availableRamGb = Number(record.available_ram_gb);
+  if (Number.isFinite(availableRamBytes) && availableRamBytes > 0)
+    result.availableRamBytes = availableRamBytes;
+  else if (Number.isFinite(availableRamGb) && availableRamGb > 0)
+    result.availableRamBytes = availableRamGb * 1024 ** 3;
   const vramBytes = Number(record.vramBytes);
   const vramGb = Number(record.vram_gb);
   if (Number.isFinite(vramBytes) && vramBytes > 0) result.vramBytes = vramBytes;
@@ -1144,8 +1152,7 @@ export function mapCupcakeRuntimePacks(status: CupcakeLocalStatus): LocalRuntime
 
 export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescriptor {
   const provider = textValue(item.provider ?? item.metadata?.provider, 'unknown');
-  const id =
-    textValue(item.id ?? item.model_id) || `${provider}:${textValue(item.model, 'model')}`;
+  const id = textValue(item.id ?? item.model_id) || `${provider}:${textValue(item.model, 'model')}`;
   const kind = runtimeKind(item);
   const local =
     item.privacy_route === 'local' ||
@@ -1212,6 +1219,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
     id,
     runtimeModelId: kind && item.model ? item.model : id,
     provider: providerNames[kind ?? provider] ?? cap(provider),
+    publisher: typeof metadata.publisher_id === 'string' ? metadata.publisher_id : undefined,
     name: item.display_name ?? item.model ?? id.split(':').at(-1) ?? id,
     route: local || item.privacy_route === 'local' ? 'Local' : 'Cloud',
     tags: capabilityTags.slice(0, 4),
@@ -1236,6 +1244,22 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
       ['none', 'low', 'medium', 'high'].includes(preset),
     ),
     chatCompatibility,
+    verificationState:
+      metadata.verification_state === 'docs_verified_chat' ||
+      metadata.verification_state === 'account_discoverable' ||
+      metadata.verification_state === 'operationally_verified' ||
+      metadata.verification_state === 'unverified' ||
+      metadata.verification_state === 'stale'
+        ? metadata.verification_state
+        : undefined,
+    verificationSourceUrl:
+      typeof metadata.compatibility_source_url === 'string'
+        ? metadata.compatibility_source_url
+        : undefined,
+    verificationDate:
+      typeof metadata.compatibility_verified_at === 'string'
+        ? metadata.compatibility_verified_at
+        : undefined,
     privacyLabel:
       item.privacy_route_label ??
       (typeof metadata.privacy_route_label === 'string' ? metadata.privacy_route_label : undefined),
@@ -1266,6 +1290,7 @@ function mapCommunityModel(item: Record<string, unknown>): ModelDescriptor | nul
   return {
     id,
     provider: 'Hugging Face',
+    publisher: id.slice(3).split('/')[0] || 'Community',
     name,
     route: 'Local',
     tags: Array.isArray(item.tags)
@@ -1343,6 +1368,26 @@ const fixtureCommunityRepositories = [
   'bartowski/Nemotron-Mini-4B-Instruct-GGUF',
   'bartowski/Falcon3-7B-Instruct-GGUF',
   'bartowski/StableLM-2-1_6B-Chat-GGUF',
+  'bartowski/Qwen3.5-9B-GGUF',
+  'bartowski/Qwen3.5-27B-GGUF',
+  'bartowski/Qwen3.5-35B-A3B-GGUF',
+  'bartowski/GLM-4.5-Air-GGUF',
+  'bartowski/GLM-4.7-Flash-GGUF',
+  'bartowski/DeepSeek-V3.1-Terminus-GGUF',
+  'bartowski/Mistral-Nemo-Instruct-2407-GGUF',
+  'bartowski/Nemotron-3-Nano-30B-A3B-GGUF',
+  'bartowski/Olmo-3-7B-Instruct-GGUF',
+  'bartowski/Olmo-3.1-32B-Think-GGUF',
+  'bartowski/Llama-3.3-70B-Instruct-GGUF',
+  'bartowski/InternLM3-8B-Instruct-GGUF',
+  'bartowski/Jan-v3-4B-GGUF',
+  'bartowski/Phi-4-multimodal-instruct-GGUF',
+  'bartowski/Magistral-Small-2509-GGUF',
+  'bartowski/Devstral-Small-2507-GGUF',
+  'unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF',
+  'unsloth/Qwen3-VL-8B-Instruct-GGUF',
+  'ggml-org/SmolVLM2-2.2B-Instruct-GGUF',
+  'ggml-org/embeddinggemma-300M-GGUF',
 ];
 
 const fixtureCommunityModels = fixtureCommunityRepositories.map(
@@ -1369,6 +1414,7 @@ export function localModelActionRequest(
   model: ModelDescriptor,
   policy?: {
     allowRamFallback: boolean;
+    ramLimitMode: 'auto' | 'manual';
     maxRamGb: number;
     reserveSystemRamGb?: number;
     reserveVramGb?: number;
@@ -1406,9 +1452,12 @@ export function localModelActionRequest(
       params: {
         modelId: nativeModel,
         allowRamFallback: policy.allowRamFallback,
-        maxRamGb: policy.maxRamGb,
-        reserveSystemRamGb: policy.reserveSystemRamGb,
-        reserveVramGb: policy.reserveVramGb,
+        ramLimitMode: policy.ramLimitMode,
+        ...(policy.ramLimitMode === 'manual' ? { maxRamGb: policy.maxRamGb } : {}),
+        ...(policy.reserveSystemRamGb === undefined
+          ? {}
+          : { reserveSystemRamGb: policy.reserveSystemRamGb }),
+        ...(policy.reserveVramGb === undefined ? {} : { reserveVramGb: policy.reserveVramGb }),
         ...(policy.allowRamFallback ? {} : { gpuLayers: 'all' }),
       },
     };
@@ -1416,6 +1465,23 @@ export function localModelActionRequest(
     method: `local_models.cupcake.${action === 'remove' ? 'remove_model' : action}`,
     params: { modelId: nativeModel },
   };
+}
+
+export function automaticRamBudgetGb(
+  hardware: HardwareRecord | null | undefined,
+  reserveSystemRamGb: number,
+): number | null {
+  const gib = 1024 ** 3;
+  const totalGb = hardware?.ramBytes ? hardware.ramBytes / gib : 0;
+  const availableGb = hardware?.availableRamBytes ? hardware.availableRamBytes / gib : 0;
+  if (availableGb > 0) return Math.max(0, Math.round((availableGb - reserveSystemRamGb) * 10) / 10);
+  if (totalGb <= 0) return null;
+  // Before a live available-memory sample arrives, reserve at least 25% of
+  // physical RAM as well as the user's explicit reserve for Windows and apps.
+  return Math.max(
+    4,
+    Math.round((totalGb - Math.max(reserveSystemRamGb, totalGb * 0.25)) * 10) / 10,
+  );
 }
 
 function mapTool(item: RuntimeTool): ToolDescriptor {
@@ -1485,6 +1551,7 @@ const fallbackSettings: WorkspaceSettings = {
   semanticEnrichment: { enabled: false, provider: null, modelId: null },
   permissionMode: 'guarded',
   allowRamFallback: true,
+  ramLimitMode: 'auto',
   maxRamGb: 24,
   autoEvictLocalModels: true,
   localModelIdleMinutes: 30,
@@ -1638,25 +1705,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (fixtureMode) return;
     await guard(async () => {
-      // The broker handshake completes before its one-file Python runtime has
-      // necessarily been extracted and opened its encrypted stores. Warm that
-      // sidecar with an idempotent health check before the first product query.
-      // Retrying this read-only operation is safe and prevents a cold launch
-      // race from stranding the renderer on its opening screen.
-      let healthFailure: Error | null = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          await request('runtime.health', {}, 120_000);
-          healthFailure = null;
-          break;
-        } catch (reason) {
-          healthFailure =
-            reason instanceof Error ? reason : new Error('The local runtime health check failed.');
-          if (attempt < 2)
-            await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
-        }
-      }
-      if (healthFailure) throw healthFailure;
+      // Let the first useful read start the frozen runtime. app.bootstrap is
+      // itself idempotent and retried below, so a separate health round-trip
+      // only lengthens the locked-to-interactive path on every launch.
       type RuntimeBootstrap = {
         selectedModelId?: string;
         projects?: RuntimeProject[];
@@ -1929,6 +1980,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           : current.enabledToolIds,
         permissionMode: permissionPolicy?.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
         allowRamFallback: runtimeSettings['models.local.allow_ram_fallback'] !== false,
+        ramLimitMode:
+          runtimeSettings['models.local.ram_limit_mode'] === 'manual' ? 'manual' : 'auto',
         maxRamGb: Math.max(
           4,
           Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
@@ -2721,6 +2774,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!target) throw new Error('The selected local model is no longer available.');
       const operation = localModelActionRequest(action, target, {
         allowRamFallback: settings.allowRamFallback,
+        ramLimitMode: settings.ramLimitMode,
         maxRamGb: settings.maxRamGb,
         reserveSystemRamGb: settings.reserveSystemRamGb,
         reserveVramGb: settings.reserveVramGb,
@@ -2771,6 +2825,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refresh,
       request,
       settings.allowRamFallback,
+      settings.ramLimitMode,
       settings.maxRamGb,
       settings.reserveSystemRamGb,
       settings.reserveVramGb,
@@ -2948,6 +3003,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           await request('broker.permission_mode.set', { mode: patch.permissionMode });
         if (patch.allowRamFallback !== undefined)
           entries.push(['models.local.allow_ram_fallback', patch.allowRamFallback]);
+        if (patch.ramLimitMode !== undefined)
+          entries.push(['models.local.ram_limit_mode', patch.ramLimitMode]);
         if (patch.maxRamGb !== undefined) entries.push(['models.local.max_ram_gb', patch.maxRamGb]);
         if (patch.autoEvictLocalModels !== undefined)
           entries.push(['models.local.auto_evict', patch.autoEvictLocalModels]);

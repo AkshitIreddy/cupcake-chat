@@ -57,6 +57,7 @@ export interface ModelDescriptor {
   id: string;
   runtimeModelId?: string;
   provider: string;
+  publisher?: string;
   name: string;
   route: 'Cloud' | 'Local';
   tags: string[];
@@ -92,6 +93,20 @@ export interface ModelDescriptor {
     state: string;
   };
   chatCompatibility?: 'chat' | 'unknown' | 'non_chat';
+  verificationState?:
+    | 'docs_verified_chat'
+    | 'account_discoverable'
+    | 'operationally_verified'
+    | 'unverified'
+    | 'stale';
+  verificationSourceUrl?: string;
+  verificationDate?: string;
+  capabilityRatings?: Array<{
+    capability: string;
+    cupcakes: number;
+    benchmarks: string[];
+    confidence: 'high' | 'medium' | 'provisional';
+  }>;
   privacyLabel?: string;
   pricingProvenance?: string;
   fit?: 'pending' | 'recommended' | 'reduced-context' | 'cpu-slow' | 'hybrid' | 'incompatible';

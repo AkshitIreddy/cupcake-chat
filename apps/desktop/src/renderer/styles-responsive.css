@@ -219,8 +219,11 @@
     grid-template-columns: repeat(2, minmax(110px, 1fr));
   }
   .model-toolbar .segmented,
-  .model-toolbar .search-field {
+  .model-toolbar .model-search-field {
     grid-column: 1 / -1;
+  }
+  .model-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hardware-meter {
     display: none;
@@ -534,7 +537,7 @@
     grid-template-columns: 1fr;
   }
   .model-toolbar .segmented,
-  .model-toolbar .search-field {
+  .model-toolbar .model-search-field {
     grid-column: auto;
   }
   .model-toolbar .segmented {
@@ -542,6 +545,12 @@
   }
   .model-toolbar .segmented button {
     flex: 1;
+  }
+  .model-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .model-filter-trigger {
+    justify-self: start;
   }
   .security-note {
     align-items: flex-start;
@@ -650,11 +659,14 @@
     flex-direction: column;
     gap: 4px;
   }
-  .model-picker__list > button {
+  .model-picker__group > button {
     grid-template-columns: 34px minmax(0, 1fr) auto;
   }
-  .model-picker__list > button > .route-badge {
+  .model-picker__group > button > .route-badge {
     display: none;
+  }
+  .model-picker__tools {
+    grid-template-columns: 1fr;
   }
   .command-layer {
     padding: 10px;
@@ -669,13 +681,25 @@
 }
 @media (max-width: 420px) {
   .cupcake-titlebar {
-    grid-template-columns: 44px minmax(12px, 1fr) 138px;
+    grid-template-columns: 40px minmax(100px, 1fr) 120px;
   }
   .cupcake-titlebar__identity {
     justify-content: center;
     padding: 0;
   }
   .cupcake-titlebar__identity span {
+    display: none;
+  }
+  .cupcake-titlebar__controls {
+    grid-template-columns: repeat(3, 40px);
+  }
+  .window-control {
+    width: 40px;
+  }
+  .cupcake-titlebar__center {
+    grid-template-columns: 0 minmax(96px, 1fr) 0;
+  }
+  .cupcake-titlebar__search kbd {
     display: none;
   }
   .composer-chip {

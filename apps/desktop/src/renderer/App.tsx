@@ -21,10 +21,12 @@ import { Icon, type IconName } from './icons';
 import { ConversationScrollController } from './conversation-scroll';
 import { RichMarkdown } from './RichMarkdown';
 import {
-  canonicalModelId,
-  modelSelectionParams,
-  requiresCompatibilityAcknowledgement,
-} from './model-selection';
+  benchmarkRatingsForModel,
+  modelIsAvailableInChat,
+  modelVerificationLabel,
+  publisherForModel,
+} from './model-intelligence';
+import { canonicalModelId, modelSelectionParams } from './model-selection';
 import type {
   Conversation,
   LiveChatMessage,
@@ -37,6 +39,7 @@ import type {
 } from './types';
 import {
   WorkspaceProvider,
+  automaticRamBudgetGb,
   scopedReferenceOptions,
   useWorkspace,
   type ArtifactRecord,
@@ -305,7 +308,7 @@ function useModalFocusTrap(
   }, [active, containerRef, onEscape]);
 }
 
-function CupcakeTitlebar() {
+function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
   const [maximized, setMaximized] = useState(false);
   const refreshMaximized = useCallback(async () => {
     setMaximized((await window.cupcake?.window?.isMaximized?.()) ?? false);
@@ -322,16 +325,29 @@ function CupcakeTitlebar() {
   };
   return (
     <header className="cupcake-titlebar" aria-label="Application window controls">
-      <div className="cupcake-titlebar__identity" aria-hidden="true">
+      <div className="cupcake-titlebar__identity" data-tauri-drag-region aria-hidden="true">
         <img src="/brand/cupcake-mark.svg" alt="" />
         <span>CUPCAKEAI</span>
       </div>
-      <div
-        className="cupcake-titlebar__drag"
-        data-tauri-drag-region
-        onDoubleClick={() => void toggleMaximize()}
-        aria-hidden="true"
-      />
+      <div className="cupcake-titlebar__center">
+        <span
+          className="cupcake-titlebar__drag"
+          data-tauri-drag-region
+          onDoubleClick={() => void toggleMaximize()}
+          aria-hidden="true"
+        />
+        <button className="cupcake-titlebar__search" type="button" onClick={onSearch}>
+          <Icon name="search" size={13} />
+          <span>Search CupcakeAI</span>
+          <kbd>Ctrl F</kbd>
+        </button>
+        <span
+          className="cupcake-titlebar__drag"
+          data-tauri-drag-region
+          onDoubleClick={() => void toggleMaximize()}
+          aria-hidden="true"
+        />
+      </div>
       <div className="cupcake-titlebar__controls">
         <button
           type="button"
@@ -422,7 +438,18 @@ function EmptyState({
 }
 
 function WorkspaceOpening() {
-  const [scene] = useState(() => Math.floor(Math.random() * 4));
+  const [scene] = useState(() => {
+    const requested = Number(new URLSearchParams(window.location.search).get('openingScene'));
+    return Number.isInteger(requested) && requested >= 0 && requested <= 3
+      ? requested
+      : Math.floor(Math.random() * 4);
+  });
+  useEffect(() => {
+    document.documentElement.dataset.openingScene = String(scene);
+    return () => {
+      delete document.documentElement.dataset.openingScene;
+    };
+  }, [scene]);
   return (
     <main className="workspace-opening" aria-live="polite">
       <Dreamscape scene={scene} />
@@ -495,14 +522,6 @@ function Shelf({
           <Icon name="x" />
         </button>
       </div>
-      <button className="shelf-search" onClick={() => navigate('search')}>
-        <Icon name="search" size={15} />
-        <span>Search CupcakeAI</span>
-        <span className="shortcut-keycaps" aria-label="Control F">
-          <kbd>Ctrl</kbd>
-          <kbd>F</kbd>
-        </span>
-      </button>
       <button className="new-chat" onClick={() => (onNewChat ? onNewChat() : navigate('chat'))}>
         <span>
           <Icon name="plus" size={17} />
@@ -3910,13 +3929,6 @@ function modelStatusLabel(status: ModelDescriptor['status']) {
   return labels[status];
 }
 
-function modelSize(model: ModelDescriptor): 'compact' | 'balanced' | 'large' {
-  const parameterCount = Number.parseFloat(model.parameters ?? '0');
-  if (parameterCount > 0 && parameterCount <= 5) return 'compact';
-  if (parameterCount > 10) return 'large';
-  return 'balanced';
-}
-
 function providerDialogId(provider: string) {
   const ids: Record<string, string> = {
     OpenAI: 'openai',
@@ -3928,6 +3940,42 @@ function providerDialogId(provider: string) {
     'NVIDIA NIM': 'nvidia-nim',
   };
   return ids[provider] ?? 'openai-compatible';
+}
+
+function CupcakeRating({
+  rating,
+}: {
+  rating: NonNullable<ModelDescriptor['capabilityRatings']>[number];
+}) {
+  return (
+    <span
+      className="cupcake-rating"
+      title={`${rating.benchmarks.join(' · ')} · ${rating.confidence} confidence`}
+    >
+      <span>{cap(rating.capability)}</span>
+      <span
+        className="cupcake-rating__cakes"
+        aria-label={`${rating.cupcakes} out of 5 cupcakes for ${rating.capability}`}
+      >
+        {Array.from({ length: 5 }, (_, index) => (
+          <i
+            className={
+              rating.cupcakes >= index + 1
+                ? 'is-full'
+                : rating.cupcakes >= index + 0.5
+                  ? 'is-half'
+                  : ''
+            }
+            aria-hidden="true"
+            key={index}
+          >
+            🧁
+          </i>
+        ))}
+      </span>
+      <strong>{rating.cupcakes.toFixed(1)}</strong>
+    </span>
+  );
 }
 
 function ModelsView({
@@ -3942,11 +3990,19 @@ function ModelsView({
   const workspace = useWorkspace();
   const [tab, setTab] = useState<'all' | 'cloud' | 'local'>('all');
   const [modelQuery, setModelQuery] = useState('');
-  const [taskFilter, setTaskFilter] = useState('all');
-  const [sizeFilter, setSizeFilter] = useState('all');
-  const [fitFilter, setFitFilter] = useState('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [publisherFilter, setPublisherFilter] = useState('all');
+  const [includeTags, setIncludeTags] = useState('');
+  const [excludeTags, setExcludeTags] = useState('');
+  const [minimumParameters, setMinimumParameters] = useState('');
+  const [maximumParameters, setMaximumParameters] = useState('');
+  const [minimumCupcakes, setMinimumCupcakes] = useState('0');
+  const [benchmarkOnly, setBenchmarkOnly] = useState(false);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [hideGated, setHideGated] = useState(false);
   const [communityModels, setCommunityModels] = useState<ModelDescriptor[]>([]);
-  const [visibleCommunityCount, setVisibleCommunityCount] = useState(24);
+  const [visibleCommunityCount, setVisibleCommunityCount] = useState(60);
   const [communityLoading, setCommunityLoading] = useState(true);
   const [communityError, setCommunityError] = useState<string | null>(null);
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
@@ -3956,8 +4012,6 @@ function ModelsView({
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
-  const [pendingCompatibility, setPendingCompatibility] = useState<ModelDescriptor | null>(null);
-  const [compatibilityAcknowledged, setCompatibilityAcknowledged] = useState(false);
   const [pendingRuntime, setPendingRuntime] = useState<LocalRuntimeRecord | null>(null);
   const [runtimeTermsAccepted, setRuntimeTermsAccepted] = useState(false);
   const installRef = useRef<HTMLElement>(null);
@@ -3982,7 +4036,7 @@ function ModelsView({
     const timer = window.setTimeout(
       () => {
         void workspace
-          .discoverCommunityModels(modelQuery, 120)
+          .discoverCommunityModels(modelQuery, 240)
           .then((items) => {
             if (!active) return;
             setCommunityModels(items);
@@ -4007,8 +4061,21 @@ function ModelsView({
   }, [modelQuery, workspace.discoverCommunityModels]);
 
   useEffect(
-    () => setVisibleCommunityCount(24),
-    [modelQuery, tab, taskFilter, sizeFilter, fitFilter],
+    () => setVisibleCommunityCount(60),
+    [
+      modelQuery,
+      tab,
+      publisherFilter,
+      includeTags,
+      excludeTags,
+      minimumParameters,
+      maximumParameters,
+      minimumCupcakes,
+      benchmarkOnly,
+      verifiedOnly,
+      availableOnly,
+      hideGated,
+    ],
   );
 
   const rankedModels = useMemo(
@@ -4032,14 +4099,39 @@ function ModelsView({
         }),
     [communityModels, models, workspace.hardware],
   );
+  const publishers = [...new Set(rankedModels.map(publisherForModel))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const filterTokens = (value: string) =>
+    value
+      .split(/[ ,]+/u)
+      .map((token) => token.trim().toLowerCase())
+      .filter(Boolean);
+  const included = filterTokens(includeTags);
+  const excluded = filterTokens(excludeTags);
+  const minParams = Number.parseFloat(minimumParameters);
+  const maxParams = Number.parseFloat(maximumParameters);
+  const minRating = Number.parseFloat(minimumCupcakes) || 0;
   const filteredModels = rankedModels.filter((model) => {
+    const publisher = publisherForModel(model);
+    const ratings = benchmarkRatingsForModel(model) ?? [];
+    const parameterBillions = Number.parseFloat(model.parameters ?? '');
     const searchable =
-      `${model.provider} ${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''}`.toLowerCase();
+      `${model.provider} ${publisher} ${model.name} ${model.tags.join(' ')} ${model.parameters ?? ''} ${ratings.flatMap((rating) => [rating.capability, ...rating.benchmarks]).join(' ')}`.toLowerCase();
     return (
       (tab === 'all' || model.route.toLowerCase() === tab) &&
-      (taskFilter === 'all' || model.tags.some((tag) => tag.toLowerCase() === taskFilter)) &&
-      (sizeFilter === 'all' || modelSize(model) === sizeFilter) &&
-      (fitFilter === 'all' || model.route !== 'Local' || model.fit === fitFilter) &&
+      (publisherFilter === 'all' || publisher === publisherFilter) &&
+      included.every((token) => searchable.includes(token)) &&
+      excluded.every((token) => !searchable.includes(token)) &&
+      (!Number.isFinite(minParams) ||
+        (Number.isFinite(parameterBillions) && parameterBillions >= minParams)) &&
+      (!Number.isFinite(maxParams) ||
+        (Number.isFinite(parameterBillions) && parameterBillions <= maxParams)) &&
+      (minRating <= 0 || ratings.some((rating) => rating.cupcakes >= minRating)) &&
+      (!benchmarkOnly || ratings.length > 0) &&
+      (!verifiedOnly || model.chatCompatibility === 'chat') &&
+      (!availableOnly || modelIsAvailableInChat(model)) &&
+      (!hideGated || !model.gated) &&
       searchable.includes(modelQuery.trim().toLowerCase())
     );
   });
@@ -4061,6 +4153,34 @@ function ModelsView({
       model.route === 'Local' &&
       ['installed', 'ready', 'benchmarked', 'offline'].includes(model.status),
   );
+  const automaticRamBudget = automaticRamBudgetGb(
+    workspace.hardware,
+    workspace.settings.reserveSystemRamGb,
+  );
+  const activeFilterCount = [
+    publisherFilter !== 'all',
+    Boolean(includeTags),
+    Boolean(excludeTags),
+    Boolean(minimumParameters),
+    Boolean(maximumParameters),
+    Number(minimumCupcakes) > 0,
+    benchmarkOnly,
+    verifiedOnly,
+    availableOnly,
+    hideGated,
+  ].filter(Boolean).length;
+  const clearAdvancedFilters = () => {
+    setPublisherFilter('all');
+    setIncludeTags('');
+    setExcludeTags('');
+    setMinimumParameters('');
+    setMaximumParameters('');
+    setMinimumCupcakes('0');
+    setBenchmarkOnly(false);
+    setVerifiedOnly(false);
+    setAvailableOnly(false);
+    setHideGated(false);
+  };
 
   const runAction = async (
     action:
@@ -4089,21 +4209,13 @@ function ModelsView({
       setWorkingId(null);
     }
   };
-  const performSelection = async (model: ModelDescriptor, acknowledged = false) => {
+  const performSelection = async (model: ModelDescriptor) => {
     if (selectingId) return;
-    if (requiresCompatibilityAcknowledgement(model) && !acknowledged) {
-      setSelectionError(null);
-      setCompatibilityAcknowledged(false);
-      setPendingCompatibility(model);
-      return;
-    }
     setSelectionError(null);
     setSelectingId(model.id);
     try {
-      const params = modelSelectionParams(model, acknowledged);
+      const params = modelSelectionParams(model);
       await selectModel(params.modelId, { compatibilityConfirmed: params.compatibilityConfirmed });
-      setPendingCompatibility(null);
-      setCompatibilityAcknowledged(false);
     } catch (reason) {
       setSelectionError(
         reason instanceof Error ? reason.message : 'Cupcake could not select this model.',
@@ -4203,11 +4315,10 @@ function ModelsView({
     <main className="page models-page">
       <div className="page-intro">
         <div>
-          <p className="eyebrow">Explicit routing · verified local catalog</p>
+          <p className="eyebrow">Cloud, local, and community model intelligence</p>
           <h2>Models</h2>
           <p>
-            Choose a cloud model or install a signed Cupcake Local model. Cupcake never changes
-            routes automatically.
+            Compare capability evidence, connect a cloud route, or install a signed local model.
           </p>
         </div>
         <div className="page-intro__actions">
@@ -4277,7 +4388,9 @@ function ModelsView({
                   : 'VRAM-only placement'}
               </strong>
               {workspace.settings.allowRamFallback
-                ? ` llama.cpp offloads as many layers as fit in VRAM, then may use system RAM up to the ${workspace.settings.maxRamGb} GB safety ceiling. Hybrid placement is slower and is never hidden.`
+                ? workspace.settings.ramLimitMode === 'auto'
+                  ? ` llama.cpp uses live available memory and currently allows up to ${automaticRamBudget?.toFixed(1) ?? 'a detected'} GB after the Windows reserve. The budget adapts whenever system memory changes.`
+                  : ` llama.cpp offloads as many layers as fit in VRAM, then may use system RAM up to the manual ${workspace.settings.maxRamGb} GB safety ceiling.`
                 : ' Cupcake requests all accelerated layers in VRAM with automatic fitting disabled. A model that does not fit fails clearly instead of spilling into RAM.'}
             </span>
           </div>
@@ -4384,50 +4497,6 @@ function ModelsView({
         </div>
       </section>
 
-      {workspace.providers['nvidia-nim'] && (
-        <section className="community-model-intro community-model-intro--nim" aria-live="polite">
-          <ProviderLogo id="nvidia-nim" name="NVIDIA NIM" />
-          <div>
-            <span className="eyebrow">NVIDIA NIM connected</span>
-            <h3>
-              {nimModels.length
-                ? `${nimModels.length} live NIM ${nimModels.length === 1 ? 'model is' : 'models are'} ready to choose`
-                : 'Refreshing your live NIM catalog…'}
-            </h3>
-            <p>
-              This catalog comes from your connected NIM endpoint. It refreshes independently from
-              local downloads and Hugging Face discovery.
-            </p>
-          </div>
-          <button
-            className="button"
-            onClick={() => {
-              setTab('cloud');
-              setModelQuery('NVIDIA NIM');
-            }}
-          >
-            Show NIM models
-          </button>
-        </section>
-      )}
-
-      <section className="community-model-intro" aria-live="polite">
-        <div className="community-model-intro__mark">HF</div>
-        <div>
-          <span className="eyebrow">Live Hugging Face discovery</span>
-          <h3>Explore the wider GGUF community</h3>
-          <p>
-            Popular community model cards appear beside Cupcake's verified catalog. Search stays
-            read-only: review upstream files, terms, and quantization before importing anything.
-          </p>
-        </div>
-        <span className={cx('community-model-intro__state', communityError && 'is-error')}>
-          {communityLoading
-            ? 'Searching Hub…'
-            : (communityError ?? `${communityModels.length} loaded from Hugging Face`)}
-        </span>
-      </section>
-
       <div className="toolbar model-toolbar">
         <div className="segmented" aria-label="Model location">
           {(['all', 'cloud', 'local'] as const).map((value) => (
@@ -4441,36 +4510,15 @@ function ModelsView({
             </button>
           ))}
         </div>
-        <label className="filter-field">
-          <span>Task</span>
-          <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
-            <option value="all">Any task</option>
-            <option value="coding">Coding</option>
-            <option value="reasoning">Reasoning</option>
-            <option value="vision">Vision</option>
-            <option value="tools">Tools</option>
-          </select>
-        </label>
-        <label className="filter-field">
-          <span>Size</span>
-          <select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}>
-            <option value="all">Any size</option>
-            <option value="compact">Compact</option>
-            <option value="balanced">Balanced</option>
-            <option value="large">Large</option>
-          </select>
-        </label>
-        <label className="filter-field">
-          <span>Device fit</span>
-          <select value={fitFilter} onChange={(event) => setFitFilter(event.target.value)}>
-            <option value="all">Any fit</option>
-            <option value="recommended">Recommended</option>
-            <option value="hybrid">Hybrid</option>
-            <option value="reduced-context">Reduced context</option>
-            <option value="cpu-slow">CPU-heavy</option>
-            <option value="pending">Scan pending</option>
-          </select>
-        </label>
+        <button
+          type="button"
+          className={cx('button model-filter-trigger', filterOpen && 'is-active')}
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((value) => !value)}
+        >
+          <Icon name="filter" /> Filters
+          {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+        </button>
         <label className="filter-field model-search-field">
           <span>Find a model</span>
           <div className="search-field">
@@ -4493,6 +4541,116 @@ function ModelsView({
           </div>
         </label>
       </div>
+      <div className={cx('model-catalog-summary', communityError && 'is-error')} aria-live="polite">
+        <span>
+          <strong>{shown.length}</strong> shown
+        </span>
+        <span>
+          <strong>{nimModels.length}</strong> account-discoverable NIM chat candidates
+        </span>
+        <span>
+          <strong>{communityLoading ? '…' : communityModels.length}</strong> Hugging Face GGUF
+          results
+        </span>
+        {communityError && <span>{communityError}</span>}
+      </div>
+      {filterOpen && (
+        <section className="model-filter-panel" aria-label="Advanced model filters">
+          <header>
+            <div>
+              <span className="eyebrow">Include, exclude, and compare</span>
+              <h3>Model filters</h3>
+            </div>
+            <button type="button" className="text-button" onClick={clearAdvancedFilters}>
+              Reset all
+            </button>
+          </header>
+          <div className="model-filter-grid">
+            <label>
+              Releasing company
+              <select
+                value={publisherFilter}
+                onChange={(event) => setPublisherFilter(event.target.value)}
+              >
+                <option value="all">All companies</option>
+                {publishers.map((publisher) => (
+                  <option value={publisher} key={publisher}>
+                    {publisher}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Include words or tags
+              <input
+                value={includeTags}
+                onChange={(event) => setIncludeTags(event.target.value)}
+                placeholder="coding, vision, tools"
+              />
+            </label>
+            <label>
+              Exclude words or tags
+              <input
+                value={excludeTags}
+                onChange={(event) => setExcludeTags(event.target.value)}
+                placeholder="gated, safety, embed"
+              />
+            </label>
+            <label>
+              Minimum benchmark rating
+              <select
+                value={minimumCupcakes}
+                onChange={(event) => setMinimumCupcakes(event.target.value)}
+              >
+                <option value="0">Any rating</option>
+                <option value="3">3+ cupcakes</option>
+                <option value="4">4+ cupcakes</option>
+                <option value="4.5">4.5+ cupcakes</option>
+                <option value="5">5 cupcakes</option>
+              </select>
+            </label>
+            <label>
+              Minimum parameters (B)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={minimumParameters}
+                onChange={(event) => setMinimumParameters(event.target.value)}
+                placeholder="0"
+              />
+            </label>
+            <label>
+              Maximum parameters (B)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={maximumParameters}
+                onChange={(event) => setMaximumParameters(event.target.value)}
+                placeholder="No maximum"
+              />
+            </label>
+          </div>
+          <div className="model-filter-checks">
+            {[
+              ['benchmarkOnly', 'Has benchmark evidence', benchmarkOnly, setBenchmarkOnly],
+              ['verifiedOnly', 'Chat compatibility verified', verifiedOnly, setVerifiedOnly],
+              ['availableOnly', 'Available to use now', availableOnly, setAvailableOnly],
+              ['hideGated', 'Exclude gated community cards', hideGated, setHideGated],
+            ].map(([id, label, checked, setter]) => (
+              <label key={String(id)}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(checked)}
+                  onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)}
+                />
+                <span>{String(label)}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
 
       {(selectionError || actionError) && (
         <p className="field-error model-page-error" role="alert">
@@ -4503,7 +4661,8 @@ function ModelsView({
         <>
           <div className="model-grid">
             {shown.map((model) => {
-              const fit = model.fit ?? 'pending';
+              const publisher = publisherForModel(model);
+              const capabilityRatings = benchmarkRatingsForModel(model) ?? [];
               const progress = model.download?.totalBytes
                 ? Math.min(
                     100,
@@ -4552,22 +4711,34 @@ function ModelsView({
                       )}
                     </span>
                     <div>
-                      <span>{model.provider}</span>
+                      <span>
+                        {publisher}
+                        {publisher !== model.provider ? ` · via ${model.provider}` : ''}
+                      </span>
                       <h3>{model.name}</h3>
                     </div>
                     <RouteBadge route={model.route} />
                   </header>
-                  {model.route === 'Local' && (
-                    <div className={cx('model-fit', `model-fit--${fit}`)}>
-                      <strong>
-                        {model.status === 'community'
-                          ? 'Fit after quantization choice'
-                          : fit === 'pending'
-                            ? 'Device scan pending'
-                            : cap(fit.replace('-', ' '))}
-                      </strong>
-                      <span>{model.fitReason}</span>
-                    </div>
+                  {model.provider === 'NVIDIA NIM' && (
+                    <a
+                      className={cx(
+                        'model-verification',
+                        model.chatCompatibility === 'chat' && 'is-verified',
+                      )}
+                      href={model.verificationSourceUrl}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (model.verificationSourceUrl)
+                          void window.cupcake?.app.openExternal(model.verificationSourceUrl);
+                      }}
+                    >
+                      <Icon
+                        name={model.chatCompatibility === 'chat' ? 'check' : 'info'}
+                        size={12}
+                      />
+                      {modelVerificationLabel(model)}
+                      {model.verificationDate ? ` · ${model.verificationDate}` : ''}
+                    </a>
                   )}
                   <p>{model.description}</p>
                   <div className="model-tags">
@@ -4576,6 +4747,22 @@ function ModelsView({
                     ))}
                     {model.quantization && <em>{model.quantization}</em>}
                     {model.parameters && <em>{model.parameters}</em>}
+                  </div>
+                  <div
+                    className={cx(
+                      'model-capability-ratings',
+                      capabilityRatings.length > 0 && 'has-ratings',
+                    )}
+                  >
+                    {capabilityRatings.length ? (
+                      capabilityRatings
+                        .slice(0, 4)
+                        .map((rating) => <CupcakeRating rating={rating} key={rating.capability} />)
+                    ) : (
+                      <span className="model-not-rated">
+                        Benchmark rating not available · raw model card still matters
+                      </span>
+                    )}
                   </div>
                   <dl className="model-specs">
                     <div>
@@ -4706,7 +4893,7 @@ function ModelsView({
             <div className="model-grid-more">
               <button
                 className="button"
-                onClick={() => setVisibleCommunityCount((count) => count + 24)}
+                onClick={() => setVisibleCommunityCount((count) => count + 60)}
               >
                 Show more community models ({hiddenCommunityCount} remaining)
               </button>
@@ -4725,10 +4912,8 @@ function ModelsView({
             className="button"
             onClick={() => {
               setTab('all');
-              setTaskFilter('all');
-              setSizeFilter('all');
-              setFitFilter('all');
               setModelQuery('');
+              clearAdvancedFilters();
             }}
           >
             Clear filters
@@ -4963,100 +5148,7 @@ function ModelsView({
           </section>
         </div>
       )}
-      <ModelCompatibilityDialog
-        model={pendingCompatibility}
-        acknowledged={compatibilityAcknowledged}
-        setAcknowledged={setCompatibilityAcknowledged}
-        busy={selectingId !== null}
-        error={selectionError}
-        cancel={() => {
-          if (selectingId) return;
-          setPendingCompatibility(null);
-          setCompatibilityAcknowledged(false);
-        }}
-        confirm={() => {
-          if (pendingCompatibility) void performSelection(pendingCompatibility, true);
-        }}
-      />
     </main>
-  );
-}
-
-function ModelCompatibilityDialog({
-  model,
-  acknowledged,
-  setAcknowledged,
-  busy,
-  error,
-  cancel,
-  confirm,
-}: {
-  model: ModelDescriptor | null;
-  acknowledged: boolean;
-  setAcknowledged: (value: boolean) => void;
-  busy: boolean;
-  error: string | null;
-  cancel: () => void;
-  confirm: () => void;
-}) {
-  if (!model) return null;
-  return (
-    <div className="popover-layer">
-      <section
-        className="provider-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm unverified model compatibility"
-      >
-        <header>
-          <div>
-            <span className="eyebrow">Compatibility acknowledgement</span>
-            <h2>Confirm {model.name}</h2>
-          </div>
-          <button className="icon-button" onClick={cancel} disabled={busy} aria-label="Cancel">
-            <Icon name="x" />
-          </button>
-        </header>
-        <div className="security-note">
-          <Icon name="info" />
-          <div>
-            <strong>NVIDIA did not declare this model as a chat endpoint.</strong>
-            <p>
-              It may reject chat requests or return an unexpected format. CupcakeAI will remember
-              this acknowledgement for this exact model only.
-            </p>
-          </div>
-        </div>
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={acknowledged}
-            disabled={busy}
-            onChange={(event) => setAcknowledged(event.target.checked)}
-          />
-          <span>I checked the model information and accept the unverified compatibility.</span>
-        </label>
-        {error && (
-          <p className="field-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer>
-          <button className="button" onClick={cancel} disabled={busy}>
-            Cancel
-          </button>
-          <span />
-          <button
-            className="button button--primary"
-            disabled={!acknowledged || busy}
-            aria-busy={busy}
-            onClick={confirm}
-          >
-            {busy ? 'Selecting…' : 'Confirm and select'}
-          </button>
-        </footer>
-      </section>
-    </div>
   );
 }
 
@@ -6259,28 +6351,55 @@ function SettingsView({
               className={cx('setting-row', !workspace.settings.allowRamFallback && 'is-disabled')}
             >
               <span>
-                <strong>Maximum system RAM for a model</strong>
+                <strong>RAM safety limit</strong>
                 <small>
-                  Safety ceiling for model weights and context cache. Cupcake leaves the rest for
-                  Windows.
+                  Auto follows live available memory and always leaves your Windows reserve free.
                 </small>
               </span>
-              <label className="number-setting">
-                <input
-                  type="number"
-                  min="4"
-                  max="256"
-                  step="1"
-                  disabled={!workspace.settings.allowRamFallback}
-                  value={workspace.settings.maxRamGb}
-                  onChange={(event) =>
-                    void workspace.updateSettings({
-                      maxRamGb: Math.max(4, Math.min(256, Number(event.target.value) || 4)),
-                    })
-                  }
-                />
-                <span>GB</span>
-              </label>
+              <div className="ram-limit-control">
+                <div className="segmented-control" aria-label="RAM safety limit mode">
+                  {(['auto', 'manual'] as const).map((mode) => (
+                    <button
+                      type="button"
+                      className={workspace.settings.ramLimitMode === mode ? 'is-active' : ''}
+                      aria-pressed={workspace.settings.ramLimitMode === mode}
+                      onClick={() => void workspace.updateSettings({ ramLimitMode: mode })}
+                      disabled={!workspace.settings.allowRamFallback}
+                      key={mode}
+                    >
+                      {mode === 'auto' ? 'Auto' : 'Manual'}
+                    </button>
+                  ))}
+                </div>
+                {workspace.settings.ramLimitMode === 'auto' ? (
+                  <span className="auto-memory-budget">
+                    {(() => {
+                      const budget = automaticRamBudgetGb(
+                        workspace.hardware,
+                        workspace.settings.reserveSystemRamGb,
+                      );
+                      return budget === null ? 'Detecting…' : `Up to ${budget} GB now`;
+                    })()}
+                  </span>
+                ) : (
+                  <label className="number-setting">
+                    <input
+                      type="number"
+                      min="4"
+                      max="256"
+                      step="1"
+                      disabled={!workspace.settings.allowRamFallback}
+                      value={workspace.settings.maxRamGb}
+                      onChange={(event) =>
+                        void workspace.updateSettings({
+                          maxRamGb: Math.max(4, Math.min(256, Number(event.target.value) || 4)),
+                        })
+                      }
+                    />
+                    <span>GB</span>
+                  </label>
+                )}
+              </div>
             </div>
             <div className="setting-row">
               <span>
@@ -7347,33 +7466,34 @@ function ModelPicker({
   manageModels: () => void;
 }) {
   const [query, setQuery] = useState('');
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [pendingCompatibility, setPendingCompatibility] = useState<ModelDescriptor | null>(null);
-  const [compatibilityAcknowledged, setCompatibilityAcknowledged] = useState(false);
   if (!open) return null;
-  const shown = models.filter(
-    (m) =>
-      m.name.toLowerCase().includes(query.toLowerCase()) ||
-      m.provider.toLowerCase().includes(query.toLowerCase()),
-  );
-  const selectFromPicker = async (model: ModelDescriptor, acknowledged = false) => {
+  const search = query.trim().toLowerCase();
+  const searched = models.filter((model) => {
+    const publisher = publisherForModel(model);
+    return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')}`
+      .toLowerCase()
+      .includes(search);
+  });
+  const shown = searched.filter((model) => showUnavailable || modelIsAvailableInChat(model));
+  const grouped = new Map<string, ModelDescriptor[]>();
+  shown.forEach((model) => {
+    const publisher = publisherForModel(model);
+    grouped.set(publisher, [...(grouped.get(publisher) ?? []), model]);
+  });
+  const groups = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const hiddenUnavailable = searched.length - shown.length;
+  const selectFromPicker = async (model: ModelDescriptor) => {
     if (selectingId) return;
-    if (requiresCompatibilityAcknowledgement(model) && !acknowledged) {
-      setSelectionError(null);
-      setCompatibilityAcknowledged(false);
-      setPendingCompatibility(model);
-      return;
-    }
     setSelectionError(null);
     setSelectingId(model.id);
     try {
-      const params = modelSelectionParams(model, acknowledged);
+      const params = modelSelectionParams(model);
       await select(params.modelId, {
         compatibilityConfirmed: params.compatibilityConfirmed,
       });
-      setPendingCompatibility(null);
-      setCompatibilityAcknowledged(false);
       close();
     } catch (reason) {
       setSelectionError(
@@ -7383,23 +7503,6 @@ function ModelPicker({
       setSelectingId(null);
     }
   };
-  if (pendingCompatibility) {
-    return (
-      <ModelCompatibilityDialog
-        model={pendingCompatibility}
-        acknowledged={compatibilityAcknowledged}
-        setAcknowledged={setCompatibilityAcknowledged}
-        busy={selectingId !== null}
-        error={selectionError}
-        cancel={() => {
-          if (selectingId) return;
-          setPendingCompatibility(null);
-          setCompatibilityAcknowledged(false);
-        }}
-        confirm={() => void selectFromPicker(pendingCompatibility, true)}
-      />
-    );
-  }
   return (
     <div
       className="popover-layer"
@@ -7417,57 +7520,83 @@ function ModelPicker({
             <Icon name="x" />
           </button>
         </header>
-        <div className="picker-notice">
-          <Icon name="info" />
-          <span>There is no Auto mode. Cupcake uses exactly the model you select.</span>
-        </div>
-        <div className="search-field">
-          <Icon name="search" />
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search models"
-          />
+        <div className="model-picker__tools">
+          <div className="search-field">
+            <Icon name="search" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search models or companies"
+            />
+          </div>
+          <label>
+            <input
+              type="checkbox"
+              checked={showUnavailable}
+              onChange={(event) => setShowUnavailable(event.target.checked)}
+            />
+            <span>Show unavailable</span>
+          </label>
         </div>
         <div className="model-picker__list">
-          {shown.map((m) => (
-            <button
-              className={m.selected ? 'is-active' : ''}
-              disabled={
-                selectingId !== null ||
-                m.status !== 'ready' ||
-                (m.provider === 'NVIDIA NIM' && m.chatCompatibility === 'non_chat')
-              }
-              onClick={() => void selectFromPicker(m)}
-              key={m.id}
+          {groups.map(([publisher, publisherModels]) => (
+            <section
+              className="model-picker__group"
+              aria-labelledby={`publisher-${publisher}`}
+              key={publisher}
             >
-              <span className="provider-logo">{m.provider.charAt(0)}</span>
-              <span>
-                <strong>{m.name}</strong>
-                <small>
-                  {m.provider} · {m.context} context · {m.cost}
-                </small>
-                <span className="model-tags">
-                  {m.tags.slice(0, 3).map((t) => (
-                    <em key={t}>{t}</em>
-                  ))}
-                </span>
-              </span>
-              <RouteBadge route={m.route} />
-              {selectingId === m.id ? (
-                <small>Selecting…</small>
-              ) : (
-                m.selected && <Icon name="check" />
-              )}
-              {m.status !== 'ready' && (
-                <small className="unavailable">{modelStatusLabel(m.status)}</small>
-              )}
-              {m.provider === 'NVIDIA NIM' && m.chatCompatibility !== 'chat' && (
-                <small className="unavailable">Chat compatibility unverified</small>
-              )}
-            </button>
+              <header>
+                <strong id={`publisher-${publisher}`}>{publisher}</strong>
+                <span>{publisherModels.length}</span>
+              </header>
+              {publisherModels.map((model) => {
+                const available = modelIsAvailableInChat(model);
+                return (
+                  <button
+                    className={model.selected ? 'is-active' : ''}
+                    disabled={selectingId !== null || !available}
+                    onClick={() => void selectFromPicker(model)}
+                    key={model.id}
+                  >
+                    <span className="provider-logo">
+                      {model.route === 'Local' ? (
+                        <Icon name="local" />
+                      ) : (
+                        <img src={`/providers/${providerDialogId(model.provider)}.svg`} alt="" />
+                      )}
+                    </span>
+                    <span>
+                      <strong>{model.name}</strong>
+                      <small>
+                        {model.provider} · {model.context} context · {model.cost}
+                      </small>
+                      <span className="model-tags">
+                        {model.tags.slice(0, 3).map((tag) => (
+                          <em key={tag}>{tag}</em>
+                        ))}
+                      </span>
+                    </span>
+                    <RouteBadge route={model.route} />
+                    {selectingId === model.id ? (
+                      <small>Selecting…</small>
+                    ) : model.selected ? (
+                      <Icon name="check" />
+                    ) : !available ? (
+                      <small className="unavailable">{modelStatusLabel(model.status)}</small>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </section>
           ))}
+          {!groups.length && (
+            <div className="model-picker__empty">
+              <Icon name="search" />
+              <strong>No available models match</strong>
+              <small>Connect a provider, load a local model, or show unavailable models.</small>
+            </div>
+          )}
         </div>
         {selectionError && (
           <p className="field-error" role="alert">
@@ -7484,7 +7613,9 @@ function ModelPicker({
           >
             Manage models <Icon name="chevron" />
           </button>
-          <span>Ctrl M</span>
+          <span>
+            {hiddenUnavailable > 0 ? `${hiddenUnavailable} unavailable hidden` : 'Ctrl M'}
+          </span>
         </footer>
       </div>
     </div>
@@ -8759,7 +8890,7 @@ function LegacyFixtureApp() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <CupcakeTitlebar />
+      <CupcakeTitlebar onSearch={() => navigate('search')} />
       <Shelf
         view={view}
         setView={navigate}
@@ -9018,10 +9149,12 @@ function OnboardingTour({
   open,
   close,
   navigate,
+  openProvider,
 }: {
   open: boolean;
   close: (completed: boolean) => void;
   navigate: (view: View) => void;
+  openProvider: (provider: string) => void;
 }) {
   const workspace = useWorkspace();
   const [step, setStep] = useState(0);
@@ -9167,6 +9300,44 @@ function OnboardingTour({
               >
                 Configure models and runtimes <Icon name="chevron" size={13} />
               </button>
+              <div className="onboarding-provider-guide">
+                <p>
+                  <strong>Connect a provider in three steps</strong>
+                  <small>
+                    Choose one, paste its key, then Test connection and Save &amp; connect.
+                  </small>
+                </p>
+                <div>
+                  {(
+                    [
+                      ['nvidia-nim', 'NVIDIA NIM'],
+                      ['cohere', 'Cohere'],
+                      ['openai', 'OpenAI'],
+                      ['choose', 'More providers'],
+                    ] as const
+                  ).map(([id, label]) => {
+                    const connected = id !== 'choose' && workspace.providers[id] === true;
+                    return (
+                      <button
+                        type="button"
+                        className={connected ? 'is-connected' : ''}
+                        onClick={() => {
+                          close(false);
+                          openProvider(id);
+                        }}
+                        key={id}
+                      >
+                        <ProviderLogo
+                          id={id === 'choose' ? 'openai-compatible' : id}
+                          name={label}
+                        />
+                        <span>{label}</span>
+                        <small>{connected ? 'Connected' : 'Set up'}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
           {last && (
@@ -9518,16 +9689,11 @@ function LiveApp() {
       ? undefined
       : `url(/wallpapers/${workspace.settings.wallpaper}.webp)`;
   return (
-    <div
-      className={cx('app-shell', wallpaperUrl && 'app-shell--wallpaper')}
-      style={
-        wallpaperUrl ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties) : undefined
-      }
-    >
+    <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <CupcakeTitlebar />
+      <CupcakeTitlebar onSearch={() => navigate('search')} />
       <Shelf
         view={view}
         setView={navigate}
@@ -9546,7 +9712,16 @@ function LiveApp() {
         profile={workspace.settings.profile}
       />
       <section
-        className={cx('app-content', view === 'chat' && 'app-content--chat')}
+        className={cx(
+          'app-content',
+          view === 'chat' && 'app-content--chat',
+          view === 'chat' && wallpaperUrl && 'app-content--wallpaper',
+        )}
+        style={
+          view === 'chat' && wallpaperUrl
+            ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties)
+            : undefined
+        }
         id="main-content"
         tabIndex={-1}
       >
@@ -9611,6 +9786,7 @@ function LiveApp() {
       <OnboardingTour
         open={onboardingOpen && workspace.ready}
         navigate={navigate}
+        openProvider={setProviderDialog}
         close={(completed) => {
           setOnboardingOpen(false);
           if (completed && !workspace.settings.onboardingCompleted)
@@ -9730,7 +9906,7 @@ function WorkspaceUnlockGate({
   };
   return (
     <div className="app-shell app-shell--locked">
-      <CupcakeTitlebar />
+      <CupcakeTitlebar onSearch={() => undefined} />
       <main className="workspace-unlock">
         <Dreamscape scene={dreamscape} />
         <section className="workspace-unlock__card">

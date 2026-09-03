@@ -11,6 +11,31 @@
   flex-direction: column;
   overflow: hidden;
 }
+.app-content--chat.app-content--wallpaper {
+  background-image:
+    linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--paper), transparent 5%) 0%,
+      color-mix(in srgb, var(--paper), transparent 20%) 52%,
+      color-mix(in srgb, var(--paper), transparent 34%) 100%
+    ),
+    var(--workspace-wallpaper);
+  background-position: center;
+  background-size: cover;
+}
+.app-content--wallpaper > .chat-layout {
+  background: transparent;
+}
+.app-content--wallpaper .chat-main,
+.app-content--wallpaper .context-panel {
+  background: color-mix(in srgb, var(--paper), transparent 22%);
+  backdrop-filter: blur(8px) saturate(0.92);
+}
+.app-content--wallpaper .chat-header,
+.app-content--wallpaper .composer-wrap {
+  background: color-mix(in srgb, var(--paper-raised), transparent 10%);
+  backdrop-filter: blur(13px) saturate(0.96);
+}
 .app-content--chat > .chat-layout {
   flex: 1 1 auto;
   height: auto;

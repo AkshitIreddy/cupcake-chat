@@ -12,17 +12,17 @@ export function canonicalModelId(model: ModelDescriptor): string {
   return model.id;
 }
 
-export function requiresCompatibilityAcknowledgement(model: ModelDescriptor): boolean {
-  return model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown';
-}
-
-export function modelSelectionParams(
-  model: ModelDescriptor,
-  acknowledged: boolean,
-): { modelId: string; compatibilityConfirmed: boolean } {
+export function modelSelectionParams(model: ModelDescriptor): {
+  modelId: string;
+  compatibilityConfirmed: boolean;
+} {
   return {
     modelId: canonicalModelId(model),
-    compatibilityConfirmed: requiresCompatibilityAcknowledgement(model) && acknowledged,
+    // Selecting a visible model row is itself an explicit user action. Unknown
+    // NVIDIA compatibility is persisted at that moment so a second modal does
+    // not ask the user to confirm the click they just made.
+    compatibilityConfirmed:
+      model.provider === 'NVIDIA NIM' && model.chatCompatibility === 'unknown',
   };
 }
 

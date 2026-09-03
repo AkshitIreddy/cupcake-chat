@@ -60,6 +60,9 @@ const evidence = {
   activeRuntime: null,
   installedModels: [],
   hostedChat: false,
+  demoProjectId: null,
+  demoConversationId: null,
+  demoSeeded: false,
   localChat: false,
   localDefault: false,
 };
@@ -98,28 +101,89 @@ try {
     );
   }
 
-  await expectOk('models.select', { modelId: 'cohere:command-a-03-2025' }, 60_000);
-  const hostedParams = {
-    content: 'Reply with exactly: CUPCAKE HOSTED READY',
-    modelId: 'cohere:command-a-03-2025',
-  };
-  const hostedPreflight = await expectOk('chat.preflight', hostedParams, 60_000);
-  const hosted = await requestRuntimeStream(
-    'chat.send',
-    {
-      ...hostedParams,
-      outboundIntent: hostedPreflight.result?.outboundIntent,
-      outboundConfirmationToken: hostedPreflight.result?.confirmationToken,
-    },
-    180_000,
+  const projects = (await expectOk('projects.list', {}, 60_000)).result ?? [];
+  let demoProject = projects.find((item) => item.name === 'CupcakeAI Capability Tour');
+  if (!demoProject) {
+    demoProject = (
+      await expectOk(
+        'projects.create',
+        {
+          name: 'CupcakeAI Capability Tour',
+          description:
+            'A real, ready-to-open project showing hosted chat, model routing, and a practical planning response.',
+        },
+        60_000,
+      )
+    ).result;
+  }
+  assert(typeof demoProject?.id === 'string', 'demo project was not created');
+  evidence.demoProjectId = demoProject.id;
+  const conversations =
+    (await expectOk('conversations.list', { projectId: demoProject.id }, 60_000)).result ?? [];
+  let demoConversation = conversations.find(
+    (item) => item.title === 'Designing a private AI research sprint',
   );
+  let demoBranch;
+  if (!demoConversation) {
+    const created = (
+      await expectOk(
+        'conversations.create',
+        {
+          title: 'Designing a private AI research sprint',
+          projectId: demoProject.id,
+        },
+        60_000,
+      )
+    ).result;
+    demoConversation = created?.conversation;
+    demoBranch = created?.branch;
+  } else {
+    const branches =
+      (await expectOk('conversations.branches', { conversationId: demoConversation.id }, 60_000))
+        .result ?? [];
+    demoBranch = branches[0];
+  }
   assert(
-    hosted.response.payload?.ok === true,
-    `hosted Cohere chat failed (${sanitizeDiagnostic(
-      JSON.stringify({ error: hosted.response.payload?.error, events: hosted.events }),
-    )})`,
+    typeof demoConversation?.id === 'string' && typeof demoBranch?.id === 'string',
+    'demo conversation was not created',
   );
-  evidence.hostedChat = hosted.events.some((event) => event.payload?.type === 'message.completed');
+  evidence.demoConversationId = demoConversation.id;
+
+  await expectOk('models.select', { modelId: 'cohere:command-a-03-2025' }, 60_000);
+  const existingDemoHistory =
+    (await expectOk('chat.history', { branchId: demoBranch.id }, 60_000)).result ?? [];
+  if (existingDemoHistory.some((item) => item.role === 'assistant')) {
+    evidence.hostedChat = true;
+  } else {
+    const hostedParams = {
+      content:
+        'Demonstrate CupcakeAI by designing a one-day private AI research sprint. Give me a crisp objective, a four-step plan, which work should stay local versus use a cloud model, two concrete deliverables, and one safety check. Keep it practical and under 350 words.',
+      modelId: 'cohere:command-a-03-2025',
+      projectId: demoProject.id,
+      conversationId: demoConversation.id,
+      branchId: demoBranch.id,
+    };
+    const hostedPreflight = await expectOk('chat.preflight', hostedParams, 60_000);
+    const hosted = await requestRuntimeStream(
+      'chat.send',
+      {
+        ...hostedParams,
+        outboundIntent: hostedPreflight.result?.outboundIntent,
+        outboundConfirmationToken: hostedPreflight.result?.confirmationToken,
+      },
+      180_000,
+    );
+    assert(
+      hosted.response.payload?.ok === true,
+      `hosted Cohere chat failed (${sanitizeDiagnostic(
+        JSON.stringify({ error: hosted.response.payload?.error, events: hosted.events }),
+      )})`,
+    );
+    evidence.hostedChat = hosted.events.some(
+      (event) => event.payload?.type === 'message.completed',
+    );
+    evidence.demoSeeded = evidence.hostedChat;
+  }
 
   let localStatus = (
     await expectOk('local_models.cupcake.status', { verifyIntegrity: true }, 180_000)

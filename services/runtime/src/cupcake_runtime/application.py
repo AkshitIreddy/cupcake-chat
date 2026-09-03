@@ -147,6 +147,7 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "profile.avatar": "atlas:16",
     "assistant.avatar": "atlas:0",
     "models.local.allow_ram_fallback": True,
+    "models.local.ram_limit_mode": "auto",
     "models.local.max_ram_gb": 24.0,
     "models.local.auto_evict": True,
     "models.local.idle_minutes": 30.0,
@@ -618,9 +619,10 @@ class RuntimeService:
                     "allowRamFallback": self.repository.get_setting(
                         "models.local.allow_ram_fallback", default=True
                     ),
-                    "maxRamGb": self.repository.get_setting(
-                        "models.local.max_ram_gb", default=24.0
+                    "ramLimitMode": self.repository.get_setting(
+                        "models.local.ram_limit_mode", default="auto"
                     ),
+                    "maxRamGb": self.repository.get_setting("models.local.max_ram_gb", default=24.0),
                     "reserveSystemRamGb": self.repository.get_setting(
                         "models.local.reserve_system_ram_gb", default=4.0
                     ),
@@ -923,16 +925,24 @@ class RuntimeService:
         active_runtime = self.cupcake_local.runtimes.active()
         model_id = _required_string(params, "modelId")
         allow_ram_fallback = params.get("allowRamFallback") is not False
-        max_ram_gb = float(params.get("maxRamGb", 24))
+        ram_limit_mode = str(params.get("ramLimitMode", "auto"))
+        if ram_limit_mode not in {"auto", "manual"}:
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "The local-model RAM limit mode must be auto or manual"
+            )
         reserve_system_ram_gb = float(params.get("reserveSystemRamGb", 4))
         reserve_vram_gb = float(params.get("reserveVramGb", 1.5))
+        hardware = detect_hardware(self.data_dir)
+        if ram_limit_mode == "manual":
+            max_ram_gb = float(params.get("maxRamGb", 24))
+        else:
+            max_ram_gb = max(4.0, min(256.0, hardware.available_ram_gb - reserve_system_ram_gb))
         if not 4 <= max_ram_gb <= 256:
             raise RuntimeCommandError(
                 "INVALID_ARGUMENT", "The local-model RAM ceiling must be between 4 and 256 GB"
             )
         installed_model = self.cupcake_local.models.get(model_id, verify=False)
         model_bytes = Path(installed_model.path).stat().st_size
-        hardware = detect_hardware(self.data_dir)
         safe_ram_gb = max(0.0, min(max_ram_gb, hardware.available_ram_gb - reserve_system_ram_gb))
         if allow_ram_fallback and model_bytes > safe_ram_gb * 1024**3:
             raise RuntimeCommandError(
@@ -1002,6 +1012,7 @@ class RuntimeService:
             "model": _jsonable(descriptor),
             "memoryPlacement": {
                 "allowRamFallback": allow_ram_fallback,
+                "ramLimitMode": ram_limit_mode,
                 "maxRamGb": max_ram_gb,
                 "safeRamGb": safe_ram_gb,
                 "reserveSystemRamGb": reserve_system_ram_gb,
@@ -3830,6 +3841,10 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
     if key == "appearance.scrollbars":
         if value not in {"slim", "minimal", "hidden"}:
             raise RuntimeCommandError("INVALID_SETTING", "Unknown scrollbar mode")
+        return value
+    if key == "models.local.ram_limit_mode":
+        if value not in {"auto", "manual"}:
+            raise RuntimeCommandError("INVALID_SETTING", "Unknown RAM limit mode")
         return value
     if key in {
         "profile.display_name",

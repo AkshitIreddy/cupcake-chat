@@ -5,7 +5,6 @@ import {
   createKeyedRequestCoalescer,
   mergeModelDescriptors,
   modelSelectionParams,
-  requiresCompatibilityAcknowledgement,
 } from './model-selection';
 
 function model(id: string, overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
@@ -33,7 +32,7 @@ describe('model selection hardening', () => {
     });
 
     expect(canonicalModelId(local)).toBe('cupcake-local:qwen3-4b-q4-k-m');
-    expect(modelSelectionParams(local, false).modelId).toBe('cupcake-local:qwen3-4b-q4-k-m');
+    expect(modelSelectionParams(local).modelId).toBe('cupcake-local:qwen3-4b-q4-k-m');
   });
 
   it('restores a persisted selection when its refreshed descriptor arrives later', () => {
@@ -56,18 +55,15 @@ describe('model selection hardening', () => {
     expect(merged.filter((item) => item.selected)).toHaveLength(1);
   });
 
-  it('requires an explicit acknowledgement only for unverified NVIDIA chat models', () => {
+  it('treats the model click itself as compatibility acknowledgement for unknown NIM rows', () => {
     const unknown = model('nim-unknown', {
       provider: 'NVIDIA NIM',
       chatCompatibility: 'unknown',
     });
-    expect(requiresCompatibilityAcknowledgement(unknown)).toBe(true);
-    expect(modelSelectionParams(unknown, false).compatibilityConfirmed).toBe(false);
-    expect(modelSelectionParams(unknown, true).compatibilityConfirmed).toBe(true);
+    expect(modelSelectionParams(unknown).compatibilityConfirmed).toBe(true);
     expect(
-      requiresCompatibilityAcknowledgement(
-        model('nim-chat', { provider: 'NVIDIA NIM', chatCompatibility: 'chat' }),
-      ),
+      modelSelectionParams(model('nim-chat', { provider: 'NVIDIA NIM', chatCompatibility: 'chat' }))
+        .compatibilityConfirmed,
     ).toBe(false);
   });
 

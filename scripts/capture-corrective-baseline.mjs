@@ -25,15 +25,26 @@ await open('/?view=settings&theme=light');
 await page.getByRole('button', { name: 'Providers' }).click();
 await page
   .locator('.provider-row')
-  .filter({ hasText: 'OpenAI' })
+  .filter({ has: page.getByText('OpenAI', { exact: true }) })
   .getByRole('button', { name: /Connect|Manage/ })
   .click();
-await page.locator('.provider-dialog').screenshot({ path: join(output, 'provider-popup.png') });
+await page.locator('.provider-setup').screenshot({ path: join(output, 'provider-popup.png') });
 await page.screenshot({ path: join(output, 'provider-popup-full.png') });
 
 await open('/?view=models&theme=light');
+await page.screenshot({ path: join(output, 'model-intelligence.png') });
+await page.getByRole('button', { name: /Filters/ }).click();
+await page.screenshot({ path: join(output, 'model-intelligence-filters.png') });
+await page.getByRole('button', { name: /Filters/ }).click();
+await page.keyboard.press('Control+M');
+await page.locator('.model-picker').screenshot({ path: join(output, 'grouped-model-picker.png') });
+await page.keyboard.press('Escape');
 await page.getByRole('button', { name: 'Local', exact: true }).click();
 await page.screenshot({ path: join(output, 'local-models.png') });
+
+await open('/?onboarding=1&theme=light');
+await page.getByRole('button', { name: 'Continue' }).click();
+await page.screenshot({ path: join(output, 'onboarding-centered.png') });
 
 await page.setViewportSize({ width: 768, height: 520 });
 await open('/?view=models&theme=dark');

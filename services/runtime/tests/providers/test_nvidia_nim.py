@@ -78,6 +78,46 @@ def test_discovery_filters_non_chat_and_does_not_invent_unknown_capabilities() -
     assert "unverified" in unknown.display_name
 
 
+def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
+    model_ids = [
+        "deepseek-ai/deepseek-v4-flash-0731",
+        "deepseek-ai/deepseek-v4-pro-0813",
+        "google/diffusiongemma-26b-a4b-it",
+        "google/gemma-4-31b-it",
+        "meta/muse-glimmer-30b",
+        "minimaxai/minimax-m3",
+        "mistralai/mistral-large-2-instruct",
+        "mistralai/mistral-nemotron",
+        "moonshotai/kimi-k2.6",
+        "moonshotai/kimi-k3",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nvidia/nemotron-nano-3-30b-a3b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "poolside/laguna-xs-2.1",
+    ]
+    result = asyncio.run(
+        NvidiaNimCatalogDiscovery().discover(
+            ProviderConfig(api_key="nvapi-recorded"),
+            client=fake_client([{"id": model_id} for model_id in model_ids]),
+        )
+    )
+
+    assert len(result.models) == 20
+    assert result.unknown_chat_compatibility == 0
+    assert all(model.metadata["chat_compatibility"] == "chat" for model in result.models)
+    assert all(model.metadata["verification_state"] == "docs_verified_chat" for model in result.models)
+    assert all(
+        str(model.metadata["compatibility_source_url"]).startswith("https://build.nvidia.com/")
+        for model in result.models
+    )
+
+
 def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:
     client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
     discovery = NvidiaNimCatalogDiscovery(ttl_seconds=60)

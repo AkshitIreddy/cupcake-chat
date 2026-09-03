@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  automaticRamBudgetGb,
   localModelActionRequest,
   mapCupcakeLocalModels,
   mapCupcakeRuntimePacks,
@@ -67,6 +68,7 @@ describe('workspace local model integration', () => {
     expect(
       localModelActionRequest('load', cupcakeLocal, {
         allowRamFallback: false,
+        ramLimitMode: 'manual',
         maxRamGb: 20,
       }),
     ).toEqual({
@@ -74,8 +76,38 @@ describe('workspace local model integration', () => {
       params: {
         modelId: 'qwen3-4b-q4-k-m',
         allowRamFallback: false,
+        ramLimitMode: 'manual',
         maxRamGb: 20,
         gpuLayers: 'all',
+      },
+    });
+  });
+
+  it('uses a dynamic available-memory budget in automatic RAM mode', () => {
+    const gib = 1024 ** 3;
+    expect(automaticRamBudgetGb({ ramBytes: 32 * gib, availableRamBytes: 21.4 * gib }, 4)).toBe(
+      17.4,
+    );
+    expect(automaticRamBudgetGb({ ramBytes: 16 * gib, availableRamBytes: 5 * gib }, 4)).toBe(1);
+    expect(automaticRamBudgetGb({ ramBytes: 16 * gib, availableRamBytes: 3 * gib }, 4)).toBe(0);
+    expect(automaticRamBudgetGb({ ramBytes: 64 * gib }, 8)).toBe(48);
+  });
+
+  it('lets the runtime calculate the live limit instead of forwarding a fixed ceiling in auto mode', () => {
+    expect(
+      localModelActionRequest('load', cupcakeLocal, {
+        allowRamFallback: true,
+        ramLimitMode: 'auto',
+        maxRamGb: 24,
+        reserveSystemRamGb: 6,
+      }),
+    ).toEqual({
+      method: 'local_models.cupcake.load',
+      params: {
+        modelId: 'qwen3-4b-q4-k-m',
+        allowRamFallback: true,
+        ramLimitMode: 'auto',
+        reserveSystemRamGb: 6,
       },
     });
   });
@@ -84,12 +116,14 @@ describe('workspace local model integration', () => {
     expect(
       normalizeHardware({
         system_ram_gb: 32,
+        available_ram_gb: 20,
         free_disk_gb: 120,
         cpu_name: 'AMD Ryzen 9',
         os_name: 'Windows',
       }),
     ).toEqual({
       ramBytes: 32 * 1024 ** 3,
+      availableRamBytes: 20 * 1024 ** 3,
       diskAvailableBytes: 120 * 1024 ** 3,
       cpu: 'AMD Ryzen 9',
       os: 'Windows',
