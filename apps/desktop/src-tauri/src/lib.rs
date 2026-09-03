@@ -61,6 +61,7 @@ pub fn run() {
             workspace_lock_status,
             workspace_password_change,
             workspace_password_setup,
+            workspace_use_windows_protection,
             workspace_unlock,
         ])
         .setup(|app| {

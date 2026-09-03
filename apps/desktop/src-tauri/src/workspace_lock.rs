@@ -185,6 +185,50 @@ impl WorkspaceLock {
         Ok(status_for(&inner))
     }
 
+    pub fn use_windows_protection(
+        &self,
+        current_password: Zeroizing<String>,
+    ) -> HostResult<WorkspaceLockStatus> {
+        let (verifier, created_at, already_protected) = {
+            let inner = self.lock();
+            if !inner.unlocked {
+                return Err(HostError::new(
+                    "WORKSPACE_LOCKED",
+                    "Unlock the workspace before removing its app password",
+                    false,
+                ));
+            }
+            enforce_retry_boundary(&inner)?;
+            let record = inner
+                .record
+                .as_ref()
+                .ok_or_else(|| HostError::invalid("Create a workspace profile first"))?;
+            (
+                record.verifier.clone(),
+                record.created_at.clone(),
+                record.algorithm == WINDOWS_PROTECTION_ALGORITHM,
+            )
+        };
+        if already_protected {
+            return Ok(self.status());
+        }
+        if !verify_password(&current_password, &verifier) {
+            return Err(HostError::new(
+                "WORKSPACE_PASSWORD_INCORRECT",
+                "The current CupcakeAI password is not correct",
+                true,
+            ));
+        }
+        let record = windows_protected_record(Some(created_at));
+        write_record(&self.record_path, &record)?;
+        let mut inner = self.lock();
+        inner.record = Some(record);
+        inner.unlocked = true;
+        inner.failed_attempts = 0;
+        inner.retry_at = None;
+        Ok(status_for(&inner))
+    }
+
     fn lock(&self) -> MutexGuard<'_, LockInner> {
         self.inner
             .lock()

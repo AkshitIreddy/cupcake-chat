@@ -153,6 +153,7 @@ export interface CupcakeDesktopApi {
     unlock(password: string): Promise<WorkspaceLockStatus>;
     lock(): Promise<WorkspaceLockStatus>;
     changePassword(currentPassword: string, newPassword: string): Promise<WorkspaceLockStatus>;
+    useWindowsProtection(currentPassword: string): Promise<WorkspaceLockStatus>;
     onStatus(listener: (status: WorkspaceLockStatus) => void): Unsubscribe;
   };
   runtime: {

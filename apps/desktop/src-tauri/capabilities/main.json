@@ -33,6 +33,7 @@
     "allow-workspace-lock-status",
     "allow-workspace-password-change",
     "allow-workspace-password-setup",
+    "allow-workspace-use-windows-protection",
     "allow-workspace-unlock"
   ]
 }

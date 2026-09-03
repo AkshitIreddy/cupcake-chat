@@ -84,6 +84,22 @@ pub async fn workspace_password_change(
     Ok(status)
 }
 
+#[tauri::command]
+pub async fn workspace_use_windows_protection(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    current_password: String,
+) -> HostResult<WorkspaceLockStatus> {
+    let workspace_lock = state.workspace_lock.clone();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        workspace_lock.use_windows_protection(Zeroizing::new(current_password))
+    })
+    .await
+    .map_err(|_| HostError::internal("Workspace protection change stopped unexpectedly"))??;
+    emit_workspace_lock(&app, &status);
+    Ok(status)
+}
+
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROVIDER_SECRET_BYTES: usize = 16 * 1024;
 const DESKTOP_COMMANDS: &[&str] = &[

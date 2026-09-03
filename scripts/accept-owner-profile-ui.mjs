@@ -26,6 +26,7 @@ const webviewData = resolve(
   option('--webview-data', 'E:/temp/CupcakeAI/qa/owner-profile-webview2'),
 );
 const port = Number(option('--port', '10051'));
+const removePassword = args.includes('--remove-password');
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
   throw new Error('--port must be a non-privileged TCP port');
 }
@@ -65,6 +66,7 @@ const result = {
   runtimeStatus: null,
   visibleError: null,
   settingsIcon: null,
+  unlockMode: null,
   browserErrors,
 };
 try {
@@ -78,9 +80,16 @@ try {
   await page.screenshot({ path: join(output, 'owner-profile-before-unlock.png') });
   const passwordInputs = page.locator('input[type="password"]');
   const passwordInput = passwordInputs.first();
-  try {
-    await passwordInput.waitFor({ timeout: 30_000 });
-  } catch (error) {
+  const ready = page.locator('.home-hero').filter({ hasText: 'Your workbench is ready' });
+  const alreadyReady = await ready.isVisible().catch(() => false);
+  if (!alreadyReady) {
+    await Promise.race([
+      passwordInput.waitFor({ timeout: 30_000 }),
+      ready.waitFor({ timeout: 30_000 }),
+    ]).catch(() => undefined);
+  }
+  const passwordVisible = await passwordInput.isVisible().catch(() => false);
+  if (!passwordVisible && !(await ready.isVisible().catch(() => false))) {
     const snapshot = {
       url: page.url(),
       title: await page.title().catch(() => ''),
@@ -91,18 +100,16 @@ try {
           .catch(() => ''),
       ),
     };
-    throw new Error(`Password field did not appear: ${JSON.stringify(snapshot)}; ${error}`, {
-      cause: error,
-    });
+    throw new Error(`Password field did not appear: ${JSON.stringify(snapshot)}`);
   }
-  await passwordInput.fill(password.toString('utf8'));
-  if ((await passwordInputs.count()) > 1) {
-    await passwordInputs.nth(1).fill(password.toString('utf8'));
+  if (passwordVisible) {
+    await passwordInput.fill(password.toString('utf8'));
+    if ((await passwordInputs.count()) > 1) {
+      await passwordInputs.nth(1).fill(password.toString('utf8'));
+    }
+    await page.getByRole('button', { name: /Unlock workspace|Create password and open/ }).click();
   }
-  password.fill(0);
-  await page.getByRole('button', { name: /Unlock workspace|Create password and open/ }).click();
 
-  const ready = page.locator('.home-hero').filter({ hasText: 'Your workbench is ready' });
   const failure = page.locator('[role="alert"]').first();
   await Promise.race([
     ready.waitFor({ timeout: 240_000 }),
@@ -111,6 +118,17 @@ try {
   const lockState = await page
     .evaluate(() => globalThis.window.cupcake?.workspace.status())
     .catch(() => null);
+  if (removePassword && lockState?.unlockMode === 'password') {
+    const migrated = await page.evaluate(
+      (currentPassword) =>
+        globalThis.window.cupcake?.workspace.useWindowsProtection(currentPassword),
+      password.toString('utf8'),
+    );
+    result.unlockMode = migrated?.unlockMode ?? null;
+  } else {
+    result.unlockMode = lockState?.unlockMode ?? null;
+  }
+  password.fill(0);
   result.unlocked = lockState?.state === 'unlocked';
   result.workspaceReady = await ready.isVisible().catch(() => false);
   result.visibleError = await failure
@@ -151,6 +169,9 @@ if (!result.workspaceReady) {
   throw new Error(
     `Owner-profile UI did not reach the workbench: ${JSON.stringify(result)}; diagnostics=${safeDiagnostics || 'empty'}`,
   );
+}
+if (removePassword && result.unlockMode !== 'windows') {
+  throw new Error(`Owner-profile password migration failed: ${JSON.stringify(result)}`);
 }
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 
