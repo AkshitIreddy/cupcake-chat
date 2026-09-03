@@ -140,6 +140,19 @@ async function buildRuntime() {
     filter: (source) => !source.split(/[\\/]/u).includes('__pycache__') && !source.endsWith('.pyc'),
   });
   const entry = join(snapshotRoot, relative(sourceRoot, sourceEntry));
+  const demandOnlyModules = [
+    'accelerate',
+    'cv2',
+    'docling',
+    'mypy',
+    'numpy',
+    'pandas',
+    'pytest',
+    'scipy',
+    'torch',
+    'torchvision',
+    'transformers',
+  ];
   run(
     python,
     [
@@ -154,6 +167,13 @@ async function buildRuntime() {
       snapshotRoot,
       '--hidden-import',
       'sqlcipher3',
+      // Docling is an optional, sandboxed document-worker capability. Keeping
+      // its ML dependency graph in the always-on broker runtime adds hundreds
+      // of megabytes (Torch, OpenCV, SciPy, and Transformers) and forces that
+      // payload to unpack before a user can see their chat history. The core
+      // runtime already fails closed when the isolated worker is unavailable;
+      // package that worker separately when its production sandbox is enabled.
+      ...demandOnlyModules.flatMap((moduleName) => ['--exclude-module', moduleName]),
       '--copy-metadata',
       'dbos',
       '--copy-metadata',

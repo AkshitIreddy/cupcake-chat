@@ -28,11 +28,12 @@ from enum import Enum
 from importlib import metadata
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from pydantic import BaseModel
 
-from cupcake_runtime.agent_engine import AgentCancellation, CupcakeAgentEngine, PydanticModelFactory
+if TYPE_CHECKING:
+    from cupcake_runtime.agent_engine import AgentCancellation, CupcakeAgentEngine
 from cupcake_runtime.agents import (
     DEFAULT_ROLE_PROFILES,
     AgentRole,
@@ -229,19 +230,21 @@ class RuntimeService:
             self.events,
             DelegateStepExecutor(self.delegates),
         )
-        self.task_runtime = (
-            _create_production_task_runtime(
-                self.tasks,
-                system_database_path=self.data_dir / "cupcake-dbos-system.db",
-            )
-            if enable_dbos
-            else None
-        )
+        # Listing durable tasks only needs the profile-local journal. Starting
+        # DBOS eagerly adds its migration and worker startup to every workspace
+        # unlock, even when the user only wants an old conversation. Initialize
+        # the production executor on the first task mutation/execution instead.
+        self._enable_dbos = enable_dbos
+        self._task_runtime: ProductionTaskRuntime | None = None
+        self._task_runtime_initialized = not enable_dbos
         self.providers = ProviderRegistry()
         self.provider_onboarding = ProviderOnboardingService(
             nvidia_nim_discovery=self.providers.nvidia_nim_discovery
         )
-        self.agent_engine = CupcakeAgentEngine(self.providers)
+        # Pydantic AI imports its provider, instrumentation, and price tables.
+        # Keep that demand-only graph asleep while the encrypted shell and chat
+        # history open; the first actual model request initializes it instead.
+        self._agent_engine: CupcakeAgentEngine | None = None
         self.cupcake_local = CupcakeLocalManager(self.data_dir / "local-models")
         baseline_directory = os.environ.get("CUPCAKE_LOCAL_BASELINE_DIR")
         self.packaged_local_runtime = (
@@ -290,6 +293,28 @@ class RuntimeService:
             enable_dbos=True,
         )
 
+    @property
+    def agent_engine(self) -> CupcakeAgentEngine:
+        if self._agent_engine is None:
+            from cupcake_runtime.agent_engine import CupcakeAgentEngine
+
+            self._agent_engine = CupcakeAgentEngine(self.providers)
+        return self._agent_engine
+
+    @agent_engine.setter
+    def agent_engine(self, value: CupcakeAgentEngine) -> None:
+        self._agent_engine = value
+
+    @property
+    def task_runtime(self) -> ProductionTaskRuntime | None:
+        if not self._task_runtime_initialized:
+            self._task_runtime = _create_production_task_runtime(
+                self.tasks,
+                system_database_path=self.data_dir / "cupcake-dbos-system.db",
+            )
+            self._task_runtime_initialized = True
+        return self._task_runtime
+
     def close(self) -> None:
         with self._state_lock:
             if self._closed:
@@ -303,8 +328,8 @@ class RuntimeService:
             if self._local_model_idle_timer is not None:
                 self._local_model_idle_timer.cancel()
                 self._local_model_idle_timer = None
-        if self.task_runtime is not None:
-            self.task_runtime.shutdown()
+        if self._task_runtime is not None:
+            self._task_runtime.shutdown()
         asyncio.run(self.cupcake_local.close())
         self.traces.close()
         self.migration_sink.close()
@@ -507,6 +532,8 @@ class RuntimeService:
         }
 
     def _self_test(self, _params: Mapping[str, Any]) -> dict[str, Any]:
+        from cupcake_runtime.agent_engine import PydanticModelFactory
+
         factory = PydanticModelFactory()
         providers: dict[str, Any] = {}
         self.providers.register_openai_compatible_endpoint(
@@ -553,7 +580,7 @@ class RuntimeService:
                     "ok": self.database.integrity_check() == ("ok",),
                     "enabled": self.database.config.require_sqlcipher,
                 },
-                "dbos": {"ok": self.task_runtime is not None},
+                "dbos": {"ok": self._enable_dbos and _module_available("dbos")},
                 "documentWorker": {
                     "ok": _module_available("cupcake_runtime.ingestion.document_worker")
                 },
@@ -2559,6 +2586,8 @@ class RuntimeService:
         finish_reason = "stop"
         current_task = asyncio.current_task()
         assert current_task is not None
+        from cupcake_runtime.agent_engine import AgentCancellation
+
         agent_cancellation = AgentCancellation()
         active = ActiveStream(
             cancellation, agent_cancellation, asyncio.get_running_loop(), current_task
