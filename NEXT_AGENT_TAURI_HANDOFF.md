@@ -7,6 +7,50 @@
 **Release policy:** local testing only. Do not push, publish, create a release, distribute an
 artifact, or configure an updater without explicit owner approval.
 
+## 2026-09-03 adaptive runtime, model intelligence, and final owner-test continuation
+
+This continuation is implemented and verified locally on `master`; nothing is pushed. The owner
+test remains at `E:\temp\cupcakeai-owner-test-20260902`, and `Launch CupcakeAI Test.vbs` opens the
+native `apps\desktop\src-tauri\target\release\CupcakeAI.exe` without a console.
+
+Implemented product changes:
+
+- RAM fallback is automatic by default and recomputes from live available system memory while
+  retaining a separate manual ceiling option. The owner acceptance changed from 9.8 GB to 8.2 GB
+  as Windows memory pressure changed, proving that 24 GB is no longer treated as a machine limit;
+- the opening shelf uses a palette paired to each randomized dreamscape, onboarding panels remain
+  centered, provider connection is taught interactively, and selectable wallpapers affect chat
+  only;
+- the chat model picker is single-click, groups models by publisher, hides unavailable providers by
+  default, offers an explicit reveal toggle, and no longer warns about or confirms nonexistent
+  automatic routing;
+- Models now uses one progressive cloud/local catalog with a rich include/exclude filter drawer.
+  It requests up to 500 Hugging Face rows, renders 60 at a time, and shows 240 live GGUF results in
+  the owner profile. NVIDIA counts are dynamic account-discoverable chat candidates rather than a
+  hard-coded catalog total;
+- twenty broadly useful NIM IDs are pinned to current NVIDIA model-card evidence. Capability cards
+  show publisher, benchmark provenance, confidence, and per-capability cupcake ratings only where
+  evidence exists; missing evidence is not displayed as a low score;
+- the title strip is slimmer with centered global search. A real `CupcakeAI Capability Tour`
+  project and `Designing a private AI research sprint` hosted Cohere conversation are seeded
+  idempotently into the disposable owner profile;
+- the always-on PyInstaller runtime excludes the inactive Docling scientific stack, shrinking from
+  roughly 343 MB to 60.9 MB. Pydantic AI initializes on first chat execution, and DBOS initializes
+  on first task execution/mutation. Native unlock-to-interactive improved from 45.67 s to 22.78 s;
+  opening feedback appears after 3.65 s. Models, catalogs, and local inference remain demand-loaded.
+
+Final evidence and gates:
+
+- native acceptance: centered opening card, zero WebView errors, 141 visible cards, 64 live
+  account-discoverable NIM chat candidates, and 240 Hugging Face GGUF results. Evidence is under
+  `E:\temp\CupcakeAI\qa\native-model-intelligence-final-20260903`;
+- Playwright 44/44, renderer Vitest 51/51, focused Python runtime 40/40, Rust host 26/26, TypeScript
+  clean, authenticated sidecar protocol passing, production Vite build passing, and native
+  screenshots visually inspected;
+- CUDA 13 remains the verified active owner-profile runtime. No model inference was needed for this
+  continuation, so the GPU lease was not taken. Preserve the unrelated dirty handoff/evidence files
+  listed by `git status` when continuing.
+
 ## 2026-09-03 first-run, discovery, and visual continuation
 
 This continuation is implemented locally on `master` and is not pushed. The owner-test launcher
