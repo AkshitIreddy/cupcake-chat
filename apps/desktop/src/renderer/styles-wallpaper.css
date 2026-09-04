@@ -1,0 +1,164 @@
+/* Selected wallpaper worlds span every workbench route. This file loads last so
+   route-specific paper surfaces inherit the scene palette without hiding it. */
+.app-shell--wallpaper .app-content--wallpaper {
+  background-color: #172033;
+  background-image: var(--workspace-wallpaper);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  color: var(--cocoa);
+}
+
+.app-shell--wallpaper .app-content--wallpaper > :is(.page, .settings-layout, .developer-page) {
+  position: relative;
+  z-index: 1;
+}
+
+.app-shell--wallpaper .app-content--wallpaper > :is(.page, .settings-layout, .developer-page),
+.app-shell--wallpaper .app-content--wallpaper > :is(.artifact-workspace, .artifact-empty-workspace),
+.app-shell--wallpaper .app-content--wallpaper .about-page {
+  background: transparent;
+}
+
+.app-shell--wallpaper .topbar,
+.app-shell--wallpaper .settings-layout > aside,
+.app-shell--wallpaper .artifact-list,
+.app-shell--wallpaper .artifact-stage > header,
+.app-shell--wallpaper .artifact-tabs {
+  border-color: var(--line);
+  background: var(--wallpaper-chrome);
+  color: var(--cocoa);
+  backdrop-filter: blur(18px) saturate(1.16);
+}
+
+.app-shell--wallpaper
+  :is(
+    .page-intro,
+    .settings-title,
+    .developer-page > header,
+    .search-hero,
+    .task-detail__head,
+    .about-hero > div:last-child
+  ) {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--wallpaper-panel-strong), transparent 5%),
+    var(--wallpaper-panel)
+  );
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(16px) saturate(1.14);
+}
+
+.app-shell--wallpaper .page-intro,
+.app-shell--wallpaper .developer-page > header,
+.app-shell--wallpaper .task-detail__head {
+  margin-bottom: 22px;
+}
+
+.app-shell--wallpaper .settings-title {
+  margin: -10px 0 24px;
+}
+
+.app-shell--wallpaper .search-hero {
+  margin-bottom: 28px;
+}
+
+.app-shell--wallpaper .home-hero {
+  width: min(820px, 100%);
+  margin: 0 auto;
+  padding: 22px 24px 25px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      circle at 50% 4%,
+      color-mix(in srgb, var(--berry-soft), transparent 12%),
+      transparent 42%
+    ),
+    var(--wallpaper-panel);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(15px) saturate(1.12);
+}
+
+.app-shell--wallpaper
+  :is(
+    .working-card,
+    .project-card,
+    .task-row,
+    .task-panel,
+    .memory-card,
+    .memory-detail,
+    .model-card,
+    .model-finder,
+    .model-system-details,
+    .model-filter-panel,
+    .settings-section,
+    .artifact-empty-hero,
+    .artifact-empty-guide,
+    .dev-metrics,
+    .developer-grid,
+    .global-search,
+    .search-result,
+    .empty-state
+  ) {
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(16px) saturate(1.12);
+}
+
+.app-shell--wallpaper :is(.task-summary-strip, .runtime-packs, .hardware-card, .run-tree) {
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.app-shell--wallpaper .artifact-stage {
+  background: color-mix(in srgb, var(--wallpaper-panel), transparent 18%);
+}
+
+.app-shell--wallpaper .document-preview {
+  background: color-mix(in srgb, var(--wallpaper-panel), transparent 10%);
+}
+
+.app-shell--wallpaper .document-paper {
+  background: var(--wallpaper-panel-strong);
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+.app-shell--wallpaper .about-page {
+  color: var(--cocoa);
+}
+
+.app-shell--wallpaper .about-values {
+  background: var(--line);
+}
+
+.app-shell--wallpaper .about-values > div,
+.app-shell--wallpaper .about-footer {
+  background: var(--wallpaper-panel-strong);
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+.app-shell--wallpaper :is(input, textarea, select)::placeholder {
+  color: color-mix(in srgb, var(--muted), transparent 10%);
+}
+
+@media (max-width: 760px) {
+  .app-shell--wallpaper
+    :is(
+      .page-intro,
+      .settings-title,
+      .developer-page > header,
+      .search-hero,
+      .task-detail__head,
+      .about-hero > div:last-child
+    ) {
+    padding: 15px;
+    border-radius: 15px;
+  }
+
+  .app-shell--wallpaper .home-hero {
+    padding: 18px 14px 20px;
+    border-radius: 20px;
+  }
+}

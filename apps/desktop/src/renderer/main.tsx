@@ -9,6 +9,7 @@ import { installTauriDesktopApi } from '../shared/tauri-client';
 import './styles.css';
 import './styles-workspace.css';
 import './styles-panels.css';
+import './styles-wallpaper.css';
 import './styles-responsive.css';
 
 installTauriDesktopApi();

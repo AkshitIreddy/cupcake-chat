@@ -11,7 +11,7 @@
   flex-direction: column;
   overflow: hidden;
 }
-.app-shell--chat-wallpaper {
+.app-shell--wallpaper {
   --cocoa: #fff9ee;
   --ink: #fff9ee;
   --muted: #d9d6dd;
@@ -36,7 +36,7 @@
   background: #151b2b;
   color: var(--cocoa);
 }
-.app-shell--chat-wallpaper[data-wallpaper='moonlit-archive'] {
+.app-shell--wallpaper[data-wallpaper='moonlit-archive'] {
   --berry: #f2c975;
   --berry-dark: #ffe3a0;
   --berry-soft: rgba(222, 167, 64, 0.2);
@@ -44,7 +44,7 @@
   --wallpaper-panel: rgba(15, 31, 55, 0.57);
   --wallpaper-panel-strong: rgba(18, 37, 65, 0.79);
 }
-.app-shell--chat-wallpaper[data-wallpaper='pistachio-atelier'] {
+.app-shell--wallpaper[data-wallpaper='pistachio-atelier'] {
   --berry: #dbe984;
   --berry-dark: #eef6b8;
   --berry-soft: rgba(180, 206, 92, 0.2);
@@ -52,7 +52,7 @@
   --wallpaper-panel: rgba(28, 50, 37, 0.57);
   --wallpaper-panel-strong: rgba(34, 59, 44, 0.8);
 }
-.app-shell--chat-wallpaper[data-wallpaper='blueberry-observatory'] {
+.app-shell--wallpaper[data-wallpaper='blueberry-observatory'] {
   --berry: #e8afe9;
   --berry-dark: #f7d4f5;
   --berry-soft: rgba(207, 113, 213, 0.22);
@@ -60,7 +60,7 @@
   --wallpaper-panel: rgba(42, 28, 68, 0.57);
   --wallpaper-panel-strong: rgba(48, 32, 78, 0.8);
 }
-.app-shell--chat-wallpaper[data-wallpaper='copper-workshop'] {
+.app-shell--wallpaper[data-wallpaper='copper-workshop'] {
   --berry: #ffbc82;
   --berry-dark: #ffd3ab;
   --berry-soft: rgba(232, 133, 69, 0.23);
@@ -68,7 +68,7 @@
   --wallpaper-panel: rgba(60, 33, 21, 0.58);
   --wallpaper-panel-strong: rgba(69, 39, 25, 0.8);
 }
-.app-shell--chat-wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
+.app-shell--wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
   --berry: #ffd09d;
   --berry-dark: #ffe4bf;
   --berry-soft: rgba(230, 158, 100, 0.21);
@@ -77,7 +77,7 @@
   --wallpaper-panel: rgba(8, 64, 69, 0.56);
   --wallpaper-panel-strong: rgba(9, 70, 76, 0.8);
 }
-.app-shell--chat-wallpaper[data-wallpaper='ink-snow-garden'] {
+.app-shell--wallpaper[data-wallpaper='ink-snow-garden'] {
   --berry: #eea7ae;
   --berry-dark: #ffd2d4;
   --berry-soft: rgba(203, 78, 89, 0.19);
@@ -85,7 +85,7 @@
   --wallpaper-panel: rgba(21, 25, 28, 0.56);
   --wallpaper-panel-strong: rgba(26, 31, 34, 0.81);
 }
-.app-shell--chat-wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
+.app-shell--wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
   --berry: #ff9bc9;
   --berry-dark: #ffc6df;
   --berry-soft: rgba(233, 68, 144, 0.22);
@@ -94,7 +94,7 @@
   --wallpaper-panel: rgba(27, 24, 57, 0.56);
   --wallpaper-panel-strong: rgba(33, 29, 67, 0.8);
 }
-.app-shell--chat-wallpaper[data-wallpaper='saffron-paper-city'] {
+.app-shell--wallpaper[data-wallpaper='saffron-paper-city'] {
   --berry: #ffca72;
   --berry-dark: #ffe0a5;
   --berry-soft: rgba(230, 158, 55, 0.22);
@@ -110,30 +110,30 @@
   background-repeat: no-repeat;
   background-size: cover;
 }
-.app-shell--chat-wallpaper .cupcake-titlebar,
-.app-shell--chat-wallpaper .shelf {
+.app-shell--wallpaper .cupcake-titlebar,
+.app-shell--wallpaper .shelf {
   border-color: var(--line);
   background: var(--wallpaper-chrome);
   color: var(--cocoa);
   backdrop-filter: blur(18px) saturate(1.18);
 }
-.app-shell--chat-wallpaper .cupcake-titlebar__search {
+.app-shell--wallpaper .cupcake-titlebar__search {
   border-color: var(--line);
   background: var(--wallpaper-panel);
   color: var(--muted);
   box-shadow: none;
 }
-.app-shell--chat-wallpaper .cupcake-titlebar__search:hover,
-.app-shell--chat-wallpaper .cupcake-titlebar__search:focus-visible {
+.app-shell--wallpaper .cupcake-titlebar__search:hover,
+.app-shell--wallpaper .cupcake-titlebar__search:focus-visible {
   background: var(--wallpaper-panel-strong);
   color: var(--cocoa);
 }
-.app-shell--chat-wallpaper .shelf :is(.new-chat, .shelf__profile) {
+.app-shell--wallpaper .shelf :is(.new-chat, .shelf__profile) {
   background: var(--wallpaper-panel-strong);
 }
-.app-shell--chat-wallpaper .shelf__recent button:hover,
-.app-shell--chat-wallpaper .nav-item:hover,
-.app-shell--chat-wallpaper .nav-item.is-active {
+.app-shell--wallpaper .shelf__recent button:hover,
+.app-shell--wallpaper .nav-item:hover,
+.app-shell--wallpaper .nav-item.is-active {
   background: var(--soft);
 }
 .app-content--wallpaper > .chat-layout {

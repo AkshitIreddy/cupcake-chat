@@ -189,7 +189,7 @@ test('fresh Windows profile opens directly without enabling workspace security',
   );
   await expect(page.getByText('Workspace lock is on')).toBeVisible();
   await page.getByLabel('Current password').fill('correct horse battery staple');
-  await page.getByRole('button', { name: 'Turn off workspace lock' }).click();
+  await page.getByRole('button', { name: 'Turn off password prompt' }).click();
   await page.waitForFunction(() =>
     Boolean((window as typeof window & { __securityDisabled?: boolean }).__securityDisabled),
   );
@@ -289,7 +289,7 @@ test('Home uses intentional aligned marks instead of bare status dots', async ({
   );
 });
 
-test('Appearance offers immersive wallpapers across the complete chat surface', async ({
+test('Appearance carries the selected wallpaper world across every workbench screen', async ({
   page,
 }) => {
   await page.goto('/?view=settings');
@@ -300,7 +300,41 @@ test('Appearance offers immersive wallpapers across the complete chat surface', 
   await expect(choice).toBeVisible();
   await choice.click();
   await expect(choice).toHaveClass(/is-active/);
-  await expect(page.locator('.app-shell')).not.toHaveClass(/app-shell--wallpaper/);
+  await expect(page.locator('.app-shell')).toHaveClass(/app-shell--wallpaper/);
+  await expect(page.locator('.app-content')).toHaveClass(/app-content--wallpaper/);
+  await expect(page.locator('.app-shell')).toHaveAttribute(
+    'data-wallpaper',
+    'blueberry-observatory',
+  );
+  const settingsBackground = await page
+    .locator('.app-content')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(settingsBackground).toContain('blueberry-observatory.webp');
+
+  for (const route of [
+    'home',
+    'chats',
+    'projects',
+    'tasks',
+    'artifacts',
+    'memory',
+    'models',
+    'tools',
+    'search',
+    'about',
+  ] as const) {
+    await page.goto(`/?view=${route}`);
+    await expect(page.locator('.app-shell')).toHaveClass(/app-shell--wallpaper/);
+    await expect(page.locator('.app-content')).toHaveClass(/app-content--wallpaper/);
+    await expect
+      .poll(() =>
+        page
+          .locator('.app-content')
+          .evaluate((element) => getComputedStyle(element).backgroundImage),
+      )
+      .toContain('blueberry-observatory.webp');
+  }
+
   const openNavigation = page.getByRole('button', { name: 'Open navigation' });
   if (await openNavigation.isVisible()) await openNavigation.click();
   await page.locator('.new-chat').click();
@@ -344,7 +378,7 @@ test('Appearance offers immersive wallpapers across the complete chat surface', 
     return {
       shellHasTheme: document
         .querySelector('.app-shell')
-        ?.classList.contains('app-shell--chat-wallpaper'),
+        ?.classList.contains('app-shell--wallpaper'),
       shelf: read('.shelf'),
       titlebar: read('.cupcake-titlebar'),
       header: read('.chat-header'),
@@ -371,6 +405,12 @@ test('Appearance offers immersive wallpapers across the complete chat surface', 
   expect(surfaces.contentRadius).toBe('0px');
   expect(surfaces.header.color).toBe('rgb(255, 249, 238)');
   expect(surfaces.messageText).toBe('rgb(255, 249, 238)');
+
+  await page.goto('/?view=settings');
+  await page.getByRole('button', { name: 'Appearance' }).click();
+  await page.getByRole('button', { name: /Quiet paper/ }).click();
+  await expect(page.locator('.app-shell')).not.toHaveClass(/app-shell--wallpaper/);
+  await expect(page.locator('.app-content')).not.toHaveClass(/app-content--wallpaper/);
 });
 
 test('selected user and assistant portraits propagate into chat', async ({ page }) => {

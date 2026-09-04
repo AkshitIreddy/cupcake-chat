@@ -6787,7 +6787,7 @@ function SettingsView({
                             .finally(() => setWorkspacePasswordBusy(false));
                         }}
                       >
-                        Turn off workspace lock
+                        Turn off password prompt
                       </button>
                       <button
                         className="button"
@@ -6803,10 +6803,13 @@ function SettingsView({
               <div className="security-note">
                 <Icon name="info" />
                 <div>
-                  <strong>Security stays out of the way until you enable it</strong>
+                  <strong>
+                    The password prompt is optional; encrypted storage stays automatic
+                  </strong>
                   <p>
-                    This optional lock controls app startup. Provider credentials still use the
-                    Windows credential vault so API keys are never stored as readable text.
+                    Turning off the prompt returns CupcakeAI to direct opening. Your workspace and
+                    provider credentials remain encrypted in the background without adding a startup
+                    step.
                   </p>
                 </div>
               </div>
@@ -9762,13 +9765,15 @@ function LiveApp() {
     workspace.settings.wallpaper === 'none'
       ? undefined
       : `url(/wallpapers/${workspace.settings.wallpaper}.webp)`;
-  const chatWallpaper = view === 'chat' && Boolean(wallpaperUrl);
+  const workspaceWallpaper = Boolean(wallpaperUrl);
   return (
     <div
-      className={cx('app-shell', chatWallpaper && 'app-shell--chat-wallpaper')}
-      data-wallpaper={chatWallpaper ? workspace.settings.wallpaper : undefined}
+      className={cx('app-shell', workspaceWallpaper && 'app-shell--wallpaper')}
+      data-wallpaper={workspaceWallpaper ? workspace.settings.wallpaper : undefined}
       style={
-        chatWallpaper ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties) : undefined
+        workspaceWallpaper
+          ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties)
+          : undefined
       }
     >
       <a className="skip-link" href="#main-content">
@@ -9796,7 +9801,7 @@ function LiveApp() {
         className={cx(
           'app-content',
           view === 'chat' && 'app-content--chat',
-          chatWallpaper && 'app-content--wallpaper',
+          workspaceWallpaper && 'app-content--wallpaper',
         )}
         id="main-content"
         tabIndex={-1}
