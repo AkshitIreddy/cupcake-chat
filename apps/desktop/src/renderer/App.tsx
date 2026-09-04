@@ -465,7 +465,7 @@ function WorkspaceOpening() {
     <main className="workspace-opening" aria-live="polite">
       <Dreamscape scene={scene} />
       <section className="workspace-opening__card">
-        <span className="eyebrow">Encrypted workspace</span>
+        <span className="eyebrow">Opening workspace</span>
         <h2>Bringing your history into view</h2>
         <p>
           Your conversations open first. Hardware scans, catalogs, and local models stay asleep
@@ -476,7 +476,7 @@ function WorkspaceOpening() {
         </div>
         <div className="workspace-opening__stages">
           <span className="is-done">
-            <Icon name="check" /> Key accepted
+            <Icon name="check" /> Profile ready
           </span>
           <span className="is-active">
             <i /> Opening recent chats
@@ -5725,6 +5725,10 @@ function SettingsView({
   const [confirmWorkspacePassword, setConfirmWorkspacePassword] = useState('');
   const [workspacePasswordBusy, setWorkspacePasswordBusy] = useState(false);
   const [workspacePasswordMessage, setWorkspacePasswordMessage] = useState('');
+  const workspaceSecurityApi = window.cupcake?.workspace;
+  const [workspaceSecurity, setWorkspaceSecurity] = useState<WorkspaceLockStatus | null>(
+    workspaceSecurityApi ? null : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
+  );
   const [profileUploadError, setProfileUploadError] = useState('');
   const [windowPreferences, setWindowPreferences] = useState<WindowPreferences>({
     startupBehavior: 'open',
@@ -5755,6 +5759,7 @@ function SettingsView({
     (model) =>
       model.provider === 'NVIDIA NIM' && model.tags.some((tag) => /embed|rerank/i.test(tag)),
   );
+  const workspaceLockEnabled = workspaceSecurity?.unlockMode === 'password';
   const updateProfile = (patch: Partial<WorkspaceSettings['profile']>) =>
     workspace.updateSettings({ profile: { ...workspace.settings.profile, ...patch } });
   const uploadProfileImage = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -5784,6 +5789,21 @@ function SettingsView({
       .then(setWindowPreferences)
       .catch((error: unknown) => setWindowPreferencesError(hostErrorMessage(error)));
   }, []);
+  useEffect(() => {
+    if (!workspaceSecurityApi) return;
+    let active = true;
+    void workspaceSecurityApi
+      .status()
+      .then((status) => active && setWorkspaceSecurity(status))
+      .catch((error: unknown) => active && setWorkspacePasswordMessage(hostErrorMessage(error)));
+    const release = workspaceSecurityApi.onStatus((status) => {
+      if (active) setWorkspaceSecurity(status);
+    });
+    return () => {
+      active = false;
+      release();
+    };
+  }, [workspaceSecurityApi]);
   const updateWindowPreferences = (patch: Partial<WindowPreferences>) => {
     const next = { ...windowPreferences, ...patch };
     setWindowPreferences(next);
@@ -6581,11 +6601,27 @@ function SettingsView({
           <>
             <section className="settings-section">
               <header>
-                <h2>Workspace password</h2>
+                <h2>Optional workspace lock</h2>
                 <p>
-                  Keep an app password, or use Windows protection for quick-open on this account.
+                  CupcakeAI opens normally without a password. Turn this on only if you want one.
                 </p>
               </header>
+              <div className={cx('workspace-lock-status', workspaceLockEnabled && 'is-enabled')}>
+                <span className="workspace-lock-status__mark">
+                  <Icon name={workspaceLockEnabled ? 'shield' : 'sparkle'} />
+                </span>
+                <span>
+                  <strong>
+                    {workspaceLockEnabled ? 'Workspace lock is on' : 'Workspace lock is off'}
+                  </strong>
+                  <small>
+                    {workspaceLockEnabled
+                      ? 'CupcakeAI will ask for this password the next time the app starts.'
+                      : 'The app opens directly. No password or security setup is required.'}
+                  </small>
+                </span>
+                <em>{workspaceLockEnabled ? 'On' : 'Off by default'}</em>
+              </div>
               <form
                 className="workspace-password-form"
                 onSubmit={(event) => {
@@ -6600,30 +6636,42 @@ function SettingsView({
                     return;
                   }
                   setWorkspacePasswordBusy(true);
-                  void window.cupcake?.workspace
-                    .changePassword(currentWorkspacePassword, newWorkspacePassword)
-                    .then(() => {
+                  const request = workspaceLockEnabled
+                    ? window.cupcake?.workspace.changePassword(
+                        currentWorkspacePassword,
+                        newWorkspacePassword,
+                      )
+                    : window.cupcake?.workspace.setup(newWorkspacePassword);
+                  void request
+                    ?.then((status) => {
+                      setWorkspaceSecurity(status);
                       setCurrentWorkspacePassword('');
                       setNewWorkspacePassword('');
                       setConfirmWorkspacePassword('');
-                      setWorkspacePasswordMessage('Password changed.');
+                      setWorkspacePasswordMessage(
+                        workspaceLockEnabled
+                          ? 'Workspace lock password changed.'
+                          : 'Workspace lock enabled. It will be required next launch.',
+                      );
                     })
                     .catch((error: unknown) => setWorkspacePasswordMessage(hostErrorMessage(error)))
                     .finally(() => setWorkspacePasswordBusy(false));
                 }}
               >
+                {workspaceLockEnabled && (
+                  <label>
+                    Current password
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      value={currentWorkspacePassword}
+                      onChange={(event) => setCurrentWorkspacePassword(event.target.value)}
+                      required
+                    />
+                  </label>
+                )}
                 <label>
-                  Current password
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentWorkspacePassword}
-                    onChange={(event) => setCurrentWorkspacePassword(event.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  New password
+                  {workspaceLockEnabled ? 'New password' : 'Create password'}
                   <input
                     type="password"
                     autoComplete="new-password"
@@ -6650,9 +6698,7 @@ function SettingsView({
                   <p
                     className={cx(
                       'field-message',
-                      !workspacePasswordMessage.startsWith('Password changed') &&
-                        !workspacePasswordMessage.startsWith('App password removed') &&
-                        'field-error',
+                      !workspacePasswordMessage.startsWith('Workspace lock') && 'field-error',
                     )}
                     role="status"
                   >
@@ -6661,49 +6707,60 @@ function SettingsView({
                 )}
                 <div className="workspace-password-form__actions">
                   <button className="button button--primary" disabled={workspacePasswordBusy}>
-                    {workspacePasswordBusy ? 'Changing…' : 'Change password'}
+                    {workspacePasswordBusy
+                      ? workspaceLockEnabled
+                        ? 'Changing…'
+                        : 'Enabling…'
+                      : workspaceLockEnabled
+                        ? 'Change password'
+                        : 'Enable workspace lock'}
                   </button>
-                  <button
-                    className="button"
-                    type="button"
-                    disabled={workspacePasswordBusy || !currentWorkspacePassword}
-                    onClick={() => {
-                      setWorkspacePasswordBusy(true);
-                      setWorkspacePasswordMessage('');
-                      void window.cupcake?.workspace
-                        .useWindowsProtection(currentWorkspacePassword)
-                        .then(() => {
-                          setCurrentWorkspacePassword('');
-                          setNewWorkspacePassword('');
-                          setConfirmWorkspacePassword('');
-                          setWorkspacePasswordMessage(
-                            'App password removed. Windows protection will quick-open this workspace.',
-                          );
-                        })
-                        .catch((error: unknown) =>
-                          setWorkspacePasswordMessage(hostErrorMessage(error)),
-                        )
-                        .finally(() => setWorkspacePasswordBusy(false));
-                    }}
-                  >
-                    Use Windows quick-open
-                  </button>
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => void window.cupcake?.workspace.lock()}
-                  >
-                    <Icon name="shield" /> Lock now
-                  </button>
+                  {workspaceLockEnabled && (
+                    <>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={workspacePasswordBusy || !currentWorkspacePassword}
+                        onClick={() => {
+                          setWorkspacePasswordBusy(true);
+                          setWorkspacePasswordMessage('');
+                          void window.cupcake?.workspace
+                            .disableProtection(currentWorkspacePassword)
+                            .then((status) => {
+                              setWorkspaceSecurity(status);
+                              setCurrentWorkspacePassword('');
+                              setNewWorkspacePassword('');
+                              setConfirmWorkspacePassword('');
+                              setWorkspacePasswordMessage(
+                                'Workspace lock disabled. CupcakeAI will open directly.',
+                              );
+                            })
+                            .catch((error: unknown) =>
+                              setWorkspacePasswordMessage(hostErrorMessage(error)),
+                            )
+                            .finally(() => setWorkspacePasswordBusy(false));
+                        }}
+                      >
+                        Turn off workspace lock
+                      </button>
+                      <button
+                        className="button"
+                        type="button"
+                        onClick={() => void window.cupcake?.workspace.lock()}
+                      >
+                        <Icon name="shield" /> Lock now
+                      </button>
+                    </>
+                  )}
                 </div>
               </form>
               <div className="security-note">
-                <Icon name="shield" />
+                <Icon name="info" />
                 <div>
-                  <strong>Two local protection layers</strong>
+                  <strong>Security stays out of the way until you enable it</strong>
                   <p>
-                    Windows DPAPI protects the encrypted workspace key and provider credentials at
-                    rest. An optional CupcakeAI password can add a second gate before startup.
+                    This optional lock controls app startup. Provider credentials still use the
+                    Windows credential vault so API keys are never stored as readable text.
                   </p>
                 </div>
               </div>
@@ -9016,7 +9073,7 @@ const onboardingSteps = [
     body: 'Chat with cloud or local models, let durable tasks continue in the background, and keep the resulting files, decisions, and memories organized.',
     icon: 'sparkle' as IconName,
     points: [
-      'Encrypted local workspace',
+      'Opens without setup friction',
       'Cloud destinations are labeled',
       'Your projects stay isolated',
     ],
@@ -9026,7 +9083,7 @@ const onboardingSteps = [
   {
     eyebrow: 'Your profile',
     title: 'Choose how CupcakeAI greets you',
-    body: 'Your display name and cupcake portrait stay in this protected profile. You can change either now or any time from Settings.',
+    body: 'Your display name and cupcake portrait stay in this local profile. You can change either now or any time from Settings.',
     icon: 'user' as IconName,
     points: [
       'More portraits available in Settings',
@@ -9083,7 +9140,7 @@ const onboardingSteps = [
     points: [
       'Review tool effects in context',
       'Stop active generation with Ctrl .',
-      'Lock the workspace from Privacy settings',
+      'Optional workspace lock in Privacy settings',
     ],
     view: 'settings' as View,
     target: 'settings',
@@ -9160,7 +9217,7 @@ function OnboardingTour({
   }, [item.target, item.view, navigate, open]);
   const configuredProviderCount = Object.values(workspace.providers).filter(Boolean).length;
   const setupChecks = [
-    { label: 'Windows-protected profile', done: true },
+    { label: 'Workspace opens directly', done: true },
     { label: 'Name and cupcake portrait', done: Boolean(workspace.settings.profile.displayName) },
     {
       label: 'At least one model route',
@@ -9836,40 +9893,19 @@ function WorkspaceUnlockGate({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [password, setPassword] = useState('');
-  const [confirmation, setConfirmation] = useState('');
   const [revealed, setRevealed] = useState(false);
-  const [securityMode, setSecurityMode] = useState<'windows' | 'password'>('windows');
-  const [displayName, setDisplayName] = useState('');
-  const [avatar, setAvatar] = useState('atlas:0');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [dreamscape] = useState(() => Math.floor(Math.random() * 4));
-  const needsSetup = status?.state === 'needs_setup';
-  const windowsProtected = status?.unlockMode === 'windows';
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!window.cupcake || !status || busy) return;
     setError('');
-    if (needsSetup && securityMode === 'password' && password !== confirmation) {
-      setError('The passwords do not match.');
-      return;
-    }
-    if (needsSetup) {
-      window.sessionStorage.setItem(
-        'cupcake-pending-profile',
-        JSON.stringify({ displayName: displayName.trim() || 'CupcakeAI user', avatar }),
-      );
-    }
     setBusy(true);
-    const request = needsSetup
-      ? securityMode === 'windows'
-        ? window.cupcake.workspace.setupWithoutPassword()
-        : window.cupcake.workspace.setup(password)
-      : window.cupcake.workspace.unlock(password);
-    void request
+    void window.cupcake.workspace
+      .unlock(password)
       .then((next) => {
         setPassword('');
-        setConfirmation('');
         onUnlocked(next);
       })
       .catch((reason: unknown) => setError(hostErrorMessage(reason)))
@@ -9884,28 +9920,12 @@ function WorkspaceUnlockGate({
           <div className="workspace-unlock__mark">
             <Icon name="shield" size={30} />
           </div>
-          <span className="eyebrow">
-            {needsSetup
-              ? 'Personal setup'
-              : windowsProtected
-                ? 'Windows-protected profile'
-                : 'App-locked local workspace'}
-          </span>
-          <h1>
-            {needsSetup
-              ? 'Make this CupcakeAI yours'
-              : windowsProtected
-                ? 'Open CupcakeAI'
-                : 'Unlock CupcakeAI'}
-          </h1>
+          <span className="eyebrow">Optional workspace lock</span>
+          <h1>Unlock CupcakeAI</h1>
           <p>
             {status === null
               ? 'Checking this local profile…'
-              : needsSetup
-                ? 'Choose your name, cupcake portrait, and whether you want an extra password at startup.'
-                : windowsProtected
-                  ? 'This profile uses your Windows account protection and does not require a separate app password.'
-                  : 'Enter the password for this CupcakeAI profile. Models, tools, and providers stay stopped until it is accepted.'}
+              : 'This workspace lock was enabled in Settings. Enter its password to continue.'}
           </p>
           {status !== null && (
             <form className="workspace-unlock__form" onSubmit={submit}>
@@ -9919,103 +9939,24 @@ function WorkspaceUnlockGate({
                 tabIndex={-1}
                 aria-hidden="true"
               />
-              {needsSetup && (
-                <div className="workspace-first-profile">
-                  <label>
-                    Your name
-                    <input
-                      value={displayName}
-                      placeholder="Your name"
-                      maxLength={60}
-                      onChange={(event) => setDisplayName(event.target.value)}
-                      autoFocus
-                    />
-                  </label>
-                  <div className="workspace-avatar-picker" aria-label="Choose a cupcake portrait">
-                    {Array.from({ length: 8 }, (_, index) => `atlas:${index}`).map((value) => (
-                      <button
-                        type="button"
-                        className={avatar === value ? 'is-selected' : ''}
-                        aria-label={`Cupcake portrait ${Number(value.split(':')[1]) + 1}`}
-                        aria-pressed={avatar === value}
-                        onClick={() => setAvatar(value)}
-                        key={value}
-                      >
-                        <CupcakePortrait value={value} label="" />
-                      </button>
-                    ))}
-                  </div>
-                  <div
-                    className="workspace-security-choice"
-                    role="radiogroup"
-                    aria-label="Startup security"
-                  >
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={securityMode === 'windows'}
-                      className={securityMode === 'windows' ? 'is-selected' : ''}
-                      onClick={() => setSecurityMode('windows')}
-                    >
-                      <Icon name="sparkle" />
-                      <span>
-                        <strong>Open with Windows</strong>
-                        <small>No separate app password</small>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={securityMode === 'password'}
-                      className={securityMode === 'password' ? 'is-selected' : ''}
-                      onClick={() => setSecurityMode('password')}
-                    >
-                      <Icon name="shield" />
-                      <span>
-                        <strong>Require a password</strong>
-                        <small>Extra gate every launch</small>
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              )}
-              {(!needsSetup || securityMode === 'password') && !windowsProtected && (
-                <label>
-                  {needsSetup ? 'New password' : 'Password'}
-                  <span className="password-input">
-                    <input
-                      type={revealed ? 'text' : 'password'}
-                      autoComplete={needsSetup ? 'new-password' : 'current-password'}
-                      minLength={15}
-                      maxLength={128}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      autoFocus={!needsSetup}
-                      required
-                    />
-                    <button type="button" onClick={() => setRevealed((value) => !value)}>
-                      {revealed ? 'Hide' : 'Show'}
-                    </button>
-                  </span>
-                </label>
-              )}
-              {needsSetup && securityMode === 'password' && (
-                <label>
-                  Confirm password
+              <label>
+                Password
+                <span className="password-input">
                   <input
                     type={revealed ? 'text' : 'password'}
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                     minLength={15}
                     maxLength={128}
-                    value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoFocus
                     required
                   />
-                </label>
-              )}
-              {(!needsSetup || securityMode === 'password') && !windowsProtected && (
-                <small>15–128 characters. Spaces and Unicode are welcome.</small>
-              )}
+                  <button type="button" onClick={() => setRevealed((value) => !value)}>
+                    {revealed ? 'Hide' : 'Show'}
+                  </button>
+                </span>
+              </label>
               {error && (
                 <p className="field-error" role="alert">
                   {error}
@@ -10026,15 +9967,7 @@ function WorkspaceUnlockGate({
                 disabled={busy || (status.retryAfterMs ?? 0) > 0}
               >
                 <Icon name="shield" />
-                {busy
-                  ? 'Protecting…'
-                  : needsSetup
-                    ? securityMode === 'windows'
-                      ? 'Save profile and open'
-                      : 'Create password and open'
-                    : windowsProtected
-                      ? 'Open workspace'
-                      : 'Unlock workspace'}
+                {busy ? 'Unlocking…' : 'Unlock workspace'}
               </button>
               {busy && (
                 <div className="workspace-unlock__progress" role="status">
@@ -10042,8 +9975,7 @@ function WorkspaceUnlockGate({
                     <i />
                   </span>
                   <small>
-                    Opening encrypted history first. Models and optional services will wake only
-                    when needed.
+                    Opening your history. Models and optional services will wake only when needed.
                   </small>
                 </div>
               )}
@@ -10060,28 +9992,26 @@ function WorkspaceUnlockGate({
           </div>
           {detailsOpen && (
             <div className="workspace-unlock__details">
-              <strong>An app password is optional; Windows protection is always active.</strong>
+              <strong>This lock is optional and can be turned off after opening.</strong>
               <p>
-                A separate password can block CupcakeAI and its sidecars at launch. With quick-open,
-                the current Windows account is the gate. In both modes, Windows Data Protection
-                (DPAPI) protects the profile key used for encrypted SQLCipher data and immutable
-                artifacts.
+                CupcakeAI normally opens without a password. This screen appears only because
+                workspace lock was explicitly enabled in Privacy settings.
               </p>
             </div>
           )}
         </section>
         <aside className="workspace-unlock__aside">
-          <span>LOCAL ONLY</span>
-          <h2>One key boundary, three protected stores.</h2>
+          <span>OPTIONAL SECURITY</span>
+          <h2>Your extra gate, when you want it.</h2>
           <ul>
             <li>
-              <Icon name="check" /> Conversations, tasks, memory, and settings
+              <Icon name="check" /> Disabled by default
             </li>
             <li>
-              <Icon name="check" /> Immutable artifact revisions
+              <Icon name="check" /> Enabled only from Settings
             </li>
             <li>
-              <Icon name="check" /> Provider credentials in the Windows vault
+              <Icon name="check" /> Removable with your current password
             </li>
           </ul>
         </aside>
@@ -10092,22 +10022,43 @@ function WorkspaceUnlockGate({
 
 export function App() {
   const workspaceLockApi = window.cupcake?.workspace;
+  const defaultSetupStarted = useRef(false);
   const [lockStatus, setLockStatus] = useState<WorkspaceLockStatus | null>(
     workspaceLockApi ? null : { state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 },
   );
   useEffect(() => {
     if (!workspaceLockApi) return;
     let active = true;
-    void workspaceLockApi.status().then((status) => active && setLockStatus(status));
+    const acceptStatus = (status: WorkspaceLockStatus) => {
+      if (!active) return;
+      if (status.state === 'needs_setup' && !defaultSetupStarted.current) {
+        defaultSetupStarted.current = true;
+        void workspaceLockApi
+          .setupWithoutPassword()
+          .then((next) => active && setLockStatus(next))
+          .catch(() => active && setLockStatus(status));
+        return;
+      }
+      setLockStatus(status);
+    };
+    void workspaceLockApi.status().then(acceptStatus);
     const release = workspaceLockApi.onStatus((status) => {
-      if (active) setLockStatus(status);
+      acceptStatus(status);
     });
     return () => {
       active = false;
       release();
     };
   }, [workspaceLockApi]);
-  if (lockStatus?.state !== 'unlocked') {
+  if (lockStatus === null || lockStatus.state === 'needs_setup') {
+    return (
+      <div className="app-shell app-shell--locked">
+        <CupcakeTitlebar onSearch={() => undefined} />
+        <WorkspaceOpening />
+      </div>
+    );
+  }
+  if (lockStatus.state === 'locked') {
     return <WorkspaceUnlockGate status={lockStatus} onUnlocked={setLockStatus} />;
   }
   return (

@@ -273,6 +273,13 @@
   .workspace-password-form {
     grid-template-columns: 1fr;
   }
+  .workspace-lock-status {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+  .workspace-lock-status em {
+    grid-column: 2;
+    justify-self: start;
+  }
   .provider-setup-layer {
     place-items: end center;
     padding: 0;

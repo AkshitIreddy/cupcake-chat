@@ -79,7 +79,7 @@ export type WorkspaceLockState = 'needs_setup' | 'locked' | 'unlocked';
 
 export interface WorkspaceLockStatus {
   state: WorkspaceLockState;
-  unlockMode?: 'password' | 'windows';
+  unlockMode?: 'password';
   failedAttempts: number;
   retryAfterMs: number;
 }
@@ -153,7 +153,7 @@ export interface CupcakeDesktopApi {
     unlock(password: string): Promise<WorkspaceLockStatus>;
     lock(): Promise<WorkspaceLockStatus>;
     changePassword(currentPassword: string, newPassword: string): Promise<WorkspaceLockStatus>;
-    useWindowsProtection(currentPassword: string): Promise<WorkspaceLockStatus>;
+    disableProtection(currentPassword: string): Promise<WorkspaceLockStatus>;
     onStatus(listener: (status: WorkspaceLockStatus) => void): Unsubscribe;
   };
   runtime: {

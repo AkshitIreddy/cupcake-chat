@@ -26,7 +26,8 @@ const webviewData = resolve(
   option('--webview-data', 'E:/temp/CupcakeAI/qa/owner-profile-webview2'),
 );
 const port = Number(option('--port', '10051'));
-const removePassword = args.includes('--remove-password');
+const disableProtection =
+  args.includes('--disable-protection') || args.includes('--remove-password');
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
   throw new Error('--port must be a non-privileged TCP port');
 }
@@ -35,7 +36,6 @@ const input = createInterface({ input: process.stdin, terminal: false });
 const passwordLine = await input.question('');
 input.close();
 const password = Buffer.from(passwordLine, 'utf8');
-if (!password.length) throw new Error('Read the workspace password from stdin');
 
 await mkdir(output, { recursive: true });
 await mkdir(webviewData, { recursive: true });
@@ -118,10 +118,9 @@ try {
   const lockState = await page
     .evaluate(() => globalThis.window.cupcake?.workspace.status())
     .catch(() => null);
-  if (removePassword && lockState?.unlockMode === 'password') {
+  if (disableProtection && lockState?.unlockMode === 'password') {
     const migrated = await page.evaluate(
-      (currentPassword) =>
-        globalThis.window.cupcake?.workspace.useWindowsProtection(currentPassword),
+      (currentPassword) => globalThis.window.cupcake?.workspace.disableProtection(currentPassword),
       password.toString('utf8'),
     );
     result.unlockMode = migrated?.unlockMode ?? null;
@@ -170,8 +169,8 @@ if (!result.workspaceReady) {
     `Owner-profile UI did not reach the workbench: ${JSON.stringify(result)}; diagnostics=${safeDiagnostics || 'empty'}`,
   );
 }
-if (removePassword && result.unlockMode !== 'windows') {
-  throw new Error(`Owner-profile password migration failed: ${JSON.stringify(result)}`);
+if (disableProtection && result.unlockMode !== null) {
+  throw new Error(`Owner-profile protection disable failed: ${JSON.stringify(result)}`);
 }
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 

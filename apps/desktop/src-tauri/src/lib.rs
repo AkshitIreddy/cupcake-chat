@@ -61,7 +61,7 @@ pub fn run() {
             workspace_lock_status,
             workspace_password_change,
             workspace_password_setup,
-            workspace_use_windows_protection,
+            workspace_protection_disable,
             workspace_unlock,
         ])
         .setup(|app| {
@@ -101,8 +101,8 @@ pub fn run() {
                 );
             });
 
-            // Password-gated profiles start after verification. Windows quick-open profiles
-            // already passed their OS account boundary while loading the DPAPI-backed profile.
+            // Password-gated profiles start after verification. Ordinary profiles have no
+            // workspace lock and open directly.
             if let Some(window) = app.get_webview_window("main") {
                 commands::apply_window_preferences(&window, &startup_preferences)?;
             }

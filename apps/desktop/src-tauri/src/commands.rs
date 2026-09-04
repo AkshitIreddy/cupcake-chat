@@ -85,17 +85,17 @@ pub async fn workspace_password_change(
 }
 
 #[tauri::command]
-pub async fn workspace_use_windows_protection(
+pub async fn workspace_protection_disable(
     app: AppHandle,
     state: State<'_, HostState>,
     current_password: String,
 ) -> HostResult<WorkspaceLockStatus> {
     let workspace_lock = state.workspace_lock.clone();
     let status = tauri::async_runtime::spawn_blocking(move || {
-        workspace_lock.use_windows_protection(Zeroizing::new(current_password))
+        workspace_lock.disable_protection(Zeroizing::new(current_password))
     })
     .await
-    .map_err(|_| HostError::internal("Workspace protection change stopped unexpectedly"))??;
+    .map_err(|_| HostError::internal("Workspace protection disable stopped unexpectedly"))??;
     emit_workspace_lock(&app, &status);
     Ok(status)
 }

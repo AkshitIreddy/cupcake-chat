@@ -21,7 +21,6 @@ pub enum WorkspaceLockState {
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceUnlockMode {
     Password,
-    Windows,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

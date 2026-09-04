@@ -1305,60 +1305,6 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
   background-size: 220% 100%;
   animation: unlock-progress 1.25s linear infinite;
 }
-.workspace-first-profile {
-  display: grid;
-  gap: 14px;
-}
-.workspace-avatar-picker {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 7px;
-}
-.workspace-avatar-picker button {
-  aspect-ratio: 1;
-  overflow: hidden;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 11px;
-  background: var(--crumb);
-}
-.workspace-avatar-picker button.is-selected {
-  border-color: var(--berry);
-  box-shadow: 0 0 0 3px var(--berry-soft);
-}
-.workspace-avatar-picker .cupcake-portrait {
-  width: 100%;
-  height: 100%;
-}
-.workspace-security-choice {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-}
-.workspace-security-choice > button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 66px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--crumb);
-  color: var(--ink);
-  text-align: left;
-}
-.workspace-security-choice > button.is-selected {
-  border-color: var(--berry);
-  background: var(--berry-soft);
-}
-.workspace-security-choice span {
-  display: grid;
-  gap: 2px;
-}
-.workspace-security-choice small {
-  color: var(--muted);
-  font-size: 9px;
-}
 @keyframes unlock-progress {
   from {
     background-position: 100% 0;
@@ -1460,6 +1406,57 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
 .workspace-opening__stages .is-active > i {
   background: var(--berry);
   box-shadow: 0 0 0 3px var(--berry-soft);
+}
+.workspace-lock-status {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--paper), var(--soft) 22%);
+}
+.workspace-lock-status.is-enabled {
+  border-color: color-mix(in srgb, var(--pistachio), var(--line) 58%);
+  background: color-mix(in srgb, var(--pistachio-soft), var(--paper) 38%);
+}
+.workspace-lock-status__mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--muted);
+}
+.workspace-lock-status.is-enabled .workspace-lock-status__mark {
+  background: var(--pistachio-soft);
+  color: var(--pistachio-ink);
+}
+.workspace-lock-status > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+.workspace-lock-status strong {
+  font-size: 13px;
+}
+.workspace-lock-status small {
+  color: var(--muted);
+}
+.workspace-lock-status em {
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: var(--soft);
+  color: var(--muted);
+  font: 650 9px 'IBM Plex Mono';
+  font-style: normal;
+  text-transform: uppercase;
+}
+.workspace-lock-status.is-enabled em {
+  background: var(--pistachio-soft);
+  color: var(--pistachio-ink);
 }
 .workspace-password-form {
   display: grid;

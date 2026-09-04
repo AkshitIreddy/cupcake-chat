@@ -33,30 +33,61 @@ test('workspace opening composition stays optically centered', async ({ page }) 
   expect(titlebarBackground).not.toBe('rgb(246, 242, 235)');
 });
 
-test('fresh Windows profile can choose quick-open without creating a password', async ({
+test('fresh Windows profile opens directly without enabling workspace security', async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    const target = window as typeof window & { __quickSetupCalled?: boolean; cupcake?: unknown };
+    const target = window as typeof window & {
+      __quickSetupCalled?: boolean;
+      __securityEnabled?: boolean;
+      __securityDisabled?: boolean;
+      cupcake?: unknown;
+    };
     target.__quickSetupCalled = false;
+    target.__securityEnabled = false;
+    target.__securityDisabled = false;
     target.cupcake = {
       apiVersion: 1,
       platform: 'win32',
+      app: {
+        getInfo: () =>
+          Promise.resolve({
+            apiVersion: 1,
+            appVersion: 'test',
+            platform: 'win32',
+            packaged: false,
+            runtime: 'ready',
+          }),
+        openExternal: () => Promise.resolve(),
+      },
       workspace: {
         status: () => Promise.resolve({ state: 'needs_setup', failedAttempts: 0, retryAfterMs: 0 }),
-        setup: () =>
+        setup: () => {
+          target.__securityEnabled = true;
+          return Promise.resolve({
+            state: 'unlocked',
+            unlockMode: 'password',
+            failedAttempts: 0,
+            retryAfterMs: 0,
+          });
+        },
+        setupWithoutPassword: () => {
+          target.__quickSetupCalled = true;
+          return Promise.resolve({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 });
+        },
+        unlock: () => Promise.resolve({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 }),
+        onStatus: () => () => undefined,
+        changePassword: () =>
           Promise.resolve({
             state: 'unlocked',
             unlockMode: 'password',
             failedAttempts: 0,
             retryAfterMs: 0,
           }),
-        setupWithoutPassword: () => {
-          target.__quickSetupCalled = true;
-          return Promise.resolve({ state: 'needs_setup', failedAttempts: 0, retryAfterMs: 0 });
+        disableProtection: () => {
+          target.__securityDisabled = true;
+          return Promise.resolve({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 });
         },
-        unlock: () => Promise.resolve({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 }),
-        onStatus: () => () => undefined,
       },
       window: {
         isMaximized: () => Promise.resolve(false),
@@ -65,20 +96,78 @@ test('fresh Windows profile can choose quick-open without creating a password', 
         close: () => Promise.resolve(),
         onCloseRequested: () => () => undefined,
       },
+      dialog: {
+        openFiles: () => Promise.resolve([]),
+        openDirectory: () => Promise.resolve(null),
+        chooseSaveTarget: () => Promise.resolve(null),
+        releaseHandle: () => Promise.resolve(),
+      },
+      commands: { execute: () => Promise.resolve(), onCommand: () => () => undefined },
+      runtime: {
+        status: () => Promise.resolve({ state: 'ready', mode: 'broker', restartCount: 0 }),
+        cancel: () => Promise.resolve(true),
+        onEvent: () => () => undefined,
+        onStatus: () => () => undefined,
+        request: ({ method }: { method: string }) => {
+          const results: Record<string, unknown> = {
+            'app.bootstrap': {
+              selectedModelId: null,
+              projects: [],
+              conversations: [],
+              models: [],
+              tools: [],
+              hardware: {},
+              localRuntimes: [],
+              suggestionsEnabled: false,
+            },
+            'tasks.list': [],
+            'memory.list': [],
+            'providers.status': { providers: [] },
+            'settings.list': {},
+            'migration.detect': { state: 'not_found', available: false },
+            'local_models.cupcake.status': {
+              activeModelId: null,
+              availableModels: [],
+              models: [],
+              recommendations: [],
+              downloads: [],
+              availableRuntimes: [],
+              runtimes: [],
+              runtimeRecommendations: [],
+              hardware: {},
+            },
+            'artifacts.list': [],
+            'developer.events': [],
+          };
+          return Promise.resolve({ ok: true, result: results[method] });
+        },
+      },
     };
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Make this CupcakeAI yours' })).toBeVisible();
-  await expect(page.getByRole('radio', { name: /Open with Windows/ })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
-  await expect(page.getByLabel('New password')).toHaveCount(0);
-  await page.getByLabel('Your name').fill('Fresh user');
-  await page.getByRole('button', { name: 'Save profile and open' }).click();
   await page.waitForFunction(() =>
     Boolean((window as typeof window & { __quickSetupCalled?: boolean }).__quickSetupCalled),
   );
+  await expect(page.getByRole('heading', { name: 'Make this CupcakeAI yours' })).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Startup security' })).toHaveCount(0);
+  await expect(page.locator('.home-hero')).toBeVisible();
+
+  await page.goto('/?view=settings');
+  await page.getByRole('button', { name: 'Privacy', exact: true }).click();
+  await expect(page.getByText('Workspace lock is off')).toBeVisible();
+  await page.getByLabel('Create password').fill('correct horse battery staple');
+  await page.getByLabel('Confirm new password').fill('correct horse battery staple');
+  await page.getByRole('button', { name: 'Enable workspace lock' }).click();
+  await page.waitForFunction(() =>
+    Boolean((window as typeof window & { __securityEnabled?: boolean }).__securityEnabled),
+  );
+  await expect(page.getByText('Workspace lock is on')).toBeVisible();
+  await page.getByLabel('Current password').fill('correct horse battery staple');
+  await page.getByRole('button', { name: 'Turn off workspace lock' }).click();
+  await page.waitForFunction(() =>
+    Boolean((window as typeof window & { __securityDisabled?: boolean }).__securityDisabled),
+  );
+  await expect(page.getByText('Workspace lock is off')).toBeVisible();
 });
 
 test('first-run tour is complete, replayable, centered, and keeps search in the titlebar', async ({

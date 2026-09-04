@@ -85,8 +85,8 @@ export function installTauriDesktopApi(): boolean {
           currentPassword,
           newPassword,
         }),
-      useWindowsProtection: (currentPassword) =>
-        invoke<WorkspaceLockStatus>('workspace_use_windows_protection', { currentPassword }),
+      disableProtection: (currentPassword) =>
+        invoke<WorkspaceLockStatus>('workspace_protection_disable', { currentPassword }),
       onStatus: (listener) => subscribe<WorkspaceLockStatus>('cupcake://workspace-lock', listener),
     },
     runtime: {

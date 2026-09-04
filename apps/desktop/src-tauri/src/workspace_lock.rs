@@ -47,7 +47,7 @@ impl WorkspaceLock {
         supervisor: Arc<SidecarSupervisor>,
     ) -> HostResult<Arc<Self>> {
         let record_path = data_directory.join("security").join("workspace-lock.json");
-        let record = if record_path.is_file() {
+        let mut record = if record_path.is_file() {
             let bytes = fs::read(&record_path).map_err(|_| {
                 HostError::internal("The workspace password record could not be read")
             })?;
@@ -59,9 +59,17 @@ impl WorkspaceLock {
         } else {
             None
         };
-        let unlocked = record
+        // Version 2 records came from the old mandatory first-run "quick-open" choice. They did
+        // not add a password boundary, so migrate them to the new unprotected default instead of
+        // continuing to present security as something every profile has enabled.
+        if record
             .as_ref()
-            .is_some_and(|item| item.algorithm == WINDOWS_PROTECTION_ALGORITHM);
+            .is_some_and(|item| item.algorithm == WINDOWS_PROTECTION_ALGORITHM)
+        {
+            remove_record(&record_path)?;
+            record = None;
+        }
+        let unlocked = record.is_none();
         Ok(Arc::new(Self {
             record_path,
             supervisor,
@@ -79,18 +87,26 @@ impl WorkspaceLock {
     }
 
     pub fn setup(&self, password: Zeroizing<String>) -> HostResult<WorkspaceLockStatus> {
-        if !password.is_empty() {
-            validate_password(&password)?;
+        if password.is_empty() {
+            let mut inner = self.lock();
+            if inner.record.is_none() {
+                inner.unlocked = true;
+                inner.failed_attempts = 0;
+                inner.retry_at = None;
+                drop(inner);
+                let _ = self.supervisor.start();
+                return Ok(self.status());
+            }
+            return Err(HostError::invalid(
+                "Workspace protection is already enabled",
+            ));
         }
+        validate_password(&password)?;
         let mut inner = self.lock();
         if inner.record.is_some() {
             return Err(HostError::invalid("A workspace password already exists"));
         }
-        let record = if password.is_empty() {
-            windows_protected_record(None)
-        } else {
-            hash_password(&password, None)?
-        };
+        let record = hash_password(&password, None)?;
         write_record(&self.record_path, &record)?;
         inner.record = Some(record);
         inner.unlocked = true;
@@ -137,13 +153,19 @@ impl WorkspaceLock {
     }
 
     pub fn lock_workspace(&self) -> WorkspaceLockStatus {
-        {
+        let should_stop = {
             let mut inner = self.lock();
             if inner.record.is_some() {
                 inner.unlocked = false;
+                true
+            } else {
+                inner.unlocked = true;
+                false
             }
+        };
+        if should_stop {
+            self.supervisor.stop();
         }
-        self.supervisor.stop();
         self.status()
     }
 
@@ -185,44 +207,38 @@ impl WorkspaceLock {
         Ok(status_for(&inner))
     }
 
-    pub fn use_windows_protection(
+    pub fn disable_protection(
         &self,
         current_password: Zeroizing<String>,
     ) -> HostResult<WorkspaceLockStatus> {
-        let (verifier, created_at, already_protected) = {
+        let (verifier, windows_protected) = {
             let inner = self.lock();
             if !inner.unlocked {
                 return Err(HostError::new(
                     "WORKSPACE_LOCKED",
-                    "Unlock the workspace before removing its app password",
+                    "Unlock the workspace before disabling its app password",
                     false,
                 ));
             }
             enforce_retry_boundary(&inner)?;
-            let record = inner
-                .record
-                .as_ref()
-                .ok_or_else(|| HostError::invalid("Create a workspace profile first"))?;
+            let Some(record) = inner.record.as_ref() else {
+                return Ok(status_for(&inner));
+            };
             (
                 record.verifier.clone(),
-                record.created_at.clone(),
                 record.algorithm == WINDOWS_PROTECTION_ALGORITHM,
             )
         };
-        if already_protected {
-            return Ok(self.status());
-        }
-        if !verify_password(&current_password, &verifier) {
+        if !windows_protected && !verify_password(&current_password, &verifier) {
             return Err(HostError::new(
                 "WORKSPACE_PASSWORD_INCORRECT",
                 "The current CupcakeAI password is not correct",
                 true,
             ));
         }
-        let record = windows_protected_record(Some(created_at));
-        write_record(&self.record_path, &record)?;
+        remove_record(&self.record_path)?;
         let mut inner = self.lock();
-        inner.record = Some(record);
+        inner.record = None;
         inner.unlocked = true;
         inner.failed_attempts = 0;
         inner.retry_at = None;
@@ -258,6 +274,7 @@ fn hash_password(password: &str, created_at: Option<String>) -> HostResult<Passw
     })
 }
 
+#[cfg(test)]
 fn windows_protected_record(created_at: Option<String>) -> PasswordRecord {
     let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     PasswordRecord {
@@ -321,7 +338,7 @@ fn enforce_retry_boundary(inner: &LockInner) -> HostResult<()> {
 
 fn status_for(inner: &LockInner) -> WorkspaceLockStatus {
     let state = if inner.record.is_none() {
-        WorkspaceLockState::NeedsSetup
+        WorkspaceLockState::Unlocked
     } else if inner.unlocked {
         WorkspaceLockState::Unlocked
     } else {
@@ -334,15 +351,19 @@ fn status_for(inner: &LockInner) -> WorkspaceLockStatus {
         .unwrap_or(0);
     WorkspaceLockStatus {
         state,
-        unlock_mode: inner.record.as_ref().map(|record| {
-            if record.algorithm == WINDOWS_PROTECTION_ALGORITHM {
-                WorkspaceUnlockMode::Windows
-            } else {
-                WorkspaceUnlockMode::Password
-            }
-        }),
+        unlock_mode: inner.record.as_ref().map(|_| WorkspaceUnlockMode::Password),
         failed_attempts: inner.failed_attempts,
         retry_after_ms,
+    }
+}
+
+fn remove_record(path: &Path) -> HostResult<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(HostError::internal(
+            "Workspace protection could not be disabled",
+        )),
     }
 }
 
@@ -414,9 +435,10 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        hash_password, validate_password, validate_record, verify_password,
-        windows_protected_record,
+        hash_password, status_for, validate_password, validate_record, verify_password,
+        windows_protected_record, LockInner,
     };
+    use crate::models::WorkspaceLockState;
 
     #[test]
     fn password_policy_accepts_long_unicode_passphrases() {
@@ -444,5 +466,18 @@ mod tests {
         assert_eq!(record.version, 2);
         assert!(record.verifier.is_empty());
         assert!(validate_record(&record).is_ok());
+    }
+
+    #[test]
+    fn unconfigured_profile_opens_without_a_security_setup_gate() {
+        let inner = LockInner {
+            record: None,
+            unlocked: true,
+            failed_attempts: 0,
+            retry_at: None,
+        };
+        let status = status_for(&inner);
+        assert_eq!(status.state, WorkspaceLockState::Unlocked);
+        assert_eq!(status.unlock_mode, None);
     }
 }
