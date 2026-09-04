@@ -360,10 +360,27 @@ export function nativeModelName(model: ModelDescriptor): string {
     .replace(/^cupcake-local:/, 'cupcake-local/');
 }
 
+function publisherFromModelFamily(model: ModelDescriptor): string | undefined {
+  const identity = `${nativeModelName(model)} ${model.name}`.toLowerCase();
+  if (/\bqwen(?:\d|\b)/u.test(identity)) return 'Qwen';
+  if (/\b(?:meta-llama|llama)\b/u.test(identity)) return 'Meta';
+  if (/\b(?:mistral|mixtral|codestral)\b/u.test(identity)) return 'Mistral AI';
+  if (/\b(?:gemma|gemini)\b/u.test(identity)) return 'Google';
+  if (/\bdeepseek\b/u.test(identity)) return 'DeepSeek';
+  if (/\bgranite\b/u.test(identity)) return 'IBM Granite';
+  if (/\b(?:command-r|command-a)\b/u.test(identity)) return 'Cohere';
+  if (/\bphi[- ]?\d/u.test(identity)) return 'Microsoft';
+  if (/\b(?:gpt|openai)\b/u.test(identity)) return 'OpenAI';
+  return undefined;
+}
+
 export function publisherForModel(model: ModelDescriptor): string {
   const curated = curatedProfileForModel(model);
   if (curated) return curated.publisher;
+  const familyPublisher = publisherFromModelFamily(model);
+  if (model.provider === 'Hugging Face' && familyPublisher) return familyPublisher;
   if (model.publisher) return PUBLISHERS[model.publisher.toLowerCase()] ?? model.publisher;
+  if (familyPublisher) return familyPublisher;
   const native = nativeModelName(model);
   const owner = native.includes('/') ? native.split('/', 1)[0]!.toLowerCase() : '';
   return (
@@ -444,21 +461,22 @@ export function modelIsAvailableInChat(model: ModelDescriptor): boolean {
 
 export function publisherLogoAsset(publisher: string): string | undefined {
   const assets: Record<string, string> = {
-    Anthropic: 'anthropic',
-    Cohere: 'cohere',
-    DeepSeek: 'deepseek',
-    Google: 'google',
-    'Hugging Face': 'hugging-face',
-    Meta: 'meta',
-    'Mistral AI': 'mistral',
-    'Mistral AI + NVIDIA': 'mistral',
-    NVIDIA: 'nvidia-nim',
-    OpenAI: 'openai',
-    'Microsoft Research': 'microsoft',
-    xAI: 'xai',
+    Anthropic: '/providers/anthropic.svg',
+    Cohere: '/providers/cohere.svg',
+    DeepSeek: '/providers/deepseek.svg',
+    Google: '/providers/google.svg',
+    'Hugging Face': '/providers/hugging-face.svg',
+    Meta: '/providers/meta.svg',
+    Microsoft: '/providers/microsoft.svg',
+    'Microsoft Research': '/providers/microsoft.svg',
+    'Mistral AI': '/providers/mistral.svg',
+    'Mistral AI + NVIDIA': '/providers/mistral.svg',
+    NVIDIA: '/providers/nvidia-nim.svg',
+    OpenAI: '/providers/openai.svg',
+    Qwen: '/providers/qwen.svg',
+    xAI: '/providers/xai.webp',
   };
-  const id = assets[publisher];
-  return id ? `/providers/${id}.svg` : undefined;
+  return assets[publisher];
 }
 
 export function publisherMonogram(publisher: string): string {

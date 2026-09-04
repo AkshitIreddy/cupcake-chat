@@ -298,7 +298,7 @@ kbd {
   background: color-mix(in srgb, var(--paper), transparent 18%);
   color: var(--muted);
   text-align: left;
-  box-shadow: inset 0 1px color-mix(in srgb, white, transparent 45%);
+  box-shadow: none;
 }
 .cupcake-titlebar__search:hover,
 .cupcake-titlebar__search:focus-visible {
@@ -406,6 +406,14 @@ kbd {
   background: var(--paper);
   border-radius: 18px 0 0 18px;
   box-shadow: -8px 0 30px rgba(71, 51, 39, 0.045);
+}
+.app-shell:has(.workspace-opening) .app-content,
+.app-content--wallpaper {
+  border-radius: 0;
+  box-shadow: none;
+}
+.app-shell:has(.workspace-opening) .app-content {
+  overflow: hidden;
 }
 .brand {
   display: flex;
@@ -1343,7 +1351,7 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
   width: min(510px, 100%);
   margin: 0;
   padding: 30px;
-  border: 1px solid color-mix(in srgb, white, transparent 55%);
+  border: 1px solid color-mix(in srgb, var(--line), transparent 12%);
   border-radius: 24px;
   background: color-mix(in srgb, var(--paper), transparent 8%);
   box-shadow: 0 32px 90px rgba(26, 18, 17, 0.3);

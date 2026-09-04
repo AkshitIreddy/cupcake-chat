@@ -45,6 +45,23 @@ describe('model intelligence', () => {
   it('uses publisher branding instead of the NVIDIA route logo', () => {
     expect(publisherLogoAsset(publisherForModel(model()))).toBe('/providers/openai.svg');
     expect(publisherLogoAsset('NVIDIA')).toBe('/providers/nvidia-nim.svg');
+    expect(publisherLogoAsset('Qwen')).toBe('/providers/qwen.svg');
+    expect(publisherLogoAsset('Microsoft')).toBe('/providers/microsoft.svg');
+    expect(publisherLogoAsset('xAI')).toBe('/providers/xai.webp');
+  });
+
+  it('uses the model family rather than a Hugging Face repack uploader', () => {
+    expect(
+      publisherForModel(
+        model({
+          id: 'hf:bartowski/Qwen3-8B-GGUF',
+          runtimeModelId: 'hf:bartowski/Qwen3-8B-GGUF',
+          provider: 'Hugging Face',
+          publisher: 'bartowski',
+          name: 'Qwen3 8B GGUF',
+        }),
+      ),
+    ).toBe('Qwen');
   });
 
   it('hides disconnected and specialized routes from the picker by default', () => {

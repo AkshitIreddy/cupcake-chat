@@ -193,6 +193,18 @@ const CUPCAKE_AVATARS = Array.from({ length: 20 }, (_, index) => ({
   ][index]!,
 }));
 
+const WORKSPACE_WALLPAPERS = [
+  ['none', 'Quiet paper', 'No artwork'],
+  ['moonlit-archive', 'Moonlit archive', 'Midnight blue'],
+  ['pistachio-atelier', 'Pistachio atelier', 'Garden light'],
+  ['blueberry-observatory', 'Blueberry observatory', 'Violet dusk'],
+  ['copper-workshop', 'Copper workshop', 'Warm brass'],
+  ['aquamarine-tidepool-library', 'Tidepool library', 'Aquamarine'],
+  ['ink-snow-garden', 'Ink snow garden', 'Monochrome'],
+  ['raspberry-circuit-conservatory', 'Circuit conservatory', 'Raspberry night'],
+  ['saffron-paper-city', 'Saffron paper city', 'Golden paper'],
+] as const satisfies ReadonlyArray<readonly [WorkspaceSettings['wallpaper'], string, string]>;
+
 function atlasStyle(index: number, columns: number, rows: number, image: string): CSSProperties {
   const column = index % columns;
   const row = Math.floor(index / columns);
@@ -224,7 +236,13 @@ function CupcakePortrait({
       />
     );
   }
-  return <img className={className} src={value || '/brand/cupcake-mark.svg'} alt={label} />;
+  return (
+    <img
+      className={cx('cupcake-portrait', className)}
+      src={value || '/brand/cupcake-mark.svg'}
+      alt={label}
+    />
+  );
 }
 
 function OnboardingStoryArt({ step }: { step: number }) {
@@ -1203,9 +1221,8 @@ function Composer({
         </div>
         <div className="composer__send">
           <button className="model-chip" onClick={onModel}>
-            <ProviderLogo
-              id={providerDialogId(selectedModel.provider)}
-              name={selectedModel.provider}
+            <PublisherLogo
+              publisher={publisherForModel(selectedModel)}
               className="composer-model-logo"
             />
             <span>
@@ -1842,11 +1859,17 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
             )}
           >
             {message.role === 'user' ? (
-              <span>AK</span>
+              <CupcakePortrait
+                value={workspace.settings.profile.avatar}
+                label={`${workspace.settings.profile.displayName}'s profile picture`}
+              />
             ) : message.role === 'status' ? (
               <Icon name="task" />
             ) : (
-              <img src="/brand/cupcake-mark.svg" alt="" />
+              <CupcakePortrait
+                value={workspace.settings.assistantAvatar}
+                label="Cupcake assistant picture"
+              />
             )}
           </div>
           <div className={cx('message', message.role === 'user' && 'message--user')}>
@@ -2178,7 +2201,10 @@ function ChatView({
               </div>
               <article className="turn turn--user" id="turn-user-1">
                 <div className="thread-node thread-node--user">
-                  <span>AK</span>
+                  <CupcakePortrait
+                    value={workspace.settings.profile.avatar}
+                    label={`${workspace.settings.profile.displayName}'s profile picture`}
+                  />
                 </div>
                 <div className="message message--user">
                   <div className="message-meta">
@@ -2205,7 +2231,10 @@ function ChatView({
               </article>
               <article className="turn turn--assistant">
                 <div className="thread-node thread-node--assistant">
-                  <img src="/brand/cupcake-mark.svg" alt="" />
+                  <CupcakePortrait
+                    value={workspace.settings.assistantAvatar}
+                    label="Cupcake assistant picture"
+                  />
                 </div>
                 <div className="message">
                   <div className="message-meta">
@@ -2232,7 +2261,10 @@ function ChatView({
               </article>
               <article className="turn turn--assistant" id="turn-answer">
                 <div className="thread-node thread-node--assistant">
-                  <img src="/brand/cupcake-mark.svg" alt="" />
+                  <CupcakePortrait
+                    value={workspace.settings.assistantAvatar}
+                    label="Cupcake assistant picture"
+                  />
                 </div>
                 <div className="message">
                   <div className="message-meta">
@@ -2348,7 +2380,10 @@ function ChatView({
                 message.role === 'user' ? (
                   <article className="turn turn--user" key={message.id}>
                     <div className="thread-node thread-node--user">
-                      <span>AK</span>
+                      <CupcakePortrait
+                        value={workspace.settings.profile.avatar}
+                        label={`${workspace.settings.profile.displayName}'s profile picture`}
+                      />
                     </div>
                     <div className="message message--user">
                       <div className="message-meta">
@@ -2372,7 +2407,10 @@ function ChatView({
                       {message.role === 'status' ? (
                         <Icon name="task" />
                       ) : (
-                        <img src="/brand/cupcake-mark.svg" alt="" />
+                        <CupcakePortrait
+                          value={workspace.settings.assistantAvatar}
+                          label="Cupcake assistant picture"
+                        />
                       )}
                     </div>
                     <div className="message">
@@ -4206,7 +4244,7 @@ function ModelsView({
           disabled={model.fit === 'incompatible'}
           onClick={() => setPendingDownload(model)}
         >
-          {model.fit === 'incompatible' ? 'Does not fit' : 'Review install'}
+          {model.fit === 'incompatible' ? 'Does not fit' : 'Install'}
         </button>
       );
     if (model.status === 'download' || model.status === 'verifying')
@@ -5653,9 +5691,16 @@ function ProviderLogo({ id, name, className }: { id: string; name: string; class
       </span>
     );
   }
+  const asset = id === 'xai' ? '/providers/xai.webp' : `/providers/${id}.svg`;
   return (
-    <span className={cx('provider-logo', className)}>
-      <img src={`/providers/${id}.svg`} alt={`${name} logo`} />
+    <span
+      className={cx(
+        'provider-logo',
+        (id === 'openai' || id === 'xai') && 'provider-logo--dark-surface',
+        className,
+      )}
+    >
+      <img src={asset} alt={`${name} logo`} />
     </span>
   );
 }
@@ -5664,7 +5709,12 @@ function PublisherLogo({ publisher, className }: { publisher: string; className?
   const asset = publisherLogoAsset(publisher);
   return (
     <span
-      className={cx('provider-logo', !asset && 'provider-logo--publisher-monogram', className)}
+      className={cx(
+        'provider-logo',
+        !asset && 'provider-logo--publisher-monogram',
+        (asset?.includes('/openai.') || asset?.includes('/xai.')) && 'provider-logo--dark-surface',
+        className,
+      )}
       title={publisher}
     >
       {asset ? (
@@ -6071,19 +6121,12 @@ function SettingsView({
             </div>
             <header className="settings-subheading">
               <h2>Workspace wallpaper</h2>
-              <p>Artwork is softened behind app surfaces so text and controls stay readable.</p>
+              <p>The artwork stays vivid while chat surfaces and text adapt to its palette.</p>
             </header>
             <div className="wallpaper-grid">
-              {(
-                [
-                  ['none', 'Quiet paper'],
-                  ['moonlit-archive', 'Moonlit archive'],
-                  ['pistachio-atelier', 'Pistachio atelier'],
-                  ['blueberry-observatory', 'Blueberry observatory'],
-                  ['copper-workshop', 'Copper workshop'],
-                ] as const
-              ).map(([value, label]) => (
+              {WORKSPACE_WALLPAPERS.map(([value, label, palette]) => (
                 <button
+                  type="button"
                   className={workspace.settings.wallpaper === value ? 'is-active' : ''}
                   onClick={() => void workspace.updateSettings({ wallpaper: value })}
                   key={value}
@@ -6096,7 +6139,10 @@ function SettingsView({
                         : { backgroundImage: `url(/wallpapers/${value}.webp)` }
                     }
                   />
-                  <strong>{label}</strong>
+                  <span className="wallpaper-label">
+                    <strong>{label}</strong>
+                    <small>{palette}</small>
+                  </span>
                   {workspace.settings.wallpaper === value && <Icon name="check" size={14} />}
                 </button>
               ))}
@@ -8054,7 +8100,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
             <div className="provider-choice-grid">
               {providerDefinitions.map((item) => (
                 <button type="button" key={item.id} onClick={() => choose(item.id)}>
-                  <span className="provider-logo">{item.name.charAt(0)}</span>
+                  <ProviderLogo id={item.id} name={item.name} />
                   <span>
                     <strong>{item.name}</strong>
                     <small>{item.route}</small>
@@ -9716,8 +9762,15 @@ function LiveApp() {
     workspace.settings.wallpaper === 'none'
       ? undefined
       : `url(/wallpapers/${workspace.settings.wallpaper}.webp)`;
+  const chatWallpaper = view === 'chat' && Boolean(wallpaperUrl);
   return (
-    <div className="app-shell">
+    <div
+      className={cx('app-shell', chatWallpaper && 'app-shell--chat-wallpaper')}
+      data-wallpaper={chatWallpaper ? workspace.settings.wallpaper : undefined}
+      style={
+        chatWallpaper ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties) : undefined
+      }
+    >
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -9743,13 +9796,8 @@ function LiveApp() {
         className={cx(
           'app-content',
           view === 'chat' && 'app-content--chat',
-          view === 'chat' && wallpaperUrl && 'app-content--wallpaper',
+          chatWallpaper && 'app-content--wallpaper',
         )}
-        style={
-          view === 'chat' && wallpaperUrl
-            ? ({ '--workspace-wallpaper': wallpaperUrl } as CSSProperties)
-            : undefined
-        }
         id="main-content"
         tabIndex={-1}
       >

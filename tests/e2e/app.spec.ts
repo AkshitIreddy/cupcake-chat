@@ -31,6 +31,32 @@ test('workspace opening composition stays optically centered', async ({ page }) 
     .evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(shelfBackground).not.toBe('rgb(246, 242, 235)');
   expect(titlebarBackground).not.toBe('rgb(246, 242, 235)');
+  const seam = await page.evaluate(() => {
+    const opening = document.querySelector('.workspace-opening')?.getBoundingClientRect();
+    const image = document.querySelector('.workspace-dreamscape')?.getBoundingClientRect();
+    const content = document.querySelector<HTMLElement>('.app-content');
+    const search = document.querySelector<HTMLElement>('.cupcake-titlebar__search');
+    if (!opening || !image || !content || !search) throw new Error('Opening composition missing');
+    const contentStyle = getComputedStyle(content);
+    return {
+      imageCoversLeft: image.left <= opening.left,
+      imageCoversTop: image.top <= opening.top,
+      imageCoversRight: image.right >= opening.right,
+      imageCoversBottom: image.bottom >= opening.bottom,
+      leftRadius: contentStyle.borderTopLeftRadius,
+      leftShadow: contentStyle.boxShadow,
+      searchShadow: getComputedStyle(search).boxShadow,
+    };
+  });
+  expect(seam).toMatchObject({
+    imageCoversLeft: true,
+    imageCoversTop: true,
+    imageCoversRight: true,
+    imageCoversBottom: true,
+    leftRadius: '0px',
+    leftShadow: 'none',
+    searchShadow: 'none',
+  });
 });
 
 test('fresh Windows profile opens directly without enabling workspace security', async ({
@@ -218,6 +244,34 @@ test('model discovery starts curated and only searches the Hub on request', asyn
   await expect(page.getByRole('button', { name: /Show more community models/i })).toHaveCount(0);
 });
 
+test('model and provider pickers use loaded company marks', async ({ page }) => {
+  await page.goto('/?view=models');
+  const openAiMark = page.locator('img[alt="OpenAI logo"]').first();
+  await expect(openAiMark).toBeVisible();
+  expect(
+    await openAiMark.evaluate((image: HTMLImageElement) => image.naturalWidth),
+  ).toBeGreaterThan(0);
+
+  await page.getByLabel('Find a model').fill('qwen');
+  const qwenMark = page.locator('img[alt="Qwen logo"]').first();
+  await expect(qwenMark).toBeVisible();
+  expect(await qwenMark.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(
+    0,
+  );
+
+  await page.getByRole('button', { name: 'Add provider' }).click();
+  const providerMarks = page.locator('.provider-choice-grid .provider-logo img');
+  await expect(providerMarks).toHaveCount(7);
+  expect(
+    await providerMarks.evaluateAll((images) =>
+      images.every(
+        (image) =>
+          (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+      ),
+    ),
+  ).toBe(true);
+});
+
 test('Home uses intentional aligned marks instead of bare status dots', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.shelf__recent button > i')).toHaveCount(0);
@@ -235,9 +289,13 @@ test('Home uses intentional aligned marks instead of bare status dots', async ({
   );
 });
 
-test('Appearance offers generated wallpapers and applies one only to chat', async ({ page }) => {
+test('Appearance offers immersive wallpapers across the complete chat surface', async ({
+  page,
+}) => {
   await page.goto('/?view=settings');
   await page.getByRole('button', { name: 'Appearance' }).click();
+  const wallpaperChoices = page.locator('.wallpaper-grid > button');
+  await expect(wallpaperChoices).toHaveCount(9);
   const choice = page.getByRole('button', { name: /Blueberry observatory/ });
   await expect(choice).toBeVisible();
   await choice.click();
@@ -252,6 +310,101 @@ test('Appearance offers generated wallpapers and applies one only to chat', asyn
     .locator('.app-content--chat')
     .evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(background).toContain('blueberry-observatory.webp');
+  expect(background).not.toContain('linear-gradient');
+
+  await expect
+    .poll(() =>
+      page.locator('.shelf').evaluate((element) => {
+        const value = getComputedStyle(element).backgroundColor;
+        const modern = value.match(/\/\s*([\d.]+)(%)?\s*\)$/u);
+        if (modern) return Number(modern[1]) / (modern[2] ? 100 : 1);
+        const legacy = value.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/u);
+        return legacy ? Number(legacy[1]) : value === 'transparent' ? 0 : 1;
+      }),
+    )
+    .toBeLessThan(0.92);
+
+  const surfaces = await page.evaluate(() => {
+    const rgbaAlpha = (value: string) => {
+      if (value === 'transparent') return 0;
+      const modern = value.match(/\/\s*([\d.]+)(%)?\s*\)$/u);
+      if (modern) return Number(modern[1]) / (modern[2] ? 100 : 1);
+      const legacy = value.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/u);
+      return legacy ? Number(legacy[1]) : 1;
+    };
+    const read = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing ${selector}`);
+      const style = getComputedStyle(element);
+      return {
+        alpha: rgbaAlpha(style.backgroundColor),
+        color: style.color,
+      };
+    };
+    return {
+      shellHasTheme: document
+        .querySelector('.app-shell')
+        ?.classList.contains('app-shell--chat-wallpaper'),
+      shelf: read('.shelf'),
+      titlebar: read('.cupcake-titlebar'),
+      header: read('.chat-header'),
+      transcript: read('.chat-main'),
+      composer: read('.composer'),
+      messageText: getComputedStyle(document.querySelector<HTMLElement>('.rich-response > p'))
+        .color,
+      composerFade: getComputedStyle(
+        document.querySelector<HTMLElement>('.chat-composer-wrap'),
+        '::before',
+      ).display,
+      contentRadius: getComputedStyle(
+        document.querySelector<HTMLElement>('.app-content--wallpaper'),
+      ).borderTopLeftRadius,
+    };
+  });
+  expect(surfaces.shellHasTheme).toBe(true);
+  expect(surfaces.shelf.alpha).toBeLessThan(0.92);
+  expect(surfaces.titlebar.alpha).toBeLessThan(0.92);
+  expect(surfaces.header.alpha).toBeLessThan(0.92);
+  expect(surfaces.transcript.alpha).toBeLessThan(0.92);
+  expect(surfaces.composer.alpha).toBeLessThan(0.92);
+  expect(surfaces.composerFade).toBe('none');
+  expect(surfaces.contentRadius).toBe('0px');
+  expect(surfaces.header.color).toBe('rgb(255, 249, 238)');
+  expect(surfaces.messageText).toBe('rgb(255, 249, 238)');
+});
+
+test('selected user and assistant portraits propagate into chat', async ({ page }) => {
+  await page.goto('/?view=settings');
+  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  const userChoice = page.locator(
+    '.avatar-picker:not(.avatar-picker--assistant) button[title="Pixel explorer"]',
+  );
+  const assistantChoice = page.locator('.avatar-picker--assistant button[title="Synthwave DJ"]');
+  await userChoice.click();
+  await assistantChoice.click();
+  const expected = await Promise.all(
+    [userChoice, assistantChoice].map((choice) =>
+      choice.locator('.cupcake-portrait').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { image: style.backgroundImage, position: style.backgroundPosition };
+      }),
+    ),
+  );
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  await page.locator('.new-chat').click();
+  const actual = await Promise.all(
+    [
+      page.locator('.turn--user .thread-node--user .cupcake-portrait').first(),
+      page.locator('.turn--assistant .thread-node--assistant .cupcake-portrait').first(),
+    ].map((portrait) =>
+      portrait.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { image: style.backgroundImage, position: style.backgroundPosition };
+      }),
+    ),
+  );
+  expect(actual).toEqual(expected);
 });
 
 test('profile, scrollbar, and RAM fallback controls update the local UI', async ({ page }) => {
@@ -872,7 +1025,7 @@ test('managed local catalog stays Cupcake-owned and explains pending hardware de
   await expect(page.getByText('RAM pending')).toBeVisible();
   await expect(page.getByText(/LM Studio|Ollama|vLLM/i)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Install a model to benchmark' })).toBeDisabled();
-  const install = localCards.first().getByRole('button', { name: 'Review install' });
+  const install = localCards.first().getByRole('button', { name: 'Install', exact: true });
   await install.click();
   await expect(page.getByRole('dialog', { name: /Review/ })).toContainText('SHA-256');
   await page.keyboard.press('Escape');

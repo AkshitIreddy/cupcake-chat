@@ -217,7 +217,15 @@ export interface LegacyMigrationState {
 export interface WorkspaceSettings {
   theme: 'light' | 'dark' | 'minimal' | 'classic';
   wallpaper:
-    'none' | 'moonlit-archive' | 'pistachio-atelier' | 'blueberry-observatory' | 'copper-workshop';
+    | 'none'
+    | 'moonlit-archive'
+    | 'pistachio-atelier'
+    | 'blueberry-observatory'
+    | 'copper-workshop'
+    | 'aquamarine-tidepool-library'
+    | 'ink-snow-garden'
+    | 'raspberry-circuit-conservatory'
+    | 'saffron-paper-city';
   offline: boolean;
   proactiveEnabled: boolean;
   developerMode: boolean;
@@ -1924,7 +1932,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           runtimeSettings['appearance.wallpaper'] === 'moonlit-archive' ||
           runtimeSettings['appearance.wallpaper'] === 'pistachio-atelier' ||
           runtimeSettings['appearance.wallpaper'] === 'blueberry-observatory' ||
-          runtimeSettings['appearance.wallpaper'] === 'copper-workshop'
+          runtimeSettings['appearance.wallpaper'] === 'copper-workshop' ||
+          runtimeSettings['appearance.wallpaper'] === 'aquamarine-tidepool-library' ||
+          runtimeSettings['appearance.wallpaper'] === 'ink-snow-garden' ||
+          runtimeSettings['appearance.wallpaper'] === 'raspberry-circuit-conservatory' ||
+          runtimeSettings['appearance.wallpaper'] === 'saffron-paper-city'
             ? runtimeSettings['appearance.wallpaper']
             : 'none',
         offline: runtimeSettings['privacy.default_mode'] === 'offline',

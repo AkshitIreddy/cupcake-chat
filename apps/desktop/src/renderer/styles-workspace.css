@@ -11,30 +11,193 @@
   flex-direction: column;
   overflow: hidden;
 }
+.app-shell--chat-wallpaper {
+  --cocoa: #fff9ee;
+  --ink: #fff9ee;
+  --muted: #d9d6dd;
+  --line: rgba(255, 255, 255, 0.19);
+  --paper: rgba(17, 22, 34, 0.68);
+  --paper-raised: rgba(22, 28, 42, 0.82);
+  --crumb: rgba(14, 19, 30, 0.82);
+  --soft: rgba(255, 255, 255, 0.12);
+  --berry: #f5a6c5;
+  --berry-dark: #ffd0e1;
+  --berry-soft: rgba(223, 94, 146, 0.22);
+  --blueberry: #bdc8ff;
+  --blueberry-soft: rgba(126, 145, 255, 0.2);
+  --pistachio: #95ddbd;
+  --pistachio-ink: #b9f2d6;
+  --pistachio-soft: rgba(78, 175, 129, 0.2);
+  --gold: #f0c871;
+  --wallpaper-chrome: rgba(16, 20, 32, 0.82);
+  --wallpaper-panel: rgba(16, 21, 34, 0.58);
+  --wallpaper-panel-strong: rgba(18, 24, 38, 0.8);
+  --wallpaper-shadow: 0 18px 54px rgba(4, 8, 18, 0.27);
+  background: #151b2b;
+  color: var(--cocoa);
+}
+.app-shell--chat-wallpaper[data-wallpaper='moonlit-archive'] {
+  --berry: #f2c975;
+  --berry-dark: #ffe3a0;
+  --berry-soft: rgba(222, 167, 64, 0.2);
+  --wallpaper-chrome: rgba(13, 28, 51, 0.84);
+  --wallpaper-panel: rgba(15, 31, 55, 0.57);
+  --wallpaper-panel-strong: rgba(18, 37, 65, 0.79);
+}
+.app-shell--chat-wallpaper[data-wallpaper='pistachio-atelier'] {
+  --berry: #dbe984;
+  --berry-dark: #eef6b8;
+  --berry-soft: rgba(180, 206, 92, 0.2);
+  --wallpaper-chrome: rgba(31, 53, 39, 0.84);
+  --wallpaper-panel: rgba(28, 50, 37, 0.57);
+  --wallpaper-panel-strong: rgba(34, 59, 44, 0.8);
+}
+.app-shell--chat-wallpaper[data-wallpaper='blueberry-observatory'] {
+  --berry: #e8afe9;
+  --berry-dark: #f7d4f5;
+  --berry-soft: rgba(207, 113, 213, 0.22);
+  --wallpaper-chrome: rgba(38, 25, 62, 0.84);
+  --wallpaper-panel: rgba(42, 28, 68, 0.57);
+  --wallpaper-panel-strong: rgba(48, 32, 78, 0.8);
+}
+.app-shell--chat-wallpaper[data-wallpaper='copper-workshop'] {
+  --berry: #ffbc82;
+  --berry-dark: #ffd3ab;
+  --berry-soft: rgba(232, 133, 69, 0.23);
+  --wallpaper-chrome: rgba(57, 31, 20, 0.85);
+  --wallpaper-panel: rgba(60, 33, 21, 0.58);
+  --wallpaper-panel-strong: rgba(69, 39, 25, 0.8);
+}
+.app-shell--chat-wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
+  --berry: #ffd09d;
+  --berry-dark: #ffe4bf;
+  --berry-soft: rgba(230, 158, 100, 0.21);
+  --blueberry: #9fece8;
+  --wallpaper-chrome: rgba(9, 56, 62, 0.84);
+  --wallpaper-panel: rgba(8, 64, 69, 0.56);
+  --wallpaper-panel-strong: rgba(9, 70, 76, 0.8);
+}
+.app-shell--chat-wallpaper[data-wallpaper='ink-snow-garden'] {
+  --berry: #eea7ae;
+  --berry-dark: #ffd2d4;
+  --berry-soft: rgba(203, 78, 89, 0.19);
+  --wallpaper-chrome: rgba(20, 24, 27, 0.85);
+  --wallpaper-panel: rgba(21, 25, 28, 0.56);
+  --wallpaper-panel-strong: rgba(26, 31, 34, 0.81);
+}
+.app-shell--chat-wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
+  --berry: #ff9bc9;
+  --berry-dark: #ffc6df;
+  --berry-soft: rgba(233, 68, 144, 0.22);
+  --blueberry: #b9c9ff;
+  --wallpaper-chrome: rgba(27, 22, 52, 0.85);
+  --wallpaper-panel: rgba(27, 24, 57, 0.56);
+  --wallpaper-panel-strong: rgba(33, 29, 67, 0.8);
+}
+.app-shell--chat-wallpaper[data-wallpaper='saffron-paper-city'] {
+  --berry: #ffca72;
+  --berry-dark: #ffe0a5;
+  --berry-soft: rgba(230, 158, 55, 0.22);
+  --blueberry: #c6cdfd;
+  --wallpaper-chrome: rgba(43, 37, 53, 0.85);
+  --wallpaper-panel: rgba(45, 38, 52, 0.57);
+  --wallpaper-panel-strong: rgba(52, 43, 59, 0.8);
+}
 .app-content--chat.app-content--wallpaper {
-  background-image:
-    linear-gradient(
-      110deg,
-      color-mix(in srgb, var(--paper), transparent 28%) 0%,
-      color-mix(in srgb, var(--paper), transparent 48%) 52%,
-      color-mix(in srgb, var(--paper), transparent 64%) 100%
-    ),
-    var(--workspace-wallpaper);
+  background-color: #172033;
+  background-image: var(--workspace-wallpaper);
   background-position: center;
+  background-repeat: no-repeat;
   background-size: cover;
+}
+.app-shell--chat-wallpaper .cupcake-titlebar,
+.app-shell--chat-wallpaper .shelf {
+  border-color: var(--line);
+  background: var(--wallpaper-chrome);
+  color: var(--cocoa);
+  backdrop-filter: blur(18px) saturate(1.18);
+}
+.app-shell--chat-wallpaper .cupcake-titlebar__search {
+  border-color: var(--line);
+  background: var(--wallpaper-panel);
+  color: var(--muted);
+  box-shadow: none;
+}
+.app-shell--chat-wallpaper .cupcake-titlebar__search:hover,
+.app-shell--chat-wallpaper .cupcake-titlebar__search:focus-visible {
+  background: var(--wallpaper-panel-strong);
+  color: var(--cocoa);
+}
+.app-shell--chat-wallpaper .shelf :is(.new-chat, .shelf__profile) {
+  background: var(--wallpaper-panel-strong);
+}
+.app-shell--chat-wallpaper .shelf__recent button:hover,
+.app-shell--chat-wallpaper .nav-item:hover,
+.app-shell--chat-wallpaper .nav-item.is-active {
+  background: var(--soft);
 }
 .app-content--wallpaper > .chat-layout {
   background: transparent;
 }
-.app-content--wallpaper .chat-main,
-.app-content--wallpaper .context-panel {
-  background: color-mix(in srgb, var(--paper), transparent 48%);
-  backdrop-filter: blur(6px) saturate(0.96);
+.app-content--wallpaper .chat-main {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--cocoa);
 }
-.app-content--wallpaper .chat-header,
-.app-content--wallpaper .composer-wrap {
-  background: color-mix(in srgb, var(--paper-raised), transparent 24%);
-  backdrop-filter: blur(10px) saturate(0.98);
+.app-content--wallpaper :is(.fixture-banner, .runtime-error) {
+  border-color: var(--line);
+  background: var(--wallpaper-chrome);
+  color: var(--cocoa);
+}
+.app-content--wallpaper .chat-header {
+  border-color: var(--line);
+  background: var(--wallpaper-chrome);
+  backdrop-filter: blur(18px) saturate(1.14);
+}
+.app-content--wallpaper .context-panel {
+  background: var(--wallpaper-chrome);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+.app-content--wallpaper .conversation > .empty-state {
+  margin-top: min(18vh, 140px);
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--wallpaper-panel);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(14px) saturate(1.12);
+}
+.app-content--wallpaper .turn > .message {
+  padding: 12px 15px 14px;
+  border: 1px solid var(--line);
+  border-radius: 5px 17px 17px 17px;
+  background: var(--wallpaper-panel);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(13px) saturate(1.08);
+}
+.app-content--wallpaper .turn--user > .message {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.app-content--wallpaper .user-slip {
+  border-color: color-mix(in srgb, var(--berry), transparent 48%);
+  background: color-mix(in srgb, var(--berry-soft), var(--wallpaper-panel-strong) 72%);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(13px) saturate(1.1);
+}
+.app-content--wallpaper .chat-composer-wrap {
+  background: transparent;
+}
+.app-content--wallpaper .chat-composer-wrap::before {
+  display: none;
+}
+.app-content--wallpaper .composer {
+  border-color: var(--line);
+  background: var(--wallpaper-panel-strong);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(18px) saturate(1.16);
 }
 .app-content--chat > .chat-layout {
   flex: 1 1 auto;
@@ -192,14 +355,16 @@
   color: var(--muted);
   box-shadow: 0 2px 6px rgba(50, 35, 30, 0.04);
 }
-.thread-node img {
+.thread-node > img,
+.thread-node > .cupcake-portrait {
   width: 28px;
   height: 28px;
+  border-radius: 9px;
+  object-fit: cover;
 }
 .thread-node--user {
-  background: var(--cocoa);
-  color: var(--paper);
-  font: 500 9px 'IBM Plex Mono';
+  background: var(--paper-raised);
+  color: var(--cocoa);
 }
 .thread-node--tool {
   background: var(--blueberry-soft);

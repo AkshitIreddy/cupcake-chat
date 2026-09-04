@@ -878,6 +878,14 @@
   height: 20px;
   object-fit: contain;
 }
+.provider-logo--dark-surface {
+  border-color: #2d3035;
+  background: #111317;
+}
+.provider-logo--dark-surface img {
+  width: 21px;
+  height: 21px;
+}
 .hugging-face-mark {
   font-size: 19px;
   line-height: 1;
@@ -2370,9 +2378,17 @@
   background: var(--berry);
   color: #fff;
 }
-.wallpaper-grid strong {
+.wallpaper-label {
+  display: grid;
+  gap: 2px;
   padding: 0 3px 3px;
+}
+.wallpaper-label strong {
   font-size: 10px;
+}
+.wallpaper-label small {
+  color: var(--muted);
+  font-size: 8px;
 }
 .wallpaper-sample {
   display: block;

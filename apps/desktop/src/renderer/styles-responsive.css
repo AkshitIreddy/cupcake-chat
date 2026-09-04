@@ -444,8 +444,10 @@
     height: 27px;
     border-radius: 9px;
   }
-  .thread-node img {
+  .thread-node > img,
+  .thread-node > .cupcake-portrait {
     width: 23px;
+    height: 23px;
   }
   .turn:not(:last-child)::before {
     left: 13px;
