@@ -695,3 +695,28 @@ Python runtime suite passed; Playwright 44/44 across desktop and narrow projects
 Prettier passed. Native packaged acceptance was headless. No GPU-model lease was acquired, the
 shared GPU marker remained `no`, and no local model/runtime was left running. Nothing was pushed,
 published, released, or wired to an updater.
+
+## 2026-09-04 optional workspace-security checkpoint
+
+The 2026-09-03 quick-open decision is superseded for product UX: ordinary CupcakeAI profiles now
+have no workspace lock at all. No lock record means `unlocked`; fresh profiles open directly with
+no password, security choice, or first-run lock setup. Settings > Privacy presents an explicit
+`Off by default` workspace-lock card. Users can enable a password, change it, lock immediately, and
+authenticate to disable it again. First-run name/avatar setup remains in onboarding.
+
+Legacy version 2 `WindowsDPAPI` passwordless records migrate to the Off state by deleting only that
+obsolete lock record. The owner test profile at `E:\temp\cupcakeai-owner-test-20260902` completed
+this migration headlessly, retained its chats/projects, reached a ready broker runtime, and reported
+`unlockMode: null` with no renderer errors. A brand-new native profile at
+`E:\temp\cupcakeai-default-open-20260904` also opened directly and created no lock record.
+
+Provider API keys continue to use the Windows credential vault. That noninteractive credential
+safeguard is separate from the optional workspace password and does not introduce a startup prompt.
+
+Fresh validation: TypeScript passed; renderer Vitest 52/52; Rust host/security 27/27; Playwright
+44/44 across desktop and narrow projects; ESLint passed. Visual evidence is listed in
+`docs/worklogs/2026-09-04-optional-workspace-security.md`, with native frames under
+`E:\temp\cupcakeai-owner-optional-security-20260904`. No GPU work was performed. The shared GPU
+marker changed to `yes` during this CPU/UI task, apparently because another task acquired it; this
+task did not modify that marker. No CupcakeAI test processes remain. Nothing was pushed, published,
+released, or connected to an updater.

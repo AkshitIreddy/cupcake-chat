@@ -27,6 +27,12 @@ The application contains no public localhost product API. Sidecars communicate o
 bounded, length-prefixed private streams. The renderer receives only serializable DTOs and opaque
 handles through explicit Tauri commands/events.
 
+The user-facing workspace password is optional and disabled by default. An absent lock record is an
+unlocked profile: fresh and ordinary profiles open directly, while explicitly password-protected
+profiles keep sidecars stopped until successful unlock. Credential-vault and encrypted-storage
+boundaries remain background implementation safeguards and do not create a first-run security
+choice.
+
 The Tauri window is undecorated and implements one custom titlebar. Only intended empty regions are
 draggable; minimize, maximize/restore, close, menus, and content are non-draggable semantic
 controls. Capabilities are Windows-only, local-only, window-scoped, and generated from the exposed
