@@ -245,6 +245,101 @@ MIGRATIONS: tuple[Migration, ...] = (
             ON legacy_tasks(status, updated_at DESC, id DESC);
         """,
     ),
+    Migration(
+        4,
+        "persistent Cupcake personas and bounded group turns",
+        """
+        CREATE TABLE personas (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 40),
+            handle TEXT NOT NULL COLLATE NOCASE UNIQUE
+                CHECK(length(handle) BETWEEN 2 AND 32),
+            avatar TEXT NOT NULL DEFAULT '' CHECK(length(avatar) <= 200),
+            role TEXT NOT NULL DEFAULT '' CHECK(length(role) <= 120),
+            description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 1000),
+            instructions TEXT NOT NULL DEFAULT '' CHECK(length(instructions) <= 4000),
+            speak_when TEXT NOT NULL DEFAULT '' CHECK(length(speak_when) <= 1000),
+            personality_json TEXT NOT NULL CHECK(json_valid(personality_json)),
+            model_id TEXT NOT NULL CHECK(length(model_id) BETWEEN 1 AND 500),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            archived_at TEXT
+        ) STRICT;
+
+        CREATE TABLE conversation_group_settings (
+            conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+            strategy TEXT NOT NULL CHECK(strategy IN ('smart-selective', 'mentions-only')),
+            max_replies INTEGER NOT NULL CHECK(max_replies BETWEEN 1 AND 3),
+            lead_participant_id TEXT,
+            roster_revision INTEGER NOT NULL CHECK(roster_revision >= 1),
+            updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE conversation_participants (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            persona_id TEXT NOT NULL REFERENCES personas(id) ON DELETE RESTRICT,
+            position INTEGER NOT NULL CHECK(position >= 0),
+            enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+            added_at TEXT NOT NULL,
+            UNIQUE(conversation_id, persona_id),
+            UNIQUE(conversation_id, position)
+        ) STRICT;
+        CREATE INDEX conversation_participants_roster
+            ON conversation_participants(conversation_id, enabled, position, id);
+
+        CREATE TABLE group_turns (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            branch_id TEXT NOT NULL REFERENCES conversation_branches(id) ON DELETE RESTRICT,
+            user_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE RESTRICT,
+            status TEXT NOT NULL CHECK(status IN (
+                'running', 'completed', 'waiting_for_you', 'selection_failed',
+                'member_failed', 'cancelled', 'awaiting_tool', 'interrupted'
+            )),
+            mode TEXT NOT NULL CHECK(mode IN ('mentions', 'smart')),
+            confirmed_digest TEXT NOT NULL CHECK(length(confirmed_digest) = 64),
+            plan_revision TEXT NOT NULL CHECK(length(plan_revision) = 64),
+            responder_limit INTEGER NOT NULL CHECK(responder_limit BETWEEN 1 AND 3),
+            selector_calls INTEGER NOT NULL DEFAULT 0 CHECK(selector_calls BETWEEN 0 AND 3),
+            responder_calls INTEGER NOT NULL DEFAULT 0 CHECK(responder_calls BETWEEN 0 AND 3),
+            selector_usage_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(selector_usage_json)),
+            plan_json TEXT NOT NULL CHECK(json_valid(plan_json)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT
+        ) STRICT;
+        CREATE INDEX group_turns_conversation_created
+            ON group_turns(conversation_id, created_at DESC, id DESC);
+
+        CREATE TABLE group_turn_members (
+            turn_id TEXT NOT NULL REFERENCES group_turns(id) ON DELETE CASCADE,
+            sequence INTEGER NOT NULL CHECK(sequence BETWEEN 1 AND 3),
+            participant_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('selected', 'completed', 'failed', 'cancelled')),
+            message_id TEXT REFERENCES messages(id) ON DELETE RESTRICT,
+            selection_reason_code TEXT NOT NULL DEFAULT ''
+                CHECK(length(selection_reason_code) <= 40),
+            selection_reason TEXT NOT NULL DEFAULT '' CHECK(length(selection_reason) <= 120),
+            speaker_snapshot_json TEXT NOT NULL CHECK(json_valid(speaker_snapshot_json)),
+            usage_snapshot_json TEXT NOT NULL CHECK(json_valid(usage_snapshot_json)),
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(turn_id, sequence),
+            UNIQUE(turn_id, participant_id)
+        ) STRICT;
+        """,
+    ),
+    Migration(
+        5,
+        "one active group turn per conversation branch",
+        """
+        CREATE UNIQUE INDEX group_turns_one_running_per_branch
+            ON group_turns(conversation_id, branch_id)
+            WHERE status = 'running';
+        """,
+    ),
 )
 
 

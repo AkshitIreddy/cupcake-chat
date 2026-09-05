@@ -339,6 +339,43 @@ class ConversationBranch(StrictGeneratedModel):
     created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
 
 
+class ConversationParticipantPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class ConversationParticipantPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: ConversationParticipantPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class ConversationParticipantAvailability(StrictGeneratedModel):
+    status: Literal["ready", "model_missing", "provider_unavailable", "local_not_loaded", "archived"]
+    message: str = Field(max_length=500)
+
+class ConversationParticipant(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona_id: str = Field(alias="personaId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    position: int = Field(ge=0, le=7)
+    enabled: bool
+    is_lead: bool = Field(alias="isLead")
+    added_at: str = Field(alias="addedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    persona: ConversationParticipantPersona
+    availability: ConversationParticipantAvailability
+
+
 class FileRecordIngestionVariant1(StrictGeneratedModel):
     state: Literal["pending"]
 
@@ -378,6 +415,432 @@ class FileRecord(StrictGeneratedModel):
     destination: Literal["local", "cloud"]
     ingestion: FileRecordIngestionVariant1 | FileRecordIngestionVariant2 | FileRecordIngestionVariant3 | FileRecordIngestionVariant4 | FileRecordIngestionVariant5
     provenance: FileRecordProvenance
+
+
+class GroupTurnSelectorUsageItemSelectionVariant1(StrictGeneratedModel):
+    decision: Literal["speak", "pass"]
+    participant_id: str | None = Field(alias="participantId")
+    reason_code: Literal["best_fit", "specialist", "cross_check", "distinct_perspective", "acknowledgement", "user_asked_to_wait", "no_distinct_value"] = Field(alias="reasonCode")
+    reason: str = Field(max_length=120)
+
+class GroupTurnSelectorUsageItem(StrictGeneratedModel):
+    status: Literal["completed", "failed", "cancelled"]
+    selection: GroupTurnSelectorUsageItemSelectionVariant1 | None
+    usage: dict[str, JsonValue]
+    error_code: str | None = Field(alias="errorCode")
+
+class GroupTurnPlanSelectorVariant1PersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPlanSelectorVariant1Persona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPlanSelectorVariant1PersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPlanSelectorVariant1Model(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPlanSelectorVariant1(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPlanSelectorVariant1Persona
+    model: GroupTurnPlanSelectorVariant1Model
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPlanEligibleSpeakersItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPlanEligibleSpeakersItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPlanEligibleSpeakersItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPlanEligibleSpeakersItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPlanEligibleSpeakersItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPlanEligibleSpeakersItemPersona
+    model: GroupTurnPlanEligibleSpeakersItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPlanIneligibleSpeakersItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPlanIneligibleSpeakersItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPlanIneligibleSpeakersItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPlanIneligibleSpeakersItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPlanIneligibleSpeakersItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPlanIneligibleSpeakersItemPersona
+    model: GroupTurnPlanIneligibleSpeakersItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["incompatible"] = Field(alias="attachmentCompatibility")
+    reason_code: Literal["attachment_incompatible", "offline_blocked", "model_missing", "provider_unavailable", "local_not_loaded", "archived"] = Field(alias="reasonCode")
+    message: str = Field(min_length=1, max_length=500)
+    repair_action: str = Field(alias="repairAction", min_length=1, max_length=100)
+
+class GroupTurnPlan(StrictGeneratedModel):
+    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    branch_id: str = Field(alias="branchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    head_message_id: str | None = Field(alias="headMessageId")
+    project_id: str | None = Field(alias="projectId")
+    roster_revision: int = Field(alias="rosterRevision", ge=1)
+    strategy: Literal["smart-selective", "mentions-only"]
+    mode: Literal["mentions", "smart"]
+    mentions: list[str] = Field(max_length=3)
+    selector: GroupTurnPlanSelectorVariant1 | None
+    eligible_speakers: list[GroupTurnPlanEligibleSpeakersItem] = Field(alias="eligibleSpeakers", max_length=8)
+    ineligible_speakers: list[GroupTurnPlanIneligibleSpeakersItem] = Field(alias="ineligibleSpeakers", max_length=8)
+    max_replies: int = Field(alias="maxReplies", ge=1, le=3)
+    max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    effective_offline: bool = Field(alias="effectiveOffline")
+    content_sha256: str = Field(alias="contentSha256", pattern="^[0-9a-f]{64}$")
+    attachment_bindings: list[dict[str, JsonValue]] = Field(alias="attachmentBindings", max_length=32)
+    reference_bindings: list[dict[str, JsonValue]] = Field(alias="referenceBindings", max_length=32)
+    memory_ids: list[str] = Field(alias="memoryIds", max_length=32)
+    tool_ids: list[JsonValue] = Field(alias="toolIds", max_length=0)
+    max_output_tokens: int | None = Field(alias="maxOutputTokens")
+
+class GroupTurnMembersItemSpeaker(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona_id: str = Field(alias="personaId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    provider_id: str = Field(alias="providerId", min_length=1, max_length=200)
+    privacy_route: Literal["local", "self_hosted", "cloud"] = Field(alias="privacyRoute")
+
+class GroupTurnMembersItem(StrictGeneratedModel):
+    sequence: int = Field(ge=1, le=3)
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    status: Literal["selected", "completed", "failed", "cancelled"]
+    message_id: str | None = Field(alias="messageId")
+    selection_reason_code: str = Field(alias="selectionReasonCode", max_length=40)
+    selection_reason: str = Field(alias="selectionReason", max_length=120)
+    speaker: GroupTurnMembersItemSpeaker
+    usage: dict[str, JsonValue]
+    error_code: str | None = Field(alias="errorCode")
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+
+class GroupTurn(StrictGeneratedModel):
+    turn_id: str = Field(alias="turnId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    conversation_id: str = Field(alias="conversationId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    branch_id: str = Field(alias="branchId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    user_message_id: str = Field(alias="userMessageId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    status: Literal["running", "completed", "waiting_for_you", "selection_failed", "member_failed", "cancelled", "awaiting_tool", "interrupted"]
+    mode: Literal["mentions", "smart"]
+    digest: str = Field(pattern="^[0-9a-f]{64}$")
+    plan_revision: str = Field(alias="planRevision", pattern="^[0-9a-f]{64}$")
+    roster_revision: int = Field(alias="rosterRevision", ge=1)
+    max_replies: int = Field(alias="maxReplies", ge=1, le=3)
+    max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
+    selector_calls: int = Field(alias="selectorCalls", ge=0, le=3)
+    responder_calls: int = Field(alias="responderCalls", ge=0, le=3)
+    selector_usage: list[GroupTurnSelectorUsageItem] = Field(alias="selectorUsage", max_length=3)
+    plan: GroupTurnPlan
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    completed_at: str | None = Field(alias="completedAt")
+    members: list[GroupTurnMembersItem] = Field(max_length=3)
+
+
+class GroupTurnPreflightSelectorVariant1PersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightSelectorVariant1Persona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightSelectorVariant1PersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightSelectorVariant1Model(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightSelectorVariant1(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightSelectorVariant1Persona
+    model: GroupTurnPreflightSelectorVariant1Model
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPreflightEligibleSpeakersItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightEligibleSpeakersItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightEligibleSpeakersItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightEligibleSpeakersItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightEligibleSpeakersItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightEligibleSpeakersItemPersona
+    model: GroupTurnPreflightEligibleSpeakersItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPreflightIneligibleSpeakersItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightIneligibleSpeakersItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightIneligibleSpeakersItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightIneligibleSpeakersItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightIneligibleSpeakersItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightIneligibleSpeakersItemPersona
+    model: GroupTurnPreflightIneligibleSpeakersItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["incompatible"] = Field(alias="attachmentCompatibility")
+    reason_code: Literal["attachment_incompatible", "offline_blocked", "model_missing", "provider_unavailable", "local_not_loaded", "archived"] = Field(alias="reasonCode")
+    message: str = Field(min_length=1, max_length=500)
+    repair_action: str = Field(alias="repairAction", min_length=1, max_length=100)
+
+class GroupTurnPreflightDisclosureSelectorVariant1PersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightDisclosureSelectorVariant1Persona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightDisclosureSelectorVariant1PersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightDisclosureSelectorVariant1Model(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightDisclosureSelectorVariant1(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightDisclosureSelectorVariant1Persona
+    model: GroupTurnPreflightDisclosureSelectorVariant1Model
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPreflightDisclosureCandidateRoutesItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightDisclosureCandidateRoutesItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightDisclosureCandidateRoutesItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightDisclosureCandidateRoutesItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightDisclosureCandidateRoutesItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightDisclosureCandidateRoutesItemPersona
+    model: GroupTurnPreflightDisclosureCandidateRoutesItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["compatible", "not_applicable"] = Field(alias="attachmentCompatibility")
+
+class GroupTurnPreflightDisclosureIneligibleRoutesItemPersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class GroupTurnPreflightDisclosureIneligibleRoutesItemPersona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: GroupTurnPreflightDisclosureIneligibleRoutesItemPersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
+
+class GroupTurnPreflightDisclosureIneligibleRoutesItemModel(StrictGeneratedModel):
+    id: str = Field(min_length=1, max_length=500)
+    provider: str = Field(min_length=1, max_length=200)
+    privacy_route: str = Field(alias="privacyRoute", min_length=1, max_length=40)
+    cost_class: str = Field(alias="costClass", min_length=1, max_length=80)
+
+class GroupTurnPreflightDisclosureIneligibleRoutesItem(StrictGeneratedModel):
+    participant_id: str = Field(alias="participantId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    persona: GroupTurnPreflightDisclosureIneligibleRoutesItemPersona
+    model: GroupTurnPreflightDisclosureIneligibleRoutesItemModel
+    selection_reason: str | None = Field(alias="selectionReason")
+    attachment_compatibility: Literal["incompatible"] = Field(alias="attachmentCompatibility")
+    reason_code: Literal["attachment_incompatible", "offline_blocked", "model_missing", "provider_unavailable", "local_not_loaded", "archived"] = Field(alias="reasonCode")
+    message: str = Field(min_length=1, max_length=500)
+    repair_action: str = Field(alias="repairAction", min_length=1, max_length=100)
+
+class GroupTurnPreflightDisclosure(StrictGeneratedModel):
+    selector: GroupTurnPreflightDisclosureSelectorVariant1 | None
+    candidate_routes: list[GroupTurnPreflightDisclosureCandidateRoutesItem] = Field(alias="candidateRoutes", max_length=8)
+    ineligible_routes: list[GroupTurnPreflightDisclosureIneligibleRoutesItem] = Field(alias="ineligibleRoutes", max_length=8)
+    max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    max_replies: int = Field(alias="maxReplies", ge=1, le=3)
+
+class GroupTurnPreflight(StrictGeneratedModel):
+    turn_id: str = Field(alias="turnId", pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    plan_revision: str = Field(alias="planRevision", pattern="^[0-9a-f]{64}$")
+    digest: str = Field(pattern="^[0-9a-f]{64}$")
+    roster_revision: int = Field(alias="rosterRevision", ge=1)
+    head_message_id: str | None = Field(alias="headMessageId")
+    user_message_id: None = Field(alias="userMessageId")
+    mode: Literal["mentions", "smart"]
+    strategy: Literal["smart-selective", "mentions-only"]
+    max_replies: int = Field(alias="maxReplies", ge=1, le=3)
+    max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    selector: GroupTurnPreflightSelectorVariant1 | None
+    eligible_speakers: list[GroupTurnPreflightEligibleSpeakersItem] = Field(alias="eligibleSpeakers", max_length=8)
+    ineligible_speakers: list[GroupTurnPreflightIneligibleSpeakersItem] = Field(alias="ineligibleSpeakers", max_length=8)
+    sendable: bool
+    confirmation_required: bool = Field(alias="confirmationRequired")
+    confirmation_token: str | None = Field(alias="confirmationToken")
+    expires_at: str = Field(alias="expiresAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    disclosure: GroupTurnPreflightDisclosure
 
 
 class MemoryRecordScopeVariant1(StrictGeneratedModel):
@@ -602,6 +1065,28 @@ class ModelDescriptor(StrictGeneratedModel):
     pricing: ModelDescriptorPricing = Field(default=cast(Any, None))
     lifecycle: Literal["available", "preview", "deprecated", "unavailable"]
     metadata: dict[str, JsonValue] = Field(default=cast(Any, None))
+
+
+class PersonaPersonality(StrictGeneratedModel):
+    preset: str = Field(min_length=1, max_length=40)
+    warmth: float = Field(ge=0, le=1)
+    brevity: float = Field(ge=0, le=1)
+    initiative: float = Field(ge=0, le=1)
+
+class Persona(StrictGeneratedModel):
+    id: str = Field(pattern="^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=40)
+    handle: str = Field(pattern="^[a-z0-9_-]{2,32}$")
+    avatar: str = Field(max_length=200)
+    role: str = Field(max_length=120)
+    description: str = Field(max_length=1000)
+    instructions: str = Field(max_length=4000)
+    speak_when: str = Field(alias="speakWhen", max_length=1000)
+    personality: PersonaPersonality
+    model_id: str = Field(alias="modelId", min_length=1, max_length=500)
+    created_at: str = Field(alias="createdAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    updated_at: str = Field(alias="updatedAt", pattern="^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$")
+    archived_at: str | None = Field(alias="archivedAt")
 
 
 class ProjectDefaultModelFallback(StrictGeneratedModel):
@@ -1186,11 +1671,15 @@ __all__ = [
     "ContextSnapshot",
     "Conversation",
     "ConversationBranch",
+    "ConversationParticipant",
     "FileRecord",
+    "GroupTurn",
+    "GroupTurnPreflight",
     "MemoryRecord",
     "MemoryMutation",
     "Message",
     "ModelDescriptor",
+    "Persona",
     "Project",
     "ProtocolEnvelope",
     "ProviderDescriptor",

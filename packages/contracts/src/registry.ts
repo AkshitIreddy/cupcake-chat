@@ -1,5 +1,6 @@
 import type { TSchema } from '@sinclair/typebox';
 import { BrokerRuntimeRequest, BrokerToolResult } from './broker-wire.js';
+import { ConversationParticipant, GroupTurn, GroupTurnPreflight, Persona } from './groups.js';
 import { MemoryMutation, MemoryRecord } from './memory.js';
 import { ModelDescriptor, ProviderDescriptor } from './models.js';
 import { ProtocolEnvelope } from './protocol.js';
@@ -27,9 +28,11 @@ export const contractSchemas = {
   'broker-tool-result': BrokerToolResult,
   context: ContextSnapshot,
   conversation: Conversation,
+  'conversation-participant': ConversationParticipant,
   'conversation-branch': ConversationBranch,
   file: FileRecord,
   memory: MemoryRecord,
+  persona: Persona,
   'memory-mutation': MemoryMutation,
   message: Message,
   model: ModelDescriptor,
@@ -39,6 +42,8 @@ export const contractSchemas = {
   'run-event': RunEvent,
   'search-request': SearchRequest,
   'search-result': SearchResult,
+  'group-turn': GroupTurn,
+  'group-turn-preflight': GroupTurnPreflight,
   'task-command': TaskCommand,
   task: TaskRecord,
   theme: ThemeTokens,

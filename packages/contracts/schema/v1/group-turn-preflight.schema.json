@@ -1,0 +1,1376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/group-turn-preflight.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "turnId",
+    "planRevision",
+    "digest",
+    "rosterRevision",
+    "headMessageId",
+    "userMessageId",
+    "mode",
+    "strategy",
+    "maxReplies",
+    "maxSelectorCalls",
+    "selectorMaxOutputTokens",
+    "selector",
+    "eligibleSpeakers",
+    "ineligibleSpeakers",
+    "sendable",
+    "confirmationRequired",
+    "confirmationToken",
+    "expiresAt",
+    "disclosure"
+  ],
+  "properties": {
+    "turnId": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "planRevision": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "rosterRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "headMessageId": {
+      "anyOf": [
+        {
+          "description": "Lowercase RFC 9562 UUID version 7.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "userMessageId": {
+      "type": "null"
+    },
+    "mode": {
+      "anyOf": [
+        {
+          "const": "mentions",
+          "type": "string"
+        },
+        {
+          "const": "smart",
+          "type": "string"
+        }
+      ]
+    },
+    "strategy": {
+      "anyOf": [
+        {
+          "const": "smart-selective",
+          "type": "string"
+        },
+        {
+          "const": "mentions-only",
+          "type": "string"
+        }
+      ]
+    },
+    "maxReplies": {
+      "minimum": 1,
+      "maximum": 3,
+      "type": "integer"
+    },
+    "maxSelectorCalls": {
+      "minimum": 0,
+      "maximum": 3,
+      "type": "integer"
+    },
+    "selectorMaxOutputTokens": {
+      "minimum": 0,
+      "maximum": 256,
+      "type": "integer"
+    },
+    "selector": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "participantId",
+            "persona",
+            "model",
+            "selectionReason",
+            "attachmentCompatibility"
+          ],
+          "properties": {
+            "participantId": {
+              "description": "Lowercase RFC 9562 UUID version 7.",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "persona": {
+              "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "handle",
+                "avatar",
+                "role",
+                "description",
+                "instructions",
+                "speakWhen",
+                "personality",
+                "modelId",
+                "createdAt",
+                "updatedAt",
+                "archivedAt"
+              ],
+              "properties": {
+                "id": {
+                  "description": "Lowercase RFC 9562 UUID version 7.",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "handle": {
+                  "pattern": "^[a-z0-9_-]{2,32}$",
+                  "type": "string"
+                },
+                "avatar": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "role": {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "description": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "instructions": {
+                  "maxLength": 4000,
+                  "type": "string"
+                },
+                "speakWhen": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "personality": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "preset",
+                    "warmth",
+                    "brevity",
+                    "initiative"
+                  ],
+                  "properties": {
+                    "preset": {
+                      "minLength": 1,
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "warmth": {
+                      "minimum": 0,
+                      "maximum": 1,
+                      "type": "number"
+                    },
+                    "brevity": {
+                      "minimum": 0,
+                      "maximum": 1,
+                      "type": "number"
+                    },
+                    "initiative": {
+                      "minimum": 0,
+                      "maximum": 1,
+                      "type": "number"
+                    }
+                  }
+                },
+                "modelId": {
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "createdAt": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "archivedAt": {
+                  "anyOf": [
+                    {
+                      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "model": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "provider",
+                "privacyRoute",
+                "costClass"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "provider": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "privacyRoute": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "costClass": {
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "type": "string"
+                }
+              }
+            },
+            "selectionReason": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "attachmentCompatibility": {
+              "anyOf": [
+                {
+                  "const": "compatible",
+                  "type": "string"
+                },
+                {
+                  "const": "not_applicable",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "eligibleSpeakers": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participantId",
+          "persona",
+          "model",
+          "selectionReason",
+          "attachmentCompatibility"
+        ],
+        "properties": {
+          "participantId": {
+            "description": "Lowercase RFC 9562 UUID version 7.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "persona": {
+            "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "handle",
+              "avatar",
+              "role",
+              "description",
+              "instructions",
+              "speakWhen",
+              "personality",
+              "modelId",
+              "createdAt",
+              "updatedAt",
+              "archivedAt"
+            ],
+            "properties": {
+              "id": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "name": {
+                "minLength": 1,
+                "maxLength": 40,
+                "type": "string"
+              },
+              "handle": {
+                "pattern": "^[a-z0-9_-]{2,32}$",
+                "type": "string"
+              },
+              "avatar": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "role": {
+                "maxLength": 120,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "instructions": {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              "speakWhen": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "personality": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "preset",
+                  "warmth",
+                  "brevity",
+                  "initiative"
+                ],
+                "properties": {
+                  "preset": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "warmth": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  },
+                  "brevity": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  },
+                  "initiative": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  }
+                }
+              },
+              "modelId": {
+                "minLength": 1,
+                "maxLength": 500,
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                "type": "string"
+              },
+              "updatedAt": {
+                "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                "type": "string"
+              },
+              "archivedAt": {
+                "anyOf": [
+                  {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "model": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "provider",
+              "privacyRoute",
+              "costClass"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 500,
+                "type": "string"
+              },
+              "provider": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              },
+              "privacyRoute": {
+                "minLength": 1,
+                "maxLength": 40,
+                "type": "string"
+              },
+              "costClass": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              }
+            }
+          },
+          "selectionReason": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachmentCompatibility": {
+            "anyOf": [
+              {
+                "const": "compatible",
+                "type": "string"
+              },
+              {
+                "const": "not_applicable",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ineligibleSpeakers": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participantId",
+          "persona",
+          "model",
+          "selectionReason",
+          "attachmentCompatibility",
+          "reasonCode",
+          "message",
+          "repairAction"
+        ],
+        "properties": {
+          "participantId": {
+            "description": "Lowercase RFC 9562 UUID version 7.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "persona": {
+            "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "handle",
+              "avatar",
+              "role",
+              "description",
+              "instructions",
+              "speakWhen",
+              "personality",
+              "modelId",
+              "createdAt",
+              "updatedAt",
+              "archivedAt"
+            ],
+            "properties": {
+              "id": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "name": {
+                "minLength": 1,
+                "maxLength": 40,
+                "type": "string"
+              },
+              "handle": {
+                "pattern": "^[a-z0-9_-]{2,32}$",
+                "type": "string"
+              },
+              "avatar": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "role": {
+                "maxLength": 120,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "instructions": {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              "speakWhen": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "personality": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "preset",
+                  "warmth",
+                  "brevity",
+                  "initiative"
+                ],
+                "properties": {
+                  "preset": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "warmth": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  },
+                  "brevity": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  },
+                  "initiative": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "type": "number"
+                  }
+                }
+              },
+              "modelId": {
+                "minLength": 1,
+                "maxLength": 500,
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                "type": "string"
+              },
+              "updatedAt": {
+                "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                "type": "string"
+              },
+              "archivedAt": {
+                "anyOf": [
+                  {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "model": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "provider",
+              "privacyRoute",
+              "costClass"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 500,
+                "type": "string"
+              },
+              "provider": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              },
+              "privacyRoute": {
+                "minLength": 1,
+                "maxLength": 40,
+                "type": "string"
+              },
+              "costClass": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              }
+            }
+          },
+          "selectionReason": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachmentCompatibility": {
+            "const": "incompatible",
+            "type": "string"
+          },
+          "reasonCode": {
+            "anyOf": [
+              {
+                "const": "attachment_incompatible",
+                "type": "string"
+              },
+              {
+                "const": "offline_blocked",
+                "type": "string"
+              },
+              {
+                "const": "model_missing",
+                "type": "string"
+              },
+              {
+                "const": "provider_unavailable",
+                "type": "string"
+              },
+              {
+                "const": "local_not_loaded",
+                "type": "string"
+              },
+              {
+                "const": "archived",
+                "type": "string"
+              }
+            ]
+          },
+          "message": {
+            "minLength": 1,
+            "maxLength": 500,
+            "type": "string"
+          },
+          "repairAction": {
+            "minLength": 1,
+            "maxLength": 100,
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sendable": {
+      "type": "boolean"
+    },
+    "confirmationRequired": {
+      "type": "boolean"
+    },
+    "confirmationToken": {
+      "anyOf": [
+        {
+          "minLength": 32,
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expiresAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "disclosure": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "selector",
+        "candidateRoutes",
+        "ineligibleRoutes",
+        "maxSelectorCalls",
+        "selectorMaxOutputTokens",
+        "maxReplies"
+      ],
+      "properties": {
+        "selector": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "participantId",
+                "persona",
+                "model",
+                "selectionReason",
+                "attachmentCompatibility"
+              ],
+              "properties": {
+                "participantId": {
+                  "description": "Lowercase RFC 9562 UUID version 7.",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "persona": {
+                  "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "handle",
+                    "avatar",
+                    "role",
+                    "description",
+                    "instructions",
+                    "speakWhen",
+                    "personality",
+                    "modelId",
+                    "createdAt",
+                    "updatedAt",
+                    "archivedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Lowercase RFC 9562 UUID version 7.",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "handle": {
+                      "pattern": "^[a-z0-9_-]{2,32}$",
+                      "type": "string"
+                    },
+                    "avatar": {
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "role": {
+                      "maxLength": 120,
+                      "type": "string"
+                    },
+                    "description": {
+                      "maxLength": 1000,
+                      "type": "string"
+                    },
+                    "instructions": {
+                      "maxLength": 4000,
+                      "type": "string"
+                    },
+                    "speakWhen": {
+                      "maxLength": 1000,
+                      "type": "string"
+                    },
+                    "personality": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "preset",
+                        "warmth",
+                        "brevity",
+                        "initiative"
+                      ],
+                      "properties": {
+                        "preset": {
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "type": "string"
+                        },
+                        "warmth": {
+                          "minimum": 0,
+                          "maximum": 1,
+                          "type": "number"
+                        },
+                        "brevity": {
+                          "minimum": 0,
+                          "maximum": 1,
+                          "type": "number"
+                        },
+                        "initiative": {
+                          "minimum": 0,
+                          "maximum": 1,
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "modelId": {
+                      "minLength": 1,
+                      "maxLength": 500,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                      "type": "string"
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {
+                          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "provider",
+                    "privacyRoute",
+                    "costClass"
+                  ],
+                  "properties": {
+                    "id": {
+                      "minLength": 1,
+                      "maxLength": 500,
+                      "type": "string"
+                    },
+                    "provider": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "privacyRoute": {
+                      "minLength": 1,
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "costClass": {
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "type": "string"
+                    }
+                  }
+                },
+                "selectionReason": {
+                  "anyOf": [
+                    {
+                      "maxLength": 120,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "attachmentCompatibility": {
+                  "anyOf": [
+                    {
+                      "const": "compatible",
+                      "type": "string"
+                    },
+                    {
+                      "const": "not_applicable",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidateRoutes": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "participantId",
+              "persona",
+              "model",
+              "selectionReason",
+              "attachmentCompatibility"
+            ],
+            "properties": {
+              "participantId": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "persona": {
+                "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "handle",
+                  "avatar",
+                  "role",
+                  "description",
+                  "instructions",
+                  "speakWhen",
+                  "personality",
+                  "modelId",
+                  "createdAt",
+                  "updatedAt",
+                  "archivedAt"
+                ],
+                "properties": {
+                  "id": {
+                    "description": "Lowercase RFC 9562 UUID version 7.",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "handle": {
+                    "pattern": "^[a-z0-9_-]{2,32}$",
+                    "type": "string"
+                  },
+                  "avatar": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "role": {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  },
+                  "speakWhen": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "personality": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "preset",
+                      "warmth",
+                      "brevity",
+                      "initiative"
+                    ],
+                    "properties": {
+                      "preset": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "warmth": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      },
+                      "brevity": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      },
+                      "initiative": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "modelId": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  "archivedAt": {
+                    "anyOf": [
+                      {
+                        "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              "model": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "provider",
+                  "privacyRoute",
+                  "costClass"
+                ],
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "privacyRoute": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "costClass": {
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "type": "string"
+                  }
+                }
+              },
+              "selectionReason": {
+                "anyOf": [
+                  {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attachmentCompatibility": {
+                "anyOf": [
+                  {
+                    "const": "compatible",
+                    "type": "string"
+                  },
+                  {
+                    "const": "not_applicable",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "ineligibleRoutes": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "participantId",
+              "persona",
+              "model",
+              "selectionReason",
+              "attachmentCompatibility",
+              "reasonCode",
+              "message",
+              "repairAction"
+            ],
+            "properties": {
+              "participantId": {
+                "description": "Lowercase RFC 9562 UUID version 7.",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+              },
+              "persona": {
+                "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "handle",
+                  "avatar",
+                  "role",
+                  "description",
+                  "instructions",
+                  "speakWhen",
+                  "personality",
+                  "modelId",
+                  "createdAt",
+                  "updatedAt",
+                  "archivedAt"
+                ],
+                "properties": {
+                  "id": {
+                    "description": "Lowercase RFC 9562 UUID version 7.",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "handle": {
+                    "pattern": "^[a-z0-9_-]{2,32}$",
+                    "type": "string"
+                  },
+                  "avatar": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "role": {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  },
+                  "speakWhen": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "personality": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "preset",
+                      "warmth",
+                      "brevity",
+                      "initiative"
+                    ],
+                    "properties": {
+                      "preset": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "warmth": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      },
+                      "brevity": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      },
+                      "initiative": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "modelId": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                    "type": "string"
+                  },
+                  "archivedAt": {
+                    "anyOf": [
+                      {
+                        "description": "UTC RFC 3339 timestamp with a trailing Z.",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              "model": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "provider",
+                  "privacyRoute",
+                  "costClass"
+                ],
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "privacyRoute": {
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "costClass": {
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "type": "string"
+                  }
+                }
+              },
+              "selectionReason": {
+                "anyOf": [
+                  {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attachmentCompatibility": {
+                "const": "incompatible",
+                "type": "string"
+              },
+              "reasonCode": {
+                "anyOf": [
+                  {
+                    "const": "attachment_incompatible",
+                    "type": "string"
+                  },
+                  {
+                    "const": "offline_blocked",
+                    "type": "string"
+                  },
+                  {
+                    "const": "model_missing",
+                    "type": "string"
+                  },
+                  {
+                    "const": "provider_unavailable",
+                    "type": "string"
+                  },
+                  {
+                    "const": "local_not_loaded",
+                    "type": "string"
+                  },
+                  {
+                    "const": "archived",
+                    "type": "string"
+                  }
+                ]
+              },
+              "message": {
+                "minLength": 1,
+                "maxLength": 500,
+                "type": "string"
+              },
+              "repairAction": {
+                "minLength": 1,
+                "maxLength": 100,
+                "type": "string"
+              }
+            }
+          }
+        },
+        "maxSelectorCalls": {
+          "minimum": 0,
+          "maximum": 3,
+          "type": "integer"
+        },
+        "selectorMaxOutputTokens": {
+          "minimum": 0,
+          "maximum": 256,
+          "type": "integer"
+        },
+        "maxReplies": {
+          "minimum": 1,
+          "maximum": 3,
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

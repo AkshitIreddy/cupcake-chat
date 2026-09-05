@@ -99,12 +99,22 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "conversations.branches",
     "conversations.create",
     "conversations.get",
+    "conversations.group.settings.get",
+    "conversations.group.settings.set",
     "conversations.list",
+    "conversations.participants.add",
+    "conversations.participants.list",
+    "conversations.participants.remove",
+    "conversations.participants.reorder",
+    "conversations.participants.update",
     "conversations.rename",
     "developer.events",
     "developer.purge",
     "developer.run_tree",
     "developer.traces",
+    "groups.turn.get",
+    "groups.turn.preflight",
+    "groups.turn.send",
     "ingestion.ingest",
     "ingestion.ingest.private",
     "local_models.cupcake.benchmark",
@@ -147,6 +157,10 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "models.fallback.preflight",
     "models.list",
     "models.select",
+    "personas.archive",
+    "personas.create",
+    "personas.list",
+    "personas.update",
     "proactive.enabled",
     "projects.archive",
     "projects.create",
@@ -193,6 +207,40 @@ mod tests {
     #[test]
     fn project_artifact_counts_are_available_through_the_read_only_bridge() {
         assert!(ensure_runtime_method_allowed("artifacts.counts").is_ok());
+    }
+
+    #[test]
+    fn group_conversations_expose_only_the_bounded_product_methods() {
+        for method in [
+            "personas.list",
+            "personas.create",
+            "personas.update",
+            "personas.archive",
+            "conversations.participants.list",
+            "conversations.participants.add",
+            "conversations.participants.remove",
+            "conversations.participants.reorder",
+            "conversations.participants.update",
+            "conversations.group.settings.get",
+            "conversations.group.settings.set",
+            "groups.turn.preflight",
+            "groups.turn.send",
+            "groups.turn.get",
+        ] {
+            assert!(ensure_runtime_method_allowed(method).is_ok(), "{method}");
+        }
+        for method in [
+            "groups.turn.execute_unchecked",
+            "groups.turn.authorize",
+            "personas.credentials",
+            "personas.tools.execute",
+        ] {
+            assert_eq!(
+                ensure_runtime_method_allowed(method).unwrap_err().code,
+                "METHOD_NOT_ALLOWED",
+                "{method}"
+            );
+        }
     }
 
     #[test]

@@ -1,4 +1,5 @@
 export * from './broker-wire.js';
+export * from './groups.js';
 export * from './memory.js';
 export * from './models.js';
 export * from './primitives.js';

@@ -43,9 +43,24 @@
       "sha256": "40855798409038ed6728fb8ad0e43f6d904d34b8bb9c824a28a1dfefdd9871cd"
     },
     {
+      "name": "conversation-participant",
+      "file": "conversation-participant.schema.json",
+      "sha256": "6c39278496cb9d66f6eb8375a89d7ab5077d5e64e53ff2a271d2cbd900dc5dd2"
+    },
+    {
       "name": "file",
       "file": "file.schema.json",
       "sha256": "daad7cfaa06b99096a786fa0b7ce405a89414616c1d479dfa454e3fcf64c7eb0"
+    },
+    {
+      "name": "group-turn",
+      "file": "group-turn.schema.json",
+      "sha256": "a79e401506190050bad373489612f4d8b5c3c5958675f9705f3930cce2ebdaa7"
+    },
+    {
+      "name": "group-turn-preflight",
+      "file": "group-turn-preflight.schema.json",
+      "sha256": "449746582bb737bb334e6e61168440532c37ec005bf7fd75d21bd72aa0952a69"
     },
     {
       "name": "memory",
@@ -66,6 +81,11 @@
       "name": "model",
       "file": "model.schema.json",
       "sha256": "62fa0305338c14e865ca75885bdbbe8ecaa7de7246ceb68f27c13dad665bbeed"
+    },
+    {
+      "name": "persona",
+      "file": "persona.schema.json",
+      "sha256": "3ff1283fca9825c2d008ee72846165240c7bbcd85ae16a05e716319a11694598"
     },
     {
       "name": "project",

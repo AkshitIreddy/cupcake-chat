@@ -1158,6 +1158,82 @@ pub mod conversation_branch {
 
 }
 
+pub mod conversation_participant {
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ConversationParticipantPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ConversationParticipantPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: ConversationParticipantPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ConversationParticipantAvailabilityStatus {
+        #[serde(rename = "ready")]
+        Ready,
+        #[serde(rename = "model_missing")]
+        ModelMissing,
+        #[serde(rename = "provider_unavailable")]
+        ProviderUnavailable,
+        #[serde(rename = "local_not_loaded")]
+        LocalNotLoaded,
+        #[serde(rename = "archived")]
+        Archived,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ConversationParticipantAvailability {
+        pub status: ConversationParticipantAvailabilityStatus,
+        pub message: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ConversationParticipant {
+        pub id: String,
+        #[serde(rename = "conversationId")]
+        pub conversation_id: String,
+        #[serde(rename = "personaId")]
+        pub persona_id: String,
+        pub position: u64,
+        pub enabled: bool,
+        #[serde(rename = "isLead")]
+        pub is_lead: bool,
+        #[serde(rename = "addedAt")]
+        pub added_at: String,
+        pub persona: ConversationParticipantPersona,
+        pub availability: ConversationParticipantAvailability,
+    }
+
+}
+
 pub mod file {
     use super::*;
 
@@ -1297,6 +1373,964 @@ pub mod file {
         pub destination: FileRecordDestination,
         pub ingestion: FileRecordIngestion,
         pub provenance: FileRecordProvenance,
+    }
+
+}
+
+pub mod group_turn {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnStatus {
+        #[serde(rename = "running")]
+        Running,
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "waiting_for_you")]
+        WaitingForYou,
+        #[serde(rename = "selection_failed")]
+        SelectionFailed,
+        #[serde(rename = "member_failed")]
+        MemberFailed,
+        #[serde(rename = "cancelled")]
+        Cancelled,
+        #[serde(rename = "awaiting_tool")]
+        AwaitingTool,
+        #[serde(rename = "interrupted")]
+        Interrupted,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnMode {
+        #[serde(rename = "mentions")]
+        Mentions,
+        #[serde(rename = "smart")]
+        Smart,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnSelectorUsageItemStatus {
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "failed")]
+        Failed,
+        #[serde(rename = "cancelled")]
+        Cancelled,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnSelectorUsageItemSelectionDecision {
+        #[serde(rename = "speak")]
+        Speak,
+        #[serde(rename = "pass")]
+        Pass,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnSelectorUsageItemSelectionReasonCode {
+        #[serde(rename = "best_fit")]
+        BestFit,
+        #[serde(rename = "specialist")]
+        Specialist,
+        #[serde(rename = "cross_check")]
+        CrossCheck,
+        #[serde(rename = "distinct_perspective")]
+        DistinctPerspective,
+        #[serde(rename = "acknowledgement")]
+        Acknowledgement,
+        #[serde(rename = "user_asked_to_wait")]
+        UserAskedToWait,
+        #[serde(rename = "no_distinct_value")]
+        NoDistinctValue,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnSelectorUsageItemSelection {
+        pub decision: GroupTurnSelectorUsageItemSelectionDecision,
+        #[serde(rename = "participantId")]
+        pub participant_id: Option<String>,
+        #[serde(rename = "reasonCode")]
+        pub reason_code: GroupTurnSelectorUsageItemSelectionReasonCode,
+        pub reason: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnSelectorUsageItem {
+        pub status: GroupTurnSelectorUsageItemStatus,
+        pub selection: Option<GroupTurnSelectorUsageItemSelection>,
+        pub usage: std::collections::BTreeMap<String, JsonValue>,
+        #[serde(rename = "errorCode")]
+        pub error_code: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanStrategy {
+        #[serde(rename = "smart-selective")]
+        SmartSelective,
+        #[serde(rename = "mentions-only")]
+        MentionsOnly,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanMode {
+        #[serde(rename = "mentions")]
+        Mentions,
+        #[serde(rename = "smart")]
+        Smart,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanSelectorPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanSelectorPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPlanSelectorPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanSelectorModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanSelectorAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanSelector {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPlanSelectorPersona,
+        pub model: GroupTurnPlanSelectorModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPlanSelectorAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanEligibleSpeakersItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanEligibleSpeakersItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPlanEligibleSpeakersItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanEligibleSpeakersItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanEligibleSpeakersItemAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanEligibleSpeakersItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPlanEligibleSpeakersItemPersona,
+        pub model: GroupTurnPlanEligibleSpeakersItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPlanEligibleSpeakersItemAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanIneligibleSpeakersItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanIneligibleSpeakersItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPlanIneligibleSpeakersItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanIneligibleSpeakersItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanIneligibleSpeakersItemAttachmentCompatibility {
+        #[serde(rename = "incompatible")]
+        Incompatible,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPlanIneligibleSpeakersItemReasonCode {
+        #[serde(rename = "attachment_incompatible")]
+        AttachmentIncompatible,
+        #[serde(rename = "offline_blocked")]
+        OfflineBlocked,
+        #[serde(rename = "model_missing")]
+        ModelMissing,
+        #[serde(rename = "provider_unavailable")]
+        ProviderUnavailable,
+        #[serde(rename = "local_not_loaded")]
+        LocalNotLoaded,
+        #[serde(rename = "archived")]
+        Archived,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlanIneligibleSpeakersItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPlanIneligibleSpeakersItemPersona,
+        pub model: GroupTurnPlanIneligibleSpeakersItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPlanIneligibleSpeakersItemAttachmentCompatibility,
+        #[serde(rename = "reasonCode")]
+        pub reason_code: GroupTurnPlanIneligibleSpeakersItemReasonCode,
+        pub message: String,
+        #[serde(rename = "repairAction")]
+        pub repair_action: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPlan {
+        #[serde(rename = "conversationId")]
+        pub conversation_id: String,
+        #[serde(rename = "branchId")]
+        pub branch_id: String,
+        #[serde(rename = "headMessageId")]
+        pub head_message_id: Option<String>,
+        #[serde(rename = "projectId")]
+        pub project_id: Option<String>,
+        #[serde(rename = "rosterRevision")]
+        pub roster_revision: u64,
+        pub strategy: GroupTurnPlanStrategy,
+        pub mode: GroupTurnPlanMode,
+        pub mentions: Vec<String>,
+        pub selector: Option<GroupTurnPlanSelector>,
+        #[serde(rename = "eligibleSpeakers")]
+        pub eligible_speakers: Vec<GroupTurnPlanEligibleSpeakersItem>,
+        #[serde(rename = "ineligibleSpeakers")]
+        pub ineligible_speakers: Vec<GroupTurnPlanIneligibleSpeakersItem>,
+        #[serde(rename = "maxReplies")]
+        pub max_replies: u64,
+        #[serde(rename = "maxSelectorCalls")]
+        pub max_selector_calls: u64,
+        #[serde(rename = "selectorMaxOutputTokens")]
+        pub selector_max_output_tokens: u64,
+        #[serde(rename = "effectiveOffline")]
+        pub effective_offline: bool,
+        #[serde(rename = "contentSha256")]
+        pub content_sha256: String,
+        #[serde(rename = "attachmentBindings")]
+        pub attachment_bindings: Vec<std::collections::BTreeMap<String, JsonValue>>,
+        #[serde(rename = "referenceBindings")]
+        pub reference_bindings: Vec<std::collections::BTreeMap<String, JsonValue>>,
+        #[serde(rename = "memoryIds")]
+        pub memory_ids: Vec<String>,
+        #[serde(rename = "toolIds")]
+        pub tool_ids: Vec<JsonValue>,
+        #[serde(rename = "maxOutputTokens")]
+        pub max_output_tokens: Option<u64>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnMembersItemStatus {
+        #[serde(rename = "selected")]
+        Selected,
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "failed")]
+        Failed,
+        #[serde(rename = "cancelled")]
+        Cancelled,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnMembersItemSpeakerPrivacyRoute {
+        #[serde(rename = "local")]
+        Local,
+        #[serde(rename = "self_hosted")]
+        SelfHosted,
+        #[serde(rename = "cloud")]
+        Cloud,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnMembersItemSpeaker {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        #[serde(rename = "personaId")]
+        pub persona_id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "providerId")]
+        pub provider_id: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: GroupTurnMembersItemSpeakerPrivacyRoute,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnMembersItem {
+        pub sequence: u64,
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub status: GroupTurnMembersItemStatus,
+        #[serde(rename = "messageId")]
+        pub message_id: Option<String>,
+        #[serde(rename = "selectionReasonCode")]
+        pub selection_reason_code: String,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: String,
+        pub speaker: GroupTurnMembersItemSpeaker,
+        pub usage: std::collections::BTreeMap<String, JsonValue>,
+        #[serde(rename = "errorCode")]
+        pub error_code: Option<String>,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurn {
+        #[serde(rename = "turnId")]
+        pub turn_id: String,
+        #[serde(rename = "conversationId")]
+        pub conversation_id: String,
+        #[serde(rename = "branchId")]
+        pub branch_id: String,
+        #[serde(rename = "userMessageId")]
+        pub user_message_id: String,
+        pub status: GroupTurnStatus,
+        pub mode: GroupTurnMode,
+        pub digest: String,
+        #[serde(rename = "planRevision")]
+        pub plan_revision: String,
+        #[serde(rename = "rosterRevision")]
+        pub roster_revision: u64,
+        #[serde(rename = "maxReplies")]
+        pub max_replies: u64,
+        #[serde(rename = "maxSelectorCalls")]
+        pub max_selector_calls: u64,
+        #[serde(rename = "selectorCalls")]
+        pub selector_calls: u64,
+        #[serde(rename = "responderCalls")]
+        pub responder_calls: u64,
+        #[serde(rename = "selectorUsage")]
+        pub selector_usage: Vec<GroupTurnSelectorUsageItem>,
+        pub plan: GroupTurnPlan,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "completedAt")]
+        pub completed_at: Option<String>,
+        pub members: Vec<GroupTurnMembersItem>,
+    }
+
+}
+
+pub mod group_turn_preflight {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightMode {
+        #[serde(rename = "mentions")]
+        Mentions,
+        #[serde(rename = "smart")]
+        Smart,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightStrategy {
+        #[serde(rename = "smart-selective")]
+        SmartSelective,
+        #[serde(rename = "mentions-only")]
+        MentionsOnly,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightSelectorPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightSelectorPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightSelectorPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightSelectorModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightSelectorAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightSelector {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightSelectorPersona,
+        pub model: GroupTurnPreflightSelectorModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightSelectorAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightEligibleSpeakersItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightEligibleSpeakersItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightEligibleSpeakersItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightEligibleSpeakersItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightEligibleSpeakersItemAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightEligibleSpeakersItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightEligibleSpeakersItemPersona,
+        pub model: GroupTurnPreflightEligibleSpeakersItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightEligibleSpeakersItemAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightIneligibleSpeakersItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightIneligibleSpeakersItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightIneligibleSpeakersItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightIneligibleSpeakersItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightIneligibleSpeakersItemAttachmentCompatibility {
+        #[serde(rename = "incompatible")]
+        Incompatible,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightIneligibleSpeakersItemReasonCode {
+        #[serde(rename = "attachment_incompatible")]
+        AttachmentIncompatible,
+        #[serde(rename = "offline_blocked")]
+        OfflineBlocked,
+        #[serde(rename = "model_missing")]
+        ModelMissing,
+        #[serde(rename = "provider_unavailable")]
+        ProviderUnavailable,
+        #[serde(rename = "local_not_loaded")]
+        LocalNotLoaded,
+        #[serde(rename = "archived")]
+        Archived,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightIneligibleSpeakersItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightIneligibleSpeakersItemPersona,
+        pub model: GroupTurnPreflightIneligibleSpeakersItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightIneligibleSpeakersItemAttachmentCompatibility,
+        #[serde(rename = "reasonCode")]
+        pub reason_code: GroupTurnPreflightIneligibleSpeakersItemReasonCode,
+        pub message: String,
+        #[serde(rename = "repairAction")]
+        pub repair_action: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureSelectorPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureSelectorPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightDisclosureSelectorPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureSelectorModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightDisclosureSelectorAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureSelector {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightDisclosureSelectorPersona,
+        pub model: GroupTurnPreflightDisclosureSelectorModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightDisclosureSelectorAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureCandidateRoutesItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureCandidateRoutesItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightDisclosureCandidateRoutesItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureCandidateRoutesItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightDisclosureCandidateRoutesItemAttachmentCompatibility {
+        #[serde(rename = "compatible")]
+        Compatible,
+        #[serde(rename = "not_applicable")]
+        NotApplicable,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureCandidateRoutesItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightDisclosureCandidateRoutesItemPersona,
+        pub model: GroupTurnPreflightDisclosureCandidateRoutesItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightDisclosureCandidateRoutesItemAttachmentCompatibility,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureIneligibleRoutesItemPersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureIneligibleRoutesItemPersona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: GroupTurnPreflightDisclosureIneligibleRoutesItemPersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureIneligibleRoutesItemModel {
+        pub id: String,
+        pub provider: String,
+        #[serde(rename = "privacyRoute")]
+        pub privacy_route: String,
+        #[serde(rename = "costClass")]
+        pub cost_class: String,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightDisclosureIneligibleRoutesItemAttachmentCompatibility {
+        #[serde(rename = "incompatible")]
+        Incompatible,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum GroupTurnPreflightDisclosureIneligibleRoutesItemReasonCode {
+        #[serde(rename = "attachment_incompatible")]
+        AttachmentIncompatible,
+        #[serde(rename = "offline_blocked")]
+        OfflineBlocked,
+        #[serde(rename = "model_missing")]
+        ModelMissing,
+        #[serde(rename = "provider_unavailable")]
+        ProviderUnavailable,
+        #[serde(rename = "local_not_loaded")]
+        LocalNotLoaded,
+        #[serde(rename = "archived")]
+        Archived,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosureIneligibleRoutesItem {
+        #[serde(rename = "participantId")]
+        pub participant_id: String,
+        pub persona: GroupTurnPreflightDisclosureIneligibleRoutesItemPersona,
+        pub model: GroupTurnPreflightDisclosureIneligibleRoutesItemModel,
+        #[serde(rename = "selectionReason")]
+        pub selection_reason: Option<String>,
+        #[serde(rename = "attachmentCompatibility")]
+        pub attachment_compatibility: GroupTurnPreflightDisclosureIneligibleRoutesItemAttachmentCompatibility,
+        #[serde(rename = "reasonCode")]
+        pub reason_code: GroupTurnPreflightDisclosureIneligibleRoutesItemReasonCode,
+        pub message: String,
+        #[serde(rename = "repairAction")]
+        pub repair_action: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflightDisclosure {
+        pub selector: Option<GroupTurnPreflightDisclosureSelector>,
+        #[serde(rename = "candidateRoutes")]
+        pub candidate_routes: Vec<GroupTurnPreflightDisclosureCandidateRoutesItem>,
+        #[serde(rename = "ineligibleRoutes")]
+        pub ineligible_routes: Vec<GroupTurnPreflightDisclosureIneligibleRoutesItem>,
+        #[serde(rename = "maxSelectorCalls")]
+        pub max_selector_calls: u64,
+        #[serde(rename = "selectorMaxOutputTokens")]
+        pub selector_max_output_tokens: u64,
+        #[serde(rename = "maxReplies")]
+        pub max_replies: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GroupTurnPreflight {
+        #[serde(rename = "turnId")]
+        pub turn_id: String,
+        #[serde(rename = "planRevision")]
+        pub plan_revision: String,
+        pub digest: String,
+        #[serde(rename = "rosterRevision")]
+        pub roster_revision: u64,
+        #[serde(rename = "headMessageId")]
+        pub head_message_id: Option<String>,
+        #[serde(rename = "userMessageId")]
+        pub user_message_id: (),
+        pub mode: GroupTurnPreflightMode,
+        pub strategy: GroupTurnPreflightStrategy,
+        #[serde(rename = "maxReplies")]
+        pub max_replies: u64,
+        #[serde(rename = "maxSelectorCalls")]
+        pub max_selector_calls: u64,
+        #[serde(rename = "selectorMaxOutputTokens")]
+        pub selector_max_output_tokens: u64,
+        pub selector: Option<GroupTurnPreflightSelector>,
+        #[serde(rename = "eligibleSpeakers")]
+        pub eligible_speakers: Vec<GroupTurnPreflightEligibleSpeakersItem>,
+        #[serde(rename = "ineligibleSpeakers")]
+        pub ineligible_speakers: Vec<GroupTurnPreflightIneligibleSpeakersItem>,
+        pub sendable: bool,
+        #[serde(rename = "confirmationRequired")]
+        pub confirmation_required: bool,
+        #[serde(rename = "confirmationToken")]
+        pub confirmation_token: Option<String>,
+        #[serde(rename = "expiresAt")]
+        pub expires_at: String,
+        pub disclosure: GroupTurnPreflightDisclosure,
     }
 
 }
@@ -2182,6 +3216,43 @@ pub mod model {
         pub lifecycle: ModelDescriptorLifecycle,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub metadata: Option<std::collections::BTreeMap<String, JsonValue>>,
+    }
+
+}
+
+pub mod persona {
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct PersonaPersonality {
+        pub preset: String,
+        pub warmth: f64,
+        pub brevity: f64,
+        pub initiative: f64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Persona {
+        pub id: String,
+        pub name: String,
+        pub handle: String,
+        pub avatar: String,
+        pub role: String,
+        pub description: String,
+        pub instructions: String,
+        #[serde(rename = "speakWhen")]
+        pub speak_when: String,
+        pub personality: PersonaPersonality,
+        #[serde(rename = "modelId")]
+        pub model_id: String,
+        #[serde(rename = "createdAt")]
+        pub created_at: String,
+        #[serde(rename = "updatedAt")]
+        pub updated_at: String,
+        #[serde(rename = "archivedAt")]
+        pub archived_at: Option<String>,
     }
 
 }

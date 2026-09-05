@@ -14,7 +14,7 @@ import { authTag, ids, validFixtures } from './fixtures.js';
 describe('contract registry', () => {
   it('contains stable, unique schema IDs for every published schema', () => {
     const ids = Object.values(contractSchemas).map((schema) => schema.$id);
-    expect(ids).toHaveLength(26);
+    expect(ids).toHaveLength(30);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.every((id) => typeof id === 'string' && id.includes('/v1/'))).toBe(true);
   });

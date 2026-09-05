@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cupcakeagi.local/v1/persona.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "handle",
+    "avatar",
+    "role",
+    "description",
+    "instructions",
+    "speakWhen",
+    "personality",
+    "modelId",
+    "createdAt",
+    "updatedAt",
+    "archivedAt"
+  ],
+  "properties": {
+    "id": {
+      "description": "Lowercase RFC 9562 UUID version 7.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "maxLength": 40,
+      "type": "string"
+    },
+    "handle": {
+      "pattern": "^[a-z0-9_-]{2,32}$",
+      "type": "string"
+    },
+    "avatar": {
+      "maxLength": 200,
+      "type": "string"
+    },
+    "role": {
+      "maxLength": 120,
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 1000,
+      "type": "string"
+    },
+    "instructions": {
+      "maxLength": 4000,
+      "type": "string"
+    },
+    "speakWhen": {
+      "maxLength": 1000,
+      "type": "string"
+    },
+    "personality": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "preset",
+        "warmth",
+        "brevity",
+        "initiative"
+      ],
+      "properties": {
+        "preset": {
+          "minLength": 1,
+          "maxLength": 40,
+          "type": "string"
+        },
+        "warmth": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "brevity": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "initiative": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        }
+      }
+    },
+    "modelId": {
+      "minLength": 1,
+      "maxLength": 500,
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "UTC RFC 3339 timestamp with a trailing Z.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+      "type": "string"
+    },
+    "archivedAt": {
+      "anyOf": [
+        {
+          "description": "UTC RFC 3339 timestamp with a trailing Z.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}
