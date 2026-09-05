@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cancelledSendWasCommitted,
   mapConversation,
   mapRuntimeMessage,
   scopedReferenceOptions,
@@ -9,6 +10,53 @@ import {
 } from './workspace';
 
 describe('workspace attachment and reference contracts', () => {
+  it('recognizes only a persisted completed user turn followed by its cancelled response', () => {
+    const committedHistory = [
+      {
+        id: 'user-current',
+        role: 'user' as const,
+        content: 'Keep this request.',
+        state: 'complete',
+        created_at: '2026-09-05T07:38:57.290Z',
+      },
+      {
+        id: 'assistant-current',
+        role: 'assistant' as const,
+        content: '',
+        state: 'cancelled',
+        parent_message_id: 'user-current',
+        created_at: '2026-09-05T07:38:59.870Z',
+      },
+    ];
+
+    expect(
+      cancelledSendWasCommitted(committedHistory, 'Keep this request.', {
+        cancelledMessageId: 'assistant-current',
+      }),
+    ).toBe(true);
+    expect(
+      cancelledSendWasCommitted(committedHistory, 'A draft that was never saved.', {
+        cancelledMessageId: 'assistant-current',
+      }),
+    ).toBe(false);
+    expect(
+      cancelledSendWasCommitted(committedHistory, 'Keep this request.', {
+        cancelledMessageId: 'assistant-missing',
+      }),
+    ).toBe(false);
+  });
+
+  it('rehydrates an empty cancelled assistant turn as stopped instead of still starting', () => {
+    expect(
+      mapRuntimeMessage({
+        id: 'assistant-cancelled',
+        role: 'assistant',
+        content: '',
+        state: 'cancelled',
+      }),
+    ).toMatchObject({ content: '', responseState: 'cancelled' });
+  });
+
   it('preserves the authoritative project identity for conversations', () => {
     const projects = [
       { id: 'project-a', name: 'Alpha', description: '', archived: false },

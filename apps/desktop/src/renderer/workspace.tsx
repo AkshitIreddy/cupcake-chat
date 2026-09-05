@@ -58,6 +58,7 @@ export interface MessageRecord extends LiveChatMessage {
   citations?: Array<{ id: string; title: string; url?: string }>;
   reasoningSummary?: string;
   finishReason?: string;
+  responseState?: 'cancelled';
 }
 
 export interface AttachmentRecord {
@@ -361,12 +362,15 @@ interface RuntimeBranch {
 interface RuntimeMessage {
   id: string;
   branch_id?: string;
+  conversation_id?: string;
+  parent_message_id?: string | null;
   run_id?: string | null;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   created_at?: string;
   model_id?: string | null;
   provider_id?: string | null;
+  state?: string;
   canonical_metadata?: Record<string, unknown>;
 }
 
@@ -873,7 +877,7 @@ export function applyRuntimeMessageEvent(
         message.content,
       );
       return withFinalMessageProvenance(
-        { ...message, content: partial || 'Response stopped.', streaming: false },
+        { ...message, content: partial, streaming: false, responseState: 'cancelled' },
         payload,
       );
     });
@@ -1033,7 +1037,26 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
     attachments: attachments.length ? attachments : undefined,
     references: references.length ? references : undefined,
     finishReason,
+    responseState:
+      item.role === 'assistant' && item.state === 'cancelled' ? 'cancelled' : undefined,
   };
+}
+
+export function cancelledSendWasCommitted(
+  history: RuntimeMessage[],
+  content: string,
+  options: { cancelledMessageId?: string; notBefore?: number } = {},
+): boolean {
+  const cancelled = [...history].reverse().find((message) => {
+    if (message.role !== 'assistant' || message.state !== 'cancelled') return false;
+    if (options.cancelledMessageId) return message.id === options.cancelledMessageId;
+    if (options.notBefore === undefined || !message.created_at) return false;
+    const createdAt = Date.parse(message.created_at);
+    return Number.isFinite(createdAt) && createdAt >= options.notBefore - 5_000;
+  });
+  if (!cancelled) return false;
+  const parent = history.find((message) => message.id === cancelled.parent_message_id);
+  return parent?.role === 'user' && parent.state === 'complete' && parent.content === content;
 }
 
 export function structuredAttachments(
@@ -1936,6 +1959,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const activeProjectIdRef = useRef(activeProjectId);
   const activeRunIdRef = useRef(activeRunId);
   const projectsRef = useRef(projects);
+  const cancelledChatRef = useRef<{
+    runId?: string;
+    messageId: string;
+    branchId: string;
+    conversationId?: string;
+    recordedAt: number;
+  } | null>(null);
   const conversationSelectionGeneration = useRef(0);
   const projectSelectionGeneration = useRef(0);
   activeProjectIdRef.current = activeProjectId;
@@ -2337,6 +2367,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setRuntimeEvents((items) => [event, ...items].slice(0, 500));
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+      if (event.type === 'message.cancelled') {
+        const persisted = recordValue(payload.message);
+        const messageId = textValue(persisted?.id);
+        const branchId = textValue(persisted?.branch_id ?? persisted?.branchId);
+        if (messageId && branchId) {
+          cancelledChatRef.current = {
+            runId,
+            messageId,
+            branchId,
+            conversationId:
+              textValue(persisted?.conversation_id ?? persisted?.conversationId) || undefined,
+            recordedAt: Date.now(),
+          };
+        }
+      }
       setMessages((items) => applyRuntimeMessageEvent(items, event, activeRunIdRef.current));
       if (event.type === 'message.started' && runId) {
         updateActiveRunId(runId);
@@ -2815,6 +2860,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setBusy(true);
       setError(null);
+      const requestStartedAt = Date.now();
+      const stableIntent = input.outboundIntent;
       try {
         const method =
           input.mode === 'edit'
@@ -2824,7 +2871,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : input.mode === 'continue'
                 ? 'chat.continue'
                 : 'chat.send';
-        const stableIntent = input.outboundIntent;
         const attachmentItems = structuredAttachments(input.attachments);
         const referenceItems = structuredReferences(input.references ?? []);
         const memoryIds =
@@ -2935,7 +2981,71 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         return true;
       } catch (reason) {
-        if (!(reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED')) {
+        const cancelled = reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED';
+        if (cancelled && shouldOptimisticallyAppendUser(input.mode)) {
+          const observedReceipt = cancelledChatRef.current;
+          const receipt =
+            observedReceipt && observedReceipt.recordedAt >= requestStartedAt
+              ? observedReceipt
+              : null;
+          const branchId =
+            receipt?.branchId ?? stableIntent?.branchId ?? input.branchId ?? activeBranchId;
+          if (branchId) {
+            try {
+              const history = await request<RuntimeMessage[]>('chat.history', { branchId });
+              if (
+                cancelledSendWasCommitted(history, input.content, {
+                  cancelledMessageId: receipt?.messageId,
+                  notBefore: requestStartedAt,
+                })
+              ) {
+                const conversationId =
+                  receipt?.conversationId ??
+                  [...history].reverse().find((message) => message.conversation_id)
+                    ?.conversation_id ??
+                  stableIntent?.conversationId ??
+                  input.conversationId ??
+                  activeConversationId;
+                setMessages(history.map(mapRuntimeMessage));
+                setActiveBranchId(branchId);
+                if (conversationId) {
+                  setActiveConversationId(conversationId);
+                  const projectId =
+                    stableIntent?.projectId ??
+                    (input.projectId !== undefined ? input.projectId : activeProjectId);
+                  const [conversationList, conversationState] = await Promise.allSettled([
+                    request<RuntimeConversation[]>('conversations.list', {
+                      projectId,
+                      includeArchived: true,
+                    }),
+                    request<{ branches: RuntimeBranch[] }>('conversations.get', {
+                      conversationId,
+                    }),
+                  ]);
+                  if (conversationList.status === 'fulfilled')
+                    setConversations(
+                      conversationList.value.map((item) => mapConversation(item, projects)),
+                    );
+                  if (conversationState.status === 'fulfilled')
+                    setBranches(
+                      (conversationState.value.branches ?? []).map((item) => ({
+                        id: item.id,
+                        conversationId: item.conversation_id,
+                        name: item.name ?? 'Branch',
+                        headMessageId: item.head_message_id,
+                        parentMessageId: item.parent_message_id,
+                      })),
+                    );
+                }
+                setError(null);
+                return true;
+              }
+            } catch {
+              // The optimistic turn remains removable below when authoritative history is absent.
+            }
+          }
+        }
+        if (!cancelled) {
           setError(reason instanceof Error ? reason.message : 'The runtime request failed');
         }
         if (shouldOptimisticallyAppendUser(input.mode)) {

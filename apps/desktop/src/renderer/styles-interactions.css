@@ -202,6 +202,16 @@
   white-space: nowrap;
 }
 
+.response-stopped-notice {
+  grid-template-columns: auto minmax(0, 1fr);
+  border-color: color-mix(in srgb, var(--blueberry), var(--line) 66%);
+  background: color-mix(in srgb, var(--blueberry-soft), var(--paper) 42%);
+}
+
+.response-stopped-notice > svg {
+  color: var(--blueberry);
+}
+
 .chat-list__row.is-busy {
   opacity: 0.64;
 }

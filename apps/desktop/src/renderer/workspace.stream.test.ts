@@ -117,6 +117,7 @@ describe('workspace runtime message stream', () => {
         content: 'Partial response',
         modelId: 'model-3',
         providerId: 'provider-3',
+        responseState: 'cancelled',
         streaming: false,
       }),
     ]);

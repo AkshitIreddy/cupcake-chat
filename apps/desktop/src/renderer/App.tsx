@@ -2241,9 +2241,24 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     </p>
                   </div>
                 )}
-                <RichMarkdown streaming={message.streaming}>
-                  {message.content || 'Starting response…'}
-                </RichMarkdown>
+                {(message.content || message.responseState !== 'cancelled') && (
+                  <RichMarkdown streaming={message.streaming}>
+                    {message.content || 'Starting response…'}
+                  </RichMarkdown>
+                )}
+                {message.responseState === 'cancelled' && !message.streaming && (
+                  <div className="response-limit-notice response-stopped-notice" role="status">
+                    <Icon name="pause" size={17} />
+                    <div>
+                      <strong>Response stopped</strong>
+                      <p>
+                        {message.content
+                          ? 'The partial response above is preserved.'
+                          : 'Your message was saved, but the response stopped before answer text was produced.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {message.finishReason === 'length' && !message.streaming && (
                   <div className="response-limit-notice" role="note">
                     <Icon name="info" size={17} />
@@ -2545,6 +2560,9 @@ function ChatView({
     window.addEventListener('cupcake:stop', stop);
     return () => window.removeEventListener('cupcake:stop', stop);
   }, []);
+  useEffect(() => {
+    if (workspace.activeRunId) setStopped(false);
+  }, [workspace.activeRunId]);
   return (
     <div className={cx('chat-layout', contextOpen && 'is-context-open')}>
       <main className="chat-main">
