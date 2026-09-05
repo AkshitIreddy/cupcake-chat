@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .types import (
     HardwareProfile,
     ModelArtifact,
@@ -12,31 +14,109 @@ from .types import (
     RuntimePackArtifact,
 )
 
-QUANT_BITS = {
-    "Q2_K": 2.7,
-    "Q3_K_S": 3.2,
-    "Q3_K_M": 3.5,
-    "Q4_K_S": 4.5,
-    "Q4_K_M": 4.8,
-    "Q5_K_S": 5.5,
-    "Q5_K_M": 5.7,
-    "Q6_K": 6.6,
-    "Q8_0": 8.5,
+_GIB = 2**30
+
+# F16 K+V bytes per token derived from the upstream model configurations:
+# 2 caches * layers * KV heads * head dimension * 2 bytes. Keep this keyed by
+# the signed catalog artifact ID: parameter count alone is especially wrong for
+# GQA and MoE models (for example Qwen3 30B-A3B has only four KV heads).
+_CURATED_KV_BYTES_PER_TOKEN = {
+    "qwen3-0-6b-q8-0": 114_688,
+    "qwen3-1-7b-q8-0": 114_688,
+    "granite-3-3-2b-instruct-q4-k-m": 81_920,
+    "qwen3-4b-q4-k-m": 147_456,
+    "qwen3-8b-q4-k-m": 147_456,
+    "qwen3-14b-q4-k-m": 163_840,
+    "granite-3-3-8b-instruct-q4-k-m": 163_840,
+    "ministral-3-3b-instruct-q4-k-m": 106_496,
+    "ministral-3-8b-instruct-q4-k-m": 139_264,
+    "phi-4-14b-q4-k-s": 204_800,
+    "qwen3-30b-a3b-q4-k-m": 49_152,
+}
+
+# Default llama.cpp KV is F16. These floors cover the curated architecture
+# families where parameter count alone materially underestimates GQA KV state,
+# especially their smaller models. A signed catalog can override the estimate
+# with a measured/model-config-derived ``kv_bytes_per_token`` value.
+_KV_BYTES_PER_TOKEN_FLOOR = {
+    "granite": 96 * 1024,
+    "mistral3": 128 * 1024,
+    "phi3": 192 * 1024,
+    "qwen3": 64 * 1024,
+    "qwen3moe": 96 * 1024,
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ModelMemoryEstimate:
+    weight_gb: float
+    kv_cache_gb: float
+    runtime_overhead_gb: float
+    total_accelerator_gb: float
+    total_host_gb: float
+    source: str
+
+
+def estimate_model_memory(artifact: ModelArtifact, context_size: int) -> ModelMemoryEstimate:
+    """Return a conservative pre-load estimate for one llama.cpp slot.
+
+    This is a safety estimate, not a benchmark. The runtime's own ``--fit``
+    decision remains authoritative after load because GGUF tensors, graph
+    buffers, backend kernels, cache types, and driver allocations vary.
+    """
+
+    if not 1 <= context_size <= artifact.context_window:
+        raise ValueError("context_size is outside the model limit")
+    configured = artifact.metadata.get("kv_bytes_per_token")
+    try:
+        configured_bytes = float(configured) if configured is not None else 0.0
+    except (TypeError, ValueError):
+        configured_bytes = 0.0
+    generic_bytes = artifact.parameter_billions * 1_000_000_000 / 8 / 8192
+    architecture = artifact.architecture.casefold()
+    if configured_bytes > 0:
+        bytes_per_token = configured_bytes
+        source = "catalog kv metadata"
+    elif artifact.id in _CURATED_KV_BYTES_PER_TOKEN:
+        bytes_per_token = float(_CURATED_KV_BYTES_PER_TOKEN[artifact.id])
+        source = "curated architecture metadata"
+    else:
+        bytes_per_token = max(
+            generic_bytes,
+            float(_KV_BYTES_PER_TOKEN_FLOOR.get(architecture, 192 * 1024)),
+        )
+        source = (
+            "conservative architecture estimate"
+            if architecture in _KV_BYTES_PER_TOKEN_FLOOR
+            else "conservative unknown-architecture estimate"
+        )
+    # Include modest allocator/graph headroom above the immutable GGUF bytes.
+    weight_gb = artifact.size_bytes / _GIB * 1.03
+    kv_cache_gb = bytes_per_token * context_size / _GIB * 1.10
+    runtime_overhead_gb = max(0.75, min(2.0, weight_gb * 0.08))
+    accelerator = weight_gb + kv_cache_gb + runtime_overhead_gb
+    host = weight_gb * 1.08 + kv_cache_gb + max(1.5, runtime_overhead_gb)
+    return ModelMemoryEstimate(
+        round(weight_gb, 3),
+        round(kv_cache_gb, 3),
+        round(runtime_overhead_gb, 3),
+        round(accelerator, 3),
+        round(host, 3),
+        source,
+    )
+
+
 def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRecommendation:
-    bits = QUANT_BITS.get(artifact.quantization.upper(), 5.0)
-    weight_gb = artifact.parameter_billions * bits / 8 * 1.08
-    # KV cache varies by architecture; this is a deliberately conservative UI
-    # estimate, with actual measurements replacing it once the model loads.
     context_cap = min(artifact.context_window, 8192)
     context = _catalog_context(artifact, context_cap)
-    kv_gb = max(0.5, artifact.parameter_billions / 8 * context / 8192)
-    vram_need = weight_gb + kv_gb + 1.0
-    ram_need = max(4.0, weight_gb * 1.2 + 2.0)
+    memory = estimate_model_memory(artifact, context)
+    vram_need = memory.total_accelerator_gb
+    ram_need = max(4.0, memory.total_host_gb)
+    reduced_context = _catalog_context(artifact, 4096)
+    reduced_memory = estimate_model_memory(artifact, reduced_context)
     reasons: list[str] = []
-    vram = hardware.vram_gb or 0
+    vram_capacity = hardware.vram_gb or 0
+    vram = hardware.available_vram_gb if hardware.available_vram_gb is not None else vram_capacity
 
     if (
         hardware.free_disk_gb is not None
@@ -45,26 +125,35 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         classification = RecommendationClass.INCOMPATIBLE
         reasons.append("insufficient free disk for download, verification, and atomic promotion")
     elif (
-        11 <= vram <= 13
+        11 <= vram_capacity <= 13
         and 7 <= artifact.parameter_billions <= 9
         and artifact.quantization.upper() == "Q4_K_M"
+        and vram_need <= vram * 0.88
     ):
         classification = RecommendationClass.RECOMMENDED
         reasons.append("ideal 7-9B Q4_K_M fit for approximately 12 GB VRAM")
     elif vram and vram_need <= vram * 0.88 and ram_need <= hardware.available_ram_gb:
         classification = RecommendationClass.RECOMMENDED
         reasons.append("weights, context, and runtime headroom fit in dedicated VRAM")
-    elif vram and vram_need <= vram * 1.08 and ram_need <= hardware.available_ram_gb:
+    elif (
+        vram
+        and reduced_context < context
+        and reduced_memory.total_accelerator_gb <= vram * 0.88
+        and reduced_memory.total_host_gb <= hardware.available_ram_gb
+    ):
         classification = RecommendationClass.FITS_REDUCED_CONTEXT
-        context = _catalog_context(artifact, 4096)
+        context = reduced_context
         reasons.append("tight VRAM fit; use a shorter context and close GPU-heavy applications")
-    elif not vram and ram_need <= hardware.available_ram_gb:
+    elif not vram and reduced_memory.total_host_gb <= hardware.available_ram_gb:
         classification = RecommendationClass.CPU_ONLY_SLOW
-        context = _catalog_context(artifact, 4096)
+        context = reduced_context
         reasons.append("fits system RAM on the safe CPU baseline, but generation will be slower")
-    elif ram_need <= hardware.available_ram_gb and artifact.parameter_billions <= 34:
+    elif (
+        reduced_memory.total_host_gb <= hardware.available_ram_gb
+        and artifact.parameter_billions <= 34
+    ):
         classification = RecommendationClass.HYBRID
-        context = _catalog_context(artifact, 4096)
+        context = reduced_context
         reasons.append("requires partial CPU/RAM offload and will be slower")
     else:
         classification = RecommendationClass.INCOMPATIBLE
@@ -72,20 +161,26 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         reasons.append("estimated memory demand exceeds safe local headroom")
 
     if (
-        11 <= vram <= 13
+        11 <= vram_capacity <= 13
         and 12 <= artifact.parameter_billions <= 14
         and classification == RecommendationClass.RECOMMENDED
     ):
         classification = RecommendationClass.FITS_REDUCED_CONTEXT
-        context = _catalog_context(artifact, 4096)
+        context = reduced_context
         reasons.append("12-14B models on 12 GB VRAM need tighter context and headroom checks")
-    if artifact.parameter_billions > 14 and 11 <= vram <= 13:
+    if artifact.parameter_billions > 14 and 11 <= vram_capacity <= 13:
         classification = (
             RecommendationClass.HYBRID
-            if ram_need <= hardware.available_ram_gb
+            if reduced_memory.total_host_gb <= hardware.available_ram_gb
             else RecommendationClass.INCOMPATIBLE
         )
         reasons.append("larger than the recommended dedicated-VRAM class for 12 GB cards")
+
+    # Report estimates for the context we actually recommend, not the larger
+    # candidate that may have caused a reduced-context classification.
+    memory = estimate_model_memory(artifact, context)
+    vram_need = memory.total_accelerator_gb
+    ram_need = max(4.0, memory.total_host_gb)
 
     labels = {
         RecommendationClass.RECOMMENDED: "Recommended",
@@ -116,9 +211,14 @@ def estimate_fit(artifact: ModelArtifact, hardware: HardwareProfile) -> ModelRec
         if classification == RecommendationClass.CPU_ONLY_SLOW
         else "none"
     )
+    if hardware.available_vram_gb is not None and vram_capacity:
+        reasons.append(
+            f"fit uses {vram:.1f} GB currently free VRAM of {vram_capacity:.1f} GB total"
+        )
     reasons.append(
-        f"estimated load: {vram_need:.1f} GB VRAM, {ram_need:.1f} GB RAM, "
-        f"{artifact.size_bytes / 2**30:.1f} GB disk"
+        f"estimated load: {vram_need:.1f} GB accelerator memory including "
+        f"{memory.kv_cache_gb:.1f} GB KV cache, {ram_need:.1f} GB host-memory safety "
+        f"budget, {artifact.size_bytes / 2**30:.1f} GB disk ({memory.source})"
     )
 
     return ModelRecommendation(

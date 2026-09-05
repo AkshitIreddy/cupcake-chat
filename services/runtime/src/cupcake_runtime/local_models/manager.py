@@ -379,6 +379,7 @@ class LlamaCppSupervisor:
             shell=False,
             timeout=timeout_seconds,
             env=_minimal_server_environment(None, None),
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
         )
         output = (result.stdout + result.stderr).decode("utf-8", errors="replace").strip()
         if result.returncode != 0 or not output:
@@ -397,6 +398,7 @@ class LlamaCppSupervisor:
             shell=False,
             timeout=timeout_seconds,
             env=_minimal_server_environment(None, None),
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
         )
         output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
         if result.returncode != 0:

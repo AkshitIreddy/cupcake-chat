@@ -25,7 +25,7 @@ class _NvmlMemory(ctypes.Structure):
 
 def _memory() -> tuple[float, float]:
     try:
-        import psutil
+        import psutil  # type: ignore[import-untyped]
 
         memory = psutil.virtual_memory()
         return memory.total / 2**30, memory.available / 2**30
@@ -52,7 +52,7 @@ def _nvml_candidates() -> tuple[Path, ...]:
     return tuple(dict.fromkeys(candidates))
 
 
-def _nvidia_nvml() -> tuple[str | None, float | None, str | None]:
+def _nvidia_nvml() -> tuple[str | None, float | None, float | None, str | None]:
     """Query the trusted NVIDIA driver DLL without spawning a child process.
 
     Packaged desktop processes run in a Windows Job, where creating a second
@@ -62,10 +62,10 @@ def _nvidia_nvml() -> tuple[str | None, float | None, str | None]:
     """
 
     if os.name != "nt":
-        return None, None, None
+        return None, None, None, None
     loader = getattr(ctypes, "WinDLL", None)
     if loader is None:
-        return None, None, None
+        return None, None, None, None
     for candidate in _nvml_candidates():
         if not candidate.is_file():
             continue
@@ -104,7 +104,7 @@ def _nvidia_nvml() -> tuple[str | None, float | None, str | None]:
                 if get_driver(driver_buffer, len(driver_buffer)) == 0
                 else None
             )
-            devices: list[tuple[str, float]] = []
+            devices: list[tuple[str, float, float]] = []
             for index in range(count.value):
                 handle = ctypes.c_void_p()
                 if get_handle(index, ctypes.byref(handle)) != 0:
@@ -119,21 +119,22 @@ def _nvidia_nvml() -> tuple[str | None, float | None, str | None]:
                     (
                         name_buffer.value.decode("utf-8", errors="replace").strip(),
                         memory.total / 2**30,
+                        memory.free / 2**30,
                     )
                 )
             if devices:
-                name, vram = max(devices, key=lambda item: item[1])
-                return name, vram, driver
+                name, vram, available_vram = max(devices, key=lambda item: item[1])
+                return name, vram, available_vram, driver
         except (AttributeError, OSError, TypeError, ValueError):
             continue
         finally:
             if initialized and shutdown is not None:
                 with suppress(AttributeError, OSError):
                     shutdown()
-    return None, None, None
+    return None, None, None, None
 
 
-def _nvidia() -> tuple[str | None, float | None, str | None]:
+def _nvidia() -> tuple[str | None, float | None, float | None, str | None]:
     detected = _nvidia_nvml()
     if detected[0]:
         return detected
@@ -146,23 +147,45 @@ def _nvidia() -> tuple[str | None, float | None, str | None]:
                 executable = str(system_executable)
     executable = executable or shutil.which("nvidia-smi")
     if not executable:
-        return None, None, None
+        return None, None, None, None
     try:
         result = subprocess.run(
             [
                 executable,
-                "--query-gpu=name,memory.total,driver_version",
+                "--query-gpu=name,memory.total,memory.free,driver_version",
                 "--format=csv,noheader,nounits",
             ],
             check=True,
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
         )
-        name, memory, driver = result.stdout.splitlines()[0].rsplit(",", 2)
-        return name.strip(), float(memory.strip()) / 1024, driver.strip()
+        name, memory, available, driver = result.stdout.splitlines()[0].rsplit(",", 3)
+        return (
+            name.strip(),
+            float(memory.strip()) / 1024,
+            float(available.strip()) / 1024,
+            driver.strip(),
+        )
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
-        return None, None, None
+        return None, None, None, None
+
+
+def _vulkan_available() -> bool:
+    """Prove that the Windows Vulkan loader exists without executing a tool.
+
+    A loader is necessary but not sufficient for inference. The selected
+    runtime pack still performs its own ``--list-devices`` probe before it can
+    become active.
+    """
+
+    if os.name != "nt":
+        return False
+    system_root = os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
+    if not system_root:
+        return False
+    return (Path(system_root) / "System32" / "vulkan-1.dll").is_file()
 
 
 def _cpu_features() -> tuple[str, ...]:
@@ -209,31 +232,33 @@ def detect_hardware(
     data_directory: Path, *, installed_acceleration_packs: tuple[str, ...] = ()
 ) -> HardwareProfile:
     total, available = _memory()
-    gpu, vram, driver = _nvidia()
+    gpu, vram, available_vram, driver = _nvidia()
     acceleration: list[str] = []
     if gpu:
         acceleration.append("cuda")
     if os.name == "nt":
-        acceleration.append("vulkan")
-    elif os.uname().sysname == "Darwin":
+        if _vulkan_available():
+            acceleration.append("vulkan")
+    elif platform.system() == "Darwin":
         acceleration.append("metal")
     disk = shutil.disk_usage(data_directory if data_directory.exists() else data_directory.parent)
     windows_version, windows_build = _windows_identity()
     processor = platform.processor().strip() or os.environ.get("PROCESSOR_IDENTIFIER") or None
     return HardwareProfile(
-        total,
-        available,
-        gpu,
-        vram,
-        os.cpu_count() or 1,
-        tuple(acceleration),
-        disk.free / 2**30,
-        driver,
-        platform.system() or None,
-        platform.machine() or None,
-        processor,
-        _cpu_features(),
-        windows_version,
-        windows_build,
-        tuple(sorted(set(installed_acceleration_packs))),
+        system_ram_gb=total,
+        available_ram_gb=available,
+        gpu_name=gpu,
+        vram_gb=vram,
+        cpu_threads=os.cpu_count() or 1,
+        acceleration=tuple(acceleration),
+        free_disk_gb=disk.free / 2**30,
+        gpu_driver_version=driver,
+        os_name=platform.system() or None,
+        architecture=platform.machine() or None,
+        cpu_name=processor,
+        cpu_features=_cpu_features(),
+        windows_version=windows_version,
+        windows_build=windows_build,
+        installed_acceleration_packs=tuple(sorted(set(installed_acceleration_packs))),
+        available_vram_gb=available_vram,
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -286,12 +287,45 @@ class CupcakeLocalManager:
         }:
             raise RuntimeError("unload the active model before changing runtime packs")
         previous = self.runtimes.active()
+        candidate = next(
+            (
+                item
+                for item in self.runtimes.list()
+                if item.version == version and item.backend == backend
+            ),
+            None,
+        )
+        if candidate is None:
+            raise FileNotFoundError(f"runtime pack {version}/{backend.value} is not installed")
+        self._probe_accelerated_runtime(candidate)
         installed = self.runtimes.activate(version, backend)
         if previous and (previous.version, previous.backend) != (version, backend):
             self._activation_history.append((previous.version, previous.backend))
         self._supervisor = None
         self._runtime_id = None
         return installed
+
+    @staticmethod
+    def _probe_accelerated_runtime(installed: InstalledRuntimePack) -> None:
+        if installed.backend == RuntimeBackend.CPU:
+            return
+        try:
+            devices = LlamaCppSupervisor(Path(installed.executable)).list_devices()
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            raise RuntimePackIntegrityError(
+                f"could not verify the installed {installed.backend.value} runtime device"
+            ) from exc
+        output = "\n".join(devices).casefold()
+        expected = (
+            "cuda"
+            if installed.backend in {RuntimeBackend.CUDA_12, RuntimeBackend.CUDA_13}
+            else installed.backend.value
+        )
+        if expected not in output:
+            label = "CUDA" if expected == "cuda" else installed.backend.value.title()
+            raise RuntimePackIntegrityError(
+                f"the installed {label} runtime did not report a matching {label} device"
+            )
 
     def rollback_runtime(self) -> InstalledRuntimePack:
         if self._supervisor and self._supervisor.state not in {
@@ -531,14 +565,17 @@ class CupcakeLocalManager:
         """Reconstruct crash-recoverable downloads after catalogs are restored."""
 
         if self._model_catalog is not None:
-            for artifact in self._model_catalog.models:
-                destination = artifact.target(self.models.root)
-                self._rehydrate_one(artifact.id, ModelDownload(artifact, destination))
+            for model_artifact in self._model_catalog.models:
+                destination = model_artifact.target(self.models.root)
+                self._rehydrate_one(model_artifact.id, ModelDownload(model_artifact, destination))
         if self._runtime_catalog is not None:
-            for artifact in self._runtime_catalog.runtimes:
-                destination = self.downloads / "runtime" / artifact.filename
-                self._rehydrate_one(artifact.id, RuntimePackDownload(artifact, destination))
-                for companion in artifact.companions:
+            for runtime_artifact in self._runtime_catalog.runtimes:
+                destination = self.downloads / "runtime" / runtime_artifact.filename
+                self._rehydrate_one(
+                    runtime_artifact.id,
+                    RuntimePackDownload(runtime_artifact, destination),
+                )
+                for companion in runtime_artifact.companions:
                     companion_destination = self.downloads / "runtime" / companion.filename
                     self._rehydrate_one(
                         companion.id,

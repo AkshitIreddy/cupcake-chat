@@ -77,6 +77,10 @@ class HardwareProfile:
     windows_version: str | None = None
     windows_build: str | None = None
     installed_acceleration_packs: tuple[str, ...] = ()
+    # A point-in-time sample, distinct from the physical VRAM capacity above.
+    # Fit decisions must prefer this value because another application may
+    # already be using most of the GPU.
+    available_vram_gb: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

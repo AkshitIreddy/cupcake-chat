@@ -561,8 +561,8 @@ def test_supervisor_health_probe_uses_ephemeral_server_authentication(
     executable = tmp_path / "llama-server.exe"
     executable.write_bytes(b"exe")
     supervisor = LlamaCppSupervisor(executable, port=8123)
-    supervisor._api_key = "ephemeral-health-key"
-    supervisor._api_prefix = "/cupcake-test"
+    supervisor._api_key = "ephemeral-health-key"  # pyright: ignore[reportPrivateUsage]
+    supervisor._api_prefix = "/cupcake-test"  # pyright: ignore[reportPrivateUsage]
     captured: list[Any] = []
 
     class _Response:
@@ -582,7 +582,7 @@ def test_supervisor_health_probe_uses_ephemeral_server_authentication(
         return _Response()
 
     monkeypatch.setattr("cupcake_runtime.local_models.manager.urlopen", fake_urlopen)
-    status, payload = supervisor._health_request()
+    status, payload = supervisor._health_request()  # pyright: ignore[reportPrivateUsage]
 
     request, timeout = captured[0]
     assert status == 200
@@ -590,6 +590,31 @@ def test_supervisor_health_probe_uses_ephemeral_server_authentication(
     assert request.full_url == "http://127.0.0.1:8123/cupcake-test/health"
     assert request.headers["Authorization"] == "Bearer ephemeral-health-key"
     assert timeout == 1.0
+
+
+def test_runtime_inspection_processes_stay_hidden_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "llama-server.exe"
+    executable.write_bytes(b"exe")
+    captured: list[dict[str, Any]] = []
+
+    def run(args: list[str], **kwargs: Any) -> Any:
+        captured.append(kwargs)
+        output = b"CUDA0: Test GPU\n" if "--list-devices" in args else b"version b10672\n"
+        return type("Result", (), {"returncode": 0, "stdout": output, "stderr": b""})()
+
+    monkeypatch.setattr("cupcake_runtime.local_models.manager.subprocess.run", run)
+    monkeypatch.setattr("cupcake_runtime.local_models.manager.sys.platform", "win32")
+    monkeypatch.setattr(
+        "cupcake_runtime.local_models.manager.subprocess.CREATE_NO_WINDOW", 0x08000000
+    )
+    supervisor = LlamaCppSupervisor(executable)
+
+    assert "b10672" in supervisor.version()
+    assert supervisor.list_devices() == ("CUDA0: Test GPU",)
+    assert len(captured) == 2
+    assert all(call["creationflags"] == 0x08000000 for call in captured)
 
 
 def test_server_configuration_bounds_are_explicit() -> None:
@@ -609,6 +634,9 @@ class _FakeSupervisor:
 
     def version(self) -> str:
         return "llama.cpp version: 10672 (511f9c1)"
+
+    def list_devices(self) -> tuple[str, ...]:
+        return ("CUDA0: Test NVIDIA GPU", "Vulkan0: Test Vulkan GPU")
 
     def start(self, model: Path, **_kwargs: Any) -> int:
         self.active_model = model
@@ -631,6 +659,36 @@ class _FakeSupervisor:
     async def stop(self) -> None:
         self.state = RuntimeState.STOPPED
         self.active_model = None
+
+
+def test_accelerated_runtime_activation_requires_matching_live_device_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = {"llama-server.exe": b"server-cuda", "ggml-cuda.dll": b"cuda"}
+    archive = tmp_path / "cuda.zip"
+    _zip(archive, files)
+    artifact = replace(
+        _runtime_artifact(archive, files),
+        id="llama-b10672-cuda",
+        backend=RuntimeBackend.CUDA_12,
+        hardware_compatibility={"api": "cuda", "minimum_windows_driver": "551.61"},
+        prerequisites=("NVIDIA driver 551.61 or newer",),
+    )
+
+    class _NoCudaSupervisor(_FakeSupervisor):
+        def list_devices(self) -> tuple[str, ...]:
+            return ("Vulkan0: Test Vulkan GPU",)
+
+    monkeypatch.setattr(
+        "cupcake_runtime.local_models.managed.LlamaCppSupervisor", _NoCudaSupervisor
+    )
+    manager = CupcakeLocalManager(tmp_path / "profile")
+    manager.install_runtime(artifact, archive, activate=False)
+
+    with pytest.raises(RuntimePackIntegrityError, match="CUDA device"):
+        manager.activate_runtime(artifact.version, artifact.backend)
+
+    assert manager.runtimes.active() is None
 
 
 def test_cupcake_local_installs_loads_unloads_and_removes_without_bundled_weights(
