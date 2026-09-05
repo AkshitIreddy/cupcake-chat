@@ -3643,6 +3643,22 @@ class RuntimeService:
             self.artifacts.list_project(project_id, limit=int(params.get("limit") or 100))
         )
 
+    def _artifact_snapshot_response(
+        self, snapshot: Any, *, inline_limit: int | None = None
+    ) -> dict[str, Any]:
+        result = _artifact_snapshot_wire(snapshot, inline_limit=inline_limit)
+        history = self.artifacts.history(
+            snapshot.artifact.id,
+            project_id=snapshot.artifact.project_id,
+        )
+        result["revisionCount"] = len(history)
+        result["revisionNumber"] = next(
+            index
+            for index, revision in enumerate(history, start=1)
+            if revision.id == snapshot.revision.id
+        )
+        return result
+
     def _artifacts_create(self, params: Mapping[str, Any]) -> Any:
         snapshot = self.artifacts.create(
             project_id=_required_string(params, "projectId"),
@@ -3654,7 +3670,7 @@ class RuntimeService:
             conversation_id=_optional_string(params, "conversationId"),
             source_message_id=_optional_string(params, "sourceMessageId"),
         )
-        return _artifact_snapshot_wire(snapshot)
+        return self._artifact_snapshot_response(snapshot)
 
     def _artifacts_get(self, params: Mapping[str, Any]) -> Any:
         snapshot = self.artifacts.get(
@@ -3662,7 +3678,7 @@ class RuntimeService:
             project_id=_required_string(params, "projectId"),
             revision_id=_optional_string(params, "revisionId"),
         )
-        return _artifact_snapshot_wire(snapshot, inline_limit=1024 * 1024)
+        return self._artifact_snapshot_response(snapshot, inline_limit=1024 * 1024)
 
     def _artifacts_content_read(self, params: Mapping[str, Any]) -> Any:
         snapshot = self.artifacts.get(
@@ -3697,7 +3713,7 @@ class RuntimeService:
             change_summary=_optional_string(params, "changeSummary"),
             source_message_id=_optional_string(params, "sourceMessageId"),
         )
-        return _artifact_snapshot_wire(snapshot)
+        return self._artifact_snapshot_response(snapshot)
 
     def _artifacts_history(self, params: Mapping[str, Any]) -> Any:
         return _jsonable(

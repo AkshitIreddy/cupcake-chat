@@ -455,6 +455,8 @@ interface RuntimeArtifactSnapshot {
   revision: RuntimeArtifactRevision;
   content?: string;
   byteSize?: number;
+  revisionNumber?: number;
+  revisionCount?: number;
 }
 
 interface WorkspaceContextValue {
@@ -2988,7 +2990,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             snapshot.artifact,
             snapshot.revision,
             snapshot.content ?? input.content,
-            1,
+            snapshot.revisionCount ?? snapshot.revisionNumber ?? 1,
           );
         }
         setArtifacts((items) => [record, ...items.filter((item) => item.id !== record.id)]);
@@ -3017,7 +3019,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         snapshot.artifact,
         snapshot.revision,
         snapshot.content,
-        artifact.revisionNumber,
+        snapshot.revisionCount ?? snapshot.revisionNumber ?? artifact.revisionNumber,
       );
       if (!revisionId || revisionId === snapshot.artifact.head_revision_id) {
         setArtifacts((items) =>
@@ -3092,7 +3094,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             snapshot.artifact,
             snapshot.revision,
             snapshot.content ?? content,
-            (artifact.revisionNumber ?? 0) + 1,
+            snapshot.revisionCount ??
+              snapshot.revisionNumber ??
+              (artifact.revisionNumber ?? 0) + 1,
           );
         }
         setArtifacts((items) =>

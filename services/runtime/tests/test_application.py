@@ -384,8 +384,12 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
             "kind": "document",
             "mimeType": "text/markdown",
             "content": "# One",
+            "authorKind": "assistant",
         },
     )
+    assert artifact["revisionNumber"] == 1
+    assert artifact["revisionCount"] == 1
+    assert artifact["revision"]["author_kind"] == "assistant"
     revised, _ = runtime.handle(
         "artifacts.revise",
         {
@@ -393,9 +397,27 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
             "artifactId": artifact["artifact"]["id"],
             "expectedRevisionId": artifact["revision"]["id"],
             "content": "# Two",
+            "changeSummary": "Edited in Artifacts",
         },
     )
     assert revised["content"] == "# Two"
+    assert revised["revisionNumber"] == 2
+    assert revised["revisionCount"] == 2
+    history, _ = runtime.handle(
+        "artifacts.history",
+        {"projectId": project["id"], "artifactId": artifact["artifact"]["id"]},
+    )
+    assert [item["author_kind"] for item in history] == ["assistant", "user"]
+    original, _ = runtime.handle(
+        "artifacts.get",
+        {
+            "projectId": project["id"],
+            "artifactId": artifact["artifact"]["id"],
+            "revisionId": artifact["revision"]["id"],
+        },
+    )
+    assert original["revisionNumber"] == 1
+    assert original["revisionCount"] == 2
     intent, _ = runtime.handle(
         "artifacts.export.intent",
         {

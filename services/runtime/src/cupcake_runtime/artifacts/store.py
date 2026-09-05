@@ -141,7 +141,29 @@ class ArtifactStore:
 
     def history(self, artifact_id: str, *, project_id: str) -> list[ArtifactRevision]:
         self._qualified_artifact(artifact_id, project_id)
-        return [self._revision(item) for item in self._repository.artifact_history(artifact_id)]
+        return [
+            self._revision(item, author_kind=self._historical_author_kind(item))
+            for item in self._repository.artifact_history(artifact_id)
+        ]
+
+    def _historical_author_kind(self, revision: DomainArtifactRevision) -> str:
+        if revision.source_message_id:
+            row = self._repository.database.connection.execute(
+                "SELECT role FROM messages WHERE id=?", (revision.source_message_id,)
+            ).fetchone()
+            if row is not None and str(row["role"]) in {"user", "assistant", "system", "tool"}:
+                return str(row["role"])
+        summary = revision.summary.casefold().strip()
+        if summary == "initial revision" or summary.startswith(
+            ("edited in artifacts", "restored revision")
+        ):
+            return "user"
+        for prefix in ("initial revision by ", "revision by "):
+            if summary.startswith(prefix):
+                author_kind = summary.removeprefix(prefix).strip()
+                if author_kind:
+                    return author_kind
+        return "unknown"
 
     def list_project(self, project_id: str, *, limit: int = 100) -> list[Artifact]:
         if not 1 <= limit <= 500:
