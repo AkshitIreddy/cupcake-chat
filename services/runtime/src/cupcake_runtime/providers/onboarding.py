@@ -766,10 +766,10 @@ class _CloudflareModelsClient:
                 "Cloudflare returned an invalid Workers AI model catalog.",
                 code="invalid_model_catalog",
             )
-        return _normalize_cloudflare_model_search(payload_map)
+        return normalize_cloudflare_model_search(payload_map)
 
 
-def _normalize_cloudflare_model_search(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+def normalize_cloudflare_model_search(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     """Expose invocable Workers AI names instead of opaque catalog record IDs."""
 
     records = payload.get("result")
@@ -779,10 +779,11 @@ def _normalize_cloudflare_model_search(payload: Mapping[str, Any]) -> Mapping[st
             code="invalid_model_catalog",
         )
     normalized: list[dict[str, str]] = []
-    for record in records:
+    for record in cast(list[Any], records):
         if not isinstance(record, Mapping):
             continue
-        name = record.get("name")
+        record_map = cast(Mapping[str, Any], record)
+        name = record_map.get("name")
         if isinstance(name, str) and name.startswith("@cf/"):
             normalized.append({"id": name, "name": name})
     return {"data": normalized}

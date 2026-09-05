@@ -14,9 +14,9 @@ from cupcake_runtime.providers.onboarding import (
     OnboardingCancellation,
     ProviderOnboardingService,
     ProviderTestState,
-    _normalize_cloudflare_model_search,
     named_compatible_base_url,
     named_compatible_model_allowed,
+    normalize_cloudflare_model_search,
     validate_remote_openai_compatible_endpoint,
 )
 
@@ -153,7 +153,7 @@ def test_mistral_v2_sdk_client_is_loaded_from_client_namespace(
 
 
 def test_cloudflare_catalog_uses_invocable_name_instead_of_opaque_record_id() -> None:
-    normalized = _normalize_cloudflare_model_search(
+    normalized = normalize_cloudflare_model_search(
         {
             "success": True,
             "result": [
