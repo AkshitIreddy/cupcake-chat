@@ -4,9 +4,11 @@
 
 This audit traced the packaged chat path from `RuntimeService` through
 `CupcakeAgentEngine` and Pydantic AI, then compared the retained direct adapter
-normalizers against current official API documentation. No credential, live API,
-GUI, or GPU call was used. Provider lists and streams were exercised with bounded
-recorded fixtures. The current packaged route is the authority for capability
+normalizers against current official API documentation. Provider lists and streams
+were exercised with bounded recorded fixtures. One explicitly authorized Gemini
+diagnostic used the owner's key in memory for a single eight-token request through
+the real engine; the key and raw SDK objects were never logged. No GUI or GPU call
+was used by this lane. The current packaged route is the authority for capability
 claims; a feature present in a vendor model but absent from that route is not
 advertised.
 
@@ -84,6 +86,19 @@ chosen exact ID appears, then run a short streamed chat with usage and cancellat
 The non-thinking packaged default remains deliberate: several Nemotron templates put
 raw reasoning in ordinary content unless `enable_thinking` is disabled.
 
+The first packaged owner run exposed an important distinction between a discovered
+limit and a conservative fallback. `/v1/models` omitted an output limit for
+`nvidia/nemotron-3-super-120b-a12b`, so the app displayed its 1,024-token planning
+fallback as if it were a hard model limit. An explicit 6,144-token request was then
+rejected before reaching NVIDIA. NVIDIA's exact inference reference publishes
+`max_tokens` from 1 through 32,768, with a default of 16,384. The descriptor now pins
+32,768 for that exact model. For any still-unknown NIM model, a conservative default
+remains useful for planning but no longer rejects a larger explicit request as though
+the fallback were provider evidence. The original owner responses persisted
+`canonical_metadata.finishReason: "length"`; the partial-response UI and Continue
+action use that durable value rather than treating the cut-off text as a complete
+answer.
+
 ## Named compatible presets
 
 Groq, OpenRouter, and Cloudflare Workers AI use the retained OpenAI-compatible
@@ -101,6 +116,52 @@ The setup policy never falls through to a paid model:
   validated Account ID, and excludes the models Cloudflare marks as requiring a
   paid billing method. Workers AI includes a daily free allocation; account plan
   and usage determine whether later requests can incur charges.
+
+The first packaged Cloudflare connection reached the authenticated search endpoint
+but reported `free_model_unavailable`. The search response carries a catalog record
+identity separately from the invocable Workers AI `name`; the generic normalizer had
+preferred `id`, so the `@cf/...` allowlist could never match. The Cloudflare-specific
+reader now searches for the exact default, requests one bounded page of 100 through
+the API's documented `search`/`per_page` parameters, and emits only `name` values that
+start with `@cf/`. Malformed or empty results still fail closed. A fresh packaged
+connection is required to confirm this correction against the owner's account.
+
+The first packaged OpenRouter response exhausted its 200-token allowance on visible
+planning text and ended mid-response. The exact free route remains
+`nvidia/nemotron-3.5-lightning:free`; the variable `openrouter/free` router is not the
+default. OpenRouter documents `reasoning.effort: "none"` as the switch that disables
+reasoning and `reasoning.exclude: true` as the response-privacy control. The engine
+now sends both explicitly for a no-reasoning request. Exclusion alone would not save
+tokens, because OpenRouter states that excluded reasoning can still be generated and
+billed. The next packaged run must verify a final answer and terminal finish reason,
+not merely accept non-empty assistant text.
+
+## Packaged SDK and error-path incidents
+
+The failed packaged Mistral connection was not caused by PyInstaller omitting the
+package. The build environment contains `mistralai` 2.9.4, and inspection of the
+frozen archive confirmed the `mistralai.client` module and its generated model tree
+were present. Version 2 exposes `Mistral` from `mistralai.client`; importing the
+namespace and looking for a top-level `mistralai.Mistral` incorrectly produced the
+product's `missing_provider_dependency` diagnostic. Both onboarding and chat model
+construction now import `from mistralai.client import Mistral`. Packaging also runs a
+no-network `--provider-load-check` inside the frozen runtime and refuses the candidate
+unless the OpenAI, Anthropic, Google, xAI, Mistral, and Cohere clients and Pydantic AI
+models all construct successfully.
+
+The owner account successfully connected Google and discovered 54 models, including
+the exact `gemini-3.8-flash` ID, but its first two chats ended in the old generic
+`agent_error`. The lane's single eight-token diagnostic reproduced an outer
+`UnexpectedModelBehavior`; that tiny allowance can itself be consumed before visible
+text and therefore did not prove whether the owner's earlier failure was quota,
+request validation, or another provider response. The engine now requests Gemini 3
+low thinking explicitly, does not request thought summaries, and safely traverses
+wrapped exceptions for numeric status codes. It reports stable product categories:
+400 as `invalid_request`, 404 as `model_unavailable`, 429 as `rate_limit`, 5xx as
+provider unavailable, and a known thinking-only token exhaustion as `output_limit`.
+Provider response bodies and credentials remain excluded. A fresh packaged Gemini
+request is still required; the ambiguous diagnostic is not recorded as a successful
+route proof.
 
 Named presets are rehydrated from DPAPI-backed endpoint metadata before the model
 catalog is returned, without a startup network request. A persisted exact NVIDIA
@@ -157,28 +218,33 @@ runtime restart; the credential is still lent only when that model is used.
 32. [Cohere list models](https://docs.cohere.com/v2/reference/list-models) — endpoint filtering and pagination.
 33. [NVIDIA NIM LLM APIs](https://docs.api.nvidia.com/nim/reference/llm-apis) — hosted OpenAI-compatible inference base and model listing.
 34. [NVIDIA Nemotron 3 Super hosted page](https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b) — exact hosted ID, Chat classification, 1M context, and reasoning template controls.
-35. [NVIDIA Nemotron 3.5 Lightning hosted page](https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b) — exact hosted ID, availability, and 1M context.
-36. [NVIDIA DeepSeek V4 Flash hosted page](https://build.nvidia.com/deepseek-ai/deepseek-v4-flash-0731) — exact hosted ID and chat-completions example.
-37. [NVIDIA Kimi K3 model card](https://build.nvidia.com/moonshotai/kimi-k3/modelcard) — exact hosted ID, modalities, context, tools, and reasoning.
+35. [NVIDIA Nemotron 3 Super inference reference](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer) — exact 1–32,768 `max_tokens` range, 16,384 default, streaming, and reasoning controls.
+36. [NVIDIA Nemotron 3.5 Lightning hosted page](https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b) — exact hosted ID, availability, and 1M context.
+37. [NVIDIA DeepSeek V4 Flash hosted page](https://build.nvidia.com/deepseek-ai/deepseek-v4-flash-0731) — exact hosted ID and chat-completions example.
+38. [NVIDIA Kimi K3 model card](https://build.nvidia.com/moonshotai/kimi-k3/modelcard) — exact hosted ID, modalities, context, tools, and reasoning.
 
 ### Named compatible providers
 
-38. [Groq OpenAI compatibility](https://console.groq.com/docs/openai) — fixed OpenAI-compatible base URL and request differences.
-39. [Groq supported models](https://console.groq.com/docs/models) — current production IDs, limits, pricing, and model-list endpoint.
-40. [Groq rate limits](https://console.groq.com/docs/rate-limits) — current Free Plan model eligibility and quotas.
-41. [OpenRouter free variant](https://openrouter.ai/docs/guides/routing/model-variants/free) — exact `:free` suffix contract.
-42. [OpenRouter Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) — model discovery fields and price filtering.
-43. [Cloudflare OpenAI compatibility](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) — account-scoped base URL and chat-completions contract.
-44. [Cloudflare model search API](https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/) — authenticated account-scoped model discovery.
-45. [Cloudflare Llama 3.1 8B FP8](https://developers.cloudflare.com/workers-ai/models/llama-3.1-8b-instruct-fp8/) — exact model ID, streaming, context, and usage.
-46. [Cloudflare Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) — daily free allocation and models that require paid billing.
+39. [Groq OpenAI compatibility](https://console.groq.com/docs/openai) — fixed OpenAI-compatible base URL and request differences.
+40. [Groq supported models](https://console.groq.com/docs/models) — current production IDs, limits, pricing, and model-list endpoint.
+41. [Groq rate limits](https://console.groq.com/docs/rate-limits) — current Free Plan model eligibility and quotas.
+42. [OpenRouter free variant](https://openrouter.ai/docs/guides/routing/model-variants/free) — exact `:free` suffix contract.
+43. [OpenRouter Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) — model discovery fields and price filtering.
+44. [OpenRouter reasoning tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) — `reasoning.effort`, disabling, exclusion, token accounting, and per-model mandatory reasoning metadata.
+45. [Cloudflare OpenAI compatibility](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) — account-scoped base URL and chat-completions contract.
+46. [Cloudflare model search API](https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/) — authenticated account-scoped model discovery and its `search`, `per_page`, and `result` contract.
+47. [Cloudflare Llama 3.1 8B FP8](https://developers.cloudflare.com/workers-ai/models/llama-3.1-8b-instruct-fp8/) — exact model ID, streaming, context, and usage.
+48. [Cloudflare Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) — daily free allocation and models that require paid billing.
 
 ## Remaining live-only evidence
 
-The code and recorded tests cannot prove owner-account access, quota, regional model
-availability, or current server-side aliases. The packaged owner-profile pass must run
-one real stream per configured provider, verify first token and final usage, cancel one
-long response, run one tool request through the Rust broker, test one supported image
-and one PDF, and confirm the chosen NIM ID from that account's bounded model response.
-Failures should retain the redacted provider error category and must not be replaced by
+Source checks now pass the complete runtime suite with one existing skip, strict
+Pyright, Ruff, and the no-network provider-load check for all six retained SDK-backed
+routes. Those results do not qualify a fresh Windows package. The new onedir build
+must pass the same frozen provider-load check, then the owner-profile pass must retry
+Mistral, Gemini, Cloudflare, OpenRouter, and the 6,144-token NIM code response. It must
+verify first token, terminal finish reason, final usage, and durable reload state;
+non-empty but truncated or reasoning-only text is not success. Account access, quota,
+regional availability, and current server-side aliases remain live-only evidence.
+Failures must retain the redacted provider error category and must not be replaced by
 mock success.
