@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
-import { chromium } from 'playwright';
+import { chromium } from '@playwright/test';
 
 const execFileAsync = promisify(execFile);
 const args = process.argv.slice(2);
@@ -87,8 +87,7 @@ try {
   evidence.timingsMs.processToHome = Math.round(performance.now() - startedAt);
   evidence.processTreeAtReady = await processTree(child.pid);
 
-  const onboardingDismiss = page.getByRole('button', { name: 'Skip onboarding', exact: true });
-  if (await onboardingDismiss.isVisible().catch(() => false)) await onboardingDismiss.click();
+  await dismissOnboarding(page, 2_000);
 
   await capture(page, '01-home', output, evidence, { closeups: true });
   await navigate(page, 'Chats');
@@ -99,6 +98,7 @@ try {
   // production renderer, without writing a new selection to product state.
   await page.goto('https://tauri.localhost/?view=chat', { waitUntil: 'domcontentloaded' });
   await page.locator('.chat-main').waitFor({ timeout: 180_000 });
+  await dismissOnboarding(page, 1_000);
   await capture(page, '03-active-chat', output, evidence, { closeups: true });
 
   await navigate(page, 'Projects');
@@ -354,12 +354,21 @@ if (!closedThroughUi) throw new Error('Packaged app did not close through its ow
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 
 async function navigate(activePage, label) {
+  await dismissOnboarding(activePage);
   const button = activePage.locator('.shelf__nav, .shelf__bottom').getByRole('button', {
     name: label,
     exact: true,
   });
   await button.first().click();
   await activePage.waitForTimeout(250);
+}
+
+async function dismissOnboarding(activePage, waitMs = 0) {
+  const button = activePage.getByRole('button', { name: 'Skip onboarding', exact: true });
+  if (waitMs > 0) {
+    await button.waitFor({ state: 'visible', timeout: waitMs }).catch(() => undefined);
+  }
+  if (await button.isVisible().catch(() => false)) await button.click();
 }
 
 async function capture(activePage, name, directory, result, options = {}) {
