@@ -44,6 +44,21 @@ def service(tmp_path: Path) -> RuntimeService:
     return RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
 
 
+def _active_cuda_13_runtime(*, verify_integrity: bool = True) -> SimpleNamespace:
+    del verify_integrity
+    return SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679")
+
+
+def _active_cpu_runtime(*, verify_integrity: bool = True) -> SimpleNamespace:
+    del verify_integrity
+    return SimpleNamespace(backend=RuntimeBackend.CPU, version="b10679")
+
+
+def _no_active_runtime(*, verify_integrity: bool = True) -> None:
+    del verify_integrity
+    return None
+
+
 def test_broker_route_resolution_never_exempts_a_generic_remote_endpoint(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     descriptor, _ = runtime.handle(
@@ -261,7 +276,7 @@ def test_local_vram_only_load_uses_current_free_vram_and_full_estimate(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+        _active_cuda_13_runtime,
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
@@ -308,7 +323,7 @@ def test_local_vram_only_load_rejects_cpu_runtime(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CPU, version="b10679"),
+        _active_cpu_runtime,
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
@@ -340,7 +355,7 @@ def test_local_load_rejects_reserve_policy_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runtime = service(tmp_path)
-    monkeypatch.setattr(runtime.cupcake_local.runtimes, "active", lambda **_kwargs: None)
+    monkeypatch.setattr(runtime.cupcake_local.runtimes, "active", _no_active_runtime)
 
     with pytest.raises(RuntimeCommandError) as refused:
         runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
@@ -363,7 +378,7 @@ def test_local_hybrid_load_passes_vram_reserve_to_llama_fit(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+        _active_cuda_13_runtime,
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
