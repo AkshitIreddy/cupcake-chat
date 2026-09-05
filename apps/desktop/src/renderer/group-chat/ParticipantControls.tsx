@@ -21,7 +21,7 @@ import type {
 } from '../types';
 import { modelIsAvailableInChat } from '../model-intelligence';
 import { PersonaPortrait } from './PersonaPortrait';
-import { participantRouteSummary } from './persona-utils';
+import { participantRouteSummary, personaModelId } from './persona-utils';
 import { useDialogFocus } from './useDialogFocus';
 
 export function ParticipantTray({
@@ -300,9 +300,7 @@ export function AddCupcakeDialog({
   const candidates = personas
     .filter((persona) => !persona.archivedAt && !rosterIds.has(persona.id))
     .map((persona) => {
-      const model = models.find(
-        (item) => item.id === persona.modelId || item.runtimeModelId === persona.modelId,
-      );
+      const model = models.find((item) => personaModelId(item) === persona.modelId);
       return { persona, model, ready: Boolean(model && modelIsAvailableInChat(model)) };
     })
     .filter(

@@ -9,6 +9,7 @@ import {
   insertParticipantMention,
   mentionTokenAtCaret,
   normalizePersonaHandle,
+  personaModelId,
   reconcileMentions,
   validatePersonaDraft,
 } from './persona-utils';
@@ -57,6 +58,23 @@ const model = (overrides: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
 });
 
 describe('persona handles', () => {
+  it('keeps an unloaded local persona on the exact route without confusing lifecycle IDs', () => {
+    const local = model({
+      id: 'cupcake-local:qwen3-8b-q4-k-m',
+      runtimeModelId: 'qwen3-8b-q4-k-m',
+      route: 'Local',
+      status: 'installed',
+    });
+    const canonical = 'openai-compatible:cupcake-local/qwen3-8b-q4-k-m';
+    expect(personaModelId(local)).toBe(canonical);
+    expect(validatePersonaDraft({ ...persona(), modelId: canonical }, [], [local])).toEqual({});
+    expect(
+      validatePersonaDraft({ ...persona(), modelId: 'qwen3-8b-q4-k-m' }, [], [local]).modelId,
+    ).toMatch(/no longer in the catalog/);
+    expect(personaModelId({ ...local, id: canonical })).toBe(canonical);
+    expect(personaModelId(model({ runtimeModelId: 'gpt-6-astra' }))).toBe('openai:gpt-6-astra');
+  });
+
   it('normalizes to the same conservative ASCII identity accepted by the runtime', () => {
     expect(normalizePersonaHandle(' @Miso Cake! ')).toBe('miso-cake');
     expect(normalizePersonaHandle('MÍSØ')).toBe('ms');

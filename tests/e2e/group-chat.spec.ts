@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
-type GroupScenario = 'complete' | 'stop' | 'cloud' | 'unavailable' | 'all-disabled' | 'interrupted';
+type GroupScenario =
+  'complete' | 'stop' | 'cloud' | 'unavailable' | 'all-disabled' | 'interrupted' | 'unloaded-local';
 
 const ids = {
   project: '01a07000-0000-7000-8000-000000000001',
@@ -596,10 +597,10 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
               };
               const results: Record<string, unknown> = {
                 'app.bootstrap': {
-                  selectedModelId: localModelId,
+                  selectedModelId: scenario === 'unloaded-local' ? cloudModelId : localModelId,
                   projects: [{ id: ids.project, name: 'Atlas', description: '', status: 'active' }],
                   conversations: [conversation],
-                  models: [localModel, cloudModel],
+                  models: scenario === 'unloaded-local' ? [cloudModel] : [localModel, cloudModel],
                   tools: [],
                   hardware: {},
                   localRuntimes: [],
@@ -618,7 +619,7 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
                 'broker.permission_mode.get': { mode: 'guarded' },
                 'migration.detect': { state: 'not_found', available: false },
                 'local_models.cupcake.status': {
-                  activeModelId: 'qwen3-4b-q4-k-m',
+                  activeModelId: scenario === 'unloaded-local' ? null : 'qwen3-4b-q4-k-m',
                   availableModels: [
                     {
                       id: 'qwen3-4b-q4-k-m',
@@ -649,6 +650,27 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
               if (method === 'groups.turn.preflight')
                 return { ok: true, result: preflight(params) };
               if (method === 'groups.turn.send') return completeSend(params);
+              if (method === 'personas.create') {
+                if (params.modelId !== localModelId)
+                  return {
+                    ok: false,
+                    error: {
+                      code: 'PERSONA_MODEL_NOT_FOUND',
+                      message: 'An exact catalog route is required.',
+                      retryable: false,
+                    },
+                  };
+                return {
+                  ok: true,
+                  result: {
+                    ...params,
+                    id: '01a07000-0000-7000-8000-00000000000c',
+                    createdAt: now,
+                    updatedAt: now,
+                    archivedAt: null,
+                  },
+                };
+              }
               if (method === 'conversations.participants.add') {
                 const saved = participant(ids.participantCloud, cloud, participants.length);
                 participants = [...participants, saved];
@@ -897,6 +919,44 @@ test('add Cupcake separates ready and repairable personas and persists the chose
   );
   expect(addCalls).toHaveLength(1);
   expect(addCalls[0]?.params?.personaId).toBe(ids.personaCloud);
+});
+
+test('a local Cupcake can be configured without loading its installed model', async ({
+  page,
+}, testInfo) => {
+  await installGroupBridge(page, 'unloaded-local');
+  await openGroupChat(page);
+  await page.getByTestId('add-cupcake').click();
+  await page.getByRole('button', { name: 'Create a Cupcake', exact: true }).first().click();
+  const editor = page.getByTestId('persona-editor');
+  await editor.getByLabel('Name', { exact: true }).fill('Juniper');
+  await editor.getByRole('textbox', { name: 'Handle', exact: true }).fill('juniper');
+  await editor.getByLabel('Role', { exact: true }).fill('Private local reviewer');
+  await editor.getByRole('button', { name: /Choose an exact model/ }).click();
+  await editor.getByLabel('Show routes that need setup or loading').check();
+  await editor.getByRole('option').filter({ hasText: 'Qwen3 4B' }).click();
+  await expect(editor.locator('.persona-editor__preview')).toContainText('Qwen3 4B');
+  await page.screenshot({
+    path: `E:/temp/cupcake-overhaul-20260905/local-persona-${testInfo.project.name}.png`,
+  });
+  await editor.getByRole('button', { name: 'Create Cupcake', exact: true }).click();
+  await expect(editor).toBeHidden();
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __groupQa: { logs: Array<{ method: string; params?: Record<string, unknown> }> };
+        }
+      ).__groupQa.logs,
+  );
+  expect(
+    calls.filter((call) => call.method === 'personas.create').map((call) => call.params?.modelId),
+  ).toEqual(['openai-compatible:cupcake-local/qwen3-4b-q4-k-m']);
+  expect(
+    calls.filter((call) =>
+      ['local_models.cupcake.load', 'groups.turn.send', 'chat.send'].includes(call.method),
+    ),
+  ).toEqual([]);
 });
 
 test('narrow group controls remain operable without page overflow', async ({ page }, testInfo) => {

@@ -2131,6 +2131,8 @@ class RuntimeService:
         try:
             descriptor = self.providers.catalog.select(model_id)
         except KeyError:
+            if self._known_local_persona_model(model_id):
+                return
             raise RuntimeCommandError(
                 "PERSONA_MODEL_NOT_FOUND", "Choose an exact model from the current catalog"
             ) from None
@@ -2139,6 +2141,18 @@ class RuntimeService:
             raise RuntimeCommandError(
                 "PERSONA_MODEL_INCOMPATIBLE", "This model cannot run a chat response"
             )
+
+    def _known_local_persona_model(self, model_id: str) -> bool:
+        prefix = "openai-compatible:cupcake-local/"
+        if not model_id.startswith(prefix):
+            return False
+        try:
+            # Read the already-verified catalog only. Creating or opening a persona
+            # must not load weights or register a supposedly live model endpoint.
+            artifact = self.cupcake_local.model_artifact(model_id.removeprefix(prefix))
+        except (KeyError, RuntimeError):
+            return False
+        return "chat" in artifact.capability_tags or "chat" in artifact.task_tags
 
     def _group_participant_public(self, participant: Mapping[str, Any]) -> dict[str, Any]:
         result = dict(participant)
@@ -2156,6 +2170,11 @@ class RuntimeService:
         try:
             descriptor = self.providers.catalog.select(model_id)
         except KeyError:
+            if self._known_local_persona_model(model_id):
+                return {
+                    "status": "local_not_loaded",
+                    "message": "Install or load this exact local model before the group turn.",
+                }
             return {"status": "model_missing", "message": "Choose an available model."}
         if (
             descriptor.metadata.get("chat_compatibility") == "non_chat"

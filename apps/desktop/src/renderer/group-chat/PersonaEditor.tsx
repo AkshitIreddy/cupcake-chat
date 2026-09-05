@@ -7,6 +7,7 @@ import {
   modelCanBackPersona,
   normalizePersonaHandle,
   personaDraft,
+  personaModelId,
   validatePersonaDraft,
   type PersonaDraft,
 } from './persona-utils';
@@ -77,9 +78,7 @@ export function PersonaEditor({
     return () => document.removeEventListener('keydown', closeModelList, true);
   }, [modelOpen]);
 
-  const selectedModel = models.find(
-    (model) => model.id === draft.modelId || model.runtimeModelId === draft.modelId,
-  );
+  const selectedModel = models.find((model) => personaModelId(model) === draft.modelId);
   const shownModels = useMemo(() => {
     const query = modelQuery.trim().toLocaleLowerCase();
     return models
@@ -195,7 +194,7 @@ export function PersonaEditor({
                 <label>
                   Handle
                   <span className="handle-input">
-                    <b>@</b>
+                    <b aria-hidden="true">@</b>
                     <input
                       value={draft.handle}
                       maxLength={32}
@@ -400,7 +399,7 @@ export function PersonaEditor({
                   <div role="listbox" aria-label="Available models">
                     {shownModels.map((model) => {
                       const configurable = modelCanBackPersona(model);
-                      const canonicalId = model.runtimeModelId ?? model.id;
+                      const canonicalId = personaModelId(model);
                       return (
                         <button
                           key={model.id}

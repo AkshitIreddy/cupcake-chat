@@ -23,6 +23,12 @@ export interface PersonaDraft {
   modelId: string;
 }
 
+export function personaModelId(model: ModelDescriptor): string {
+  return model.id.startsWith('cupcake-local:')
+    ? `openai-compatible:cupcake-local/${model.id.slice('cupcake-local:'.length)}`
+    : model.id;
+}
+
 export function normalizePersonaHandle(value: string): string {
   return value
     .trim()
@@ -74,9 +80,7 @@ export function validatePersonaDraft(
     errors.role = 'Keep the role to 120 characters or fewer.';
   if (!draft.modelId) errors.modelId = 'Choose an exact model.';
   else {
-    const model = models.find(
-      (item) => item.id === draft.modelId || item.runtimeModelId === draft.modelId,
-    );
+    const model = models.find((item) => personaModelId(item) === draft.modelId);
     if (!model) errors.modelId = 'That exact model is no longer in the catalog.';
     else if (!modelCanBackPersona(model))
       errors.modelId = 'Choose a chat-compatible model for this Cupcake.';
@@ -173,11 +177,7 @@ export function participantRouteSummary(
 ): { label: string; detail: string; allLocal: boolean } {
   const ready = participants.filter((item) => item.enabled && item.availability.status === 'ready');
   const routes = ready.map((participant) => {
-    const model = models.find(
-      (item) =>
-        item.id === participant.persona.modelId ||
-        item.runtimeModelId === participant.persona.modelId,
-    );
+    const model = models.find((item) => personaModelId(item) === participant.persona.modelId);
     return {
       route: model?.route ?? 'Cloud',
       provider: model?.provider ?? 'Unavailable route',
