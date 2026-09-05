@@ -5,6 +5,7 @@ import {
   applyGroupTurnEvent,
   applyRuntimeMessageEvent,
   mapRuntimeMessage,
+  normalizeOptionalArray,
   type MessageRecord,
 } from './workspace';
 
@@ -25,6 +26,13 @@ const speaker = (name: string, sequence: number) => ({
 });
 
 describe('group conversation renderer state', () => {
+  it('treats an absent optional legacy bridge collection as empty', () => {
+    expect(normalizeOptionalArray(undefined)).toEqual([]);
+    expect(normalizeOptionalArray(null)).toEqual([]);
+    expect(normalizeOptionalArray({})).toEqual([]);
+    expect(normalizeOptionalArray(['persona-one'])).toEqual(['persona-one']);
+  });
+
   it('rehydrates the persisted nested speaker snapshot without losing attribution', () => {
     const mapped = mapRuntimeMessage({
       id: 'message-two',

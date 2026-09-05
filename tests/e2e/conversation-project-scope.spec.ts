@@ -174,10 +174,15 @@ test('opening a chat binds its project through context refresh, preflight, and s
 
   await expect(page.locator('.chat-header h1')).toHaveText('Atlas decision room');
   await expect(page.locator('.chat-project')).toContainText('Atlas');
-  await expect(page.locator('.composer-chip').filter({ hasText: 'Atlas' })).toBeVisible();
+  await expect(page.locator('.composer-chip').filter({ hasText: 'Atlas' })).toContainText('Atlas');
   await expect(page.getByRole('alert')).toContainText(
     'Conversation opened, but its supporting context could not be refreshed',
   );
+  // This bridge predates the optional group RPCs and returns a successful undefined result for
+  // unknown methods. The chat must stay in solo mode instead of treating undefined as a roster.
+  await expect(page.getByTestId('participant-tray')).toBeVisible();
+  await expect(page.getByTestId('group-settings')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible();
   expect(pageErrors).toEqual([]);
 
   await page.getByLabel('Message Cupcake').fill('Use the Atlas project context.');

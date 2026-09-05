@@ -756,6 +756,43 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+export function normalizeOptionalArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function normalizeGroupSettings(value: unknown): ConversationGroupSettings | null {
+  const item = recordValue(value);
+  if (
+    !item ||
+    typeof item.conversationId !== 'string' ||
+    (item.strategy !== 'smart-selective' && item.strategy !== 'mentions-only') ||
+    !Number.isInteger(item.maxReplies) ||
+    Number(item.maxReplies) < 1 ||
+    Number(item.maxReplies) > 3 ||
+    !Number.isInteger(item.rosterRevision) ||
+    typeof item.updatedAt !== 'string'
+  )
+    return null;
+  return item as unknown as ConversationGroupSettings;
+}
+
+function normalizePersistedGroupTurn(value: unknown): ContractGroupTurn | null {
+  const item = recordValue(value);
+  const plan = recordValue(item?.plan);
+  if (
+    !item ||
+    !plan ||
+    typeof item.turnId !== 'string' ||
+    typeof item.conversationId !== 'string' ||
+    typeof item.branchId !== 'string' ||
+    typeof item.status !== 'string' ||
+    !Array.isArray(item.members) ||
+    !Array.isArray(item.selectorUsage)
+  )
+    return null;
+  return item as unknown as ContractGroupTurn;
+}
+
 function safeGroupSpeaker(value: unknown): GroupSpeakerSnapshot | undefined {
   const item = recordValue(value);
   if (!item) return undefined;
@@ -2498,7 +2535,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             providerResult.providers.map((item) => [item.provider, item.configured]),
           ),
         );
-        setPersonas(personaResult);
+        setPersonas(normalizeOptionalArray<CupcakePersona>(personaResult));
         const configuredProviders = Object.fromEntries(
           providerResult.providers.map((item) => [item.provider, item.configured]),
         );
@@ -3146,13 +3183,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setMessages(historyResult.map(mapRuntimeMessage));
         const [participantResult, settingsResult, turnResult] = await groupRequest;
         if (generation !== conversationSelectionGeneration.current) return;
-        setParticipants(participantResult.status === 'fulfilled' ? participantResult.value : []);
-        setGroupSettings(settingsResult.status === 'fulfilled' ? settingsResult.value : null);
-        setActiveGroupTurn(
-          turnResult.status === 'fulfilled' && turnResult.value
-            ? mapPersistedGroupTurn(turnResult.value)
+        setParticipants(
+          participantResult.status === 'fulfilled'
+            ? normalizeOptionalArray<ConversationParticipant>(participantResult.value)
+            : [],
+        );
+        setGroupSettings(
+          settingsResult.status === 'fulfilled'
+            ? normalizeGroupSettings(settingsResult.value)
             : null,
         );
+        const persistedGroupTurn =
+          turnResult.status === 'fulfilled' ? normalizePersistedGroupTurn(turnResult.value) : null;
+        setActiveGroupTurn(persistedGroupTurn ? mapPersistedGroupTurn(persistedGroupTurn) : null);
         const [memoryResult, artifactResult] = await contextRequest;
         if (generation !== conversationSelectionGeneration.current) return;
         if (memoryResult.status === 'fulfilled')
@@ -3195,7 +3238,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
         if (generation !== conversationSelectionGeneration.current) return;
         setMessages(history.map(mapRuntimeMessage));
-        setActiveGroupTurn(turn ? mapPersistedGroupTurn(turn) : null);
+        const persistedGroupTurn = normalizePersistedGroupTurn(turn);
+        setActiveGroupTurn(persistedGroupTurn ? mapPersistedGroupTurn(persistedGroupTurn) : null);
       });
     },
     [branches, fixtureMode, guard, request],
@@ -3251,7 +3295,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (conversationId: string) => {
       if (fixtureMode) return;
       const generation = conversationSelectionGeneration.current;
-      const [nextParticipants, nextSettings] = await Promise.all([
+      const [participantResult, settingsResult] = await Promise.allSettled([
         request<ConversationParticipant[]>('conversations.participants.list', {
           conversationId,
         }),
@@ -3263,8 +3307,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         generation === conversationSelectionGeneration.current &&
         activeConversationIdRef.current === conversationId
       ) {
-        setParticipants(nextParticipants);
-        setGroupSettings(nextSettings);
+        setParticipants(
+          participantResult.status === 'fulfilled'
+            ? normalizeOptionalArray<ConversationParticipant>(participantResult.value)
+            : [],
+        );
+        setGroupSettings(
+          settingsResult.status === 'fulfilled'
+            ? normalizeGroupSettings(settingsResult.value)
+            : null,
+        );
       }
     },
     [fixtureMode, request],
