@@ -36,7 +36,7 @@ def test_catalog_local_persona_survives_restart_without_loading(tmp_path: Path) 
         {"conversationId": created["conversation"]["id"], "personaId": persona["id"]},
     )
     assert participant["availability"]["status"] == "local_not_loaded"
-    assert runtime.cupcake_local._supervisor is None
+    assert runtime.cupcake_local.status()["activeModelId"] is None
     # Configuring a future route must not make the generic registry think it is loaded.
     with pytest.raises(KeyError):
         runtime.providers.catalog.select(canonical)
@@ -49,7 +49,7 @@ def test_catalog_local_persona_survives_restart_without_loading(tmp_path: Path) 
     )
     assert roster[0]["persona"]["modelId"] == canonical
     assert roster[0]["availability"]["status"] == "local_not_loaded"
-    assert reopened.cupcake_local._supervisor is None
+    assert reopened.cupcake_local.status()["activeModelId"] is None
     with pytest.raises(RuntimeCommandError) as error:
         reopened.handle(
             "personas.create",
