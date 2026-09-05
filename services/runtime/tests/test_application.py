@@ -7,12 +7,21 @@ import sqlite3
 import threading
 from importlib.util import find_spec
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.domain.models import Setting
+from cupcake_runtime.local_models.types import (
+    HardwareProfile,
+    ModelArtifact,
+    RuntimeBackend,
+    RuntimeEndpoint,
+    RuntimeKind,
+    RuntimeState,
+)
 from cupcake_runtime.providers.types import (
     ModelCapabilities,
     ModelDescriptor,
@@ -102,6 +111,203 @@ def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
         "deferredUntilUse": True,
         "errorType": None,
     }
+    runtime.close()
+
+
+def _local_model_artifact(*, size_bytes: int = 5_000_000_000) -> ModelArtifact:
+    return ModelArtifact(
+        "qwen3-8b-q4-k-m",
+        "Qwen3 8B Q4_K_M",
+        "qwen3",
+        8,
+        "Q4_K_M",
+        size_bytes,
+        "0" * 64,
+        ("https://example.invalid/qwen.gguf",),
+        "qwen.gguf",
+        "Apache-2.0",
+        "https://example.invalid/license",
+        131072,
+        architecture="qwen3",
+        context_choices=(4096, 8192),
+    )
+
+
+@pytest.mark.parametrize("available_vram_gb", [4.0, 0.0])
+def test_local_vram_only_load_uses_current_free_vram_and_full_estimate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, available_vram_gb: float
+) -> None:
+    runtime = service(tmp_path)
+    monkeypatch.setattr(
+        runtime.cupcake_local.runtimes,
+        "active",
+        lambda: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+    )
+
+    def model_artifact(_model_id: str) -> ModelArtifact:
+        return _local_model_artifact()
+
+    def detect_test_hardware(_path: Path) -> HardwareProfile:
+        return HardwareProfile(
+            32,
+            24,
+            "NVIDIA GeForce RTX 4070",
+            12,
+            16,
+            ("cuda", "vulkan"),
+            100,
+            "610.43",
+            available_vram_gb=available_vram_gb,
+        )
+
+    monkeypatch.setattr(runtime.cupcake_local, "model_artifact", model_artifact)
+    monkeypatch.setattr(
+        "cupcake_runtime.application.detect_hardware",
+        detect_test_hardware,
+    )
+
+    with pytest.raises(RuntimeCommandError) as refused:
+        runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
+            {
+                "modelId": "qwen3-8b-q4-k-m",
+                "allowRamFallback": False,
+                "reserveVramGb": 1.0,
+                "contextSize": 8192,
+            }
+        )
+
+    assert refused.value.code == "MODEL_EXCEEDS_VRAM_POLICY"
+    assert "KV cache" in str(refused.value)
+    runtime.close()
+
+
+def test_local_vram_only_load_rejects_cpu_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    monkeypatch.setattr(
+        runtime.cupcake_local.runtimes,
+        "active",
+        lambda: SimpleNamespace(backend=RuntimeBackend.CPU, version="b10679"),
+    )
+
+    def model_artifact(_model_id: str) -> ModelArtifact:
+        return _local_model_artifact(size_bytes=600_000_000)
+
+    def detect_test_hardware(_path: Path) -> HardwareProfile:
+        return HardwareProfile(32, 24, None, None, 16, (), 100)
+
+    monkeypatch.setattr(runtime.cupcake_local, "model_artifact", model_artifact)
+    monkeypatch.setattr(
+        "cupcake_runtime.application.detect_hardware",
+        detect_test_hardware,
+    )
+
+    with pytest.raises(RuntimeCommandError) as refused:
+        runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
+            {
+                "modelId": "qwen3-8b-q4-k-m",
+                "allowRamFallback": False,
+                "contextSize": 4096,
+            }
+        )
+
+    assert refused.value.code == "VRAM_ONLY_REQUIRES_ACCELERATION"
+    runtime.close()
+
+
+def test_local_load_rejects_reserve_policy_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    monkeypatch.setattr(runtime.cupcake_local.runtimes, "active", lambda: None)
+
+    with pytest.raises(RuntimeCommandError) as refused:
+        runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
+            {
+                "modelId": "qwen3-8b-q4-k-m",
+                "reserveSystemRamGb": -100,
+                "reserveVramGb": -100,
+            }
+        )
+
+    assert refused.value.code == "INVALID_ARGUMENT"
+    runtime.close()
+
+
+def test_local_hybrid_load_passes_vram_reserve_to_llama_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        runtime.cupcake_local.runtimes,
+        "active",
+        lambda: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+    )
+
+    def model_artifact(_model_id: str) -> ModelArtifact:
+        return _local_model_artifact(size_bytes=600_000_000)
+
+    def detect_test_hardware(_path: Path) -> HardwareProfile:
+        return HardwareProfile(
+            32,
+            24,
+            "NVIDIA GeForce RTX 4070",
+            12,
+            16,
+            ("cuda", "vulkan"),
+            100,
+            "610.43",
+            available_vram_gb=10.0,
+        )
+
+    monkeypatch.setattr(runtime.cupcake_local, "model_artifact", model_artifact)
+    monkeypatch.setattr(
+        "cupcake_runtime.application.detect_hardware",
+        detect_test_hardware,
+    )
+
+    async def load(_model_id: str, *, config: Any, timeout_seconds: float) -> RuntimeEndpoint:
+        captured["config"] = config
+        captured["timeout"] = timeout_seconds
+        return RuntimeEndpoint(
+            id="cupcake_llama_cpp:test",
+            kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
+            base_url="http://127.0.0.1:49152/private",
+            state=RuntimeState.READY,
+            managed=True,
+        )
+
+    monkeypatch.setattr(runtime.cupcake_local, "load", load)
+
+    def register_local_endpoint_model(**_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(id="openai-compatible:cupcake-local/test")
+
+    def touch_local_model_idle_timer(_model_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(runtime, "_register_local_endpoint_model", register_local_endpoint_model)
+    monkeypatch.setattr(runtime, "_touch_local_model_idle_timer", touch_local_model_idle_timer)
+    monkeypatch.setattr(
+        runtime.cupcake_local,
+        "_supervisor",
+        SimpleNamespace(authorization_headers=lambda: {"Authorization": "Bearer test-only"}),
+    )
+
+    result = runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
+        {
+            "modelId": "qwen3-8b-q4-k-m",
+            "allowRamFallback": True,
+            "reserveVramGb": 2.25,
+            "contextSize": 4096,
+        }
+    )
+
+    assert captured["config"].fit_target_mib == 2304
+    assert result["memoryPlacement"]["observedFreeVramGb"] == 10.0
+    assert result["memoryPlacement"]["estimatedKvCacheGb"] > 0
+    monkeypatch.setattr(runtime.cupcake_local, "_supervisor", None)
     runtime.close()
 
 

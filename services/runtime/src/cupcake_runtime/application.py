@@ -67,7 +67,8 @@ from cupcake_runtime.local_models import (
     detect_hardware,
 )
 from cupcake_runtime.local_models.discovery import search_huggingface_gguf
-from cupcake_runtime.local_models.types import RuntimeBackend
+from cupcake_runtime.local_models.recommendations import estimate_model_memory
+from cupcake_runtime.local_models.types import InstalledModel, InstalledRuntimePack, RuntimeBackend
 from cupcake_runtime.mcp import (
     MCPCallBrokerRequest,
     MCPConnectBrokerRequest,
@@ -735,7 +736,9 @@ class RuntimeService:
                     "ramLimitMode": self.repository.get_setting(
                         "models.local.ram_limit_mode", default="auto"
                     ),
-                    "maxRamGb": self.repository.get_setting("models.local.max_ram_gb", default=24.0),
+                    "maxRamGb": self.repository.get_setting(
+                        "models.local.max_ram_gb", default=24.0
+                    ),
                     "reserveSystemRamGb": self.repository.get_setting(
                         "models.local.reserve_system_ram_gb", default=4.0
                     ),
@@ -745,8 +748,13 @@ class RuntimeService:
                     "timeoutSeconds": 180,
                 }
             )
-            descriptor = result.get("model") if isinstance(result, Mapping) else None
-            loaded = isinstance(descriptor, Mapping) and descriptor.get("id") == selected
+            descriptor: Mapping[str, object] | None = None
+            if isinstance(result, Mapping):
+                typed_result = cast(Mapping[str, object], result)
+                raw_descriptor = typed_result.get("model")
+                if isinstance(raw_descriptor, Mapping):
+                    descriptor = cast(Mapping[str, object], raw_descriptor)
+            loaded = descriptor is not None and descriptor.get("id") == selected
             return {"attempted": True, "loaded": loaded, "errorType": None}
         except Exception as exc:
             return {"attempted": True, "loaded": False, "errorType": type(exc).__name__}
@@ -955,11 +963,16 @@ class RuntimeService:
 
     def _local_models_discovery_search(self, params: Mapping[str, Any]) -> Any:
         query = str(params.get("query") or "")
-        limit_value = params.get("limit", 120)
+        limit_value = params.get("limit", 36)
+        cursor_value = params.get("cursor")
         if isinstance(limit_value, bool) or not isinstance(limit_value, (int, float)):
             raise RuntimeCommandError("INVALID_ARGUMENT", "limit must be a number")
         try:
-            return search_huggingface_gguf(query, limit=int(limit_value))
+            return search_huggingface_gguf(
+                query,
+                limit=int(limit_value),
+                cursor=str(cursor_value) if cursor_value is not None else None,
+            )
         except (OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             raise RuntimeCommandError(
                 "MODEL_DISCOVERY_UNAVAILABLE",
@@ -995,12 +1008,12 @@ class RuntimeService:
             )
         accepted_license_urls = tuple(cast(Sequence[str], accepted_license_url_items))
         if artifact_kind == "model":
-            artifact = self.cupcake_local.model_artifact(artifact_id)
-            self.cupcake_local.begin_model_download(artifact)
+            model_artifact = self.cupcake_local.model_artifact(artifact_id)
+            self.cupcake_local.begin_model_download(model_artifact)
         elif artifact_kind == "runtime":
-            artifact = self.cupcake_local.runtime_artifact(artifact_id)
+            runtime_artifact = self.cupcake_local.runtime_artifact(artifact_id)
             self.cupcake_local.begin_runtime_download(
-                artifact, accepted_license_urls=accepted_license_urls
+                runtime_artifact, accepted_license_urls=accepted_license_urls
             )
         else:
             raise RuntimeCommandError("INVALID_ARGUMENT", "artifactKind must be model or runtime")
@@ -1020,7 +1033,7 @@ class RuntimeService:
                 previous = snapshot
             await asyncio.sleep(0.1)
         snapshot = await operation
-        installed = None
+        installed: InstalledModel | InstalledRuntimePack | None = None
         if snapshot.state.value == "completed":
             if artifact_kind == "model":
                 _, installed = await self.cupcake_local.download_model_by_id(artifact_id)
@@ -1089,6 +1102,14 @@ class RuntimeService:
             )
         reserve_system_ram_gb = float(params.get("reserveSystemRamGb", 4))
         reserve_vram_gb = float(params.get("reserveVramGb", 1.5))
+        if not 2 <= reserve_system_ram_gb <= 64:
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "The Windows RAM reserve must be between 2 and 64 GB"
+            )
+        if not 0.5 <= reserve_vram_gb <= 16:
+            raise RuntimeCommandError(
+                "INVALID_ARGUMENT", "The VRAM reserve must be between 0.5 and 16 GB"
+            )
         hardware = detect_hardware(self.data_dir)
         if ram_limit_mode == "manual":
             max_ram_gb = float(params.get("maxRamGb", 24))
@@ -1098,21 +1119,60 @@ class RuntimeService:
             raise RuntimeCommandError(
                 "INVALID_ARGUMENT", "The local-model RAM ceiling must be between 4 and 256 GB"
             )
-        installed_model = self.cupcake_local.models.get(model_id, verify=False)
-        model_bytes = Path(installed_model.path).stat().st_size
+        context_size = int(params.get("contextSize", 4096))
+        try:
+            artifact = self.cupcake_local.model_artifact(model_id)
+        except (KeyError, RuntimeError) as exc:
+            raise RuntimeCommandError(
+                "MODEL_METADATA_UNAVAILABLE",
+                "The installed model has no verified memory metadata; reinstall it from the "
+                "current Cupcake Local catalog before loading",
+            ) from exc
+        memory = estimate_model_memory(artifact, context_size)
         safe_ram_gb = max(0.0, min(max_ram_gb, hardware.available_ram_gb - reserve_system_ram_gb))
-        if allow_ram_fallback and model_bytes > safe_ram_gb * 1024**3:
+        if allow_ram_fallback and memory.total_host_gb > safe_ram_gb:
             raise RuntimeCommandError(
                 "MODEL_EXCEEDS_RAM_POLICY",
-                f"The model weights alone require {model_bytes / 1024**3:.1f} GB, "
-                f"above the current {safe_ram_gb:.1f} GB safe RAM budget after reserves",
+                f"The estimated load needs {memory.total_host_gb:.1f} GB of host-memory "
+                f"headroom including weights, KV cache, and runtime buffers, above the "
+                f"current {safe_ram_gb:.1f} GB safe RAM budget after reserves",
             )
-        safe_vram_gb = max(0.0, (hardware.vram_gb or 0.0) - reserve_vram_gb)
-        if not allow_ram_fallback and model_bytes > safe_vram_gb * 1024**3:
+        observed_free_vram_gb = hardware.available_vram_gb
+        if (
+            not allow_ram_fallback
+            and active_runtime is not None
+            and active_runtime.backend == RuntimeBackend.CPU
+        ):
+            raise RuntimeCommandError(
+                "VRAM_ONLY_REQUIRES_ACCELERATION",
+                "VRAM-only loading requires an active CUDA or Vulkan runtime pack",
+            )
+        if (
+            not allow_ram_fallback
+            and active_runtime is not None
+            and active_runtime.backend != RuntimeBackend.CPU
+            and observed_free_vram_gb is None
+        ):
+            raise RuntimeCommandError(
+                "VRAM_AVAILABILITY_UNKNOWN",
+                "CupcakeAI could not measure currently free VRAM, so a VRAM-only load was "
+                "refused. Refresh device status or allow RAM fallback.",
+            )
+        safe_vram_gb = max(
+            0.0,
+            (
+                observed_free_vram_gb
+                if observed_free_vram_gb is not None
+                else hardware.vram_gb or 0.0
+            )
+            - reserve_vram_gb,
+        )
+        if not allow_ram_fallback and memory.total_accelerator_gb > safe_vram_gb:
             raise RuntimeCommandError(
                 "MODEL_EXCEEDS_VRAM_POLICY",
-                f"The model weights require {model_bytes / 1024**3:.1f} GB, above the "
-                f"current {safe_vram_gb:.1f} GB VRAM budget after reserves",
+                f"The estimated load needs {memory.total_accelerator_gb:.1f} GB of "
+                f"accelerator memory including weights, KV cache, and runtime buffers, "
+                f"above the current {safe_vram_gb:.1f} GB free VRAM budget after reserves",
             )
         default_gpu_layers: int | str = (
             ("auto" if allow_ram_fallback else "all")
@@ -1126,7 +1186,7 @@ class RuntimeService:
         else:
             gpu_layers = int(gpu_layers_value)
         config = LlamaServerConfig(
-            context_size=int(params.get("contextSize", 4096)),
+            context_size=context_size,
             gpu_layers=gpu_layers,
             threads=int(params["threads"]) if params.get("threads") is not None else None,
             device=str(params["device"]) if params.get("device") is not None else None,
@@ -1136,6 +1196,7 @@ class RuntimeService:
                 int(params["ubatchSize"]) if params.get("ubatchSize") is not None else None
             ),
             fit=allow_ram_fallback,
+            fit_target_mib=max(128, min(65_536, round(reserve_vram_gb * 1024))),
         )
         endpoint = asyncio.run(
             self.cupcake_local.load(
@@ -1175,6 +1236,13 @@ class RuntimeService:
                 "reserveSystemRamGb": reserve_system_ram_gb,
                 "reserveVramGb": reserve_vram_gb,
                 "gpuLayers": gpu_layers,
+                "estimatedWeightGb": memory.weight_gb,
+                "estimatedKvCacheGb": memory.kv_cache_gb,
+                "estimatedRuntimeOverheadGb": memory.runtime_overhead_gb,
+                "estimatedAcceleratorGb": memory.total_accelerator_gb,
+                "estimatedHostGb": memory.total_host_gb,
+                "estimateSource": memory.source,
+                "observedFreeVramGb": observed_free_vram_gb,
                 "mode": "hybrid_allowed" if allow_ram_fallback else "vram_only",
             },
         }
