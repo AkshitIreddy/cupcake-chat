@@ -145,6 +145,10 @@ try {
     evidence.screenshots.push(screenshot);
     evidence.outcome = 'already_completed';
   } else {
+    const privacy = await runtimeRequest(page, 'settings.get', { key: 'privacy.default_mode' });
+    if (privacy?.value === 'offline') {
+      throw new Error('Turn off Offline mode before the explicitly authorized hosted showcase');
+    }
     if (existing?.promptSeenButIncomplete) {
       throw new Error(
         'A showcase prompt already exists without complete accepted group evidence; refusing automatic retry',

@@ -4813,7 +4813,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ]);
         if (patch.wallpaper !== undefined) entries.push(['appearance.wallpaper', patch.wallpaper]);
         if (patch.offline !== undefined)
-          entries.push(['privacy.default_mode', patch.offline ? 'offline' : 'connected']);
+          entries.push(['privacy.default_mode', patch.offline ? 'offline' : 'direct']);
         if (patch.proactiveEnabled !== undefined)
           entries.push(['proactive.enabled', patch.proactiveEnabled]);
         if (patch.developerMode !== undefined)
