@@ -2,6 +2,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
+import { chromium } from '@playwright/test';
 
 const args = process.argv.slice(2);
 const option = (name, fallback = undefined) => {
@@ -24,6 +25,12 @@ const installer = resolve(
   ),
 );
 const productName = option('--product-name', 'CupcakeAI 2');
+const portableExecutable = resolve(
+  option(
+    '--portable-executable',
+    join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
+  ),
+);
 if (!process.env.LOCALAPPDATA)
   throw new Error('LOCALAPPDATA is required for NSIS lifecycle testing');
 const installDirectory = normalize(join(process.env.LOCALAPPDATA, productName));
@@ -69,6 +76,7 @@ if (args.includes('--inspect-registry')) {
 }
 
 await access(installer);
+await access(portableExecutable);
 const existingRecords = installedRecords();
 if (existingRecords.length) {
   throw new Error(
@@ -124,15 +132,22 @@ async function waitForDevtools(timeoutMs = 180_000) {
 
 const evidence = {
   installer,
+  portableExecutable,
   installDirectory,
   profile,
   silentInstall: false,
   firstRun: false,
+  firstRunScreenshot: join(dirname(resultPath), 'installed-first-run.png'),
+  sentinel: null,
   silentUninstall: false,
+  uninstallRecordRemoved: false,
   installDirectoryRemoved: false,
+  retainedProfileReopened: false,
+  retainedProfileScreenshot: join(dirname(resultPath), 'portable-retained-profile.png'),
   profileRetained: false,
 };
 let app;
+let browser;
 try {
   await run(installer, ['/S']);
   evidence.silentInstall = true;
@@ -160,12 +175,30 @@ try {
     stdio: 'ignore',
   });
   await waitForDevtools();
+  browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  let page = await waitForPage(browser);
+  await page.locator('.home-hero').waitFor({ timeout: 240_000 });
+  await page.screenshot({ path: evidence.firstRunScreenshot, fullPage: true });
+  const sentinelName = `NSIS lifecycle sentinel ${Date.now()}`;
+  const sentinelDescription = 'Disposable project proving installed runtime persistence.';
+  const sentinel = await runtimeRequest(page, 'projects.create', {
+    name: sentinelName,
+    description: sentinelDescription,
+  });
+  if (!sentinel?.id || sentinel.name !== sentinelName) {
+    throw new Error(
+      `Installed runtime returned an invalid project sentinel: ${JSON.stringify(sentinel)}`,
+    );
+  }
+  evidence.sentinel = {
+    id: sentinel.id,
+    name: sentinelName,
+    description: sentinelDescription,
+  };
   evidence.firstRun = true;
-  app.kill();
-  await Promise.race([
-    new Promise((resolveExit) => app.once('exit', resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 15_000)),
-  ]);
+  await closeThroughUi(page, app);
+  await browser.close();
+  browser = undefined;
   app = undefined;
 
   const uninstallers = (await readdir(installDirectory)).filter((name) =>
@@ -176,6 +209,10 @@ try {
   }
   await run(join(installDirectory, uninstallers[0]), ['/S']);
   evidence.silentUninstall = true;
+  if (installedRecords().length !== 0) {
+    throw new Error(`${productName} uninstall record remained after silent uninstall`);
+  }
+  evidence.uninstallRecordRemoved = true;
   try {
     await access(installDirectory);
     throw new Error(`Uninstaller retained its install directory: ${installDirectory}`);
@@ -185,7 +222,41 @@ try {
   evidence.installDirectoryRemoved = true;
   const profileFiles = await readdir(profile);
   evidence.profileRetained = profileFiles.length > 0;
+
+  app = spawn(portableExecutable, [], {
+    env: {
+      ...process.env,
+      CUPCAKE_TEST_DATA_DIR: profile,
+      CUPCAKE_TEST_HEADLESS: '1',
+      WEBVIEW2_USER_DATA_FOLDER: join(profile, 'webview2-portable-reopen'),
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    },
+    windowsHide: true,
+    stdio: 'ignore',
+  });
+  await waitForDevtools();
+  browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  page = await waitForPage(browser);
+  await page.locator('.home-hero').waitFor({ timeout: 240_000 });
+  const projects = await runtimeRequest(page, 'projects.list', { includeArchived: true });
+  const retained = Array.isArray(projects)
+    ? projects.find((project) => project?.id === evidence.sentinel?.id)
+    : undefined;
+  if (
+    !retained ||
+    retained.name !== evidence.sentinel?.name ||
+    retained.description !== evidence.sentinel?.description
+  ) {
+    throw new Error('Portable host did not recover the exact installed-runtime project sentinel');
+  }
+  evidence.retainedProfileReopened = true;
+  await page.screenshot({ path: evidence.retainedProfileScreenshot, fullPage: true });
+  await closeThroughUi(page, app);
+  await browser.close();
+  browser = undefined;
+  app = undefined;
 } finally {
+  if (browser) await browser.close().catch(() => undefined);
   if (app && app.exitCode === null) app.kill();
   // The product uninstaller is the only component allowed to remove the
   // disposable install. If it fails, retain the install for inspection rather
@@ -198,9 +269,49 @@ if (
   !evidence.silentInstall ||
   !evidence.firstRun ||
   !evidence.silentUninstall ||
+  !evidence.uninstallRecordRemoved ||
   !evidence.installDirectoryRemoved ||
-  !evidence.profileRetained
+  !evidence.profileRetained ||
+  !evidence.retainedProfileReopened
 ) {
   throw new Error(`NSIS lifecycle acceptance was incomplete: ${JSON.stringify(evidence)}`);
 }
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+
+async function waitForPage(activeBrowser, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pages = activeBrowser.contexts().flatMap((context) => context.pages());
+    const page = pages.find((candidate) => candidate.url().startsWith('https://tauri.localhost'));
+    if (page) return page;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error('Installed Tauri WebView page did not become available');
+}
+
+async function runtimeRequest(page, method, params) {
+  const response = await page.evaluate(
+    async ({ requestMethod, requestParams }) => {
+      const api = globalThis.window.cupcake?.runtime;
+      if (!api) return { ok: false, error: { code: 'BRIDGE_UNAVAILABLE' } };
+      return api.request({ method: requestMethod, params: requestParams, timeoutMs: 120_000 });
+    },
+    { requestMethod: method, requestParams: params },
+  );
+  if (!response?.ok) {
+    throw new Error(
+      `${method} failed: ${response?.error?.code ?? 'UNKNOWN'}: ${response?.error?.message ?? ''}`,
+    );
+  }
+  return response.result;
+}
+
+async function closeThroughUi(page, child) {
+  const exited = new Promise((resolveExit) => child.once('exit', resolveExit));
+  await page.getByRole('button', { name: 'Close window' }).click();
+  const result = await Promise.race([
+    exited.then(() => true),
+    new Promise((resolveDelay) => setTimeout(() => resolveDelay(false), 15_000)),
+  ]);
+  if (!result) throw new Error('Packaged app did not exit through its Close control');
+}
