@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from httpx2 import AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -277,6 +277,8 @@ async def test_nvidia_nim_non_thinking_setting_reaches_openai_chat_transport(
 
     assert captured["url"] == "https://integrate.api.nvidia.com/v1/chat/completions"
     assert captured["body"]["model"] == "nvidia/nemotron-test"
+    assert captured["body"]["max_completion_tokens"] == 128
+    assert "max_tokens" not in captured["body"]
     assert captured["body"]["reasoning_effort"] == "high"
     assert captured["body"]["chat_template_kwargs"] == {"enable_thinking": False}
     assert (
@@ -426,6 +428,33 @@ async def test_thinking_only_output_limit_has_actionable_safe_error() -> None:
     assert failure.type is StreamEventType.ERROR
     assert failure.error_code == "output_limit"
     assert failure.text == "The model used its output allowance before producing a response."
+
+
+@pytest.mark.asyncio
+async def test_local_pydantic_output_budget_is_not_reported_as_provider_quota() -> None:
+    async def fail_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        raise UsageLimitExceeded("Exceeded the output_tokens_limit of 200 (output_tokens=256)")
+        yield "unreachable"
+
+    engine = CupcakeAgentEngine(
+        ProviderRegistry(),
+        model_factory=FixedFactory(
+            FunctionModel(stream_function=fail_stream, model_name="local-output-limit")
+        ),
+    )
+    failure = (
+        await collect(
+            engine,
+            ModelRequest(MOCK_DESCRIPTOR.id, (CanonicalMessage("user", "bounded"),)),
+        )
+    )[-1]
+
+    assert failure.type is StreamEventType.ERROR
+    assert failure.error_code == "output_limit"
+    assert failure.retryable is False
+    assert failure.text == "The response exceeded the app's output allowance."
+    assert "provider" not in failure.text.casefold()
 
 
 def test_google_defaults_to_low_supported_thinking_for_short_chat() -> None:

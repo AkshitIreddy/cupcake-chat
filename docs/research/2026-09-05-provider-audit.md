@@ -123,8 +123,20 @@ identity separately from the invocable Workers AI `name`; the generic normalizer
 preferred `id`, so the `@cf/...` allowlist could never match. The Cloudflare-specific
 reader now searches for the exact default, requests one bounded page of 100 through
 the API's documented `search`/`per_page` parameters, and emits only `name` values that
-start with `@cf/`. Malformed or empty results still fail closed. A fresh packaged
-connection is required to confirm this correction against the owner's account.
+start with `@cf/`. Malformed or empty results still fail closed. The fresh packaged
+connection then succeeded and discovered the one pinned model.
+
+Its first 200-token inference ended as `UsageLimitExceeded`. That class is Pydantic
+AI's local run-budget exception, so it is not evidence that the Cloudflare account
+exhausted a plan quota. A no-network transport capture reproduced the cause: the
+generic OpenAI profile translated the app's 200-token setting into
+`max_completion_tokens`, while this model's Cloudflare schema accepts `max_tokens`
+and otherwise defaults to 256. Cloudflare could therefore complete its documented
+default allowance, after which the app's local 200-token guard rejected the reported
+256-token usage. Cloudflare and OpenRouter now receive an explicit compatibility
+profile that emits `max_tokens`; other compatible endpoints, local models, native
+OpenAI, and NVIDIA NIM retain their existing profiles. No further Cloudflare or
+OpenRouter inference was used during diagnosis.
 
 The first packaged OpenRouter response exhausted its 200-token allowance on visible
 planning text and ended mid-response. The exact free route remains

@@ -169,12 +169,20 @@ def classify_provider_error(error: Exception) -> ClassifiedProviderError:
     current: BaseException | None = error
     status = None
     class_names: list[str] = []
+    local_usage_limit: str | None = None
     for _ in range(5):
         if current is None:
             break
         if isinstance(current, ProviderError):
             return ClassifiedProviderError(str(current), current.code, current.retryable)
         class_names.append(type(current).__name__.lower())
+        if type(current).__name__ == "UsageLimitExceeded" and type(current).__module__.startswith(
+            "pydantic_ai"
+        ):
+            # This is Pydantic AI's product-side run budget, not a provider
+            # account or quota response. Its message is locally generated and
+            # safe to use only for choosing a stable product category.
+            local_usage_limit = str(current)
         status = (
             get_path(current, "status_code")
             or get_path(current, "response.status_code")
@@ -194,6 +202,19 @@ def classify_provider_error(error: Exception) -> ClassifiedProviderError:
         return ClassifiedProviderError(
             "The model used its output allowance before producing a response.",
             "output_limit",
+            False,
+        )
+
+    if local_usage_limit is not None:
+        if "output_tokens_limit" in local_usage_limit:
+            return ClassifiedProviderError(
+                "The response exceeded the app's output allowance.",
+                "output_limit",
+                False,
+            )
+        return ClassifiedProviderError(
+            "The run reached an app usage safety limit.",
+            "usage_limit",
             False,
         )
 

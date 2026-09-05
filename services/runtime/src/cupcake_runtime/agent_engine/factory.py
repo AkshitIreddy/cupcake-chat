@@ -79,6 +79,7 @@ class PydanticModelFactory:
             raise ValueError("an OpenAI-compatible endpoint requires an explicit base URL")
         try:
             from pydantic_ai.models.openai import OpenAIChatModel
+            from pydantic_ai.profiles.openai import OpenAIModelProfile
             from pydantic_ai.providers.openai import OpenAIProvider
         except ImportError as exc:
             raise MissingProviderDependency(
@@ -88,4 +89,17 @@ class PydanticModelFactory:
             api_key=config.api_key or "not-required",
             base_url=config.base_url,
         )
+        endpoint_id = descriptor.metadata.get("endpoint_id")
+        if endpoint_id in {"cloudflare", "openrouter"}:
+            # These documented compatibility endpoints accept the established
+            # Chat Completions `max_tokens` field. The generic OpenAI profile
+            # otherwise emits the newer OpenAI-only `max_completion_tokens`,
+            # which Cloudflare ignores and then falls back to its own default.
+            return OpenAIChatModel(
+                descriptor.model,
+                provider=provider,
+                profile=OpenAIModelProfile(
+                    openai_chat_supports_max_completion_tokens=False,
+                ),
+            )
         return OpenAIChatModel(descriptor.model, provider=provider)
