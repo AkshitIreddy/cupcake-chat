@@ -151,6 +151,7 @@ try {
     env: {
       ...process.env,
       CUPCAKE_TEST_DATA_DIR: profile,
+      CUPCAKE_TEST_HEADLESS: '1',
       WEBVIEW2_USER_DATA_FOLDER: join(profile, 'webview2'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     },
@@ -178,7 +179,7 @@ try {
   evidence.profileRetained = profileFiles.length > 0;
 } finally {
   if (app && app.exitCode === null) app.kill();
-  // This path was validated above as a non-root child of repo/out and was
+  // This path was validated above as a non-root child of LOCALAPPDATA and was
   // created solely for this lifecycle test. The retained disposable profile
   // is intentionally not removed so its data-retention evidence can be read.
   await rm(installDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
