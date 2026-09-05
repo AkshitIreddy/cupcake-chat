@@ -71,6 +71,9 @@ impl BrokerProcess {
             )
             .env("CUPCAKE_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
             .env("CUPCAKE_DATA_DIR", data.path())
+            // DPAPI credentials are Windows-user scoped, not CUPCAKE_DATA_DIR
+            // scoped. Tests must never read or replace the owner's vault.
+            .env("LOCALAPPDATA", data.path().join("local-app-data"))
             .env(
                 "CUPCAKE_RUNTIME_PATH",
                 env!("CARGO_BIN_EXE_cupcake-fake-runtime"),
