@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 import sqlite3
 import threading
 from importlib.util import find_spec
@@ -166,6 +167,53 @@ def _local_model_artifact(*, size_bytes: int = 5_000_000_000) -> ModelArtifact:
         architecture="qwen3",
         context_choices=(4096, 8192),
     )
+
+
+def test_local_status_redacts_private_endpoint_identity_to_stable_public_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    private_nonce = "private-capability-nonce-92841"
+    private_url = f"http://127.0.0.1:49152/cupcake-{private_nonce}"
+
+    def mock_status(*, verify_integrity: bool) -> dict[str, Any]:
+        return {
+            "endpoint": {
+                "id": f"cupcake_llama_cpp:{private_url}",
+                "kind": "cupcake_llama_cpp",
+                "base_url": private_url,
+                "state": "ready",
+                "managed": True,
+            },
+            "model": {
+                "id": "qwen3-8b-q4-k-m",
+                "description": "Qwen3 8B managed local model",
+            },
+            "verified": verify_integrity,
+        }
+
+    monkeypatch.setattr(
+        runtime.cupcake_local,
+        "status",
+        mock_status,
+    )
+
+    result, _events = runtime.handle(
+        "local_models.cupcake.status",
+        {"verifyIntegrity": True},
+    )
+    serialized = json.dumps(result)
+
+    assert result["endpoint"]["id"] == "cupcake_llama_cpp:managed"
+    assert result["endpoint"]["base_url"] == ""
+    assert result["model"] == {
+        "id": "qwen3-8b-q4-k-m",
+        "description": "Qwen3 8B managed local model",
+    }
+    assert result["verified"] is True
+    assert private_nonce not in serialized
+    assert private_url not in serialized
+    runtime.close()
 
 
 @pytest.mark.parametrize("available_vram_gb", [4.0, 0.0])

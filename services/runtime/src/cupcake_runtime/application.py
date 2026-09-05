@@ -5371,7 +5371,18 @@ def _redact_json_value(value: Any) -> Any:
             folded = name.casefold()
             if folded in hidden or folded.endswith("path"):
                 continue
-            result[name] = "" if folded in network else _redact_json_value(item)
+            if (
+                folded == "id"
+                and isinstance(item, str)
+                and re.match(
+                    r"^cupcake_llama_cpp:https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:/|$)",
+                    item,
+                    re.IGNORECASE,
+                )
+            ):
+                result[name] = "cupcake_llama_cpp:managed"
+            else:
+                result[name] = "" if folded in network else _redact_json_value(item)
         return result
     if isinstance(value, list):
         return [_redact_json_value(item) for item in cast(list[Any], value)]
