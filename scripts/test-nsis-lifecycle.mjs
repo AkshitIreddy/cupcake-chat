@@ -2,6 +2,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { chromium } from '@playwright/test';
 
 const args = process.argv.slice(2);
@@ -137,12 +138,14 @@ const evidence = {
   profile,
   silentInstall: false,
   firstRun: false,
+  installedTimingsMs: null,
   firstRunScreenshot: join(dirname(resultPath), 'installed-first-run.png'),
   sentinel: null,
   silentUninstall: false,
   uninstallRecordRemoved: false,
   installDirectoryRemoved: false,
   retainedProfileReopened: false,
+  portableTimingsMs: null,
   retainedProfileScreenshot: join(dirname(resultPath), 'portable-retained-profile.png'),
   profileRetained: false,
 };
@@ -163,6 +166,7 @@ try {
   }
   const executable = join(installDirectory, 'CupcakeAI.exe');
   await access(executable);
+  let launchedAt = performance.now();
   app = spawn(executable, [], {
     env: {
       ...process.env,
@@ -175,9 +179,14 @@ try {
     stdio: 'ignore',
   });
   await waitForDevtools();
+  const processToDevtools = Math.round(performance.now() - launchedAt);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   let page = await waitForPage(browser);
   await page.locator('.home-hero').waitFor({ timeout: 240_000 });
+  evidence.installedTimingsMs = {
+    processToDevtools,
+    processToHome: Math.round(performance.now() - launchedAt),
+  };
   await page.screenshot({ path: evidence.firstRunScreenshot, fullPage: true });
   const sentinelName = `NSIS lifecycle sentinel ${Date.now()}`;
   const sentinelDescription = 'Disposable project proving installed runtime persistence.';
@@ -223,6 +232,7 @@ try {
   const profileFiles = await readdir(profile);
   evidence.profileRetained = profileFiles.length > 0;
 
+  launchedAt = performance.now();
   app = spawn(portableExecutable, [], {
     env: {
       ...process.env,
@@ -235,9 +245,14 @@ try {
     stdio: 'ignore',
   });
   await waitForDevtools();
+  const portableProcessToDevtools = Math.round(performance.now() - launchedAt);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = await waitForPage(browser);
   await page.locator('.home-hero').waitFor({ timeout: 240_000 });
+  evidence.portableTimingsMs = {
+    processToDevtools: portableProcessToDevtools,
+    processToHome: Math.round(performance.now() - launchedAt),
+  };
   const projects = await runtimeRequest(page, 'projects.list', { includeArchived: true });
   const retained = Array.isArray(projects)
     ? projects.find((project) => project?.id === evidence.sentinel?.id)
