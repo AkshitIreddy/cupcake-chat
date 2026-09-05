@@ -90,6 +90,16 @@ from cupcake_runtime.observability import DeveloperTraceStore, TraceKind, TraceR
 from cupcake_runtime.personality import build_personality_instructions
 from cupcake_runtime.providers import ProviderOnboardingService, ProviderRegistry, ProviderTestState
 from cupcake_runtime.providers.base import ProviderConfig
+from cupcake_runtime.providers.nvidia_nim import (
+    NVIDIA_NIM_PROVIDER,
+    verified_hosted_descriptor,
+)
+from cupcake_runtime.providers.onboarding import (
+    NAMED_COMPATIBLE_DEFAULT_MODELS,
+    NAMED_COMPATIBLE_PROVIDERS,
+    named_compatible_base_url,
+    named_compatible_model_allowed,
+)
 from cupcake_runtime.providers.types import (
     CanonicalMessage,
     ModelCapabilities,
@@ -666,6 +676,14 @@ class RuntimeService:
             return {"attempted": True, "loaded": False, "errorType": type(exc).__name__}
 
     def _models_list(self, params: Mapping[str, Any]) -> Any:
+        selected = self.repository.get_setting("models.default")
+        if isinstance(selected, str) and selected.startswith(f"{NVIDIA_NIM_PROVIDER}:"):
+            try:
+                self.providers.catalog.get(selected)
+            except KeyError:
+                descriptor = verified_hosted_descriptor(selected.split(":", 1)[1])
+                if descriptor is not None:
+                    self.providers.catalog.register(descriptor)
         provider = _optional_string(params, "provider")
         return _jsonable(self.providers.catalog.list(provider=provider))
 
@@ -1096,10 +1114,12 @@ class RuntimeService:
         credential = _required_string(params, "credentialLease")
         base_url = _optional_string(params, "baseUrl")
         organization = _optional_string(params, "organization")
+        account_id = _optional_string(params, "accountId")
         config = ProviderConfig(
             api_key=credential,
             base_url=base_url,
             organization=organization,
+            account_id=account_id,
         )
         # The broker uses this path only to rehydrate a credential that it
         # previously validated and persisted in the platform vault. It is not
@@ -1108,14 +1128,52 @@ class RuntimeService:
         # still forcing all new/replaced credentials through onboarding below.
         if params.get("trustedHydration") is True:
             if provider == "openai-compatible":
+                endpoint_id = _required_string(params, "endpointId")
+                model_id = _required_string(params, "modelId")
+                if endpoint_id in NAMED_COMPATIBLE_PROVIDERS and not named_compatible_model_allowed(
+                    endpoint_id, model_id
+                ):
+                    raise RuntimeCommandError(
+                        "PAID_MODEL_DENIED",
+                        "This convenience connection accepts only its documented "
+                        "free-tier-eligible route.",
+                    )
                 descriptor = self.providers.register_openai_compatible_endpoint(
-                    _required_string(params, "endpointId"),
-                    model=_required_string(params, "modelId"),
+                    endpoint_id,
+                    model=model_id,
                     display_name=_required_string(params, "displayName"),
                     base_url=_required_string(params, "baseUrl"),
                     api_key=credential,
                     replace=True,
                 )
+                if endpoint_id in NAMED_COMPATIBLE_PROVIDERS:
+                    descriptor = replace(
+                        descriptor,
+                        privacy_route=PrivacyRoute.CLOUD,
+                        metadata={
+                            **descriptor.metadata,
+                            "provider_preset": endpoint_id,
+                            "cost_policy": "free-tier-eligible",
+                            "routing_behavior": (
+                                "variable-free-model-router"
+                                if endpoint_id == "openrouter"
+                                and descriptor.model == "openrouter/free"
+                                else "fixed-model"
+                            ),
+                        },
+                    )
+                    self.providers.catalog.register(descriptor, replace=True)
+                models = [_jsonable(descriptor)]
+            elif provider == NVIDIA_NIM_PROVIDER and params.get("modelId") is not None:
+                model_id = _required_string(params, "modelId")
+                descriptor = verified_hosted_descriptor(model_id)
+                if descriptor is None:
+                    raise RuntimeCommandError(
+                        "MODEL_NOT_VERIFIED",
+                        "The saved NVIDIA NIM model no longer has verified hosted-chat metadata.",
+                    )
+                self.providers.catalog.register(descriptor, replace=True)
+                self.providers.configure(provider, config)
                 models = [_jsonable(descriptor)]
             else:
                 self.providers.configure(provider, config)
@@ -1151,6 +1209,13 @@ class RuntimeService:
                     api_key=credential,
                     replace=True,
                 )
+            elif result.provider in NAMED_COMPATIBLE_PROVIDERS:
+                self._register_named_compatible_models(
+                    result.provider,
+                    result.models,
+                    selected_model=_required_string(params, "modelId"),
+                    config=config,
+                )
             else:
                 self.providers.configure_tested(
                     result.provider,
@@ -1159,9 +1224,70 @@ class RuntimeService:
                 )
         return cast(dict[str, Any], _jsonable(result))
 
+    def _register_named_compatible_models(
+        self,
+        provider: str,
+        models: Sequence[Any],
+        *,
+        selected_model: str,
+        config: ProviderConfig,
+    ) -> None:
+        if not named_compatible_model_allowed(provider, selected_model):
+            raise RuntimeCommandError(
+                "PAID_MODEL_DENIED",
+                "This convenience connection accepts only its documented free-tier-eligible route.",
+            )
+        discovered = {str(model.model): str(model.display_name) for model in models}
+        if provider == "openrouter" and selected_model == "openrouter/free":
+            discovered.setdefault(selected_model, "Variable free-model router")
+        if selected_model not in discovered:
+            raise RuntimeCommandError(
+                "FREE_MODEL_UNAVAILABLE",
+                "The selected free model was not returned by the provider test.",
+                retryable=True,
+            )
+        base_url = named_compatible_base_url(provider, config.account_id)
+        provider_label = {
+            "groq": "Groq",
+            "openrouter": "OpenRouter",
+            "cloudflare": "Cloudflare Workers AI",
+        }[provider]
+        for model_id, display_name in discovered.items():
+            if not named_compatible_model_allowed(provider, model_id):
+                continue
+            context_window, max_output_tokens = _named_compatible_limits(provider, model_id)
+            descriptor = self.providers.register_openai_compatible_endpoint(
+                provider,
+                model=model_id,
+                display_name=f"{provider_label} · {display_name}",
+                base_url=base_url,
+                api_key=config.api_key,
+                context_window=context_window,
+                max_output_tokens=max_output_tokens,
+                capabilities=ModelCapabilities(streaming=True),
+                metadata={
+                    "provider_preset": provider,
+                    "cost_policy": "free-tier-eligible",
+                    "selected_default": model_id == selected_model,
+                    "routing_behavior": (
+                        "variable-free-model-router"
+                        if provider == "openrouter" and model_id == "openrouter/free"
+                        else "fixed-model"
+                    ),
+                },
+                replace=True,
+            )
+            self.providers.catalog.register(
+                replace(descriptor, privacy_route=PrivacyRoute.CLOUD), replace=True
+            )
+
     def _provider_disconnect(self, params: Mapping[str, Any]) -> dict[str, Any]:
         provider = _required_string(params, "provider")
-        removed = self.providers.disconnect(provider)
+        removed = (
+            self.providers.disconnect_openai_compatible_endpoint(provider)
+            if provider in NAMED_COMPATIBLE_PROVIDERS
+            else self.providers.disconnect(provider)
+        )
         return {
             "provider": "google" if provider == "gemini" else provider,
             "configured": False,
@@ -3705,6 +3831,96 @@ def _collect_stream(
 
     value = asyncio.run(run())
     return RuntimeResult(value, events)
+
+
+_PROVIDER_IMAGE_SIGNATURES: dict[str, Callable[[bytes], bool]] = {
+    "image/jpeg": lambda data: data.startswith(b"\xff\xd8\xff"),
+    "image/png": lambda data: data.startswith(b"\x89PNG\r\n\x1a\n"),
+    "image/webp": lambda data: (
+        len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    ),
+}
+_PROVIDER_DOCUMENT_SIGNATURES: dict[str, Callable[[bytes], bool]] = {
+    "application/pdf": lambda data: data.startswith(b"%PDF-"),
+}
+_MAX_PROVIDER_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+def _named_compatible_limits(provider: str, model_id: str) -> tuple[int, int | None]:
+    if provider == "groq":
+        return (131_072, 65_536 if model_id.startswith("openai/gpt-oss-") else 16_384)
+    if provider == "cloudflare":
+        return (32_000, 4_096)
+    if provider == "openrouter" and model_id == NAMED_COMPATIBLE_DEFAULT_MODELS[provider]:
+        # The router chooses among free models dynamically. This conservative
+        # budget avoids claiming one routed model's larger context limit.
+        return (32_768, None)
+    return (32_768, None)
+
+
+def _validated_staged_media_type(name: str, declared: str, data: bytes) -> str:
+    normalized = declared.partition(";")[0].strip().casefold()
+    extension_type = {
+        ".jpeg": "image/jpeg",
+        ".jpg": "image/jpeg",
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(Path(name).suffix.casefold())
+    candidate = (
+        normalized
+        if normalized
+        in {
+            *_PROVIDER_IMAGE_SIGNATURES,
+            *_PROVIDER_DOCUMENT_SIGNATURES,
+        }
+        else extension_type
+    )
+    if candidate is None:
+        return normalized or "application/octet-stream"
+    verifier = _PROVIDER_IMAGE_SIGNATURES.get(candidate) or _PROVIDER_DOCUMENT_SIGNATURES[candidate]
+    if not verifier(data):
+        raise RuntimeCommandError(
+            "ATTACHMENT_CONTENT_MISMATCH",
+            "The attachment bytes do not match the claimed file type",
+        )
+    return candidate
+
+
+def _provider_binary_attachment(
+    objects: EncryptedObjectStore,
+    project_file: ProjectFile,
+    descriptor: ModelDescriptor,
+) -> dict[str, Any] | None:
+    """Resolve one app-owned object into an ephemeral provider-safe binary part."""
+
+    media_type = project_file.media_type.partition(";")[0].strip().casefold()
+    verifier = _PROVIDER_IMAGE_SIGNATURES.get(media_type)
+    supported = descriptor.capabilities.images
+    if verifier is None:
+        verifier = _PROVIDER_DOCUMENT_SIGNATURES.get(media_type)
+        supported = descriptor.capabilities.documents
+    if verifier is None or not supported or project_file.content_hash is None:
+        return None
+    if project_file.byte_size > _MAX_PROVIDER_ATTACHMENT_BYTES:
+        return None
+    try:
+        data = objects.get(project_file.content_hash)
+    except (FileNotFoundError, ValueError, RuntimeError):
+        raise RuntimeCommandError(
+            "ATTACHMENT_UNAVAILABLE", "The attachment content is unavailable"
+        ) from None
+    if len(data) != project_file.byte_size or not verifier(data):
+        raise RuntimeCommandError(
+            "ATTACHMENT_CONTENT_MISMATCH",
+            "The attachment bytes do not match the validated media type",
+        )
+    return {
+        "data": data,
+        "media_type": media_type,
+        "name": project_file.display_name,
+        "sha256": project_file.content_hash,
+    }
 
 
 def _selected_model(repository: ProductRepository, params: Mapping[str, Any]) -> str:

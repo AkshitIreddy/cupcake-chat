@@ -381,6 +381,37 @@ def test_reasoning_settings_are_explicit_and_provider_specific() -> None:
     assert settings_dict["openai_reasoning_effort"] == "high"
     assert settings_dict["openai_reasoning_summary"] == "auto"
 
+    xai_descriptor = registry.catalog.list(provider="xai")[0]
+    xai_settings = CupcakeAgentEngineProbe.model_settings_for_test(
+        xai_descriptor,
+        ModelRequest(
+            xai_descriptor.id,
+            (CanonicalMessage("user", "reason"),),
+            reasoning_effort=ReasoningEffort.XHIGH,
+            temperature=0.2,
+        ),
+        1_000,
+    )
+    xai_settings_dict: dict[str, Any] = dict(xai_settings)
+    assert xai_settings_dict["openai_reasoning_effort"] == "xhigh"
+    assert "temperature" not in xai_settings_dict
+
+    anthropic_descriptor = registry.catalog.list(provider="anthropic")[0]
+    anthropic_settings = CupcakeAgentEngineProbe.model_settings_for_test(
+        anthropic_descriptor,
+        ModelRequest(
+            anthropic_descriptor.id,
+            (CanonicalMessage("user", "reason"),),
+            reasoning_effort=ReasoningEffort.HIGH,
+            temperature=0.2,
+        ),
+        1_000,
+    )
+    anthropic_settings_dict: dict[str, Any] = dict(anthropic_settings)
+    assert anthropic_settings_dict["anthropic_thinking"] == {"type": "adaptive"}
+    assert anthropic_settings_dict["anthropic_effort"] == "high"
+    assert "temperature" not in anthropic_settings_dict
+
 
 def test_only_openai_thinking_parts_are_normalized_as_requested_summaries() -> None:
     from pydantic_ai.messages import (
@@ -440,3 +471,10 @@ def test_continuity_contains_only_scoped_opaque_response_id() -> None:
     assert continuity.provider == descriptor.provider
     assert continuity.model_family == descriptor.family
     assert continuity.opaque_state == {"response_id": "resp_123"}
+
+
+def test_non_openai_response_ids_are_not_persisted_as_unusable_continuity() -> None:
+    registry = ProviderRegistry()
+    descriptor = registry.catalog.list(provider="xai")[0]
+    response = ModelResponse([TextPart("answer")], provider_response_id="xai_opaque")
+    assert CupcakeAgentEngineProbe.continuity_for_test(descriptor, response) is None

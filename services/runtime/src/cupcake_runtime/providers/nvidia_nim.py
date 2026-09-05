@@ -119,6 +119,15 @@ _VERIFIED_HOSTED_CHAT_MODELS: dict[str, str] = {
     )
 }
 
+# Current official model cards publish these context limits even though the
+# hosted OpenAI-compatible `/v1/models` payload commonly omits them.
+_VERIFIED_HOSTED_CONTEXT_WINDOWS: dict[str, int] = {
+    "deepseek-ai/deepseek-v4-flash-0731": 1_000_000,
+    "moonshotai/kimi-k3": 1_048_576,
+    "nvidia/nemotron-3-super-120b-a12b": 1_000_000,
+    "nvidia/nemotron-3.5-lightning-30b-a3b": 1_000_000,
+}
+
 
 class ChatCompatibility(StrEnum):
     CHAT = "chat"
@@ -394,7 +403,7 @@ def _descriptor_from_record(
 ) -> ModelDescriptor:
     context = _bounded_positive_integer(
         record.get("context_window") or record.get("context_length") or record.get("max_model_len")
-    )
+    ) or _VERIFIED_HOSTED_CONTEXT_WINDOWS.get(model_id)
     output = _bounded_positive_integer(
         record.get("max_output_tokens") or record.get("max_tokens"), maximum=10_000_000
     )
@@ -465,6 +474,21 @@ def _descriptor_from_record(
             "pricing_provenance": "NVIDIA API Catalog and the selected model terms",
             "privacy_route_label": "NVIDIA-hosted API Catalog",
         },
+    )
+
+
+def verified_hosted_descriptor(model_id: str) -> ModelDescriptor | None:
+    """Rebuild one exact official hosted-chat descriptor without a network request."""
+
+    verification_url = _VERIFIED_HOSTED_CHAT_MODELS.get(model_id)
+    if verification_url is None:
+        return None
+    return _descriptor_from_record(
+        model_id,
+        {},
+        ChatCompatibility.CHAT,
+        f"official NVIDIA model card: {verification_url}",
+        frozenset({"chat"}),
     )
 
 

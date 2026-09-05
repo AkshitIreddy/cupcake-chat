@@ -202,6 +202,8 @@ pub struct ProviderConnectionInput {
     #[serde(default)]
     pub organization: Option<String>,
     #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
     pub model_id: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,

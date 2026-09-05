@@ -167,6 +167,7 @@ pub struct SensitiveProviderRequest {
     pub secret: Zeroizing<String>,
     pub base_url: Option<String>,
     pub organization: Option<String>,
+    pub account_id: Option<String>,
     pub model_id: Option<String>,
     pub display_name: Option<String>,
 }
@@ -290,6 +291,9 @@ impl SidecarSupervisor {
         }
         if let Some(value) = request.organization {
             params.insert("organization".into(), Value::String(value));
+        }
+        if let Some(value) = request.account_id {
+            params.insert("accountId".into(), Value::String(value));
         }
         if let Some(value) = request.model_id {
             params.insert("modelId".into(), Value::String(value));

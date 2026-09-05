@@ -771,6 +771,42 @@ fn ensure_runtime(runtime: &mut Option<RuntimeChild>) -> Result<&mut RuntimeChil
         .ok_or_else(|| BrokerError::InvalidConfig("packaged Python runtime is unavailable".into()))
 }
 
+fn hydrate_named_compatible_providers(
+    runtime: &mut Option<RuntimeChild>,
+    vault: &SelectedVault,
+) -> Result<()> {
+    for provider in ["groq", "openrouter", "cloudflare"] {
+        let Some(endpoint) = load_named_compatible_endpoint(vault, provider)? else {
+            continue;
+        };
+        let Some(secret) = vault.inner().load(&provider_account(provider))? else {
+            continue;
+        };
+        let Some(model_id) = endpoint.model_id.as_deref() else {
+            continue;
+        };
+        if !named_compatible_model_allowed(provider, model_id) {
+            return Err(BrokerError::Integrity(
+                "saved provider model violates the free-tier policy".into(),
+            ));
+        }
+        let display_name = if provider == "openrouter" && model_id == "openrouter/free" {
+            "OpenRouter · Variable free-model router".to_owned()
+        } else {
+            format!("{provider} · {model_id}")
+        };
+        let options = object(json!({
+            "baseUrl": endpoint.base_url,
+            "endpointId": endpoint.id,
+            "modelId": model_id,
+            "displayName": display_name,
+            "trustedHydration": true
+        }));
+        let _ = configure_provider("openai-compatible", secret.expose(), &options, runtime)?;
+    }
+    Ok(())
+}
+
 fn dispatch_secure_request(
     payload: &mut Map<String, Value>,
     runtime: &mut Option<RuntimeChild>,
@@ -779,6 +815,9 @@ fn dispatch_secure_request(
     let Some(method) = payload.get("method").and_then(Value::as_str) else {
         return Ok(None);
     };
+    if matches!(method, "app.bootstrap" | "models.list" | "providers.status") {
+        hydrate_named_compatible_providers(runtime, vault)?;
+    }
     match method {
         "providers.status" => {
             let mut providers = provider_names()
@@ -861,6 +900,7 @@ fn dispatch_secure_request(
                 .ok_or_else(|| BrokerError::InvalidConfig("provider secret is required".into()))?;
             let secret = SecretBytes::new(raw_secret.into_bytes())?;
 
+            let compatible_preset = is_named_compatible_provider(&provider);
             let endpoint = if provider == "openai-compatible" {
                 let raw_base_url =
                     params
@@ -872,6 +912,25 @@ fn dispatch_secure_request(
                             )
                         })?;
                 let endpoint = validate_openai_compatible_endpoint(raw_base_url)?;
+                params.insert("baseUrl".into(), Value::String(endpoint.base_url.clone()));
+                params.insert("endpointId".into(), Value::String(endpoint.id.clone()));
+                Some(endpoint)
+            } else if compatible_preset {
+                let endpoint = named_compatible_endpoint(&provider, params)?;
+                let model = params
+                    .get("modelId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        BrokerError::InvalidConfig(
+                            "Named provider preset requires an explicit model".into(),
+                        )
+                    })?;
+                if !named_compatible_model_allowed(&provider, model) {
+                    return Err(BrokerError::PermissionDenied(
+                        "Named provider presets accept only documented free-tier-eligible routes"
+                            .into(),
+                    ));
+                }
                 params.insert("baseUrl".into(), Value::String(endpoint.base_url.clone()));
                 params.insert("endpointId".into(), Value::String(endpoint.id.clone()));
                 Some(endpoint)
@@ -943,6 +1002,13 @@ fn dispatch_secure_request(
                     .store(&openai_compatible_key_account(&endpoint.id), &secret)?;
                 store_openai_compatible_endpoint(vault, &endpoint)?;
                 Some(endpoint.id)
+            } else if compatible_preset {
+                let endpoint = endpoint.ok_or_else(|| {
+                    BrokerError::InvalidConfig("validated preset endpoint is missing".into())
+                })?;
+                vault.inner().store(&provider_account(&provider), &secret)?;
+                store_named_compatible_endpoint(vault, &provider, &endpoint)?;
+                Some(endpoint.id)
             } else {
                 vault.inner().store(&provider_account(&provider), &secret)?;
                 None
@@ -983,6 +1049,12 @@ fn dispatch_secure_request(
                 } else {
                     false
                 }
+            } else if is_named_compatible_provider(provider) {
+                let removed = vault.inner().delete(&provider_account(provider))?;
+                vault
+                    .inner()
+                    .delete(&named_compatible_endpoint_account(provider))?;
+                removed
             } else {
                 vault.inner().delete(&provider_account(provider))?
             };
@@ -1039,26 +1111,49 @@ fn configure_selected_provider(
             // weaken isolation and break local runtimes that need no user key.
             return Ok(());
         }
-        let endpoint = load_openai_compatible_endpoint(vault)?.ok_or_else(|| {
-            BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
-        })?;
-        let secret = vault
-            .inner()
-            .load(&openai_compatible_key_account(&endpoint.id))?
-            .ok_or_else(|| {
-                BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
-            })?;
         let (selected_endpoint, selected_model) = model_id
             .strip_prefix("openai-compatible:")
             .and_then(|value| value.split_once('/'))
             .ok_or_else(|| {
                 BrokerError::InvalidConfig("OpenAI-compatible model identity is invalid".into())
             })?;
-        if selected_endpoint != endpoint.id {
-            return Err(BrokerError::PermissionDenied(
-                "OpenAI-compatible model belongs to a different endpoint".into(),
-            ));
-        }
+        let (endpoint, secret) = if is_named_compatible_provider(selected_endpoint) {
+            if !named_compatible_model_allowed(selected_endpoint, selected_model) {
+                return Err(BrokerError::PermissionDenied(
+                    "Named provider presets accept only documented free-tier-eligible routes"
+                        .into(),
+                ));
+            }
+            let endpoint =
+                load_named_compatible_endpoint(vault, selected_endpoint)?.ok_or_else(|| {
+                    BrokerError::PermissionDenied(format!("{selected_endpoint} is not connected"))
+                })?;
+            let secret = vault
+                .inner()
+                .load(&provider_account(selected_endpoint))?
+                .ok_or_else(|| {
+                    BrokerError::PermissionDenied(format!("{selected_endpoint} is not connected"))
+                })?;
+            (endpoint, secret)
+        } else {
+            let endpoint = load_openai_compatible_endpoint(vault)?.ok_or_else(|| {
+                BrokerError::PermissionDenied("OpenAI-compatible endpoint is not connected".into())
+            })?;
+            if selected_endpoint != endpoint.id {
+                return Err(BrokerError::PermissionDenied(
+                    "OpenAI-compatible model belongs to a different endpoint".into(),
+                ));
+            }
+            let secret = vault
+                .inner()
+                .load(&openai_compatible_key_account(&endpoint.id))?
+                .ok_or_else(|| {
+                    BrokerError::PermissionDenied(
+                        "OpenAI-compatible endpoint is not connected".into(),
+                    )
+                })?;
+            (endpoint, secret)
+        };
         let options = object(json!({
             "baseUrl": endpoint.base_url,
             "endpointId": endpoint.id,
@@ -1077,7 +1172,13 @@ fn configure_selected_provider(
         .load(&provider_account(provider))?
         .ok_or_else(|| BrokerError::PermissionDenied(format!("{provider} is not connected")))?;
     let options = if provider == "nvidia-nim" {
-        Map::new()
+        let selected_model = model_id.strip_prefix("nvidia-nim:").ok_or_else(|| {
+            BrokerError::InvalidConfig("NVIDIA NIM model identity is invalid".into())
+        })?;
+        object(json!({
+            "trustedHydration": true,
+            "modelId": selected_model
+        }))
     } else {
         object(json!({"trustedHydration": true}))
     };
@@ -1234,7 +1335,7 @@ fn configure_provider_response(
     if let Some(value) = options.get("organization") {
         params.insert("organization".into(), value.clone());
     }
-    for key in ["endpointId", "modelId", "displayName"] {
+    for key in ["endpointId", "modelId", "displayName", "accountId"] {
         if let Some(value) = options.get(key).filter(|value| value.is_string()) {
             params.insert(key.into(), value.clone());
         }
@@ -1289,7 +1390,26 @@ fn provider_names() -> &'static [&'static str] {
         "mistral",
         "cohere",
         "nvidia-nim",
+        "groq",
+        "openrouter",
+        "cloudflare",
     ]
+}
+
+fn is_named_compatible_provider(provider: &str) -> bool {
+    matches!(provider, "groq" | "openrouter" | "cloudflare")
+}
+
+fn named_compatible_model_allowed(provider: &str, model: &str) -> bool {
+    match provider {
+        "groq" => matches!(
+            model,
+            "openai/gpt-oss-20b" | "openai/gpt-oss-120b" | "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b"
+        ),
+        "openrouter" => model == "openrouter/free" || model.ends_with(":free"),
+        "cloudflare" => model == "@cf/meta/llama-3.1-8b-instruct-fp8",
+        _ => false,
+    }
 }
 
 fn provider_account(provider: &str) -> String {
@@ -1302,6 +1422,113 @@ const OPENAI_COMPATIBLE_ENDPOINT_ACCOUNT: &str = "provider.openai-compatible.sel
 struct OpenAiCompatibleEndpoint {
     id: String,
     base_url: String,
+    model_id: Option<String>,
+}
+
+fn named_compatible_endpoint(
+    provider: &str,
+    params: &Map<String, Value>,
+) -> Result<OpenAiCompatibleEndpoint> {
+    let base_url = match provider {
+        "groq" => "https://api.groq.com/openai/v1".to_owned(),
+        "openrouter" => "https://openrouter.ai/api/v1".to_owned(),
+        "cloudflare" => {
+            let account_id = params
+                .get("accountId")
+                .and_then(Value::as_str)
+                .filter(|value| {
+                    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+                .ok_or_else(|| {
+                    BrokerError::InvalidConfig(
+                        "Cloudflare Account ID must be a 32-character hexadecimal value".into(),
+                    )
+                })?;
+            format!("https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1")
+        }
+        _ => {
+            return Err(BrokerError::InvalidConfig(
+                "unknown named compatible provider".into(),
+            ))
+        }
+    };
+    if let Some(supplied) = params.get("baseUrl").and_then(Value::as_str) {
+        if supplied.trim_end_matches('/') != base_url {
+            return Err(BrokerError::InvalidConfig(
+                "Named provider endpoint cannot be changed".into(),
+            ));
+        }
+    }
+    Ok(OpenAiCompatibleEndpoint {
+        id: provider.to_owned(),
+        base_url,
+        model_id: params
+            .get("modelId")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    })
+}
+
+fn named_compatible_endpoint_account(provider: &str) -> String {
+    format!("provider.{provider}.endpoint")
+}
+
+fn store_named_compatible_endpoint(
+    vault: &SelectedVault,
+    provider: &str,
+    endpoint: &OpenAiCompatibleEndpoint,
+) -> Result<()> {
+    let metadata = serde_json::to_vec(&json!({
+        "endpointId": endpoint.id,
+        "baseUrl": endpoint.base_url,
+        "modelId": endpoint.model_id
+    }))?;
+    vault.inner().store(
+        &named_compatible_endpoint_account(provider),
+        &SecretBytes::new(metadata)?,
+    )
+}
+
+fn load_named_compatible_endpoint(
+    vault: &SelectedVault,
+    provider: &str,
+) -> Result<Option<OpenAiCompatibleEndpoint>> {
+    if !is_named_compatible_provider(provider) {
+        return Err(BrokerError::InvalidConfig(
+            "unknown named compatible provider".into(),
+        ));
+    }
+    let Some(metadata) = vault
+        .inner()
+        .load(&named_compatible_endpoint_account(provider))?
+    else {
+        return Ok(None);
+    };
+    let value: Value = serde_json::from_slice(metadata.expose())
+        .map_err(|_| BrokerError::Integrity("invalid provider endpoint metadata".into()))?;
+    let base_url = value
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .ok_or_else(|| BrokerError::Integrity("provider endpoint URL is missing".into()))?;
+    let mut params = Map::new();
+    params.insert("baseUrl".into(), Value::String(base_url.to_owned()));
+    if provider == "cloudflare" {
+        let account_id = base_url
+            .strip_prefix("https://api.cloudflare.com/client/v4/accounts/")
+            .and_then(|value| value.strip_suffix("/ai/v1"))
+            .ok_or_else(|| BrokerError::Integrity("invalid Cloudflare endpoint metadata".into()))?;
+        params.insert("accountId".into(), Value::String(account_id.to_owned()));
+    }
+    if let Some(model_id) = value.get("modelId").and_then(Value::as_str) {
+        params.insert("modelId".into(), Value::String(model_id.to_owned()));
+    }
+    let validated = named_compatible_endpoint(provider, &params)?;
+    if value.get("endpointId").and_then(Value::as_str) != Some(validated.id.as_str()) {
+        return Err(BrokerError::Integrity(
+            "provider endpoint identity mismatch".into(),
+        ));
+    }
+    Ok(Some(validated))
 }
 
 fn validate_openai_compatible_endpoint(value: &str) -> Result<OpenAiCompatibleEndpoint> {
@@ -1359,6 +1586,7 @@ fn validate_openai_compatible_endpoint(value: &str) -> Result<OpenAiCompatibleEn
     Ok(OpenAiCompatibleEndpoint {
         id: format!("endpoint_{digest}"),
         base_url,
+        model_id: None,
     })
 }
 
@@ -1454,6 +1682,46 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn named_compatible_endpoints_and_free_tier_policy_are_fixed() {
+        let groq = named_compatible_endpoint(
+            "groq",
+            &object(json!({
+                "modelId": "openai/gpt-oss-20b"
+            })),
+        )
+        .unwrap();
+        assert_eq!(groq.id, "groq");
+        assert_eq!(groq.base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(groq.model_id.as_deref(), Some("openai/gpt-oss-20b"));
+
+        let cloudflare = named_compatible_endpoint(
+            "cloudflare",
+            &object(json!({
+                "accountId": "a".repeat(32),
+                "modelId": "@cf/meta/llama-3.1-8b-instruct-fp8"
+            })),
+        )
+        .unwrap();
+        assert!(cloudflare
+            .base_url
+            .ends_with(&format!("/{}/ai/v1", "a".repeat(32))));
+        assert!(named_compatible_endpoint(
+            "cloudflare",
+            &object(json!({"accountId": "not-an-account"}))
+        )
+        .is_err());
+
+        assert!(named_compatible_model_allowed(
+            "openrouter",
+            "nvidia/nemotron-3.5-lightning:free"
+        ));
+        assert!(!named_compatible_model_allowed(
+            "openrouter",
+            "nvidia/nemotron-3.5-lightning"
+        ));
     }
 
     #[test]

@@ -4,9 +4,10 @@ from typing import Any
 
 import pytest
 
-from cupcake_runtime.application import RuntimeService
+from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.providers.base import ProviderConfig
 from cupcake_runtime.providers.onboarding import (
+    DiscoveredProviderModel,
     ModelDiscoveryState,
     ProviderOnboardingDiagnostic,
     ProviderOnboardingExecution,
@@ -73,9 +74,9 @@ def test_validate_only_returns_typed_result_without_committing_config(tmp_path: 
 
         assert result["state"] == "ready"
         assert result["discovery"] == "supported"
-        assert runtime.providers.adapter(
-            "openai:gpt-5.6-sol", client=object()
-        ).config.api_key is None
+        assert (
+            runtime.providers.adapter("openai:gpt-6-astra", client=object()).config.api_key is None
+        )
         assert fixed.seen[0][1].api_key == SECRET_CANARY
         assert SECRET_CANARY not in repr(result)
     finally:
@@ -100,7 +101,7 @@ def test_successful_connect_commits_only_after_test(tmp_path: Any) -> None:
 
         assert result["state"] == "ready"
         assert (
-            runtime.providers.adapter("openai:gpt-5.6-sol", client=object()).config.api_key
+            runtime.providers.adapter("openai:gpt-6-astra", client=object()).config.api_key
             == SECRET_CANARY
         )
         assert SECRET_CANARY not in repr(result)
@@ -130,10 +131,66 @@ def test_trusted_hydration_restores_an_already_validated_key_without_discovery(
         assert result["hydrated"] is True
         assert fixed.seen == []
         assert (
-            runtime.providers.adapter("openai:gpt-5.6-sol", client=object()).config.api_key
+            runtime.providers.adapter("openai:gpt-6-astra", client=object()).config.api_key
             == SECRET_CANARY
         )
         assert SECRET_CANARY not in repr(result)
+    finally:
+        runtime.close()
+
+
+def test_trusted_nim_hydration_rebuilds_verified_selected_model_without_discovery(
+    tmp_path: Any,
+) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    fixed = FixedOnboardingService(
+        ProviderOnboardingExecution(onboarding_result(ProviderTestState.READY))
+    )
+    runtime.provider_onboarding = fixed  # type: ignore[assignment]
+    model = "nvidia/nemotron-3-super-120b-a12b"
+    try:
+        result, _ = runtime.handle(
+            "providers.configure",
+            {
+                "provider": "nvidia-nim",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "modelId": model,
+            },
+        )
+        descriptor_id = f"nvidia-nim:{model}"
+        assert result["models"][0]["id"] == descriptor_id
+        assert runtime.providers.catalog.get(descriptor_id).context_window == 1_000_000
+        assert (
+            runtime.providers.adapter(descriptor_id, client=object()).config.api_key
+            == SECRET_CANARY
+        )
+        assert fixed.seen == []
+    finally:
+        runtime.close()
+
+
+def test_trusted_named_hydration_rejects_non_free_route(tmp_path: Any) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        with pytest.raises(RuntimeCommandError) as denied:
+            runtime.handle(
+                "providers.configure",
+                {
+                    "provider": "openai-compatible",
+                    "credentialLease": SECRET_CANARY,
+                    "trustedHydration": True,
+                    "endpointId": "openrouter",
+                    "modelId": "nvidia/nemotron-3.5-lightning",
+                    "displayName": "Paid route",
+                    "baseUrl": "https://openrouter.ai/api/v1",
+                },
+            )
+
+        assert denied.value.code == "PAID_MODEL_DENIED"
+        assert "openai-compatible:openrouter/nvidia/nemotron-3.5-lightning" not in {
+            descriptor.id for descriptor in runtime.providers.catalog.list()
+        }
     finally:
         runtime.close()
 
@@ -174,6 +231,74 @@ def test_openai_compatible_connect_registers_the_tested_endpoint_model(tmp_path:
         runtime.close()
 
 
+@pytest.mark.parametrize(
+    ("provider", "model_id", "account_id", "expected_url"),
+    (
+        ("groq", "openai/gpt-oss-20b", None, "https://api.groq.com/openai/v1"),
+        (
+            "openrouter",
+            "nvidia/nemotron-3.5-lightning:free",
+            None,
+            "https://openrouter.ai/api/v1",
+        ),
+        (
+            "cloudflare",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
+            "a" * 32,
+            f"https://api.cloudflare.com/client/v4/accounts/{'a' * 32}/ai/v1",
+        ),
+    ),
+)
+def test_named_compatible_connect_registers_isolated_free_route(
+    tmp_path: Any,
+    provider: str,
+    model_id: str,
+    account_id: str | None,
+    expected_url: str,
+) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    result = ProviderOnboardingResult(
+        provider=provider,
+        state=ProviderTestState.READY,
+        discovery=ModelDiscoveryState.SUPPORTED,
+        models=(
+            DiscoveredProviderModel(
+                id=model_id,
+                model=model_id,
+                display_name="Free model",
+                capabilities=("streaming",),
+                compatibility_verified=True,
+            ),
+        ),
+        tested_at_ms=123,
+        latency_ms=4,
+    )
+    fixed = FixedOnboardingService(ProviderOnboardingExecution(result))
+    runtime.provider_onboarding = fixed  # type: ignore[assignment]
+    try:
+        runtime.handle(
+            "providers.configure",
+            {
+                "provider": provider,
+                "credentialLease": SECRET_CANARY,
+                "accountId": account_id,
+                "modelId": model_id,
+                "validateOnly": False,
+            },
+        )
+        descriptor_id = f"openai-compatible:{provider}/{model_id}"
+        descriptor = runtime.providers.catalog.get(descriptor_id)
+        adapter = runtime.providers.adapter(descriptor_id, client=object())
+        assert descriptor.metadata["provider_preset"] == provider
+        assert descriptor.metadata["cost_policy"] == "free-tier-eligible"
+        assert descriptor.privacy_route.value == "cloud"
+        assert adapter.config.base_url == expected_url
+        assert adapter.config.api_key == SECRET_CANARY
+        assert fixed.seen[0][1].account_id == account_id
+    finally:
+        runtime.close()
+
+
 @pytest.mark.parametrize("state", (ProviderTestState.FAILED, ProviderTestState.CANCELLED))
 def test_failed_or_cancelled_connect_does_not_mutate_config_or_catalog(
     tmp_path: Any, state: ProviderTestState
@@ -206,7 +331,7 @@ def test_failed_or_cancelled_connect_does_not_mutate_config_or_catalog(
         )
 
         assert result["state"] == state.value
-        assert runtime.providers.adapter("openai:gpt-5.6-sol", client=object()).config is prior
+        assert runtime.providers.adapter("openai:gpt-6-astra", client=object()).config is prior
         assert runtime.providers.catalog.list(include_deprecated=True) == catalog_before
         assert SECRET_CANARY not in repr(result)
     finally:
@@ -224,9 +349,10 @@ def test_provider_disconnect_handler_clears_registry_configuration(tmp_path: Any
             "configured": False,
             "disconnected": True,
         }
-        assert runtime.providers.adapter(
-            "google:gemini-3.5-flash", client=object()
-        ).config.api_key is None
+        assert (
+            runtime.providers.adapter("google:gemini-3.8-flash", client=object()).config.api_key
+            is None
+        )
         assert SECRET_CANARY not in repr(result)
     finally:
         runtime.close()

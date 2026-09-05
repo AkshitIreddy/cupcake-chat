@@ -29,12 +29,15 @@ pub fn ensure_runtime_method_allowed(method: &str) -> HostResult<()> {
 pub fn ensure_provider_id(provider: &str) -> HostResult<()> {
     const PROVIDERS: &[&str] = &[
         "anthropic",
+        "cloudflare",
         "cohere",
         "google",
+        "groq",
         "mistral",
         "nvidia-nim",
         "openai",
         "openai-compatible",
+        "openrouter",
         "xai",
     ];
     if PROVIDERS.binary_search(&provider).is_err() {
@@ -88,6 +91,8 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "chat.preflight",
     "chat.regenerate",
     "chat.send",
+    "content_protection.set",
+    "content_protection.status",
     "conversations.archive",
     "conversations.branch",
     "conversations.branches",

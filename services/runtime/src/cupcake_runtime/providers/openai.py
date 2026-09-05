@@ -64,6 +64,8 @@ class OpenAIResponsesAdapter(ProviderAdapter):
             payload["reasoning"] = {"effort": OPENAI_EFFORT[effort], "summary": "auto"}
         if request.max_output_tokens:
             payload["max_output_tokens"] = request.max_output_tokens
+        if request.temperature is not None and effort == ReasoningEffort.NONE:
+            payload["temperature"] = request.temperature
         if request.tools:
             payload["tools"] = list(request.tools)
         continuity = self.usable_continuity(request)
@@ -181,6 +183,31 @@ class OpenAIResponsesAdapter(ProviderAdapter):
                     yield builder.make(
                         StreamEventType.FINISH, finish_reason="stop", continuity=continuity
                     )
+                elif event_type == "response.incomplete":
+                    finished = True
+                    reason = get_path(event, "response.incomplete_details.reason", "incomplete")
+                    yield builder.make(
+                        StreamEventType.FINISH,
+                        finish_reason=str(reason or "incomplete"),
+                        continuity=(
+                            ProviderContinuity(
+                                self.provider,
+                                self.descriptor.family,
+                                {"response_id": response_id},
+                            )
+                            if response_id
+                            else None
+                        ),
+                    )
+                elif event_type == "response.cancelled":
+                    finished = True
+                    yield builder.make(
+                        StreamEventType.ERROR,
+                        text="The provider cancelled the response.",
+                        error_code="cancelled",
+                        retryable=False,
+                    )
+                    return
                 elif event_type in {"response.failed", "error"}:
                     finished = True
                     error = get_path(event, "response.error") or get_path(event, "error")
@@ -199,11 +226,15 @@ class OpenAIResponsesAdapter(ProviderAdapter):
             yield provider_error_event(builder, exc)
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None):
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+):
     """Build Pydantic AI's native OpenAI Responses model when installed."""
     try:
         from pydantic_ai.models.openai import OpenAIResponsesModel
         from pydantic_ai.providers.openai import OpenAIProvider
     except ImportError as exc:
         raise MissingProviderDependency("openai", "pydantic-ai-slim[openai]") from exc
-    return OpenAIResponsesModel(model_name, provider=OpenAIProvider(api_key=api_key))
+    return OpenAIResponsesModel(
+        model_name, provider=OpenAIProvider(api_key=api_key, base_url=base_url)
+    )

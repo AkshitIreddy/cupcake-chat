@@ -62,11 +62,14 @@ class PydanticModelFactory:
             builder = self._builders[descriptor.provider]
         except KeyError as exc:
             raise ValueError(f"no Pydantic model builder for {descriptor.provider!r}") from exc
-        if descriptor.provider == "xai":
+        if descriptor.provider != "nvidia-nim":
+            base_url = config.base_url
+            if descriptor.provider == "xai":
+                base_url = base_url or "https://api.x.ai/v1"
             return builder(
                 descriptor.model,
                 api_key=config.api_key,
-                base_url=config.base_url or "https://api.x.ai/v1",
+                base_url=base_url,
             )
         return builder(descriptor.model, api_key=config.api_key)
 

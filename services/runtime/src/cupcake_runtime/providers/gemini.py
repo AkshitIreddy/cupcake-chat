@@ -180,14 +180,16 @@ class GeminiAdapter(ProviderAdapter):
             )
             yield builder.make(
                 StreamEventType.FINISH,
-                finish_reason=str(finish_reason).lower(),
+                finish_reason=_finish_reason_value(finish_reason),
                 continuity=continuity,
             )
         except Exception as exc:
             yield provider_error_event(builder, exc)
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None):
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+):
     try:
         from pydantic_ai.models.google import GoogleModel
         from pydantic_ai.providers.google import GoogleProvider
@@ -195,4 +197,9 @@ def build_pydantic_model(model_name: str, *, api_key: str | None = None):
         raise MissingProviderDependency("google", "pydantic-ai-slim[google]") from exc
     if not api_key:
         raise ValueError("Google provider requires an API key")
-    return GoogleModel(model_name, provider=GoogleProvider(api_key=api_key))
+    return GoogleModel(model_name, provider=GoogleProvider(api_key=api_key, base_url=base_url))
+
+
+def _finish_reason_value(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw).rsplit(".", 1)[-1].lower()

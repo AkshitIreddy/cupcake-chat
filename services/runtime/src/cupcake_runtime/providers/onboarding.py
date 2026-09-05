@@ -20,7 +20,7 @@ import re
 import time
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, cast
 from urllib.parse import SplitResult, urlsplit, urlunsplit
@@ -44,6 +44,26 @@ from .types import ModelCapabilities, ModelDescriptor
 
 OPENAI_COMPATIBLE_PROVIDER = "openai-compatible"
 GEMINI_PROVIDER = "google"
+NAMED_COMPATIBLE_PROVIDERS = frozenset({"groq", "openrouter", "cloudflare"})
+NAMED_COMPATIBLE_DEFAULT_MODELS: dict[str, str] = {
+    "groq": "openai/gpt-oss-20b",
+    "openrouter": "nvidia/nemotron-3.5-lightning:free",
+    "cloudflare": "@cf/meta/llama-3.1-8b-instruct-fp8",
+}
+_GROQ_FREE_PLAN_MODELS = frozenset(
+    {
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.6-27b",
+        "qwen/qwen3.8-27b",
+    }
+)
+_CLOUDFLARE_FREE_DEFAULTS = frozenset({NAMED_COMPATIBLE_DEFAULT_MODELS["cloudflare"]})
+_CLOUDFLARE_ACCOUNT_ID = re.compile(r"^[0-9a-fA-F]{32}$")
+_NAMED_COMPATIBLE_FIXED_BASE_URLS = {
+    "groq": "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
 SUPPORTED_ONBOARDING_PROVIDERS = frozenset(
     {
         "openai",
@@ -55,10 +75,11 @@ SUPPORTED_ONBOARDING_PROVIDERS = frozenset(
         "cohere",
         NVIDIA_NIM_PROVIDER,
         OPENAI_COMPATIBLE_PROVIDER,
+        *NAMED_COMPATIBLE_PROVIDERS,
     }
 )
 
-_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+/@-]*$")
+_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9._:+/@-]*$")
 _LIST_METHODS: dict[str, tuple[str, ...]] = {
     "openai": ("models.list",),
     "anthropic": ("models.list",),
@@ -67,6 +88,9 @@ _LIST_METHODS: dict[str, tuple[str, ...]] = {
     "mistral": ("models.list_async", "models.list"),
     "cohere": ("models.list",),
     OPENAI_COMPATIBLE_PROVIDER: ("models.list",),
+    "groq": ("models.list",),
+    "openrouter": ("models.list",),
+    "cloudflare": ("models.list", "list_models"),
 }
 
 
@@ -227,6 +251,8 @@ class ProviderOnboardingService:
 
             if normalized_provider == OPENAI_COMPATIBLE_PROVIDER:
                 validate_remote_openai_compatible_endpoint(config.base_url or "")
+            elif normalized_provider in NAMED_COMPATIBLE_PROVIDERS:
+                validate_named_compatible_config(normalized_provider, config)
 
             if normalized_provider == NVIDIA_NIM_PROVIDER:
                 catalog = await _await_or_cancel(
@@ -253,6 +279,8 @@ class ProviderOnboardingService:
                 models = await _await_or_cancel(
                     self._discover(normalized_provider, resolved_client), cancellation
                 )
+                if normalized_provider in NAMED_COMPATIBLE_PROVIDERS:
+                    models = _named_compatible_models(normalized_provider, models)
             except ModelDiscoveryUnsupported as error:
                 return ProviderOnboardingExecution(
                     ProviderOnboardingResult(
@@ -405,6 +433,70 @@ def validate_remote_openai_compatible_endpoint(value: str) -> str:
     return urlunsplit(SplitResult("https", netloc, path, "", ""))
 
 
+def named_compatible_base_url(provider: str, account_id: str | None = None) -> str:
+    """Return the immutable first-party endpoint for one named compatible preset."""
+
+    normalized = provider.strip().casefold()
+    fixed = _NAMED_COMPATIBLE_FIXED_BASE_URLS.get(normalized)
+    if fixed is not None:
+        return fixed
+    if normalized != "cloudflare":
+        raise ProviderError("Unknown compatible provider preset.", code="unsupported_provider")
+    value = (account_id or "").strip()
+    if _CLOUDFLARE_ACCOUNT_ID.fullmatch(value) is None:
+        raise ProviderError(
+            "Cloudflare Account ID must be the 32-character identifier from Workers AI.",
+            code="invalid_account_id",
+        )
+    return f"https://api.cloudflare.com/client/v4/accounts/{value}/ai/v1"
+
+
+def validate_named_compatible_config(provider: str, config: ProviderConfig) -> str:
+    expected = named_compatible_base_url(provider, config.account_id)
+    if config.base_url is not None:
+        supplied = validate_remote_openai_compatible_endpoint(config.base_url)
+        if supplied.rstrip("/") != expected:
+            raise ProviderError(
+                f"{_provider_label(provider)} uses a fixed first-party endpoint.",
+                code="invalid_endpoint",
+            )
+    return expected
+
+
+def named_compatible_model_allowed(provider: str, model_id: str) -> bool:
+    """Restrict convenience presets to explicit zero-cost/free-allocation routes."""
+
+    normalized = provider.strip().casefold()
+    model = model_id.strip()
+    if normalized == "groq":
+        return model in _GROQ_FREE_PLAN_MODELS
+    if normalized == "openrouter":
+        return model == "openrouter/free" or model.endswith(":free")
+    if normalized == "cloudflare":
+        return model in _CLOUDFLARE_FREE_DEFAULTS
+    return False
+
+
+def _named_compatible_models(
+    provider: str, models: tuple[DiscoveredProviderModel, ...]
+) -> tuple[DiscoveredProviderModel, ...]:
+    safe = tuple(model for model in models if named_compatible_model_allowed(provider, model.model))
+    if not safe:
+        raise ProviderError(
+            f"{_provider_label(provider)} did not return a supported free model.",
+            code="free_model_unavailable",
+            retryable=True,
+        )
+    return tuple(
+        replace(
+            model,
+            capabilities=("streaming",),
+            compatibility_verified=True,
+        )
+        for model in safe
+    )
+
+
 async def _await_or_cancel(
     operation: Awaitable[Any], cancellation: OnboardingCancellation | None
 ) -> Any:
@@ -444,7 +536,6 @@ async def _await_or_cancel(
 async def _bounded_models(
     response: Any, *, max_models: int, max_catalog_bytes: int
 ) -> tuple[DiscoveredProviderModel, ...]:
-    records = _response_records(response)
     discovered: dict[str, DiscoveredProviderModel] = {}
     total_bytes = 0
     scanned_records = 0
@@ -468,13 +559,47 @@ async def _bounded_models(
             )
         discovered[model.id] = model
 
-    if isinstance(records, AsyncIterable):
-        async for item in records:
-            accept(item)
-    else:
-        for item in records:
-            accept(item)
+    page = response
+    seen_pages: set[int] = set()
+    while True:
+        page_identity = id(page)
+        if page_identity in seen_pages:
+            raise ProviderError(
+                "The provider returned a cyclic model catalog.",
+                code="invalid_model_catalog",
+            )
+        seen_pages.add(page_identity)
+        records = _response_records(page)
+        if isinstance(records, AsyncIterable):
+            async for item in records:
+                accept(item)
+        else:
+            for item in records:
+                accept(item)
+        next_page = await _next_model_page(page)
+        if next_page is None:
+            break
+        page = next_page
     return tuple(sorted(discovered.values(), key=lambda item: item.display_name.casefold()))
+
+
+async def _next_model_page(page: Any) -> Any | None:
+    """Follow SDK page objects without assuming one provider's cursor schema."""
+
+    get_next = getattr(page, "get_next_page", None)
+    if not callable(get_next):
+        return None
+    has_next = getattr(page, "has_next_page", None)
+    if callable(has_next):
+        has_next = has_next()
+        if inspect.isawaitable(has_next):
+            has_next = await has_next
+    if has_next is False:
+        return None
+    next_page = get_next()
+    if inspect.isawaitable(next_page):
+        next_page = await next_page
+    return next_page
 
 
 def _response_records(response: Any) -> Iterable[Any] | AsyncIterable[Any]:
@@ -483,12 +608,12 @@ def _response_records(response: Any) -> Iterable[Any] | AsyncIterable[Any]:
         return direct_collection
     if isinstance(response, Mapping):
         response_map = cast(Mapping[str, Any], response)
-        for key in ("data", "models", "items"):
+        for key in ("data", "models", "items", "result"):
             collection = _as_model_collection(response_map.get(key))
             if collection is not None:
                 return collection
     response_object = cast(Any, response)
-    for name in ("data", "models", "items"):
+    for name in ("data", "models", "items", "result"):
         collection = _as_model_collection(getattr(response_object, name, None))
         if collection is not None:
             return collection
@@ -509,6 +634,8 @@ def _as_model_collection(value: Any) -> Iterable[Any] | AsyncIterable[Any] | Non
 
 
 def _normalize_model(record: Any) -> DiscoveredProviderModel | None:
+    model_id: str | None
+    display_name: str | None
     if isinstance(record, str):
         model_id = record
         display_name = record
@@ -600,8 +727,64 @@ def _resolve_callable(client: Any, paths: Sequence[str]) -> Callable[[], Any] | 
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class _CloudflareModelsClient:
+    api_key: str
+    account_id: str
+    timeout_seconds: float
+
+    async def list_models(self) -> Mapping[str, Any]:
+        try:
+            import httpx
+        except ImportError as error:
+            raise MissingProviderDependency("cloudflare", "httpx") from error
+        url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/ai/models/search"
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                params={
+                    "task": "Text Generation",
+                    "hide_experimental": "true",
+                    "include_deprecated": "false",
+                    "per_page": str(MAX_DISCOVERED_MODELS),
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, Mapping):
+            raise ProviderError(
+                "Cloudflare returned an invalid Workers AI model catalog.",
+                code="invalid_model_catalog",
+            )
+        payload_map = cast(Mapping[str, Any], payload)
+        if payload_map.get("success") is not True:
+            raise ProviderError(
+                "Cloudflare returned an invalid Workers AI model catalog.",
+                code="invalid_model_catalog",
+            )
+        return payload_map
+
+
 def _create_client(provider: str, config: ProviderConfig) -> Any:
-    if provider in {"openai", "xai", OPENAI_COMPATIBLE_PROVIDER}:
+    if provider == "cloudflare":
+        account_id = (config.account_id or "").strip()
+        named_compatible_base_url(provider, account_id)
+        return _CloudflareModelsClient(
+            api_key=config.api_key or "",
+            account_id=account_id,
+            timeout_seconds=config.timeout_seconds,
+        )
+    if provider in {
+        "openai",
+        "xai",
+        OPENAI_COMPATIBLE_PROVIDER,
+        "groq",
+        "openrouter",
+    }:
         try:
             from openai import AsyncOpenAI
         except ImportError as error:
@@ -611,6 +794,8 @@ def _create_client(provider: str, config: ProviderConfig) -> Any:
             base_url = base_url or "https://api.x.ai/v1"
         elif provider == OPENAI_COMPATIBLE_PROVIDER:
             base_url = validate_remote_openai_compatible_endpoint(config.base_url or "")
+        elif provider in NAMED_COMPATIBLE_PROVIDERS:
+            base_url = validate_named_compatible_config(provider, config)
         options: dict[str, Any] = {
             "api_key": config.api_key,
             "timeout": config.timeout_seconds,
@@ -678,6 +863,9 @@ def _provider_label(provider: str) -> str:
         "cohere": "Cohere",
         NVIDIA_NIM_PROVIDER: "NVIDIA NIM",
         OPENAI_COMPATIBLE_PROVIDER: "OpenAI-compatible endpoint",
+        "groq": "Groq",
+        "openrouter": "OpenRouter",
+        "cloudflare": "Cloudflare Workers AI",
     }.get(provider, "Provider")
 
 

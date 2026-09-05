@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
+from dataclasses import replace as dataclass_replace
 from typing import Any
 
 from .anthropic import AnthropicAdapter
@@ -59,7 +60,7 @@ class ProviderRegistry:
 
     def configure(self, provider: str, config: ProviderConfig) -> None:
         if provider == NVIDIA_NIM_PROVIDER:
-            config = replace(config, base_url=NVIDIA_NIM_BASE_URL)
+            config = dataclass_replace(config, base_url=NVIDIA_NIM_BASE_URL)
             if self._configs.get(provider) != config:
                 self._nvidia_nim_catalog.invalidate()
         self._configs[provider] = config
@@ -89,7 +90,7 @@ class ProviderRegistry:
             return
         if nvidia_nim_catalog is None:
             raise ValueError("tested NVIDIA NIM catalog evidence is required")
-        self._configs[provider] = replace(config, base_url=NVIDIA_NIM_BASE_URL)
+        self._configs[provider] = dataclass_replace(config, base_url=NVIDIA_NIM_BASE_URL)
         self._reconcile_nvidia_nim_catalog(nvidia_nim_catalog)
 
     def disconnect(self, provider: str) -> bool:
@@ -120,6 +121,20 @@ class ProviderRegistry:
                 removed = self._model_configs.pop(descriptor.id, None) is not None or removed
         return removed
 
+    def disconnect_openai_compatible_endpoint(self, endpoint_id: str) -> bool:
+        """Drop one named compatible endpoint without disturbing sibling routes."""
+
+        prefix = f"openai-compatible:{endpoint_id}/"
+        removed = False
+        for descriptor in self.catalog.list(provider="openai-compatible", include_deprecated=True):
+            if not descriptor.id.startswith(prefix):
+                continue
+            if isinstance(descriptor.metadata.get("runtime_kind"), str):
+                continue
+            removed = self.catalog.unregister(descriptor.id) or removed
+            removed = self._model_configs.pop(descriptor.id, None) is not None or removed
+        return removed
+
     async def refresh_nvidia_nim_models(
         self, *, client: Any = None, force: bool = False
     ) -> NvidiaNimCatalogResult:
@@ -143,7 +158,7 @@ class ProviderRegistry:
         discovered_ids = {model.id for model in result.models}
         for existing in self.catalog.list(provider=NVIDIA_NIM_PROVIDER, include_deprecated=True):
             if existing.id not in discovered_ids:
-                self.catalog.register(replace(existing, deprecated=True), replace=True)
+                self.catalog.register(dataclass_replace(existing, deprecated=True), replace=True)
         for descriptor in result.models:
             self.catalog.register(descriptor, replace=True)
 
@@ -198,6 +213,7 @@ class ProviderRegistry:
         reasoning_efforts: tuple[ReasoningEffort, ...] = (),
         capabilities: ModelCapabilities | None = None,
         headers: dict[str, str] | None = None,
+        metadata: Mapping[str, Any] | None = None,
         replace: bool = False,
     ) -> ModelDescriptor:
         if not base_url.startswith(("http://", "https://")):
@@ -211,6 +227,11 @@ class ProviderRegistry:
             reasoning_efforts=reasoning_efforts,
             capabilities=capabilities,
         )
+        if metadata:
+            descriptor = dataclass_replace(
+                descriptor,
+                metadata={**descriptor.metadata, **dict(metadata)},
+            )
         self.catalog.register(descriptor, replace=replace)
         self._model_configs[descriptor.id] = ProviderConfig(
             api_key=api_key,
@@ -244,5 +265,5 @@ class ProviderRegistry:
         """Resolve only the user-selected model; never apply fallback/routing."""
         adapter = self.adapter(request.model_id)
         adapter.validate_request(request)
-        sanitized = replace(request, continuity=adapter.usable_continuity(request))
+        sanitized = dataclass_replace(request, continuity=adapter.usable_continuity(request))
         return adapter, sanitized

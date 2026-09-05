@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelMessage,
     ModelResponse,
     SystemPromptPart,
@@ -31,7 +32,15 @@ def estimate_tokens(text: str) -> int:
 
 
 def _message_tokens(message: CanonicalMessage) -> int:
-    return 12 + estimate_tokens(message.content)
+    # Binary inputs are bounded independently at the provider boundary. This
+    # allowance keeps local context pruning deterministic without pretending
+    # that vendor image/PDF tokenization can be inferred from file bytes.
+    binary_allowance = sum(
+        2_048 + ((len(data) + 2_047) // 2_048)
+        for attachment in message.attachments
+        if isinstance((data := attachment.get("data")), bytes)
+    )
+    return 12 + estimate_tokens(message.content) + binary_allowance
 
 
 def _visible_turns(messages: Sequence[CanonicalMessage]) -> list[list[CanonicalMessage]]:
@@ -120,8 +129,24 @@ def prepare_visible_history(
     for instruction in system_messages:
         SystemPromptPart(instruction)
 
+    prompt: str | tuple[str | BinaryContent, ...] = prompt_message.content
+    if prompt_message.attachments:
+        prompt = (
+            prompt_message.content,
+            *(
+                BinaryContent(
+                    data=attachment["data"],
+                    media_type=str(attachment["media_type"]),
+                    identifier=(
+                        str(attachment["name"]) if isinstance(attachment.get("name"), str) else None
+                    ),
+                )
+                for attachment in prompt_message.attachments
+            ),
+        )
+
     plan = PreparedAgentRequest(
-        prompt=prompt_message.content,
+        prompt=prompt,
         system_instructions=system_messages,
         history_message_count=len(selected),
         dropped_history_messages=len(candidates) - len(selected),

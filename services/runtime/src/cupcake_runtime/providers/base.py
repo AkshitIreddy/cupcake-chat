@@ -61,6 +61,7 @@ class ProviderConfig:
     api_key: str | None = None
     base_url: str | None = None
     organization: str | None = None
+    account_id: str | None = None
     timeout_seconds: float = 120.0
     headers: Mapping[str, str] | None = None
 
@@ -90,6 +91,28 @@ class ProviderAdapter(ABC):
             raise ValueError(f"unsupported reasoning effort; choose one of: {supported}")
         if request.tools and not self.descriptor.capabilities.tools:
             raise ValueError(f"{self.descriptor.id} does not support tools")
+        total_attachment_bytes = 0
+        for message in request.messages:
+            for attachment in message.attachments:
+                data = attachment.get("data")
+                media_type = attachment.get("media_type")
+                if not isinstance(data, bytes) or not data:
+                    raise ValueError("attachments must contain non-empty app-owned bytes")
+                if not isinstance(media_type, str):
+                    raise ValueError("attachments must contain a validated media_type")
+                if media_type.startswith("image/"):
+                    if not self.descriptor.capabilities.images:
+                        raise ValueError(f"{self.descriptor.id} does not support image input")
+                elif media_type == "application/pdf":
+                    if not self.descriptor.capabilities.documents:
+                        raise ValueError(f"{self.descriptor.id} does not support document input")
+                else:
+                    raise ValueError(f"unsupported binary attachment media type: {media_type}")
+                total_attachment_bytes += len(data)
+                if len(data) > 20 * 1024 * 1024:
+                    raise ValueError("an attachment exceeds the 20 MiB provider input limit")
+        if total_attachment_bytes > 24 * 1024 * 1024:
+            raise ValueError("attachments exceed the 24 MiB provider input limit")
         if request.continuity and not request.continuity.applies_to(self.descriptor):
             # Provider state is an optimization, never canonical history. Silently
             # dropping it prevents cross-provider leakage while retaining messages.

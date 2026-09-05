@@ -190,10 +190,14 @@ class AnthropicAdapter(ProviderAdapter):
             yield provider_error_event(builder, exc)
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None):
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+):
     try:
         from pydantic_ai.models.anthropic import AnthropicModel
         from pydantic_ai.providers.anthropic import AnthropicProvider
     except ImportError as exc:
         raise MissingProviderDependency("anthropic", "pydantic-ai-slim[anthropic]") from exc
-    return AnthropicModel(model_name, provider=AnthropicProvider(api_key=api_key))
+    return AnthropicModel(
+        model_name, provider=AnthropicProvider(api_key=api_key, base_url=base_url)
+    )

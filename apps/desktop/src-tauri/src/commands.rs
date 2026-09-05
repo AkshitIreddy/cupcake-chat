@@ -445,6 +445,7 @@ async fn provider_call(
     for value in [
         input.base_url.as_deref(),
         input.organization.as_deref(),
+        input.account_id.as_deref(),
         input.model_id.as_deref(),
         input.display_name.as_deref(),
     ]
@@ -460,6 +461,7 @@ async fn provider_call(
         secret,
         base_url,
         organization,
+        account_id,
         model_id,
         display_name,
     } = input;
@@ -473,6 +475,7 @@ async fn provider_call(
                 secret,
                 base_url,
                 organization,
+                account_id,
                 model_id,
                 display_name,
             },

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from pydantic_ai.messages import BinaryContent, ModelResponse, UserPromptPart
 from pydantic_ai.messages import ModelRequest as PydanticModelRequest
-from pydantic_ai.messages import ModelResponse, UserPromptPart
 
 from cupcake_runtime.agent_engine.history import prepare_visible_history
 from cupcake_runtime.agent_engine.models import ContextLimitExceeded
@@ -72,6 +72,35 @@ def test_current_prompt_is_never_silently_truncated() -> None:
             context_token_budget=20,
             max_output_tokens=10,
         )
+
+
+def test_current_binary_attachment_becomes_in_memory_user_content() -> None:
+    payload = b"\x89PNG\r\n\x1a\nrecorded-image"
+    plan, history = prepare_visible_history(
+        (
+            CanonicalMessage(
+                "user",
+                "Describe this image.",
+                attachments=(
+                    {
+                        "data": payload,
+                        "media_type": "image/png",
+                        "name": "cupcake.png",
+                    },
+                ),
+            ),
+        ),
+        context_token_budget=10_000,
+        max_output_tokens=100,
+    )
+    assert history == []
+    assert isinstance(plan.prompt, tuple)
+    assert plan.prompt[0] == "Describe this image."
+    binary = plan.prompt[1]
+    assert isinstance(binary, BinaryContent)
+    assert binary.data == payload
+    assert binary.media_type == "image/png"
+    assert binary.identifier == "cupcake.png"
 
 
 def test_history_budget_never_keeps_an_orphan_assistant_message() -> None:

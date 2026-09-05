@@ -307,11 +307,14 @@ class CupcakeAgentEngine:
         descriptor: ModelDescriptor, request: ModelRequest, output_tokens: int
     ) -> ModelSettings:
         settings: dict[str, Any] = {"max_tokens": output_tokens}
-        if request.temperature is not None:
+        effort = request.reasoning_effort or descriptor.default_reasoning_effort
+        incompatible_sampling = (
+            descriptor.provider == "anthropic" and descriptor.family == "claude-5"
+        ) or (descriptor.provider in {"openai", "xai"} and effort is not ReasoningEffort.NONE)
+        if request.temperature is not None and not incompatible_sampling:
             if not 0 <= request.temperature <= 2:
                 raise ValueError("temperature must be between 0 and 2")
             settings["temperature"] = request.temperature
-        effort = request.reasoning_effort or descriptor.default_reasoning_effort
         if descriptor.provider == NVIDIA_NIM_PROVIDER:
             # NVIDIA's hosted Nemotron-family chat templates can emit a raw
             # reasoning trace inside ordinary `content` unless thinking is
@@ -324,13 +327,22 @@ class CupcakeAgentEngine:
             }
             if effort is not ReasoningEffort.NONE:
                 settings["openai_reasoning_effort"] = effort.value
-        elif effort == ReasoningEffort.NONE:
-            settings["thinking"] = False
         elif descriptor.provider == "anthropic":
-            settings["anthropic_effort"] = effort.value
+            if effort is ReasoningEffort.NONE:
+                settings["anthropic_thinking"] = {"type": "disabled"}
+            else:
+                settings["anthropic_thinking"] = {"type": "adaptive"}
+                settings["anthropic_effort"] = effort.value
         elif descriptor.provider == "openai":
             settings["openai_reasoning_effort"] = effort.value
             settings["openai_reasoning_summary"] = "auto"
+        elif descriptor.provider in {"xai", "openai-compatible"}:
+            if effort is ReasoningEffort.NONE:
+                settings["thinking"] = False
+            else:
+                settings["openai_reasoning_effort"] = effort.value
+        elif effort == ReasoningEffort.NONE:
+            settings["thinking"] = False
         else:
             settings["thinking"] = effort.value
 
@@ -467,7 +479,7 @@ class CupcakeAgentEngine:
     def _continuity(
         descriptor: ModelDescriptor, response: ModelResponse | None
     ) -> ProviderContinuity | None:
-        if response is None or not response.provider_response_id:
+        if response is None or not response.provider_response_id or descriptor.provider != "openai":
             return None
         # Only an opaque response identifier crosses the engine boundary. Raw
         # provider details, thinking signatures, SDK messages, and checkpoints do not.

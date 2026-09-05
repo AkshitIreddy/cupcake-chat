@@ -18,13 +18,13 @@ from cupcake_runtime.providers.xai import XAIAdapter
 
 
 def test_openai_responses_payload_uses_valid_same_family_continuity() -> None:
-    descriptor = ModelCatalog.builtins().get("openai:gpt-5.6-sol")
+    descriptor = ModelCatalog.builtins().get("openai:gpt-6-astra")
     adapter = OpenAIResponsesAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(
         descriptor.id,
         (CanonicalMessage("user", "hello"),),
         reasoning_effort=ReasoningEffort.HIGH,
-        continuity=ProviderContinuity("openai", "gpt-5.6", {"response_id": "resp_1"}),
+        continuity=ProviderContinuity("openai", "gpt-6", {"response_id": "resp_1"}),
     )
     payload = adapter.build_request(request)
     assert payload["previous_response_id"] == "resp_1"
@@ -32,7 +32,7 @@ def test_openai_responses_payload_uses_valid_same_family_continuity() -> None:
 
 
 def test_openai_none_effort_omits_reasoning_request() -> None:
-    descriptor = ModelCatalog.builtins().get("openai:gpt-5.6-sol")
+    descriptor = ModelCatalog.builtins().get("openai:gpt-6-astra")
     adapter = OpenAIResponsesAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(
         descriptor.id,
@@ -40,6 +40,54 @@ def test_openai_none_effort_omits_reasoning_request() -> None:
         reasoning_effort=ReasoningEffort.NONE,
     )
     assert "reasoning" not in adapter.build_request(request)
+
+
+def test_binary_inputs_are_bytes_only_bounded_and_capability_checked() -> None:
+    openai_descriptor = ModelCatalog.builtins().get("openai:gpt-6-astra")
+    openai_adapter = OpenAIResponsesAdapter(
+        openai_descriptor, ProviderConfig(api_key="test"), client=object()
+    )
+    valid = ModelRequest(
+        openai_descriptor.id,
+        (
+            CanonicalMessage(
+                "user",
+                "look",
+                attachments=({"data": b"png", "media_type": "image/png"},),
+            ),
+        ),
+    )
+    openai_adapter.validate_request(valid)
+
+    cohere_descriptor = ModelCatalog.builtins().get("cohere:command-a-plus-05-2026")
+    cohere_adapter = CohereAdapter(
+        cohere_descriptor, ProviderConfig(api_key="test"), client=object()
+    )
+    unsupported = ModelRequest(
+        cohere_descriptor.id,
+        (
+            CanonicalMessage(
+                "user",
+                "look",
+                attachments=({"data": b"png", "media_type": "image/png"},),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="does not support image input"):
+        cohere_adapter.validate_request(unsupported)
+
+    path_shaped = ModelRequest(
+        openai_descriptor.id,
+        (
+            CanonicalMessage(
+                "user",
+                "look",
+                attachments=({"path": "C:/private.png", "media_type": "image/png"},),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="app-owned bytes"):
+        openai_adapter.validate_request(path_shaped)
 
 
 def test_anthropic_payload_separates_system_and_maps_adaptive_effort() -> None:
@@ -69,7 +117,7 @@ def test_anthropic_supported_none_effort_disables_adaptive_thinking() -> None:
 
 
 def test_gemini_3_maps_portable_effort_to_thinking_level() -> None:
-    descriptor = ModelCatalog.builtins().get("google:gemini-3.5-flash")
+    descriptor = ModelCatalog.builtins().get("google:gemini-3.8-flash")
     adapter = GeminiAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(
         descriptor.id,
@@ -83,7 +131,7 @@ def test_gemini_3_maps_portable_effort_to_thinking_level() -> None:
 
 
 def test_xai_maps_reasoning_effort_without_routing() -> None:
-    descriptor = ModelCatalog.builtins().get("xai:grok-4.3")
+    descriptor = ModelCatalog.builtins().get("xai:grok-4.6")
     adapter = XAIAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(
         descriptor.id,
@@ -94,7 +142,7 @@ def test_xai_maps_reasoning_effort_without_routing() -> None:
 
 
 def test_cohere_non_reasoning_catalog_entry_disables_private_thinking() -> None:
-    descriptor = ModelCatalog.builtins().get("cohere:command-a-03-2025")
+    descriptor = ModelCatalog.builtins().get("cohere:command-a-plus-05-2026")
     adapter = CohereAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
     request = ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),))
     assert adapter.build_request(request)["thinking"] == {"type": "disabled"}
@@ -102,10 +150,7 @@ def test_cohere_non_reasoning_catalog_entry_disables_private_thinking() -> None:
 
 @pytest.mark.parametrize(
     ("model_id", "adapter_type"),
-    (
-        ("mistral:mistral-medium-3-5", MistralAdapter),
-        ("cohere:command-a-03-2025", CohereAdapter),
-    ),
+    (("cohere:command-a-plus-05-2026", CohereAdapter),),
 )
 def test_non_reasoning_models_reject_unsupported_effort(
     model_id: str, adapter_type: type[MistralAdapter] | type[CohereAdapter]
@@ -119,6 +164,17 @@ def test_non_reasoning_models_reject_unsupported_effort(
     )
     with pytest.raises(ValueError, match="unsupported reasoning effort"):
         adapter.validate_request(request)
+
+
+def test_mistral_medium_maps_its_documented_adjustable_reasoning_values() -> None:
+    descriptor = ModelCatalog.builtins().get("mistral:mistral-medium-3-5")
+    adapter = MistralAdapter(descriptor, ProviderConfig(api_key="test"), client=object())
+    high = ModelRequest(
+        descriptor.id,
+        (CanonicalMessage("user", "hello"),),
+        reasoning_effort=ReasoningEffort.HIGH,
+    )
+    assert adapter.build_request(high)["reasoning_effort"] == "high"
 
 
 def test_generic_endpoint_maps_only_advertised_reasoning_effort() -> None:

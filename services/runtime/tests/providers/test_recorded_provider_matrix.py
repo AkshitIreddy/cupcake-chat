@@ -189,22 +189,22 @@ def _adapter(provider: str, stream: Any | None = None, *, client: Any | None = N
     catalog = ModelCatalog.builtins()
     config = ProviderConfig(api_key="recorded-test")
     if provider == "openai":
-        descriptor = catalog.get("openai:gpt-5.6-sol")
+        descriptor = catalog.get("openai:gpt-6-astra")
         cls: type[ProviderAdapter] = OpenAIResponsesAdapter
     elif provider == "anthropic":
         descriptor = catalog.get("anthropic:claude-sonnet-5")
         cls = AnthropicAdapter
     elif provider == "google":
-        descriptor = catalog.get("google:gemini-3.5-flash")
+        descriptor = catalog.get("google:gemini-3.8-flash")
         cls = GeminiAdapter
     elif provider == "xai":
-        descriptor = catalog.get("xai:grok-4.3")
+        descriptor = catalog.get("xai:grok-4.6")
         cls = XAIAdapter
     elif provider == "mistral":
         descriptor = catalog.get("mistral:mistral-medium-3-5")
         cls = MistralAdapter
     elif provider == "cohere":
-        descriptor = catalog.get("cohere:command-a-03-2025")
+        descriptor = catalog.get("cohere:command-a-plus-05-2026")
         cls = CohereAdapter
     elif provider == "nvidia-nim":
         descriptor = ModelDescriptor(
@@ -413,6 +413,63 @@ def test_citations_are_normalized_where_recorded() -> None:
         assert citations and all(citation is not None for citation in citations)
 
 
+@pytest.mark.parametrize(
+    ("terminal", "last_type", "reason"),
+    (
+        (
+            {
+                "type": "response.incomplete",
+                "response": {
+                    "id": "resp_partial",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                },
+            },
+            StreamEventType.FINISH,
+            "max_output_tokens",
+        ),
+        (
+            {"type": "response.cancelled", "response": {"id": "resp_cancelled"}},
+            StreamEventType.ERROR,
+            "cancelled",
+        ),
+    ),
+)
+def test_openai_non_success_terminal_events_are_not_reported_as_stop(
+    terminal: dict[str, Any], last_type: StreamEventType, reason: str
+) -> None:
+    adapter, descriptor = _adapter("openai", RecordedAsyncStream([terminal]))
+    events = asyncio.run(
+        _collect(adapter, ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),)))
+    )
+    assert events[-1].type is last_type
+    if last_type is StreamEventType.FINISH:
+        assert events[-1].finish_reason == reason
+    else:
+        assert events[-1].error_code == reason
+
+
+def test_gemini_enum_finish_reason_is_normalized_to_wire_value() -> None:
+    stream = RecordedAsyncStream(
+        [
+            {
+                "response_id": "gemini-response",
+                "candidates": [
+                    {
+                        "finish_reason": SimpleNamespace(value="MAX_TOKENS"),
+                        "content": {"parts": [{"text": "partial"}]},
+                    }
+                ],
+            }
+        ]
+    )
+    adapter, descriptor = _adapter("google", stream)
+    events = asyncio.run(
+        _collect(adapter, ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),)))
+    )
+    assert events[-1].type is StreamEventType.FINISH
+    assert events[-1].finish_reason == "max_tokens"
+
+
 def test_generic_endpoints_are_selectable_isolated_and_retain_canonical_history() -> None:
     registry = ProviderRegistry()
     lab = _generic_descriptor(registry, "lab")
@@ -442,9 +499,19 @@ def test_generic_endpoints_are_selectable_isolated_and_retain_canonical_history(
     assert "previous_response_id" not in payload
 
 
+def test_named_compatible_disconnect_keeps_sibling_endpoints() -> None:
+    registry = ProviderRegistry()
+    groq = _generic_descriptor(registry, "groq")
+    openrouter = _generic_descriptor(registry, "openrouter")
+    assert registry.disconnect_openai_compatible_endpoint("groq") is True
+    with pytest.raises(KeyError):
+        registry.catalog.get(groq.id)
+    assert registry.catalog.get(openrouter.id) is openrouter
+
+
 def test_openai_continuity_is_used_only_within_the_exact_model_family() -> None:
     catalog = ModelCatalog.builtins()
-    descriptor = catalog.get("openai:gpt-5.6-sol")
+    descriptor = catalog.get("openai:gpt-6-astra")
     adapter = OpenAIResponsesAdapter(
         descriptor, ProviderConfig(api_key="recorded-test"), client=object()
     )
@@ -478,7 +545,7 @@ def test_registry_scrubs_incompatible_opaque_state_before_runtime_use() -> None:
     request = ModelRequest(
         "anthropic:claude-sonnet-5",
         (CanonicalMessage("user", "continue visibly"),),
-        continuity=ProviderContinuity("openai", "gpt-5.6", {"response_id": "resp_1"}),
+        continuity=ProviderContinuity("openai", "gpt-6", {"response_id": "resp_1"}),
     )
     _adapter_instance, sanitized = registry.prepare_request(request)
     assert sanitized.messages == request.messages

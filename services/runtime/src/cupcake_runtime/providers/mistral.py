@@ -21,6 +21,7 @@ from .types import (
     ModelRequest,
     NormalizedStreamEvent,
     ProviderContinuity,
+    ReasoningEffort,
     StreamEventType,
     TokenUsage,
 )
@@ -54,6 +55,9 @@ class MistralAdapter(ProviderAdapter):
             payload["temperature"] = request.temperature
         if request.tools:
             payload["tools"] = list(request.tools)
+        effort = self.effort(request)
+        if effort is not ReasoningEffort.NONE:
+            payload["reasoning_effort"] = effort.value
         return payload
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[NormalizedStreamEvent]:
@@ -130,10 +134,13 @@ class MistralAdapter(ProviderAdapter):
             yield provider_error_event(builder, exc)
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None):
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+):
     try:
         from pydantic_ai.models.mistral import MistralModel
         from pydantic_ai.providers.mistral import MistralProvider
     except ImportError as exc:
         raise MissingProviderDependency("mistral", "pydantic-ai-slim[mistral]") from exc
-    return MistralModel(model_name, provider=MistralProvider(api_key=api_key))
+    provider_type = cast(Any, MistralProvider)
+    return MistralModel(model_name, provider=provider_type(api_key=api_key, base_url=base_url))

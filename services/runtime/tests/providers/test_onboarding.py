@@ -14,6 +14,8 @@ from cupcake_runtime.providers.onboarding import (
     OnboardingCancellation,
     ProviderOnboardingService,
     ProviderTestState,
+    named_compatible_base_url,
+    named_compatible_model_allowed,
     validate_remote_openai_compatible_endpoint,
 )
 
@@ -78,6 +80,31 @@ def test_direct_discovery_bounds_scanned_records_including_invalid_entries() -> 
     assert result.state is ProviderTestState.FAILED
     assert result.diagnostic is not None
     assert result.diagnostic.code == "oversized_model_catalog"
+
+
+def test_direct_discovery_follows_sdk_pages_with_one_global_bound() -> None:
+    class Page:
+        def __init__(self, ids: list[str], next_page: Page | None = None) -> None:
+            self.data = [{"id": model_id} for model_id in ids]
+            self._next_page = next_page
+
+        def has_next_page(self) -> bool:
+            return self._next_page is not None
+
+        async def get_next_page(self) -> Page:
+            assert self._next_page is not None
+            return self._next_page
+
+    response = Page(["vendor/one"], Page(["vendor/two"]))
+    result = asyncio.run(
+        ProviderOnboardingService(max_models=2).test_connection(
+            "anthropic",
+            ProviderConfig(api_key=SECRET_CANARY),
+            client=fake_client(response),
+        )
+    )
+    assert result.state is ProviderTestState.READY
+    assert [model.id for model in result.models] == ["vendor/one", "vendor/two"]
 
 
 def test_gemini_aio_model_listing_shape_is_supported() -> None:
@@ -323,6 +350,89 @@ def test_generic_remote_openai_compatible_discovery() -> None:
     assert result.state is ProviderTestState.READY
     assert result.provider == "openai-compatible"
     assert len(result.models) == 2
+
+
+@pytest.mark.parametrize(
+    ("provider", "account_id", "records", "expected"),
+    (
+        (
+            "groq",
+            None,
+            [
+                {"id": "openai/gpt-oss-20b", "name": "GPT OSS 20B"},
+                {"id": "vendor/paid", "name": "Paid"},
+            ],
+            ["openai/gpt-oss-20b"],
+        ),
+        (
+            "openrouter",
+            None,
+            [
+                {
+                    "id": "nvidia/nemotron-3.5-lightning:free",
+                    "name": "Nemotron 3.5 Lightning (free)",
+                },
+                {"id": "vendor/model", "name": "Paid model"},
+            ],
+            ["nvidia/nemotron-3.5-lightning:free"],
+        ),
+        (
+            "cloudflare",
+            "a" * 32,
+            [
+                {
+                    "id": "@cf/meta/llama-3.1-8b-instruct-fp8",
+                    "name": "Llama 3.1 8B FP8",
+                },
+                {"id": "@cf/paid/model", "name": "Paid model"},
+            ],
+            ["@cf/meta/llama-3.1-8b-instruct-fp8"],
+        ),
+    ),
+)
+def test_named_compatible_presets_keep_only_explicit_free_routes(
+    provider: str,
+    account_id: str | None,
+    records: list[dict[str, str]],
+    expected: list[str],
+) -> None:
+    result = asyncio.run(
+        ProviderOnboardingService().test_connection(
+            provider,
+            ProviderConfig(api_key=SECRET_CANARY, account_id=account_id),
+            client=fake_client(SimpleNamespace(data=records)),
+        )
+    )
+    assert result.state is ProviderTestState.READY
+    assert result.provider == provider
+    assert [model.id for model in result.models] == expected
+    assert all(model.compatibility_verified for model in result.models)
+    assert all(model.capabilities == ("streaming",) for model in result.models)
+
+
+def test_named_compatible_endpoints_and_model_policy_are_fixed() -> None:
+    assert named_compatible_base_url("groq") == "https://api.groq.com/openai/v1"
+    assert named_compatible_base_url("openrouter") == "https://openrouter.ai/api/v1"
+    assert named_compatible_base_url("cloudflare", "b" * 32).endswith(f"/{'b' * 32}/ai/v1")
+    assert named_compatible_model_allowed(
+        "openrouter", "nvidia/nemotron-3.5-lightning:free"
+    )
+    assert named_compatible_model_allowed("openrouter", "vendor/model:free")
+    assert not named_compatible_model_allowed("openrouter", "vendor/model")
+
+
+def test_named_compatible_endpoint_override_and_invalid_account_fail_closed() -> None:
+    for provider, config in (
+        ("groq", ProviderConfig(api_key=SECRET_CANARY, base_url="https://evil.example/v1")),
+        ("cloudflare", ProviderConfig(api_key=SECRET_CANARY, account_id="not-an-account")),
+    ):
+        result = asyncio.run(
+            ProviderOnboardingService().test_connection(provider, config, client=fake_client())
+        )
+        assert result.state is ProviderTestState.FAILED
+        assert result.diagnostic is not None
+        assert result.diagnostic.code in {"invalid_endpoint", "invalid_account_id"}
+        assert SECRET_CANARY not in repr(result)
 
 
 def test_generic_endpoint_normalizes_public_https_origin() -> None:

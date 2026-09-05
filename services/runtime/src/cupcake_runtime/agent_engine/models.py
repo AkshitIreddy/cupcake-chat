@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic_ai.messages import UserContent
+
 
 class AgentEngineError(RuntimeError):
     """Base error for requests rejected before a provider call is made."""
@@ -43,7 +45,7 @@ class AgentLimits:
 class PreparedAgentRequest:
     """Observable, provider-neutral request plan passed to the Pydantic backend."""
 
-    prompt: str
+    prompt: str | tuple[UserContent, ...]
     system_instructions: tuple[str, ...]
     history_message_count: int
     dropped_history_messages: int

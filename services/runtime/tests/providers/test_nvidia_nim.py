@@ -113,13 +113,22 @@ def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
     assert result.unknown_chat_compatibility == 0
     assert all(model.metadata["chat_compatibility"] == "chat" for model in result.models)
     assert all(
-        model.metadata["verification_state"] == "docs_verified_chat"
-        for model in result.models
+        model.metadata["verification_state"] == "docs_verified_chat" for model in result.models
     )
     assert all(
         str(model.metadata["compatibility_source_url"]).startswith("https://build.nvidia.com/")
         for model in result.models
     )
+
+
+def test_verified_current_nim_card_supplies_context_when_models_api_omits_it() -> None:
+    result = asyncio.run(
+        NvidiaNimCatalogDiscovery().discover(
+            ProviderConfig(api_key="nvapi-recorded"),
+            client=fake_client([{"id": "nvidia/nemotron-3-super-120b-a12b"}]),
+        )
+    )
+    assert result.models[0].context_window == 1_000_000
 
 
 def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:
@@ -172,9 +181,7 @@ def test_registry_invalidates_discovery_only_when_nim_credentials_change() -> No
 def test_tested_nim_catalog_commits_without_duplicate_discovery() -> None:
     client = fake_client([{"id": "vendor/model", "capabilities": ["chat"]}])
     registry = ProviderRegistry()
-    service = ProviderOnboardingService(
-        nvidia_nim_discovery=registry.nvidia_nim_discovery
-    )
+    service = ProviderOnboardingService(nvidia_nim_discovery=registry.nvidia_nim_discovery)
     config = ProviderConfig(api_key="nvapi-recorded")
 
     execution = asyncio.run(

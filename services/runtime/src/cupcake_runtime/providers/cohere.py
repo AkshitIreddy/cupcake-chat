@@ -169,10 +169,20 @@ class CohereAdapter(ProviderAdapter):
             yield provider_error_event(builder, exc)
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None):
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+):
     try:
         from pydantic_ai.models.cohere import CohereModel
         from pydantic_ai.providers.cohere import CohereProvider
     except ImportError as exc:
         raise MissingProviderDependency("cohere", "pydantic-ai-slim[cohere]") from exc
-    return CohereModel(model_name, provider=CohereProvider(api_key=api_key))
+    if base_url:
+        try:
+            from cohere import AsyncClientV2
+        except ImportError as exc:
+            raise MissingProviderDependency("cohere", "cohere") from exc
+        provider = CohereProvider(cohere_client=AsyncClientV2(api_key=api_key, base_url=base_url))
+    else:
+        provider = CohereProvider(api_key=api_key)
+    return CohereModel(model_name, provider=provider)
