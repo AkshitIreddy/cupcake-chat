@@ -73,6 +73,8 @@ Use a new absolute child of:
 C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\out\tauri-test-profiles\
 ```
 
+The repository's `out` directory is redirected to `E:\temp\cupcakeagi-out`; new large disposable
+profiles and captures may also use explicitly named child directories directly under `E:\temp`.
 Set `CUPCAKE_TEST_DATA_DIR` to that absolute, non-root directory before launching the packaged
 executable. Record the exact directory in the final handoff. Never reuse an older desktop profile as
 acceptance evidence, and never delete the owner's normal application data.
@@ -112,13 +114,22 @@ unload, remove, and version replacement.
 
 Restart during download and inference. An incomplete object must never become installed, and
 recovery must not duplicate effects. After one verified download, disconnect the network and
-complete a chat. Record measured tokens/second and context settings. No corrective app-managed local
-chat or benchmark has been obtained yet.
+complete a chat. Record measured tokens/second and context settings. On 2026-09-05 the owner profile's
+verified Qwen3 8B Q4_K_M completed two turns through managed b10679 CUDA 13 and measured 64.76 generated
+tokens/second in the 64-token app benchmark at 4,096 context. Streaming, Stop, follow-up recovery,
+graceful VRAM-policy refusal, and unload were observed on provisional executable `BF706D1F`.
+These results do not waive final package restart and interruption checks.
 
 Before NVIDIA model work, read `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`. If it is `yes`, do
-not use the GPU. If available, set it to `yes` immediately before model load and restore `no` after
+not use the GPU. If available, atomically claim it with exclusive file access immediately before
+model load and restore `no` after
 unload and sidecar shutdown, including failure paths. Ordinary app rendering does not take GPU-model
 ownership.
+
+The owner uses an always-on TransparencyApp dimming overlay. Leave it untouched. Prefer direct
+WebView/CDP captures for application color review; document the overlay when interpreting desktop
+captures. Archive obsolete task-owned files to `E:\uesless` with a restore manifest. Moving files
+within E is reversible organization, not disk-space reclamation.
 
 ## 8. Native window and visual matrix
 
