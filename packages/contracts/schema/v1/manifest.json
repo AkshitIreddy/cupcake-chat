@@ -55,12 +55,12 @@
     {
       "name": "group-turn",
       "file": "group-turn.schema.json",
-      "sha256": "a79e401506190050bad373489612f4d8b5c3c5958675f9705f3930cce2ebdaa7"
+      "sha256": "3b8460335df69a3c3a5397b60795c40355e9c8d7de4c2ba30edd60fbe189370c"
     },
     {
       "name": "group-turn-preflight",
       "file": "group-turn-preflight.schema.json",
-      "sha256": "449746582bb737bb334e6e61168440532c37ec005bf7fd75d21bd72aa0952a69"
+      "sha256": "0d185cd7aa53850383994be710ce69401cc2bf55b1f306ce1f34b74e96644b1c"
     },
     {
       "name": "memory",

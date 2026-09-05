@@ -21,6 +21,7 @@ from cupcake_runtime.providers.types import (
     ModelDescriptor,
     NormalizedStreamEvent,
     PrivacyRoute,
+    ReasoningEffort,
     StreamEventType,
     TokenUsage,
 )
@@ -439,6 +440,68 @@ def test_smart_pass_is_durable_and_selector_never_receives_private_instructions(
     selector_body = engine.selector_requests[0].messages[-1].content
     assert "private-mira-instruction" not in selector_body
     assert "private-sol-instruction" not in selector_body
+    runtime.close()
+
+
+def test_reasoning_selector_discloses_and_uses_a_reasoning_aware_budget(
+    tmp_path: Path,
+) -> None:
+    runtime = service(tmp_path)
+    group = configured_group(runtime)
+    descriptor = runtime.providers.register_openai_compatible_endpoint(
+        "groq",
+        model="openai/gpt-oss-20b",
+        display_name="Groq GPT OSS 20B",
+        base_url="https://api.groq.com/openai/v1",
+        api_key="credential-lease",
+        context_window=131_072,
+        max_output_tokens=65_536,
+        reasoning_efforts=(
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+        ),
+        capabilities=ModelCapabilities(streaming=True, reasoning=True),
+        metadata={"provider_preset": "groq"},
+    )
+    runtime.providers.catalog.register(
+        replace(
+            descriptor,
+            privacy_route=PrivacyRoute.CLOUD,
+            default_reasoning_effort=ReasoningEffort.LOW,
+        ),
+        replace=True,
+    )
+    for persona in group["personas"]:
+        runtime.handle("personas.update", {"personaId": persona["id"], "modelId": descriptor.id})
+    engine = ScriptedGroupEngine(
+        lambda _payload, _index: json.dumps(
+            {
+                "decision": "pass",
+                "participantId": None,
+                "reasonCode": "acknowledgement",
+                "reason": "No reply would add value.",
+            }
+        )
+    )
+    runtime.agent_engine = engine  # type: ignore[assignment]
+    base: dict[str, Any] = {
+        "conversationId": group["conversationId"],
+        "branchId": group["branchId"],
+        "content": "Thanks, everyone.",
+        "mentions": [],
+    }
+
+    preflight, _ = runtime.handle("groups.turn.preflight", base)
+    result, _ = asyncio.run(send(runtime, send_params(base, preflight)))
+
+    assert preflight["selectorMaxOutputTokens"] == 1_024
+    assert preflight["disclosure"]["selectorMaxOutputTokens"] == 1_024
+    assert result["status"] == "waiting_for_you"
+    assert result["selectorCalls"] == 1
+    assert len(engine.selector_requests) == 1
+    assert engine.selector_requests[0].max_output_tokens == 1_024
+    assert engine.selector_requests[0].reasoning_effort is ReasoningEffort.LOW
     runtime.close()
 
 

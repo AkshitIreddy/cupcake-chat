@@ -548,7 +548,7 @@ class GroupTurnPlan(StrictGeneratedModel):
     ineligible_speakers: list[GroupTurnPlanIneligibleSpeakersItem] = Field(alias="ineligibleSpeakers", max_length=8)
     max_replies: int = Field(alias="maxReplies", ge=1, le=3)
     max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
-    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=1024)
     effective_offline: bool = Field(alias="effectiveOffline")
     content_sha256: str = Field(alias="contentSha256", pattern="^[0-9a-f]{64}$")
     attachment_bindings: list[dict[str, JsonValue]] = Field(alias="attachmentBindings", max_length=32)
@@ -818,7 +818,7 @@ class GroupTurnPreflightDisclosure(StrictGeneratedModel):
     candidate_routes: list[GroupTurnPreflightDisclosureCandidateRoutesItem] = Field(alias="candidateRoutes", max_length=8)
     ineligible_routes: list[GroupTurnPreflightDisclosureIneligibleRoutesItem] = Field(alias="ineligibleRoutes", max_length=8)
     max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
-    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=1024)
     max_replies: int = Field(alias="maxReplies", ge=1, le=3)
 
 class GroupTurnPreflight(StrictGeneratedModel):
@@ -832,7 +832,7 @@ class GroupTurnPreflight(StrictGeneratedModel):
     strategy: Literal["smart-selective", "mentions-only"]
     max_replies: int = Field(alias="maxReplies", ge=1, le=3)
     max_selector_calls: int = Field(alias="maxSelectorCalls", ge=0, le=3)
-    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=256)
+    selector_max_output_tokens: int = Field(alias="selectorMaxOutputTokens", ge=0, le=1024)
     selector: GroupTurnPreflightSelectorVariant1 | None
     eligible_speakers: list[GroupTurnPreflightEligibleSpeakersItem] = Field(alias="eligibleSpeakers", max_length=8)
     ineligible_speakers: list[GroupTurnPreflightIneligibleSpeakersItem] = Field(alias="ineligibleSpeakers", max_length=8)

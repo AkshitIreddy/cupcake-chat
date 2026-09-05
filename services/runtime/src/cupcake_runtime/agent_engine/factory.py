@@ -57,7 +57,7 @@ class PydanticModelFactory:
             response = str(request.metadata.get("mock_response") or f"Cupcake received: {prompt}")
             return TestModel(custom_output_text=response, model_name=descriptor.model)
         if descriptor.provider == "openai-compatible":
-            return self._openai_compatible(descriptor, config)
+            return self._openai_compatible(descriptor, config, request)
         try:
             builder = self._builders[descriptor.provider]
         except KeyError as exc:
@@ -74,10 +74,15 @@ class PydanticModelFactory:
         return builder(descriptor.model, api_key=config.api_key)
 
     @staticmethod
-    def _openai_compatible(descriptor: ModelDescriptor, config: ProviderConfig) -> Any:
+    def _openai_compatible(
+        descriptor: ModelDescriptor,
+        config: ProviderConfig,
+        request: ModelRequest,
+    ) -> Any:
         if not config.base_url:
             raise ValueError("an OpenAI-compatible endpoint requires an explicit base URL")
         try:
+            from openai import AsyncOpenAI
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.profiles.openai import OpenAIModelProfile
             from pydantic_ai.providers.openai import OpenAIProvider
@@ -85,9 +90,19 @@ class PydanticModelFactory:
             raise MissingProviderDependency(
                 "openai-compatible", "pydantic-ai-slim[openai]"
             ) from exc
-        provider = OpenAIProvider(
-            api_key=config.api_key or "not-required",
-            base_url=config.base_url,
+        provider = (
+            OpenAIProvider(
+                openai_client=AsyncOpenAI(
+                    api_key=config.api_key or "not-required",
+                    base_url=config.base_url,
+                    max_retries=0,
+                )
+            )
+            if request.metadata.get("group_selector") is True
+            else OpenAIProvider(
+                api_key=config.api_key or "not-required",
+                base_url=config.base_url,
+            )
         )
         endpoint_id = descriptor.metadata.get("endpoint_id")
         if endpoint_id in {"cloudflare", "openrouter"}:

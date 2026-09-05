@@ -14,6 +14,7 @@ from cupcake_runtime.providers.onboarding import (
     ProviderOnboardingResult,
     ProviderTestState,
 )
+from cupcake_runtime.providers.types import ReasoningEffort
 
 SECRET_CANARY = "sk-application-onboarding-secret-canary-58302"
 
@@ -195,6 +196,37 @@ def test_trusted_named_hydration_rejects_non_free_route(tmp_path: Any) -> None:
         runtime.close()
 
 
+def test_trusted_groq_gpt_oss_hydration_restores_reasoning_contract(tmp_path: Any) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        result, _ = runtime.handle(
+            "providers.configure",
+            {
+                "provider": "openai-compatible",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "endpointId": "groq",
+                "modelId": "openai/gpt-oss-20b",
+                "displayName": "Groq · GPT OSS 20B",
+                "baseUrl": "https://api.groq.com/openai/v1",
+            },
+        )
+
+        descriptor = runtime.providers.catalog.get("openai-compatible:groq/openai/gpt-oss-20b")
+        assert result["hydrated"] is True
+        assert descriptor.capabilities.reasoning is True
+        assert descriptor.reasoning_efforts == (
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+        )
+        assert descriptor.default_reasoning_effort is ReasoningEffort.LOW
+        assert descriptor.context_window == 131_072
+        assert descriptor.max_output_tokens == 65_536
+    finally:
+        runtime.close()
+
+
 def test_openai_compatible_connect_registers_the_tested_endpoint_model(tmp_path: Any) -> None:
     runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
     fixed = FixedOnboardingService(
@@ -295,6 +327,14 @@ def test_named_compatible_connect_registers_isolated_free_route(
         assert adapter.config.base_url == expected_url
         assert adapter.config.api_key == SECRET_CANARY
         assert fixed.seen[0][1].account_id == account_id
+        if provider == "groq":
+            assert descriptor.capabilities.reasoning is True
+            assert descriptor.reasoning_efforts == (
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+            )
+            assert descriptor.default_reasoning_effort is ReasoningEffort.LOW
     finally:
         runtime.close()
 

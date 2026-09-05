@@ -7,6 +7,7 @@ import pytest
 from httpx2 import AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -80,6 +81,58 @@ def test_generic_openai_compatible_requires_an_explicit_endpoint() -> None:
     request = ModelRequest(descriptor.id, (CanonicalMessage("user", "hello"),))
     with pytest.raises(ValueError, match="explicit base URL"):
         PydanticModelFactory().build(descriptor, ProviderConfig(), request)
+
+
+@pytest.mark.asyncio
+async def test_group_selector_compatible_transport_makes_one_wire_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    async def capture(_request: Request) -> Response:
+        nonlocal attempts
+        attempts += 1
+        return Response(503, json={"error": {"message": "temporary provider failure"}})
+
+    descriptor = openai_compatible_descriptor(
+        "groq",
+        "openai/gpt-oss-20b",
+        "Groq GPT OSS 20B",
+        context_window=131_072,
+        max_output_tokens=65_536,
+    )
+    request = ModelRequest(
+        descriptor.id,
+        (CanonicalMessage("user", "Choose one participant."),),
+        metadata={"group_selector": True},
+    )
+
+    async with AsyncClient(transport=MockTransport(capture)) as http_client:
+        client = AsyncOpenAI(
+            api_key="recorded-test-key",
+            base_url="https://api.groq.com/openai/v1",
+            http_client=http_client,
+            max_retries=0,
+        )
+
+        def no_retry_client(**kwargs: Any) -> AsyncOpenAI:
+            assert kwargs["max_retries"] == 0
+            return client
+
+        monkeypatch.setattr("openai.AsyncOpenAI", no_retry_client)
+        model = PydanticModelFactory().build(
+            descriptor,
+            ProviderConfig(
+                api_key="recorded-test-key",
+                base_url="https://api.groq.com/openai/v1",
+            ),
+            request,
+        )
+
+        with pytest.raises(ModelHTTPError, match="503"):
+            await Agent(model).run("Choose one participant.")
+
+    assert attempts == 1
 
 
 @pytest.mark.asyncio

@@ -364,6 +364,13 @@ class CupcakeAgentEngine:
                     "exclude": True,
                 }
             }
+        elif (
+            descriptor.provider == "openai-compatible"
+            and descriptor.metadata.get("endpoint_id") == "groq"
+            and descriptor.model.startswith("openai/gpt-oss-")
+        ):
+            settings["openai_reasoning_effort"] = effort.value
+            settings["extra_body"] = {"include_reasoning": False}
         elif descriptor.provider in {"xai", "openai-compatible"}:
             if effort is ReasoningEffort.NONE:
                 settings["thinking"] = False

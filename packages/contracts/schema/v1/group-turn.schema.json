@@ -1005,7 +1005,7 @@
         },
         "selectorMaxOutputTokens": {
           "minimum": 0,
-          "maximum": 256,
+          "maximum": 1024,
           "type": "integer"
         },
         "effectiveOffline": {

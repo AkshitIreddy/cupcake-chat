@@ -137,7 +137,7 @@ export const GroupDisclosure = StrictObject({
   candidateRoutes: Type.Array(GroupEligibleSpeaker, { maxItems: 8 }),
   ineligibleRoutes: Type.Array(GroupIneligibleSpeaker, { maxItems: 8 }),
   maxSelectorCalls: Type.Integer({ minimum: 0, maximum: 3 }),
-  selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 256 }),
+  selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 1024 }),
   maxReplies: Type.Integer({ minimum: 1, maximum: 3 }),
 });
 
@@ -153,7 +153,7 @@ export const GroupTurnPreflight = StrictObject(
     strategy: GroupStrategy,
     maxReplies: Type.Integer({ minimum: 1, maximum: 3 }),
     maxSelectorCalls: Type.Integer({ minimum: 0, maximum: 3 }),
-    selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 256 }),
+    selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 1024 }),
     selector: Nullable(GroupEligibleSpeaker),
     eligibleSpeakers: Type.Array(GroupEligibleSpeaker, { maxItems: 8 }),
     ineligibleSpeakers: Type.Array(GroupIneligibleSpeaker, { maxItems: 8 }),
@@ -225,7 +225,7 @@ export const GroupTurnPlan = StrictObject({
   ineligibleSpeakers: Type.Array(GroupIneligibleSpeaker, { maxItems: 8 }),
   maxReplies: Type.Integer({ minimum: 1, maximum: 3 }),
   maxSelectorCalls: Type.Integer({ minimum: 0, maximum: 3 }),
-  selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 256 }),
+  selectorMaxOutputTokens: Type.Integer({ minimum: 0, maximum: 1024 }),
   effectiveOffline: Type.Boolean(),
   contentSha256: Type.String({ pattern: '^[0-9a-f]{64}$' }),
   attachmentBindings: Type.Array(JsonObject, { maxItems: 32 }),

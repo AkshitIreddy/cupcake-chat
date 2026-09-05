@@ -193,3 +193,31 @@ def test_generic_endpoint_maps_only_advertised_reasoning_effort() -> None:
         reasoning_effort=ReasoningEffort.MEDIUM,
     )
     assert adapter.build_request(request)["reasoning_effort"] == "medium"  # type: ignore[attr-defined]
+
+
+def test_groq_gpt_oss_payload_uses_documented_completion_and_reasoning_fields() -> None:
+    registry = ProviderRegistry()
+    descriptor = registry.register_openai_compatible_endpoint(
+        "groq",
+        model="openai/gpt-oss-20b",
+        display_name="Groq GPT OSS 20B",
+        base_url="https://api.groq.com/openai/v1",
+        reasoning_efforts=(
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+        ),
+    )
+    adapter = registry.adapter(descriptor.id, client=object())
+    request = ModelRequest(
+        descriptor.id,
+        (CanonicalMessage("user", "Choose one participant."),),
+        reasoning_effort=ReasoningEffort.LOW,
+        max_output_tokens=1_024,
+    )
+
+    payload = adapter.build_request(request)  # type: ignore[attr-defined]
+    assert payload["max_completion_tokens"] == 1_024
+    assert "max_tokens" not in payload
+    assert payload["reasoning_effort"] == "low"
+    assert payload["include_reasoning"] is False

@@ -1350,18 +1350,32 @@ class RuntimeService:
                         "This convenience connection accepts only its documented "
                         "free-tier-eligible route.",
                     )
+                context_window = 32_768
+                max_output_tokens = None
+                reasoning_efforts: tuple[ReasoningEffort, ...] = ()
+                if endpoint_id in NAMED_COMPATIBLE_PROVIDERS:
+                    context_window, max_output_tokens = _named_compatible_limits(
+                        endpoint_id, model_id
+                    )
+                    reasoning_efforts = _named_compatible_reasoning_efforts(endpoint_id, model_id)
                 descriptor = self.providers.register_openai_compatible_endpoint(
                     endpoint_id,
                     model=model_id,
                     display_name=_required_string(params, "displayName"),
                     base_url=_required_string(params, "baseUrl"),
                     api_key=credential,
+                    context_window=context_window,
+                    max_output_tokens=max_output_tokens,
+                    reasoning_efforts=reasoning_efforts,
                     replace=True,
                 )
                 if endpoint_id in NAMED_COMPATIBLE_PROVIDERS:
                     descriptor = replace(
                         descriptor,
                         privacy_route=PrivacyRoute.CLOUD,
+                        default_reasoning_effort=_named_compatible_default_reasoning_effort(
+                            endpoint_id, model_id
+                        ),
                         metadata={
                             **descriptor.metadata,
                             "provider_preset": endpoint_id,
@@ -1468,6 +1482,7 @@ class RuntimeService:
             if not named_compatible_model_allowed(provider, model_id):
                 continue
             context_window, max_output_tokens = _named_compatible_limits(provider, model_id)
+            reasoning_efforts = _named_compatible_reasoning_efforts(provider, model_id)
             descriptor = self.providers.register_openai_compatible_endpoint(
                 provider,
                 model=model_id,
@@ -1476,7 +1491,11 @@ class RuntimeService:
                 api_key=config.api_key,
                 context_window=context_window,
                 max_output_tokens=max_output_tokens,
-                capabilities=ModelCapabilities(streaming=True),
+                reasoning_efforts=reasoning_efforts,
+                capabilities=ModelCapabilities(
+                    streaming=True,
+                    reasoning=bool(reasoning_efforts),
+                ),
                 metadata={
                     "provider_preset": provider,
                     "cost_policy": "free-tier-eligible",
@@ -1490,7 +1509,14 @@ class RuntimeService:
                 replace=True,
             )
             self.providers.catalog.register(
-                replace(descriptor, privacy_route=PrivacyRoute.CLOUD), replace=True
+                replace(
+                    descriptor,
+                    privacy_route=PrivacyRoute.CLOUD,
+                    default_reasoning_effort=_named_compatible_default_reasoning_effort(
+                        provider, model_id
+                    ),
+                ),
+                replace=True,
             )
 
     def _provider_disconnect(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -2300,6 +2326,15 @@ class RuntimeService:
                 raise RuntimeCommandError(
                     "OFFLINE_ROUTE_DENIED", "Offline mode blocks the configured Smart selector"
                 )
+        selector_output_tokens = 0
+        if selector_route is not None:
+            selector_model = cast(Mapping[str, Any], selector_route["model"])
+            selector_descriptor = self.providers.catalog.select(str(selector_model["id"]))
+            selector_output_tokens = min(
+                _group_selector_output_tokens(selector_descriptor),
+                selector_descriptor.max_output_tokens
+                or _group_selector_output_tokens(selector_descriptor),
+            )
         bound = self._confirmation_bound_params(params)
         roster_revision = int(settings["rosterRevision"])
         plan_core = {
@@ -2316,7 +2351,7 @@ class RuntimeService:
             "ineligibleSpeakers": ineligible,
             "maxReplies": int(settings["maxReplies"]),
             "maxSelectorCalls": int(settings["maxReplies"]) if mode == "smart" else 0,
-            "selectorMaxOutputTokens": 256 if mode == "smart" else 0,
+            "selectorMaxOutputTokens": selector_output_tokens,
             "effectiveOffline": offline,
             "contentSha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "attachmentBindings": bound["attachmentBindings"],
@@ -2379,6 +2414,7 @@ class RuntimeService:
             "strategy": settings["strategy"],
             "maxReplies": plan_core["maxReplies"],
             "maxSelectorCalls": plan_core["maxSelectorCalls"],
+            "selectorMaxOutputTokens": plan_core["selectorMaxOutputTokens"],
             "selector": selector_route,
             "eligibleSpeakers": eligible,
             "ineligibleSpeakers": ineligible,
@@ -6012,6 +6048,26 @@ def _named_compatible_limits(provider: str, model_id: str) -> tuple[int, int | N
     return (32_768, None)
 
 
+def _named_compatible_reasoning_efforts(
+    provider: str, model_id: str
+) -> tuple[ReasoningEffort, ...]:
+    if provider == "groq" and model_id.startswith("openai/gpt-oss-"):
+        return (
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+        )
+    return ()
+
+
+def _named_compatible_default_reasoning_effort(provider: str, model_id: str) -> ReasoningEffort:
+    if _named_compatible_reasoning_efforts(provider, model_id):
+        # Groq defaults GPT-OSS to medium. CupcakeAI pins low to keep ordinary
+        # chat and the bounded group router predictable and quota-conscious.
+        return ReasoningEffort.LOW
+    return ReasoningEffort.NONE
+
+
 def _validated_staged_media_type(name: str, declared: str, data: bytes) -> str:
     normalized = declared.partition(";")[0].strip().casefold()
     extension_type = {
@@ -6502,7 +6558,21 @@ def _group_selector_effort(descriptor: ModelDescriptor) -> ReasoningEffort | Non
     for effort in (ReasoningEffort.NONE, ReasoningEffort.MINIMAL, ReasoningEffort.LOW):
         if effort in supported:
             return effort
+    if descriptor.default_reasoning_effort in supported:
+        return descriptor.default_reasoning_effort
     return None
+
+
+def _group_selector_output_tokens(descriptor: ModelDescriptor) -> int:
+    effort = _group_selector_effort(descriptor)
+    # Groq's reasoning guide recommends 1,024 completion tokens and notes that
+    # reasoning itself consumes generated tokens. Preserve the smaller budget
+    # for selectors that can explicitly disable reasoning.
+    reasoning_is_required = (
+        descriptor.capabilities.reasoning
+        and ReasoningEffort.NONE not in descriptor.reasoning_efforts
+    )
+    return 1_024 if effort not in {None, ReasoningEffort.NONE} or reasoning_is_required else 256
 
 
 def _parse_group_selection(content: str, allowed_ids: set[str]) -> dict[str, Any]:

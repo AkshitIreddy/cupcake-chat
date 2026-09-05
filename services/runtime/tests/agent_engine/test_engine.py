@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from decimal import Decimal
 from typing import Any
 
@@ -26,6 +27,7 @@ from cupcake_runtime.agent_engine import (
 )
 from cupcake_runtime.providers import ProviderRegistry
 from cupcake_runtime.providers.base import EventBuilder, ProviderConfig
+from cupcake_runtime.providers.catalog import openai_compatible_descriptor
 from cupcake_runtime.providers.mock import MOCK_DESCRIPTOR
 from cupcake_runtime.providers.nvidia_nim import NVIDIA_NIM_PROVIDER, build_pydantic_model
 from cupcake_runtime.providers.types import (
@@ -285,6 +287,90 @@ async def test_nvidia_nim_non_thinking_setting_reaches_openai_chat_transport(
         "".join(event.text or "" for event in events if event.type == StreamEventType.TEXT_DELTA)
         == "safe answer"
     )
+
+
+@pytest.mark.asyncio
+async def test_groq_gpt_oss_selector_wire_uses_low_reasoning_and_1024_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def capture(request: Request) -> Response:
+        captured["body"] = json.loads(request.content)
+        stream = "".join(
+            (
+                'data: {"id":"chatcmpl-groq","object":"chat.completion.chunk",'
+                '"created":1,"model":"openai/gpt-oss-20b","choices":[{"index":0,'
+                '"delta":{"role":"assistant","content":"bounded"},'
+                '"finish_reason":null}]}\n\n',
+                'data: {"id":"chatcmpl-groq","object":"chat.completion.chunk",'
+                '"created":1,"model":"openai/gpt-oss-20b","choices":[{"index":0,'
+                '"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":30,'
+                '"completion_tokens":80,"total_tokens":110}}\n\n',
+                "data: [DONE]\n\n",
+            )
+        )
+        return Response(200, headers={"content-type": "text/event-stream"}, content=stream)
+
+    async with AsyncClient(transport=MockTransport(capture)) as http_client:
+        provider = OpenAIProvider(
+            openai_client=AsyncOpenAI(
+                api_key="recorded-test-key",
+                base_url="https://api.groq.com/openai/v1",
+                http_client=http_client,
+                max_retries=0,
+            )
+        )
+
+        def recorded_provider(**_kwargs: Any) -> OpenAIProvider:
+            return provider
+
+        monkeypatch.setattr("pydantic_ai.providers.openai.OpenAIProvider", recorded_provider)
+        descriptor = openai_compatible_descriptor(
+            "groq",
+            "openai/gpt-oss-20b",
+            "Groq GPT OSS 20B",
+            context_window=131_072,
+            max_output_tokens=65_536,
+            reasoning_efforts=(
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+            ),
+            capabilities=ModelCapabilities(streaming=True, reasoning=True),
+        )
+        descriptor = dataclass_replace(
+            descriptor,
+            default_reasoning_effort=ReasoningEffort.LOW,
+            metadata={**descriptor.metadata, "provider_preset": "groq"},
+        )
+        registry = ProviderRegistry()
+        registry.catalog.register(descriptor)
+        registry.configure_model(
+            descriptor.id,
+            ProviderConfig(
+                api_key="recorded-test-key",
+                base_url="https://api.groq.com/openai/v1",
+            ),
+        )
+        engine = CupcakeAgentEngine(registry)
+
+        events = await collect(
+            engine,
+            ModelRequest(
+                descriptor.id,
+                (CanonicalMessage("user", "Route this group turn."),),
+                max_output_tokens=1_024,
+                reasoning_effort=ReasoningEffort.LOW,
+                metadata={"group_selector": True},
+            ),
+        )
+
+    assert captured["body"]["max_completion_tokens"] == 1_024
+    assert "max_tokens" not in captured["body"]
+    assert captured["body"]["reasoning_effort"] == "low"
+    assert captured["body"]["include_reasoning"] is False
+    assert not any(event.type is StreamEventType.REASONING_SUMMARY_DELTA for event in events)
 
 
 @pytest.mark.asyncio

@@ -161,6 +161,13 @@ class GenericOpenAICompatibleAdapter(OpenAICompatibleAdapter):
 
     def build_request(self, request: ModelRequest) -> dict[str, Any]:
         payload = super().build_request(request)
+        if self.descriptor.metadata.get(
+            "endpoint_id"
+        ) == "groq" and self.descriptor.model.startswith("openai/gpt-oss-"):
+            max_tokens = payload.pop("max_tokens", None)
+            if max_tokens is not None:
+                payload["max_completion_tokens"] = max_tokens
+            payload["include_reasoning"] = False
         effort = self.effort(request)
         if effort != ReasoningEffort.NONE:
             payload["reasoning_effort"] = effort.value
