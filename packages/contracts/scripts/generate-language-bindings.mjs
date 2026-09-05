@@ -95,7 +95,7 @@ function renderPython(entries) {
   }
   lines.push('', '', '__all__ = [');
   for (const name of exports) lines.push(`    ${JSON.stringify(name)},`);
-  lines.push(']', '');
+  lines.push(']');
   return `${lines.join('\n')}\n`;
 }
 

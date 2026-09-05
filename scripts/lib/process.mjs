@@ -52,8 +52,8 @@ export function commandExists(command) {
 }
 
 export function pnpmCommand() {
-  if (commandExists('pnpm')) return { command: executable('pnpm'), prefix: [] };
   if (commandExists('corepack')) return { command: executable('corepack'), prefix: ['pnpm'] };
+  if (commandExists('pnpm')) return { command: executable('pnpm'), prefix: [] };
   throw new Error('pnpm is required. Install it or enable Corepack for this repository.');
 }
 
