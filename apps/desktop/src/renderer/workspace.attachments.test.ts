@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapConversation,
   mapRuntimeMessage,
   scopedReferenceOptions,
   shouldOptimisticallyAppendUser,
@@ -8,6 +9,29 @@ import {
 } from './workspace';
 
 describe('workspace attachment and reference contracts', () => {
+  it('preserves the authoritative project identity for conversations', () => {
+    const projects = [
+      { id: 'project-a', name: 'Alpha', description: '', archived: false },
+      { id: 'project-b', name: 'Beta', description: '', archived: false },
+    ];
+
+    expect(
+      mapConversation(
+        {
+          id: 'conversation-b',
+          title: 'Beta launch room',
+          project_id: 'project-b',
+          status: 'active',
+        },
+        projects,
+      ),
+    ).toMatchObject({
+      id: 'conversation-b',
+      project: 'Beta',
+      projectId: 'project-b',
+    });
+  });
+
   it('sends only opaque handle identities and typed reference identities', () => {
     expect(
       structuredAttachments([

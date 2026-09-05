@@ -21,6 +21,7 @@ export interface Conversation {
   preview: string;
   updated: string;
   project?: string;
+  projectId?: string | null;
   pinned?: boolean;
   archived?: boolean;
   unread?: boolean;

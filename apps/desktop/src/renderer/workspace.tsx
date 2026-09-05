@@ -876,13 +876,14 @@ export function applyRuntimeMessageEvent(
   return messages;
 }
 
-function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): Conversation {
+export function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): Conversation {
   return {
     id: item.id,
     title: item.title,
     preview: 'Open to see this conversation',
     updated: displayDate(item.updated_at),
     project: projects.find((project) => project.id === item.project_id)?.name,
+    projectId: item.project_id ?? null,
     archived: item.status === 'archived',
   };
 }
@@ -1917,6 +1918,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const activeProjectIdRef = useRef(activeProjectId);
   const activeRunIdRef = useRef(activeRunId);
   const projectsRef = useRef(projects);
+  const conversationSelectionGeneration = useRef(0);
+  const projectSelectionGeneration = useRef(0);
   activeProjectIdRef.current = activeProjectId;
   activeRunIdRef.current = activeRunId;
   projectsRef.current = projects;
@@ -1974,6 +1977,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(
     async (includeHostedCatalog = false) => {
       if (fixtureMode) return;
+      const contextGeneration = ++conversationSelectionGeneration.current;
+      ++projectSelectionGeneration.current;
       await guard(async () => {
         // Let the first useful read start the frozen runtime. app.bootstrap is
         // itself idempotent and retried below, so a separate health round-trip
@@ -2047,8 +2052,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // interactive frame hostage.
         setReady(true);
         const memoryRequest = request<RuntimeMemory[]>('memory.list', {
+          projectId: selectedProject,
+          includeGlobal: true,
           states: ['active', 'candidate', 'superseded', 'expired'],
-        }).catch(() => request<RuntimeMemory[]>('memory.list'));
+        }).catch(() =>
+          request<RuntimeMemory[]>('memory.list', {
+            projectId: selectedProject,
+            includeGlobal: true,
+          }),
+        );
         const [
           taskResult,
           memoryResult,
@@ -2085,7 +2097,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
         const localStatus = cupcakeStatus ?? {};
         setTasks(taskResult.map(mapTask));
-        setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
+        if (contextGeneration === conversationSelectionGeneration.current)
+          setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
         setProviders(
           Object.fromEntries(
             providerResult.providers.map((item) => [item.provider, item.configured]),
@@ -2397,8 +2410,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('cupcake-workspace-settings', JSON.stringify(settings));
   }, [settings]);
 
-  const conversationSelectionGeneration = useRef(0);
-  const projectSelectionGeneration = useRef(0);
   const setActiveProject = useCallback(
     async (projectId: string | null) => {
       const generation = ++projectSelectionGeneration.current;
@@ -2409,7 +2420,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setMessages([]);
       if (!fixtureMode)
         await guard(async () => {
-          const [conversationItems, memoryItems] = await Promise.all([
+          const [conversationItems, memoryItems, artifactItems] = await Promise.all([
             request<RuntimeConversation[]>('conversations.list', {
               projectId,
               includeArchived: true,
@@ -2419,14 +2430,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               includeGlobal: true,
               states: ['active', 'candidate', 'superseded', 'expired'],
             }),
+            projectId
+              ? request<RuntimeArtifact[]>('artifacts.list', { projectId })
+              : Promise.resolve([]),
           ]);
           if (generation !== projectSelectionGeneration.current) return;
           setConversations(conversationItems.map((item) => mapConversation(item, projects)));
           setMemories(memoryItems.map((item) => mapMemory(item, projects)));
-          await loadArtifacts(projectId);
+          setArtifacts(artifactItems.map((item) => mapRuntimeArtifact(item)));
         });
     },
-    [fixtureMode, guard, loadArtifacts, projects, request],
+    [fixtureMode, guard, projects, request],
   );
 
   const createProject = useCallback(
@@ -2587,10 +2601,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const selectConversation = useCallback(
     async (conversationId: string) => {
       const generation = ++conversationSelectionGeneration.current;
+      ++projectSelectionGeneration.current;
+      const selectedConversation = conversations.find((item) => item.id === conversationId);
+      const projectId = selectedConversation
+        ? (selectedConversation.projectId ?? null)
+        : activeProjectIdRef.current;
+      setActiveProjectId(projectId);
       setActiveConversationId(conversationId);
+      setActiveBranchId(null);
+      setBranches([]);
       setMessages([]);
-      if (fixtureMode) return;
+      if (fixtureMode) {
+        setMemories((items) =>
+          items.filter((item) => !item.projectId || item.projectId === projectId),
+        );
+        setArtifacts((items) => items.filter((item) => item.projectId === projectId));
+        return;
+      }
+      setMemories([]);
+      setArtifacts([]);
       await guard(async () => {
+        const memoryRequest = request<RuntimeMemory[]>('memory.list', {
+          projectId,
+          includeGlobal: true,
+          states: ['active', 'candidate', 'superseded', 'expired'],
+        });
+        const artifactRequest = projectId
+          ? request<RuntimeArtifact[]>('artifacts.list', { projectId })
+          : Promise.resolve([]);
+        const contextRequest = Promise.allSettled([memoryRequest, artifactRequest] as const);
         const result = await request<{ branches: RuntimeBranch[]; activeBranchId?: string }>(
           'conversations.get',
           { conversationId },
@@ -2602,18 +2641,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           headMessageId: item.head_message_id,
           parentMessageId: item.parent_message_id,
         }));
-        if (generation !== conversationSelectionGeneration.current) return;
         const branchId = result.activeBranchId ?? branchRecords[0]?.id ?? null;
+        const history = branchId
+          ? request<RuntimeMessage[]>('chat.history', { branchId })
+          : Promise.resolve([]);
+        const historyResult = await history;
+        if (generation !== conversationSelectionGeneration.current) return;
         setBranches(branchRecords);
         setActiveBranchId(branchId);
-        if (branchId) {
-          const history = await request<RuntimeMessage[]>('chat.history', { branchId });
-          if (generation !== conversationSelectionGeneration.current) return;
-          setMessages(history.map(mapRuntimeMessage));
-        } else setMessages([]);
+        setMessages(historyResult.map(mapRuntimeMessage));
+        const [memoryResult, artifactResult] = await contextRequest;
+        if (generation !== conversationSelectionGeneration.current) return;
+        if (memoryResult.status === 'fulfilled')
+          setMemories(memoryResult.value.map((item) => mapMemory(item, projects)));
+        if (artifactResult.status === 'fulfilled')
+          setArtifacts(artifactResult.value.map((item) => mapRuntimeArtifact(item)));
+        const contextFailure: unknown =
+          memoryResult.status === 'rejected'
+            ? memoryResult.reason
+            : artifactResult.status === 'rejected'
+              ? artifactResult.reason
+              : null;
+        if (contextFailure)
+          setError(
+            contextFailure instanceof Error
+              ? `Conversation opened, but its supporting context could not be refreshed: ${contextFailure.message}`
+              : 'Conversation opened, but its supporting context could not be refreshed.',
+          );
       });
     },
-    [fixtureMode, guard, request],
+    [conversations, fixtureMode, guard, projects, request],
   );
 
   const selectBranch = useCallback(

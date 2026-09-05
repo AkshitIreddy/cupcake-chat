@@ -1048,12 +1048,18 @@ function Composer({
     if (!clean && attachments.length === 0) return;
     if (offline && selectedModel.route === 'Cloud') return;
     setSending(true);
+    const activeConversation = workspace.conversations.find(
+      (conversation) => conversation.id === workspace.activeConversationId,
+    );
+    const conversationProjectId = activeConversation
+      ? (activeConversation.projectId ?? null)
+      : workspace.activeProjectId;
     const context =
       workspace.activeConversationId && workspace.activeBranchId
         ? {
             conversationId: workspace.activeConversationId,
             branchId: workspace.activeBranchId,
-            projectId: workspace.activeProjectId,
+            projectId: conversationProjectId,
           }
         : attachments.length > 0
           ? await workspace.createConversation('New conversation')
