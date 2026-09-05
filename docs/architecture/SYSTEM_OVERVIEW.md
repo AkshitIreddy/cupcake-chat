@@ -7,8 +7,8 @@
       │ narrow Tauri invoke/events; opaque handles
 [Tauri Rust host]
       │ verifies and supervises private child processes
-      ├── [Python runtime] ── encrypted product/checkpoint stores
       └── [Rust ToolBroker] ── DPAPI vault, security/audit store, tools/MCP/sandbox
+                └── [Python runtime] ── product objects/database and workflow state
 ```
 
 The renderer is untrusted. The Tauri host owns native window/tray/dialog/deep-link policy and a
@@ -21,9 +21,17 @@ The broker owns credentials and effects. No component exposes a public product l
 2. Host canonicalizes the bundled sidecar resource directory.
 3. Host verifies schema/protocol, exact binary set, bytes, SHA-256, transport, runtime provenance,
    and absence of model weights.
-4. Host launches broker/runtime with private authentication and a minimal environment.
+4. Host launches the broker with private authentication and a minimal environment; the broker
+   launches and authenticates the Python runtime when needed.
 5. Sidecars handshake before product bootstrap; invalid/tampered/incompatible processes fail closed.
 6. Renderer receives redacted bootstrap DTOs and canonical visible events only.
+
+The frozen runtime is a verified executable plus an exact manifest-bound `_internal` support tree.
+It does not extract a onefile archive at every opening. The first useful renderer frame applies
+saved identity, appearance, onboarding state, and offline preference before becoming interactive;
+provider discovery, model hardware, tasks, and diagnostics hydrate afterward. Packaging constructs
+all retained provider SDK clients and model adapters without network access to catch frozen-import
+incompatibilities before accepting the bundle.
 
 ## Commands and events
 
@@ -37,6 +45,12 @@ canonical sequence identities.
 The in-app form sends a key once to a trusted onboarding command. The trusted boundary tests the
 connection, discovers models, stores the secret with per-user DPAPI only after success, and returns
 masked non-secret metadata. Chat uses a short-lived memory credential lease behind the boundary.
+
+Persisted output-limit responses remain partial even when their transport has finished. The
+renderer preserves their text and offers an explicit continuation on the original provider/model
+route. A missing or ambiguous original route fails visibly; the current model selection never
+silently replaces it. Known output limits are distinguished from conservative defaults for
+providers whose discovery API omits that metadata.
 
 ## Cupcake Local lifecycle
 
