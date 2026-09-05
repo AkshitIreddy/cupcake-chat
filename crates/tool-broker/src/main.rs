@@ -1,9 +1,14 @@
 use chrono::{SecondsFormat, Utc};
 use cupcake_tool_broker::audit::redact;
+use cupcake_tool_broker::backup_envelope::load_profile_master_key_for_backup;
+use cupcake_tool_broker::backup_restore::{
+    extract_restore_workspace, read_restore_manifest, resolve_restore_profile_key,
+    restore_security_snapshot,
+};
 use cupcake_tool_broker::framing::{
     read_protocol_frame, write_protocol_frame, DEFAULT_MAX_FRAME_BYTES,
 };
-use cupcake_tool_broker::integration::BrokerIntegration;
+use cupcake_tool_broker::integration::{ArtifactExportRequest, BrokerIntegration};
 use cupcake_tool_broker::protocol::{
     decode_transport_secret, uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
     RuntimeBrokerRequest,
@@ -144,6 +149,9 @@ fn run() -> Result<()> {
                         } else {
                             prepare_migration_request(&mut envelope.payload, &mut integration)
                                 .and_then(|cleanup_migration| {
+                                    let restart_runtime_after_response =
+                                        envelope.payload.get("method").and_then(Value::as_str)
+                                            == Some("content_protection.set");
                                     prepare_chat_attachment_preflight(
                                         &mut envelope.payload,
                                         &mut integration,
@@ -168,10 +176,34 @@ fn run() -> Result<()> {
                                         &secret,
                                         &envelope,
                                     )?;
+                                    let response = complete_artifact_export_response(
+                                        &envelope.payload,
+                                        response,
+                                        &mut integration,
+                                    );
+                                    let response = complete_backup_create_response(
+                                        &envelope.payload,
+                                        response,
+                                        runtime.as_mut(),
+                                        &mut integration,
+                                    );
+                                    let response = complete_backup_restore_response(
+                                        &envelope.payload,
+                                        response,
+                                        runtime.as_mut(),
+                                        &mut integration,
+                                        &data_dir,
+                                    );
                                     if cleanup_migration
                                         && response.get("ok").and_then(Value::as_bool) == Some(true)
                                     {
                                         integration.cleanup_migration_snapshot()?;
+                                    }
+                                    if restart_runtime_after_response {
+                                        if let Some(child) = runtime.as_mut() {
+                                            child.shutdown();
+                                        }
+                                        runtime = None;
                                     }
                                     Ok(response)
                                 })
@@ -1633,6 +1665,326 @@ fn success(result: Value) -> Map<String, Value> {
     object(json!({"ok": true, "result": result}))
 }
 
+fn complete_artifact_export_response(
+    desktop_request: &Map<String, Value>,
+    runtime_response: Map<String, Value>,
+    integration: &mut BrokerIntegration,
+) -> Map<String, Value> {
+    if desktop_request.get("method").and_then(Value::as_str) != Some("artifacts.export.intent")
+        || runtime_response.get("ok").and_then(Value::as_bool) != Some(true)
+    {
+        return runtime_response;
+    }
+    let mut extract = || -> std::result::Result<Value, &'static str> {
+        let request_params = desktop_request
+            .get("params")
+            .and_then(Value::as_object)
+            .ok_or("artifact export request parameters are missing")?;
+        let result = runtime_response
+            .get("result")
+            .and_then(Value::as_object)
+            .ok_or("artifact export intent is missing")?;
+        if result.get("protocolVersion").and_then(Value::as_u64) != Some(1)
+            || result.get("requestType").and_then(Value::as_str) != Some("artifact.export")
+        {
+            return Err("artifact export intent has an unsupported protocol");
+        }
+        let intent = result
+            .get("payload")
+            .and_then(Value::as_object)
+            .ok_or("artifact export intent payload is missing")?;
+        let desktop_handle_id = artifact_export_string(intent, "destinationHandle")?;
+        let project_id = artifact_export_string(request_params, "projectId")?;
+        let artifact_id = artifact_export_string(intent, "artifactId")?;
+        let revision_id = artifact_export_string(intent, "revisionId")?;
+        let object_digest = artifact_export_string(intent, "objectDigest")?;
+        let content_base64 = artifact_export_string(intent, "contentBase64")?;
+        let byte_size = intent
+            .get("byteSize")
+            .and_then(Value::as_u64)
+            .ok_or("artifact export byte size is missing")?;
+        if artifact_export_string(request_params, "destinationHandle")? != desktop_handle_id
+            || artifact_export_string(request_params, "artifactId")? != artifact_id
+            || artifact_export_string(intent, "projectId")? != project_id
+            || intent.get("overwrite").and_then(Value::as_bool) != Some(false)
+            || request_params
+                .get("revisionId")
+                .and_then(Value::as_str)
+                .is_some_and(|requested| requested != revision_id)
+        {
+            return Err("artifact export intent does not match the desktop request");
+        }
+        integration
+            .export_artifact_to_desktop_target(ArtifactExportRequest {
+                desktop_handle_id,
+                project_id,
+                artifact_id,
+                revision_id,
+                object_digest,
+                byte_size,
+                content_base64,
+            })
+            .map_err(|_| "artifact export was rejected by the broker")
+    };
+    match extract() {
+        Ok(receipt) => success(receipt),
+        Err(message) => failure("ARTIFACT_EXPORT_FAILED", message, false),
+    }
+}
+
+fn artifact_export_string<'a>(
+    map: &'a Map<String, Value>,
+    key: &str,
+) -> std::result::Result<&'a str, &'static str> {
+    map.get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or("artifact export intent is incomplete")
+}
+
+fn complete_backup_create_response(
+    desktop_request: &Map<String, Value>,
+    runtime_response: Map<String, Value>,
+    runtime: Option<&mut RuntimeChild>,
+    integration: &mut BrokerIntegration,
+) -> Map<String, Value> {
+    if desktop_request.get("method").and_then(Value::as_str) != Some("backup.create.intent")
+        || runtime_response.get("ok").and_then(Value::as_bool) != Some(true)
+    {
+        return runtime_response;
+    }
+    let complete = || -> Result<Value> {
+        let request_params = desktop_request
+            .get("params")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                BrokerError::InvalidEnvelope("backup request parameters are missing".into())
+            })?;
+        let intent_result = runtime_response
+            .get("result")
+            .and_then(Value::as_object)
+            .ok_or_else(|| BrokerError::Integrity("runtime backup intent is missing".into()))?;
+        if intent_result.get("protocolVersion").and_then(Value::as_u64) != Some(1)
+            || intent_result.get("requestType").and_then(Value::as_str) != Some("backup.create")
+        {
+            return Err(BrokerError::Integrity(
+                "runtime backup intent has an unsupported protocol".into(),
+            ));
+        }
+        let intent = intent_result
+            .get("payload")
+            .and_then(Value::as_object)
+            .ok_or_else(|| BrokerError::Integrity("runtime backup intent is incomplete".into()))?;
+        let request_handle = backup_intent_string(request_params, "destinationHandle")?;
+        let intent_handle = backup_intent_string(intent, "destinationHandle")?;
+        if request_handle != intent_handle {
+            return Err(BrokerError::Integrity(
+                "runtime backup destination binding does not match the desktop request".into(),
+            ));
+        }
+
+        let profile_key = load_profile_master_key_for_backup()?;
+        let prepared = integration.begin_backup_creation(intent_handle)?;
+        let runtime_archive = prepared.runtime_archive().to_string_lossy().into_owned();
+        let private_request = object(json!({
+            "method": "backup.create.private",
+            "params": {"destinationPath": runtime_archive}
+        }));
+        let Some(runtime) = runtime else {
+            integration.abort_backup_creation(&prepared);
+            return Err(BrokerError::InvalidConfig(
+                "packaged Python runtime is unavailable".into(),
+            ));
+        };
+        let private_response = match runtime.request_streaming(&private_request, |_| Ok(())) {
+            Ok(response) => response,
+            Err(error) => {
+                integration.abort_backup_creation(&prepared);
+                return Err(error);
+            }
+        };
+        if private_response.get("ok").and_then(Value::as_bool) != Some(true) {
+            integration.abort_backup_creation(&prepared);
+            return Err(BrokerError::Integrity(
+                "runtime rejected the private backup snapshot".into(),
+            ));
+        }
+        let private_result = private_response
+            .get("result")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                integration.abort_backup_creation(&prepared);
+                BrokerError::Integrity("runtime backup snapshot receipt is missing".into())
+            })?;
+        if private_result.get("archivePath").and_then(Value::as_str)
+            != Some(runtime_archive.as_str())
+        {
+            integration.abort_backup_creation(&prepared);
+            return Err(BrokerError::Integrity(
+                "runtime backup snapshot path binding is invalid".into(),
+            ));
+        }
+        let runtime_manifest = private_result.get("manifest").ok_or_else(|| {
+            integration.abort_backup_creation(&prepared);
+            BrokerError::Integrity("runtime backup manifest is missing".into())
+        })?;
+        integration.complete_backup_creation(prepared, runtime_manifest, &profile_key)
+    };
+    match complete() {
+        Ok(receipt) => success(receipt),
+        Err(_) => failure(
+            "BACKUP_CREATE_FAILED",
+            "The backup could not be created or verified",
+            false,
+        ),
+    }
+}
+
+fn backup_intent_string<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a str> {
+    map.get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| BrokerError::Integrity("runtime backup intent is incomplete".into()))
+}
+
+fn complete_backup_restore_response(
+    desktop_request: &Map<String, Value>,
+    runtime_response: Map<String, Value>,
+    runtime: Option<&mut RuntimeChild>,
+    integration: &mut BrokerIntegration,
+    data_dir: &std::path::Path,
+) -> Map<String, Value> {
+    if desktop_request.get("method").and_then(Value::as_str) != Some("backup.restore.intent")
+        || runtime_response.get("ok").and_then(Value::as_bool) != Some(true)
+    {
+        return runtime_response;
+    }
+    let prepare = || -> Result<Value> {
+        let request_params = desktop_request
+            .get("params")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                BrokerError::InvalidEnvelope("backup restore parameters are missing".into())
+            })?;
+        let intent_result = runtime_response
+            .get("result")
+            .and_then(Value::as_object)
+            .ok_or_else(|| BrokerError::Integrity("runtime restore intent is missing".into()))?;
+        if intent_result.get("protocolVersion").and_then(Value::as_u64) != Some(1)
+            || intent_result.get("requestType").and_then(Value::as_str) != Some("backup.restore")
+        {
+            return Err(BrokerError::Integrity(
+                "runtime restore intent has an unsupported protocol".into(),
+            ));
+        }
+        let intent = intent_result
+            .get("payload")
+            .and_then(Value::as_object)
+            .ok_or_else(|| BrokerError::Integrity("runtime restore intent is incomplete".into()))?;
+        let request_handle = backup_intent_string(request_params, "sourceHandle")?;
+        let intent_handle = backup_intent_string(intent, "sourceHandle")?;
+        if request_handle != intent_handle
+            || intent.get("mode").and_then(Value::as_str) != Some("replace-after-restart")
+            || intent.get("requiresFreshApproval").and_then(Value::as_bool) != Some(true)
+        {
+            return Err(BrokerError::Integrity(
+                "runtime restore intent does not match the desktop request".into(),
+            ));
+        }
+
+        let source = integration.resolve_backup_source(intent_handle)?;
+        let manifest = read_restore_manifest(&source)?;
+        let restored_key = resolve_restore_profile_key(&manifest)?;
+        let staging_root = data_dir.join("broker-restore");
+        let workspace = extract_restore_workspace(&source, &staging_root, &restored_key)?;
+        let result = (|| -> Result<Value> {
+            let Some(active_runtime) = runtime else {
+                return Err(BrokerError::InvalidConfig(
+                    "packaged Python runtime is unavailable".into(),
+                ));
+            };
+            let prepare_request = object(json!({
+                "method": "backup.restore.prepare_disposable.private",
+                "params": {
+                    "sourcePath": workspace.runtime_archive.to_string_lossy(),
+                    "destinationRoot": workspace.profile_root.to_string_lossy(),
+                }
+            }));
+            let prepare_response =
+                active_runtime.request_streaming(&prepare_request, |_| Ok(()))?;
+            if prepare_response.get("ok").and_then(Value::as_bool) != Some(true) {
+                return Err(BrokerError::Integrity(
+                    "runtime rejected the restored archive".into(),
+                ));
+            }
+            let prepared = prepare_response
+                .get("result")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    BrokerError::Integrity("runtime restore receipt is missing".into())
+                })?;
+            let mode = prepared
+                .get("contentMode")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    BrokerError::Integrity("runtime restore content mode is missing".into())
+                })?;
+            let content_encrypted = match mode {
+                "encrypted" => true,
+                "plaintext" => false,
+                _ => {
+                    return Err(BrokerError::Integrity(
+                        "runtime restore content mode is invalid".into(),
+                    ))
+                }
+            };
+
+            let executable = std::env::var_os("CUPCAKE_RUNTIME_PATH")
+                .map(PathBuf::from)
+                .filter(|path| path.is_file())
+                .ok_or_else(|| {
+                    BrokerError::InvalidConfig("packaged Python runtime is unavailable".into())
+                })?;
+            let mut verifier = RuntimeChild::launch_with_profile_key(
+                &executable,
+                &workspace.profile_root,
+                &restored_key,
+                content_encrypted,
+            )?;
+            let validate_request = object(json!({
+                "method": "backup.restore.validate_disposable.private",
+                "params": {}
+            }));
+            let verification = verifier.request_streaming(&validate_request, |_| Ok(()));
+            verifier.shutdown();
+            let verification = verification?;
+            if verification.get("ok").and_then(Value::as_bool) != Some(true) {
+                return Err(BrokerError::Integrity(
+                    "restored profile could not be opened".into(),
+                ));
+            }
+            let verified = verification.get("result").cloned().ok_or_else(|| {
+                BrokerError::Integrity("restored profile verification is missing".into())
+            })?;
+            restore_security_snapshot(&workspace)?;
+            let _ = std::fs::remove_dir_all(workspace.root.join("outer"));
+            Ok(workspace.receipt(&verified))
+        })();
+        if result.is_err() {
+            workspace.cleanup();
+        }
+        result
+    };
+    match prepare() {
+        Ok(receipt) => success(receipt),
+        Err(_) => failure(
+            "BACKUP_RESTORE_FAILED",
+            "The backup could not be authenticated and prepared",
+            false,
+        ),
+    }
+}
+
 fn failure(code: &str, message: &str, retryable: bool) -> Map<String, Value> {
     object(json!({
         "ok": false,
@@ -1879,5 +2231,34 @@ mod tests {
         assert_eq!(descriptor["brokerGrantId"], "grant_private");
         assert!(!descriptor.to_string().contains("C:/private"));
         assert!(descriptor.get("destination").is_none());
+    }
+
+    #[test]
+    fn restore_route_rejects_an_intent_not_bound_to_the_desktop_handle() {
+        let data = tempdir().unwrap();
+        let mut integration = BrokerIntegration::open(data.path()).unwrap();
+        let desktop = object(json!({
+            "method": "backup.restore.intent",
+            "params": {"sourceHandle": "desktop-handle"}
+        }));
+        let runtime = success(json!({
+            "protocolVersion": 1,
+            "requestType": "backup.restore",
+            "payload": {
+                "sourceHandle": "different-handle",
+                "mode": "replace-after-restart",
+                "requiresFreshApproval": true
+            }
+        }));
+        let response = complete_backup_restore_response(
+            &desktop,
+            runtime,
+            None,
+            &mut integration,
+            data.path(),
+        );
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "BACKUP_RESTORE_FAILED");
+        assert!(!data.path().join("broker-restore").exists());
     }
 }

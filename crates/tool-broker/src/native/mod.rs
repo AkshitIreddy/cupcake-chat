@@ -14,6 +14,7 @@ pub use filesystem::{
     apply_exact_write, list_bounded, read_bounded, validate_exact_write,
     validate_relative_windows_path, ExactWrite, FileEntry, FileEntryKind,
 };
+pub(crate) use filesystem::{atomic_replace, sync_directory};
 pub use network::{
     validate_public_https_url, validate_public_ip, HttpsBackend, HttpsResponse, StrictHttpsClient,
 };
@@ -297,8 +298,9 @@ impl NativeToolExecutorService {
                 "native intent grant IDs do not exactly match resolved resources".into(),
             ));
         }
-        let mut requires_approval = operation.always_requires_fresh_approval();
         let policy = self.policy.read().map_err(poisoned)?;
+        let mut requires_approval =
+            !policy.full_freedom && operation.always_requires_fresh_approval();
         for effect in &required_effects {
             let policy_resources = if resource_ids.is_empty() {
                 vec![None]
@@ -1153,7 +1155,7 @@ impl Operation {
             Self::ReadFile { .. } => "Read one exact file from an opaque local grant.".into(),
             Self::ListDirectory { .. } => "List one exact directory from an opaque local grant; links are omitted.".into(),
             Self::ProposeWrites { writes, .. } => format!("Stage {} exact file replacement(s) in broker memory without writing.", writes.len()),
-            Self::ApplyWrites { writes, .. } => format!("Write {} exact staged file replacement(s) after fresh approval and revision checks.", writes.len()),
+            Self::ApplyWrites { writes, .. } => format!("Write {} exact staged file replacement(s) after policy authorization and revision checks.", writes.len()),
             Self::GitInspect { .. } => "Run one read-only typed Git inspection using the fixed Git executable.".into(),
             Self::WebFetch { url } => format!("Send a bounded HTTPS GET to {}.", origin(url)),
             Self::WebSearch { .. } => "Send a search query to the configured public HTTPS search origin.".into(),
@@ -1717,6 +1719,43 @@ mod tests {
         assert!(service
             .execute(&apply_intent, &apply_preflight, Some(&proof), 1_005)
             .is_err());
+    }
+
+    #[test]
+    fn full_freedom_skips_patch_prompt_but_keeps_grant_and_revision_checks() {
+        let root = tempdir().unwrap();
+        std::fs::write(root.path().join("a.txt"), b"before").unwrap();
+        let service = service(root.path());
+        service.policy.write().unwrap().full_freedom = true;
+        let grant = service
+            .issue_filesystem_grant(
+                root.path(),
+                [FilesystemPermission::Modify].into_iter().collect(),
+                GrantScope::Session,
+                10_000,
+            )
+            .unwrap();
+        let proposal_intent = intent(
+            "native.git.patch_proposal",
+            json!({"edits": [{"grantId": grant, "relativePath": "a.txt", "contentBase64": BASE64_STANDARD.encode(b"after"), "expectedSha256": hex::encode(Sha256::digest(b"before"))}], "projectId": null}),
+            [Effect::ReadFiles].into_iter().collect(),
+        );
+        let proposal_preflight = service.preflight(&proposal_intent, 1_000).unwrap();
+        let proposal = service
+            .execute(&proposal_intent, &proposal_preflight, None, 1_001)
+            .unwrap();
+        let mut apply_intent = intent(
+            "native.git.patch_apply",
+            json!({"proposalId": proposal.output["proposalId"]}),
+            [Effect::WriteFiles].into_iter().collect(),
+        );
+        apply_intent.grant_ids.insert(grant);
+        let apply_preflight = service.preflight(&apply_intent, 1_002).unwrap();
+        assert!(!apply_preflight.requires_approval);
+        service
+            .execute(&apply_intent, &apply_preflight, None, 1_003)
+            .unwrap();
+        assert_eq!(std::fs::read(root.path().join("a.txt")).unwrap(), b"after");
     }
 
     #[test]

@@ -7,12 +7,17 @@
 
 use crate::approval::{ApprovalChallenge, ApprovalManager, ApprovalProof};
 use crate::audit::{AuditEvent, AuditStore};
+use crate::backup_container::{create_coordinated_backup, BackupProtectionInput};
+use crate::backup_envelope::BackupIdentity;
 use crate::grants::{
     FilesystemGrantStore, FilesystemPermission, GrantId, GrantScope, ResolvedPath,
 };
 use crate::mcp::{ConnectionState, McpTransportConfig, OAuthPkceConfig};
 use crate::mcp_transport::{McpConnectionSnapshot, McpTransportService};
-use crate::native::{DisabledLocalModelBackend, NativeToolExecutorService, StrictHttpsClient};
+use crate::native::{
+    atomic_replace, sync_directory, DisabledLocalModelBackend, NativeToolExecutorService,
+    StrictHttpsClient,
+};
 use crate::policy::{CategoryDecision, Effect, PolicyDecision, PolicySet, ScopeKey};
 use crate::protocol::{canonical_json, RuntimeBrokerRequest, RuntimeRequestType};
 use crate::registry::native_descriptor_catalog;
@@ -23,15 +28,17 @@ use crate::security_db::{
     SecurityDatabase, SecurityGrant, SecurityGrantScope, StoredApprovalChallenge, StoredPolicy,
     StoredPolicyDecision, StoredPolicyScope,
 };
+use crate::vault::SecretBytes;
 use crate::{BrokerError, Result};
+use base64::prelude::*;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fs::File;
-use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
@@ -42,6 +49,7 @@ const MAX_STAGED_ATTACHMENT_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ATTACHMENT_MANIFEST_BYTES: u64 = 16 * 1024;
 const MAX_MIGRATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_MIGRATION_SNAPSHOT_FILES: usize = 50_000;
+const MAX_ARTIFACT_EXPORT_BYTES: usize = 5 * 1024 * 1024;
 const GRANT_LIFETIME_DAYS: i64 = 30;
 const APPROVAL_LIFETIME_MINUTES: i64 = 5;
 
@@ -76,7 +84,7 @@ enum DesktopFileKind {
     SaveTarget,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DesktopGrant {
     broker_id: GrantId,
     kind: DesktopFileKind,
@@ -85,6 +93,33 @@ struct DesktopGrant {
     writable: bool,
     display_name: String,
     native_grant_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct PreparedBackupCreation {
+    source_handle_id: String,
+    destination: PathBuf,
+    display_name: String,
+    staging_root: PathBuf,
+    runtime_archive: PathBuf,
+    container_path: PathBuf,
+}
+
+impl PreparedBackupCreation {
+    pub fn runtime_archive(&self) -> &Path {
+        &self.runtime_archive
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ArtifactExportRequest<'a> {
+    pub desktop_handle_id: &'a str,
+    pub project_id: &'a str,
+    pub artifact_id: &'a str,
+    pub revision_id: &'a str,
+    pub object_digest: &'a str,
+    pub byte_size: u64,
+    pub content_base64: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -481,6 +516,40 @@ impl BrokerIntegration {
         }
     }
 
+    /// Resolve one exact desktop-selected backup without exposing its path to
+    /// either the renderer or the Python runtime. Container parsing performs a
+    /// second regular-file check and authenticates all payload bytes.
+    pub fn resolve_backup_source(&mut self, handle_id: &str) -> Result<PathBuf> {
+        validate_handle_id(handle_id)?;
+        let desktop = self
+            .desktop_grants
+            .get(handle_id)
+            .ok_or(BrokerError::InvalidGrant)?;
+        if desktop.kind != DesktopFileKind::File || desktop.writable {
+            return Err(BrokerError::InvalidGrant);
+        }
+        let relative = desktop
+            .fixed_relative
+            .as_deref()
+            .ok_or(BrokerError::InvalidGrant)?;
+        let resolved = self.grants.resolve(
+            &desktop.broker_id,
+            relative,
+            FilesystemPermission::Read,
+            Utc::now().timestamp_millis(),
+            None,
+        )?;
+        resolved.revalidate()?;
+        validate_exact_target(desktop, &resolved)?;
+        let metadata = std::fs::symlink_metadata(resolved.as_path())?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err(BrokerError::InvalidConfig(
+                "backup source is not a regular file".into(),
+            ));
+        }
+        Ok(resolved.as_path().to_path_buf())
+    }
+
     /// Copy one exact desktop file capability into a broker-private staging
     /// directory using bounded streaming I/O. The returned native path is only
     /// for the authenticated broker→runtime pipe and must never be serialized
@@ -828,7 +897,7 @@ impl BrokerIntegration {
         resolved.revalidate()?;
         let source_root = resolved.as_path().canonicalize()?;
         let staging_id = Uuid::now_v7().to_string();
-        let staging_root = self.data_dir.join("migration-staging").join(&staging_id);
+        let staging_root = self.data_dir.join("broker-migration").join(&staging_id);
         let snapshot_root = staging_root.join("source");
         std::fs::create_dir_all(&snapshot_root)?;
         let mut entries = Vec::new();
@@ -887,9 +956,313 @@ impl BrokerIntegration {
         Ok(true)
     }
 
+    /// Complete an explicit artifact save through the exact opaque desktop
+    /// capability. Artifact bytes come from the authenticated runtime response,
+    /// never from renderer state, and are bound to its immutable object digest.
+    pub fn export_artifact_to_desktop_target(
+        &mut self,
+        request: ArtifactExportRequest<'_>,
+    ) -> Result<Value> {
+        let ArtifactExportRequest {
+            desktop_handle_id,
+            project_id,
+            artifact_id,
+            revision_id,
+            object_digest,
+            byte_size,
+            content_base64,
+        } = request;
+        validate_handle_id(desktop_handle_id)?;
+        for (label, value) in [
+            ("project", project_id),
+            ("artifact", artifact_id),
+            ("revision", revision_id),
+        ] {
+            if value.is_empty()
+                || value.len() > 255
+                || value.chars().any(|character| character.is_control())
+            {
+                return Err(BrokerError::InvalidConfig(format!(
+                    "invalid {label} identifier"
+                )));
+            }
+        }
+        if object_digest.len() != 64 || !object_digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(BrokerError::Integrity(
+                "artifact object digest is invalid".into(),
+            ));
+        }
+        let content = BASE64_STANDARD
+            .decode(content_base64)
+            .map_err(|_| BrokerError::Integrity("artifact content encoding is invalid".into()))?;
+        if content.len() > MAX_ARTIFACT_EXPORT_BYTES || content.len() as u64 != byte_size {
+            return Err(BrokerError::Integrity(
+                "artifact content size does not match its immutable revision".into(),
+            ));
+        }
+        let content_digest = hex::encode(Sha256::digest(&content));
+        if !content_digest.eq_ignore_ascii_case(object_digest) {
+            return Err(BrokerError::Integrity(
+                "artifact content does not match its immutable revision".into(),
+            ));
+        }
+
+        let desktop = self
+            .desktop_grants
+            .get(desktop_handle_id)
+            .ok_or(BrokerError::InvalidGrant)?;
+        if desktop.kind != DesktopFileKind::SaveTarget || !desktop.writable {
+            return Err(BrokerError::InvalidGrant);
+        }
+        let relative = desktop
+            .fixed_relative
+            .as_deref()
+            .ok_or(BrokerError::InvalidGrant)?;
+        let resolved = self.grants.resolve(
+            &desktop.broker_id,
+            relative,
+            FilesystemPermission::Create,
+            Utc::now().timestamp_millis(),
+            Some(project_id),
+        )?;
+        resolved.revalidate()?;
+        validate_exact_target(desktop, &resolved)?;
+
+        let mut created_target = false;
+        let write_result = (|| -> Result<String> {
+            let mut file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(resolved.as_path())?;
+            created_target = true;
+            file.write_all(&content)?;
+            file.flush()?;
+            file.sync_all()?;
+            file.seek(SeekFrom::Start(0))?;
+            let mut written_digest = Sha256::new();
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                let count = file.read(&mut buffer)?;
+                if count == 0 {
+                    break;
+                }
+                written_digest.update(&buffer[..count]);
+            }
+            buffer.fill(0);
+            let written_digest = hex::encode(written_digest.finalize());
+            if !written_digest.eq_ignore_ascii_case(object_digest) {
+                return Err(BrokerError::Integrity(
+                    "artifact export failed its post-write verification".into(),
+                ));
+            }
+            Ok(written_digest)
+        })();
+
+        let (outcome, error) = match &write_result {
+            Ok(_) => ("success", None),
+            Err(_) => ("failed", Some("artifact export rejected")),
+        };
+        if write_result.is_err() && created_target {
+            let _ = std::fs::remove_file(resolved.as_path());
+        }
+        self.audit.append(AuditEvent {
+            category: "artifact".into(),
+            action: "export".into(),
+            outcome: outcome.into(),
+            fields: json!({
+                "artifactId": artifact_id,
+                "revisionId": revision_id,
+                "projectId": project_id,
+                "brokerGrantId": desktop.broker_id.expose_opaque(),
+                "byteSize": byte_size,
+                "error": error
+            }),
+        })?;
+        let verified_digest = write_result?;
+        Ok(json!({
+            "artifactId": artifact_id,
+            "revisionId": revision_id,
+            "fileName": desktop.display_name,
+            "byteSize": byte_size,
+            "sha256": verified_digest
+        }))
+    }
+
+    /// Bind a backup operation to one exact renderer-selected save capability
+    /// and allocate a private archive destination for the runtime. The selected
+    /// native path never crosses the authenticated broker/runtime boundary.
+    pub fn begin_backup_creation(
+        &mut self,
+        desktop_handle_id: &str,
+    ) -> Result<PreparedBackupCreation> {
+        validate_handle_id(desktop_handle_id)?;
+        let desktop = self
+            .desktop_grants
+            .get(desktop_handle_id)
+            .cloned()
+            .ok_or(BrokerError::InvalidGrant)?;
+        if desktop.kind != DesktopFileKind::SaveTarget || !desktop.writable {
+            return Err(BrokerError::InvalidGrant);
+        }
+        let relative = desktop
+            .fixed_relative
+            .as_deref()
+            .ok_or(BrokerError::InvalidGrant)?;
+        let permission = if desktop.exact_target.as_deref().is_some_and(Path::exists) {
+            FilesystemPermission::Modify
+        } else {
+            FilesystemPermission::Create
+        };
+        let resolved = self.grants.resolve(
+            &desktop.broker_id,
+            relative,
+            permission,
+            Utc::now().timestamp_millis(),
+            None,
+        )?;
+        resolved.revalidate()?;
+        validate_exact_target(&desktop, &resolved)?;
+        let data_root = self.data_dir.canonicalize()?;
+        if resolved.as_path().starts_with(data_root) {
+            return Err(BrokerError::PermissionDenied(
+                "backup destination cannot be inside private application data".into(),
+            ));
+        }
+
+        let staging_id = Uuid::now_v7().to_string();
+        let staging_root = self.data_dir.join("broker-backup").join(&staging_id);
+        std::fs::create_dir_all(&staging_root)?;
+        Ok(PreparedBackupCreation {
+            source_handle_id: desktop_handle_id.to_owned(),
+            destination: resolved.as_path().to_path_buf(),
+            display_name: desktop.display_name,
+            runtime_archive: staging_root.join("runtime.cupcake-runtime.zip"),
+            container_path: staging_root.join("verified.cupcakebak"),
+            staging_root,
+        })
+    }
+
+    /// Wrap the runtime snapshot and broker security database with the
+    /// DPAPI-protected profile key, then copy and atomically replace the exact
+    /// destination selected by the user. Only a path-free receipt is returned.
+    pub fn complete_backup_creation(
+        &mut self,
+        prepared: PreparedBackupCreation,
+        runtime_manifest: &Value,
+        profile_key: &SecretBytes,
+    ) -> Result<Value> {
+        let result = (|| -> Result<Value> {
+            let runtime_metadata = std::fs::symlink_metadata(&prepared.runtime_archive)?;
+            if !runtime_metadata.is_file() || runtime_metadata.file_type().is_symlink() {
+                return Err(BrokerError::Integrity(
+                    "runtime backup archive is not a regular broker-staged file".into(),
+                ));
+            }
+            let product_version = runtime_manifest
+                .get("product_version")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    BrokerError::Integrity("runtime backup product version is missing".into())
+                })?;
+            let identity = BackupIdentity {
+                backup_id: Uuid::now_v7(),
+                product_version: product_version.to_owned(),
+            };
+            let created_at = Utc::now();
+            let inspection = create_coordinated_backup(
+                &prepared.container_path,
+                &prepared.runtime_archive,
+                runtime_manifest,
+                &self.security,
+                &prepared.staging_root,
+                identity,
+                created_at,
+                profile_key,
+                BackupProtectionInput::SameUserDpapi,
+                None,
+            )?;
+            let (expected_digest, expected_size) = digest_regular_file(&prepared.container_path)?;
+
+            let desktop = self
+                .desktop_grants
+                .get(&prepared.source_handle_id)
+                .cloned()
+                .ok_or(BrokerError::InvalidGrant)?;
+            if desktop.kind != DesktopFileKind::SaveTarget || !desktop.writable {
+                return Err(BrokerError::InvalidGrant);
+            }
+            let relative = desktop
+                .fixed_relative
+                .as_deref()
+                .ok_or(BrokerError::InvalidGrant)?;
+            let destination_exists = prepared.destination.exists();
+            let permission = if destination_exists {
+                FilesystemPermission::Modify
+            } else {
+                FilesystemPermission::Create
+            };
+            let resolved = self.grants.resolve(
+                &desktop.broker_id,
+                relative,
+                permission,
+                Utc::now().timestamp_millis(),
+                None,
+            )?;
+            resolved.revalidate()?;
+            validate_exact_target(&desktop, &resolved)?;
+            if resolved.as_path() != prepared.destination {
+                return Err(BrokerError::PathEscape);
+            }
+            atomic_install_verified_file(
+                &prepared.container_path,
+                resolved.as_path(),
+                &expected_digest,
+                expected_size,
+                destination_exists,
+            )?;
+            let (installed_digest, installed_size) = digest_regular_file(resolved.as_path())?;
+            if installed_size != expected_size || installed_digest != expected_digest {
+                return Err(BrokerError::Integrity(
+                    "installed backup failed its post-write verification".into(),
+                ));
+            }
+            self.audit.append(AuditEvent {
+                category: "backup".into(),
+                action: "create".into(),
+                outcome: "success".into(),
+                fields: json!({
+                    "backupId": inspection.manifest.backup.backup_id,
+                    "brokerGrantId": desktop.broker_id.expose_opaque(),
+                    "byteSize": installed_size,
+                    "sha256": installed_digest,
+                    "verifiedPayloads": inspection.verified_payloads
+                }),
+            })?;
+            Ok(json!({
+                "backupId": inspection.manifest.backup.backup_id,
+                "fileName": prepared.display_name,
+                "byteSize": installed_size,
+                "sha256": installed_digest,
+                "verifiedPayloads": inspection.verified_payloads,
+                "totalPayloadBytes": inspection.total_payload_bytes,
+                "protection": "windows-dpapi-current-user",
+                "createdAt": created_at.to_rfc3339_opts(SecondsFormat::Millis, true)
+            }))
+        })();
+        let _ = std::fs::remove_dir_all(&prepared.staging_root);
+        result
+    }
+
+    pub fn abort_backup_creation(&self, prepared: &PreparedBackupCreation) {
+        let _ = std::fs::remove_dir_all(&prepared.staging_root);
+    }
+
     fn remove_migration_staging(&self, staging_id: &str) -> Result<()> {
         validate_handle_id(staging_id)?;
-        let root = self.data_dir.join("migration-staging");
+        let root = self.data_dir.join("broker-migration");
         let target = root.join(staging_id);
         if target.parent() != Some(root.as_path()) {
             return Err(BrokerError::PathEscape);
@@ -1633,6 +2006,92 @@ impl Drop for AttachmentStageCleanup {
     }
 }
 
+fn digest_regular_file(path: &Path) -> Result<(String, u64)> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(BrokerError::Integrity(
+            "backup payload is not a regular file".into(),
+        ));
+    }
+    let mut input = File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let count = input.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count as u64)
+            .ok_or_else(|| BrokerError::Integrity("backup size overflow".into()))?;
+        digest.update(&buffer[..count]);
+    }
+    buffer.fill(0);
+    if total != metadata.len() {
+        return Err(BrokerError::Integrity(
+            "backup changed while it was verified".into(),
+        ));
+    }
+    Ok((hex::encode(digest.finalize()), total))
+}
+
+fn atomic_install_verified_file(
+    source: &Path,
+    destination: &Path,
+    expected_sha256: &str,
+    expected_size: u64,
+    replace: bool,
+) -> Result<()> {
+    let parent = destination.parent().ok_or(BrokerError::PathEscape)?;
+    let file_name = destination
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or(BrokerError::PathEscape)?;
+    let temporary = parent.join(format!(".{file_name}.{}.partial", Uuid::now_v7()));
+    let result = (|| -> Result<()> {
+        let mut input = File::open(source)?;
+        let mut output = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        let mut copied = 0_u64;
+        loop {
+            let count = input.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            copied = copied
+                .checked_add(count as u64)
+                .ok_or_else(|| BrokerError::Integrity("backup size overflow".into()))?;
+            if copied > expected_size {
+                return Err(BrokerError::Integrity(
+                    "backup changed while it was installed".into(),
+                ));
+            }
+            output.write_all(&buffer[..count])?;
+        }
+        buffer.fill(0);
+        output.flush()?;
+        output.sync_all()?;
+        drop(output);
+        let (temporary_digest, temporary_size) = digest_regular_file(&temporary)?;
+        if temporary_size != expected_size || temporary_digest != expected_sha256 {
+            return Err(BrokerError::Integrity(
+                "backup staging copy failed verification".into(),
+            ));
+        }
+        atomic_replace(&temporary, destination, replace)?;
+        sync_directory(parent)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 fn verify_regular_file_digest(
     path: &Path,
     expected_size: u64,
@@ -1703,11 +2162,16 @@ fn copy_migration_tree(
             .map_err(|_| BrokerError::PathEscape)?;
         let destination = destination_root.join(relative);
         if metadata.is_dir() {
-            std::fs::create_dir_all(&destination)?;
+            if !migration_directory_may_contain_allowed(relative) {
+                continue;
+            }
             copy_migration_tree(source_root, &source, destination_root, entries, total_bytes)?;
             continue;
         }
         if !metadata.is_file() {
+            continue;
+        }
+        if !migration_source_is_allowed(relative) {
             continue;
         }
         if entries.len() >= MAX_MIGRATION_SNAPSHOT_FILES {
@@ -1762,6 +2226,99 @@ fn copy_migration_tree(
         }));
     }
     Ok(())
+}
+
+fn migration_directory_may_contain_allowed(relative: &Path) -> bool {
+    let parts = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return true;
+    }
+    if parts.iter().any(|part| {
+        matches!(
+            part.as_str(),
+            ".git" | ".venv" | "venv" | "__pycache__" | "build" | "dist" | "generated"
+        )
+    }) {
+        return false;
+    }
+    parts
+        .first()
+        .is_some_and(|part| part == "memory" || (part == "state_of_mind" && parts.len() == 1))
+}
+
+fn migration_source_is_allowed(relative: &Path) -> bool {
+    let parts = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    if parts.is_empty()
+        || parts.iter().any(|part| {
+            matches!(
+                part.as_str(),
+                ".git"
+                    | ".venv"
+                    | "venv"
+                    | "__pycache__"
+                    | "build"
+                    | "dist"
+                    | "generated"
+                    | ".env"
+                    | ".env.local"
+                    | ".env.development"
+                    | ".env.production"
+                    | "secrets.json"
+                    | "credentials.json"
+                    | "api_keys.json"
+                    | "apikeys.json"
+                    | "tokens.json"
+            ) || part.contains("credential")
+                || part.contains("api_key")
+                || part.contains("apikey")
+                || part.contains("access_token")
+                || part.contains("auth_token")
+        })
+    {
+        return false;
+    }
+
+    const STATE_FILES: &[&str] = &[
+        "conversation.json",
+        "task_list.json",
+        "personality.txt",
+        "thought_bubble.txt",
+        "happiness.txt",
+        "sadness.txt",
+        "anger.txt",
+        "fear.txt",
+        "creativity.txt",
+        "curiosity.txt",
+        "smell.txt",
+        "taste.txt",
+        "touch.txt",
+    ];
+    let is_state_file = |name: &str| STATE_FILES.contains(&name);
+    if parts.len() == 1 {
+        return is_state_file(&parts[0]);
+    }
+    if parts.len() == 2 && parts[0] == "state_of_mind" {
+        return is_state_file(&parts[1]);
+    }
+    if parts.first().map(String::as_str) != Some("memory") {
+        return false;
+    }
+    matches!(
+        parts.last().map(String::as_str),
+        Some(
+            "documents.json"
+                | "chroma_documents.json"
+                | "chroma.sqlite3"
+                | "chroma.sqlite"
+                | "chroma.db"
+        )
+    )
 }
 
 fn validate_handle_id(value: &str) -> Result<()> {
@@ -2106,6 +2663,35 @@ mod tests {
     }
 
     #[test]
+    fn backup_source_requires_an_exact_read_only_file_capability() {
+        let data = tempdir().unwrap();
+        let selected = tempdir().unwrap();
+        let path = selected.path().join("owner-backup.cupcakebak");
+        std::fs::write(&path, "backup bytes").unwrap();
+        let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ac";
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"file","name":"owner-backup.cupcakebak","absolutePath":path,"writable":false}})
+                    .as_object().unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            broker.resolve_backup_source(handle_id).unwrap(),
+            path.canonicalize().unwrap()
+        );
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.released","handleId":handle_id})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(broker.resolve_backup_source(handle_id).is_err());
+    }
+
+    #[test]
     fn selected_file_can_be_preflighted_and_read_without_returning_a_path() {
         let data = tempdir().unwrap();
         let selected = tempdir().unwrap();
@@ -2185,6 +2771,127 @@ mod tests {
             .to_string()
             .contains(selected.path().to_str().unwrap()));
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn artifact_export_consumes_exact_save_target_and_verifies_revision_bytes() {
+        let data = tempdir().unwrap();
+        let selected = tempdir().unwrap();
+        let target = selected.path().join("project-note.md");
+        let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"save-target","name":"project-note.md","absolutePath":target,"writable":true}})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        let content = b"# Verified artifact\n";
+        let digest = hex::encode(Sha256::digest(content));
+        let content_base64 = BASE64_STANDARD.encode(content);
+        let request = ArtifactExportRequest {
+            desktop_handle_id: handle_id,
+            project_id: "project-019d0000",
+            artifact_id: "artifact-019d0000",
+            revision_id: "revision-019d0000",
+            object_digest: &digest,
+            byte_size: content.len() as u64,
+            content_base64: &content_base64,
+        };
+        let receipt = broker.export_artifact_to_desktop_target(request).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), content);
+        assert_eq!(receipt["fileName"], "project-note.md");
+        assert_eq!(receipt["sha256"], digest);
+
+        let collision = broker.export_artifact_to_desktop_target(request);
+        assert!(collision.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), content);
+    }
+
+    #[test]
+    fn backup_creation_uses_exact_save_target_and_returns_path_free_verified_receipt() {
+        let root = tempdir().unwrap();
+        let data = root.path().join("profile");
+        let selected = root.path().join("exports");
+        std::fs::create_dir_all(&selected).unwrap();
+        let target = selected.join("owner-backup.cupcakebak");
+        std::fs::write(&target, b"old backup").unwrap();
+        let mut broker = BrokerIntegration::open(&data).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"save-target","name":"owner-backup.cupcakebak","absolutePath":target,"writable":true}})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        let prepared = broker.begin_backup_creation(handle_id).unwrap();
+        let staging_root = prepared.staging_root.clone();
+        std::fs::write(prepared.runtime_archive(), b"trusted runtime archive").unwrap();
+        let manifest = json!({
+            "format_version": 1,
+            "product_version": "2.0.0-rc.1",
+            "created_at": "2026-09-05T00:00:00Z",
+            "schema_version": 1,
+            "entries": [
+                {"path":"database/product.sqlite","sha256":"00".repeat(32),"byte_size":1},
+                {"path":"database/dbos.sqlite","sha256":"11".repeat(32),"byte_size":1}
+            ]
+        });
+        let key = SecretBytes::new(vec![7_u8; 32]).unwrap();
+        let receipt = broker
+            .complete_backup_creation(prepared, &manifest, &key)
+            .unwrap();
+
+        assert_eq!(receipt["fileName"], "owner-backup.cupcakebak");
+        assert_eq!(receipt["protection"], "windows-dpapi-current-user");
+        assert_eq!(receipt["verifiedPayloads"], 2);
+        assert_eq!(
+            receipt["byteSize"],
+            std::fs::metadata(&target).unwrap().len()
+        );
+        assert_eq!(
+            receipt["sha256"],
+            hex::encode(Sha256::digest(std::fs::read(&target).unwrap()))
+        );
+        assert!(!receipt.to_string().contains(selected.to_str().unwrap()));
+        assert!(!staging_root.exists());
+        let inspection =
+            crate::backup_container::inspect_backup_container_with_key(&target, &key).unwrap();
+        assert_eq!(inspection.verified_payloads, 2);
+        assert_eq!(
+            inspection.manifest.backup.backup_id.to_string(),
+            receipt["backupId"].as_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn failed_backup_manifest_cleans_private_staging_and_preserves_existing_target() {
+        let root = tempdir().unwrap();
+        let data = root.path().join("profile");
+        let selected = root.path().join("exports");
+        std::fs::create_dir_all(&selected).unwrap();
+        let target = selected.join("owner-backup.cupcakebak");
+        std::fs::write(&target, b"known good backup").unwrap();
+        let mut broker = BrokerIntegration::open(&data).unwrap();
+        let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        broker
+            .handle_desktop_event(
+                json!({"type":"files.granted","handle":{"id":handle_id,"kind":"save-target","name":"owner-backup.cupcakebak","absolutePath":target,"writable":true}})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+        let prepared = broker.begin_backup_creation(handle_id).unwrap();
+        let staging_root = prepared.staging_root.clone();
+        std::fs::write(prepared.runtime_archive(), b"invalid runtime archive").unwrap();
+        let key = SecretBytes::new(vec![9_u8; 32]).unwrap();
+        assert!(broker
+            .complete_backup_creation(prepared, &json!({"format_version": 1}), &key)
+            .is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"known good backup");
+        assert!(!staging_root.exists());
     }
 
     #[test]
@@ -2290,7 +2997,27 @@ mod tests {
         let data = tempdir().unwrap();
         let selected = tempdir().unwrap();
         std::fs::create_dir(selected.path().join("memory")).unwrap();
-        std::fs::write(selected.path().join("memory").join("facts.json"), "[]").unwrap();
+        std::fs::write(selected.path().join("memory").join("documents.json"), "[]").unwrap();
+        std::fs::create_dir(selected.path().join("state_of_mind")).unwrap();
+        std::fs::write(
+            selected
+                .path()
+                .join("state_of_mind")
+                .join("conversation.json"),
+            r#"{"conversation":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(selected.path().join(".env"), "excluded").unwrap();
+        std::fs::write(
+            selected.path().join("memory").join("api_keys.json"),
+            r#"{"excluded":true}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            selected.path().join("memory").join("rebuild_memory.py"),
+            "# excluded",
+        )
+        .unwrap();
         let mut broker = BrokerIntegration::open(data.path()).unwrap();
         let handle_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
         broker
@@ -2308,10 +3035,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            std::fs::read_to_string(staged.snapshot_path.join("memory").join("facts.json"))
+            std::fs::read_to_string(staged.snapshot_path.join("memory").join("documents.json"),)
                 .unwrap(),
             "[]"
         );
+        assert_eq!(
+            staged
+                .snapshot_path
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::file_name)
+                .and_then(|value| value.to_str()),
+            Some("broker-migration")
+        );
+        assert!(!staged.snapshot_path.join(".env").exists());
+        assert!(!staged
+            .snapshot_path
+            .join("memory")
+            .join("api_keys.json")
+            .exists());
+        assert!(!staged
+            .snapshot_path
+            .join("memory")
+            .join("rebuild_memory.py")
+            .exists());
         assert!(!std::fs::read_to_string(&staged.manifest_path)
             .unwrap()
             .contains(selected.path().to_str().unwrap()));

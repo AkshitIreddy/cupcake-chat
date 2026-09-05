@@ -330,13 +330,13 @@ fn verify_opened_file(file: &File, requested: &Path) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn atomic_replace(temporary: &Path, target: &Path, _replace: bool) -> Result<()> {
+pub(crate) fn atomic_replace(temporary: &Path, target: &Path, _replace: bool) -> Result<()> {
     std::fs::rename(temporary, target)?;
     Ok(())
 }
 
 #[cfg(windows)]
-fn atomic_replace(temporary: &Path, target: &Path, replace: bool) -> Result<()> {
+pub(crate) fn atomic_replace(temporary: &Path, target: &Path, replace: bool) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, ReplaceFileW, MOVEFILE_WRITE_THROUGH, REPLACEFILE_WRITE_THROUGH,
@@ -374,13 +374,13 @@ fn atomic_replace(temporary: &Path, target: &Path, replace: bool) -> Result<()> 
 }
 
 #[cfg(unix)]
-fn sync_directory(path: &Path) -> Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)?.sync_all()?;
     Ok(())
 }
 
 #[cfg(windows)]
-fn sync_directory(_path: &Path) -> Result<()> {
+pub(crate) fn sync_directory(_path: &Path) -> Result<()> {
     // ReplaceFileW/MoveFileExW use WRITE_THROUGH above. Opening directories for
     // FlushFileBuffers is not supported consistently on Windows filesystems.
     Ok(())

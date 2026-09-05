@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import sqlite3
 import threading
 from importlib.util import find_spec
 from pathlib import Path
@@ -198,6 +200,10 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
         },
     )
     assert intent["payload"]["destinationHandle"] == "grant-export-1"
+    assert intent["payload"]["projectId"] == project["id"]
+    assert intent["payload"]["revisionId"] == revised["revision"]["id"]
+    assert base64.b64decode(intent["payload"]["contentBase64"], validate=True) == b"# Two"
+    assert hashlib.sha256(b"# Two").hexdigest() == intent["payload"]["objectDigest"]
     setting, _ = runtime.handle("settings.set", {"key": "appearance.theme", "value": "classic"})
     assert setting == {"key": "appearance.theme", "value": "classic"}
     runtime.close()
@@ -411,6 +417,89 @@ def test_attachment_content_is_explicit_context_without_lexical_overlap(tmp_path
     runtime.close()
 
 
+def test_image_attachment_reaches_agent_as_verified_object_bytes(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    capturing = _CapturingAgentEngine()
+    runtime.agent_engine = capturing  # type: ignore[assignment]
+    descriptor = ModelDescriptor(
+        id="mock:vision",
+        provider="mock",
+        model="vision",
+        display_name="Recorded vision",
+        family="mock-vision",
+        context_window=8_192,
+        max_output_tokens=1_024,
+        capabilities=ModelCapabilities(streaming=False, tools=False, images=True),
+        privacy_route=PrivacyRoute.LOCAL,
+    )
+    runtime.providers.catalog.register(descriptor)
+    project, _ = runtime.handle("projects.create", {"name": "Vision scope"})
+    created, _ = runtime.handle(
+        "conversations.create", {"title": "See image", "projectId": project["id"]}
+    )
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    staging = tmp_path / "broker-ingestion"
+    staging.mkdir()
+    source = staging / "cupcake.png"
+    source.write_bytes(png)
+    ingested, _ = runtime.handle(
+        "ingestion.ingest.private",
+        {
+            "projectId": project["id"],
+            "sourceHandle": "grant-image-1",
+            "displayName": "cupcake.png",
+            "stagedPath": str(source),
+            "sha256": hashlib.sha256(png).hexdigest(),
+            "byteSize": len(png),
+            "mediaType": "application/octet-stream",
+            "structuredDocument": {
+                "version": 1,
+                "entries": [
+                    {
+                        "text": "Image metadata extracted by the broker worker.",
+                        "locator": {
+                            "path": "cupcake.png",
+                            "line_start": None,
+                            "line_end": None,
+                            "page": None,
+                            "sheet": None,
+                            "cell_range": None,
+                            "archive_member": None,
+                            "timestamp_start_ms": None,
+                            "timestamp_end_ms": None,
+                            "metadata": {},
+                        },
+                    }
+                ],
+                "warnings": [],
+                "metadata": {"network_access": False},
+            },
+        },
+    )
+    runtime.handle(
+        "chat.send",
+        {
+            "conversationId": created["conversation"]["id"],
+            "branchId": created["branch"]["id"],
+            "projectId": project["id"],
+            "content": "Describe this image.",
+            "modelId": descriptor.id,
+            "attachments": [{"fileId": ingested["file"]["id"], "sourceId": ingested["sourceId"]}],
+            "attachmentHandles": ["grant-image-1"],
+        },
+    )
+    current = capturing.request.messages[-1]
+    assert current.role == "user"
+    assert current.attachments[0]["data"] == png
+    assert current.attachments[0]["media_type"] == "image/png"
+    assert current.attachments[0]["sha256"] == hashlib.sha256(png).hexdigest()
+    history, _ = runtime.handle("chat.history", {"branchId": created["branch"]["id"]})
+    assert "data" not in history[0]["canonical_metadata"]["attachments"][0]
+    runtime.close()
+
+
 def test_explicit_references_are_typed_and_project_isolated(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     capturing = _CapturingAgentEngine()
@@ -615,14 +704,14 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
     with pytest.raises(RuntimeCommandError) as offline:
         runtime.handle(
             "chat.send",
-            {"content": "No network", "modelId": "openai:gpt-5.6-sol", "offline": True},
+            {"content": "No network", "modelId": "openai:gpt-6-astra", "offline": True},
         )
     assert offline.value.code == "OFFLINE_ROUTE_DENIED"
     preflight, _ = runtime.handle(
         "chat.disclosure.preflight",
         {
             "content": "Hello",
-            "modelId": "openai:gpt-5.6-sol",
+            "modelId": "openai:gpt-6-astra",
             "files": ["file-1"],
             "attachmentBindings": [attachment_binding],
         },
@@ -630,9 +719,9 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
     assert preflight["confirmationRequired"] is True
     runtime_any: Any = runtime
     runtime_any._enforce_model_policy(
-        "openai:gpt-5.6-sol",
+        "openai:gpt-6-astra",
         {
-            "modelId": "openai:gpt-5.6-sol",
+            "modelId": "openai:gpt-6-astra",
             "files": ["file-1"],
             "attachmentBindings": [attachment_binding],
             "outboundIntent": preflight["outboundIntent"],
@@ -642,9 +731,9 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
     )
     with pytest.raises(RuntimeCommandError) as replayed:
         runtime_any._enforce_model_policy(
-            "openai:gpt-5.6-sol",
+            "openai:gpt-6-astra",
             {
-                "modelId": "openai:gpt-5.6-sol",
+                "modelId": "openai:gpt-6-astra",
                 "files": ["file-1"],
                 "attachmentBindings": [attachment_binding],
                 "outboundIntent": preflight["outboundIntent"],
@@ -657,7 +746,7 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
         "chat.disclosure.preflight",
         {
             "content": "Hello",
-            "modelId": "openai:gpt-5.6-sol",
+            "modelId": "openai:gpt-6-astra",
             "files": ["file-1"],
             "attachmentBindings": [attachment_binding],
         },
@@ -667,7 +756,7 @@ def test_offline_and_cloud_disclosure_tokens_are_enforced(tmp_path: Path) -> Non
             "chat.send",
             {
                 "content": "Changed",
-                "modelId": "openai:gpt-5.6-sol",
+                "modelId": "openai:gpt-6-astra",
                 "files": ["file-1"],
                 "attachmentBindings": [attachment_binding],
                 "disclosureConfirmationToken": tamper_preflight["token"],
@@ -688,7 +777,7 @@ def test_cloud_confirmation_binds_attachment_bytes(tmp_path: Path) -> None:
         "chat.preflight",
         {
             "content": "Read it",
-            "modelId": "openai:gpt-5.6-sol",
+            "modelId": "openai:gpt-6-astra",
             "attachmentHandles": ["attachment-1"],
             "attachmentBindings": [original],
         },
@@ -702,9 +791,9 @@ def test_cloud_confirmation_binds_attachment_bytes(tmp_path: Path) -> None:
     runtime_any: Any = runtime
     with pytest.raises(RuntimeCommandError) as rejected:
         runtime_any._enforce_model_policy(
-            "openai:gpt-5.6-sol",
+            "openai:gpt-6-astra",
             {
-                "modelId": "openai:gpt-5.6-sol",
+                "modelId": "openai:gpt-6-astra",
                 "attachmentHandles": ["attachment-1"],
                 "attachmentBindings": [changed],
                 "outboundIntent": preflight["outboundIntent"],
@@ -735,7 +824,7 @@ def test_cloud_confirmation_binds_artifact_revision_and_digest(tmp_path: Path) -
     reference = {"id": artifact["artifact"]["id"], "type": "artifact"}
     params = {
         "content": "Review it",
-        "modelId": "openai:gpt-5.6-sol",
+        "modelId": "openai:gpt-6-astra",
         "projectId": project["id"],
         "conversationId": conversation["conversation"]["id"],
         "branchId": conversation["branch"]["id"],
@@ -761,7 +850,7 @@ def test_cloud_confirmation_binds_artifact_revision_and_digest(tmp_path: Path) -
     runtime_any: Any = runtime
     with pytest.raises(RuntimeCommandError) as changed:
         runtime_any._enforce_model_policy(
-            "openai:gpt-5.6-sol",
+            "openai:gpt-6-astra",
             {
                 **params,
                 "outboundIntent": preflight["outboundIntent"],
@@ -781,7 +870,7 @@ def test_cloud_confirmation_binds_artifact_revision_and_digest(tmp_path: Path) -
     }
     pinned, _ = runtime.handle("chat.preflight", pinned_params)
     runtime_any._enforce_model_policy(
-        "openai:gpt-5.6-sol",
+        "openai:gpt-6-astra",
         {
             **pinned_params,
             "outboundIntent": pinned["outboundIntent"],
@@ -828,10 +917,12 @@ def test_unverified_nim_model_requires_explicit_persisted_confirmation(tmp_path:
 def test_broker_staged_ingestion_verifies_and_deletes_source(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     project, _ = runtime.handle("projects.create", {"name": "Files"})
+    owner_source = tmp_path / "owner-notes.md"
+    owner_source.write_text("Cupcake indexing evidence", encoding="utf-8")
     staging = tmp_path / "broker-ingestion"
     staging.mkdir()
     source = staging / "source-1.md"
-    source.write_text("Cupcake indexing evidence", encoding="utf-8")
+    source.write_bytes(owner_source.read_bytes())
     data = source.read_bytes()
     result, _ = runtime.handle(
         "ingestion.ingest.private",
@@ -847,6 +938,10 @@ def test_broker_staged_ingestion_verifies_and_deletes_source(tmp_path: Path) -> 
     )
     assert result["chunkCount"] == 1
     assert not source.exists()
+    assert owner_source.read_text(encoding="utf-8") == "Cupcake indexing evidence"
+    digest = hashlib.sha256(data).hexdigest()
+    assert runtime.objects.get(digest) == data
+    assert digest in runtime.repository.reachable_object_ids()
     found, _ = runtime.handle("search.project", {"projectId": project["id"], "query": "evidence"})
     assert found[0]["document"]["source_id"] == result["sourceId"]
     runtime.close()
@@ -854,19 +949,28 @@ def test_broker_staged_ingestion_verifies_and_deletes_source(tmp_path: Path) -> 
 
 def test_private_backup_includes_runtime_database_and_stages_restore(tmp_path: Path) -> None:
     runtime = service(tmp_path / "profile")
-    runtime.handle("tasks.create", {"prompt": "Durable backup evidence"})
+    task, _ = runtime.handle("tasks.create", {"prompt": "Durable backup evidence"})
     destination = tmp_path / "backup.zip"
     created, _ = runtime.handle(
         "backup.create.private", {"destinationPath": str(destination.resolve())}
     )
     paths = {entry["path"] for entry in created["manifest"]["entries"]}
     assert "database/product.sqlite" in paths
-    assert "database/runtime.sqlite" in paths
+    assert "database/dbos.sqlite" in paths
+    assert "database/runtime.sqlite" not in paths
+    assert "database/dbos-system.sqlite" not in paths
     prepared, _ = runtime.handle(
         "backup.restore.prepare.private", {"sourcePath": str(destination.resolve())}
     )
     assert prepared["requiresRestart"] is True
-    assert "database/runtime.sqlite" in {entry["path"] for entry in prepared["manifest"]["entries"]}
+    assert "database/dbos.sqlite" in {entry["path"] for entry in prepared["manifest"]["entries"]}
+    restored_workflow = Path(prepared["stagingPath"]) / "database" / "dbos.sqlite"
+    with sqlite3.connect(restored_workflow) as connection:
+        restored = connection.execute(
+            "SELECT spec_json FROM durable_runs WHERE run_id=?", (task["run"]["run_id"],)
+        ).fetchone()
+    assert restored is not None
+    assert "Durable backup evidence" in restored[0]
     runtime.close()
 
 
@@ -885,6 +989,22 @@ def test_packaged_self_test_constructs_provider_models_without_network(tmp_path:
     } <= providers.keys()
     assert all(providers[name]["ok"] for name in providers)
     runtime.close()
+
+
+def test_selected_verified_nim_descriptor_survives_runtime_restart_without_network(
+    tmp_path: Path,
+) -> None:
+    selected = "nvidia-nim:nvidia/nemotron-3-super-120b-a12b"
+    runtime = service(tmp_path)
+    runtime.repository.set_setting(Setting(key="models.default", value=selected))
+    runtime.close()
+
+    reopened = service(tmp_path)
+    models, _ = reopened.handle("models.list")
+    restored = next(model for model in models if model["id"] == selected)
+    assert restored["metadata"]["chat_compatibility"] == "chat"
+    assert restored["context_window"] == 1_000_000
+    reopened.close()
 
 
 class _SlowAgentEngine:
