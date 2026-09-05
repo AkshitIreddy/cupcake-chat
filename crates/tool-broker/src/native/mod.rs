@@ -1017,7 +1017,10 @@ impl NativeToolExecutorService {
             ProcessState::OutputLimitExceeded => ToolResultStatus::OutputLimitExceeded,
             _ => ToolResultStatus::Failed,
         };
-        if status != ToolResultStatus::Completed {
+        if !matches!(
+            sandbox_output.state,
+            ProcessState::Completed | ProcessState::Failed
+        ) {
             return Ok(ToolResult {
                 intent_id: intent.intent_id,
                 status,
@@ -1029,25 +1032,20 @@ impl NativeToolExecutorService {
             });
         }
 
-        let response_bytes = read_worker_frame(
+        let response = read_bound_worker_response(
             &stage.join("python-response.frame"),
             MAX_SANDBOX_FRAME_BYTES.min(preflight.limits.max_output_bytes),
+            &request_id,
+            &stage_token,
         )?;
-        let response: Value = serde_json::from_slice(&response_bytes)?;
-        if response.get("version").and_then(Value::as_u64) != Some(1)
-            || response.get("request_id").and_then(Value::as_str) != Some(request_id.as_str())
-            || response.get("stage_token").and_then(Value::as_str) != Some(stage_token.as_str())
-            || !matches!(
-                response.get("kind").and_then(Value::as_str),
-                Some("python.execute.complete" | "python.execute.failed")
-            )
-        {
+        let response_completed =
+            response.get("kind").and_then(Value::as_str) == Some("python.execute.complete");
+        if sandbox_output.state == ProcessState::Failed && response_completed {
             return Err(BrokerError::Integrity(
-                "sandbox worker response binding is invalid".into(),
+                "sandbox worker completion conflicts with its process status".into(),
             ));
         }
-        let completed =
-            response.get("kind").and_then(Value::as_str) == Some("python.execute.complete");
+        let completed = sandbox_output.state == ProcessState::Completed && response_completed;
         Ok(ToolResult {
             intent_id: intent.intent_id,
             status: if completed {
@@ -1410,6 +1408,29 @@ fn encode_worker_frame(payload: &[u8]) -> Result<Vec<u8>> {
     Ok(frame)
 }
 
+fn read_bound_worker_response(
+    path: &Path,
+    maximum: usize,
+    request_id: &str,
+    stage_token: &str,
+) -> Result<Value> {
+    let response_bytes = read_worker_frame(path, maximum)?;
+    let response: Value = serde_json::from_slice(&response_bytes)?;
+    if response.get("version").and_then(Value::as_u64) != Some(1)
+        || response.get("request_id").and_then(Value::as_str) != Some(request_id)
+        || response.get("stage_token").and_then(Value::as_str) != Some(stage_token)
+        || !matches!(
+            response.get("kind").and_then(Value::as_str),
+            Some("python.execute.complete" | "python.execute.failed")
+        )
+    {
+        return Err(BrokerError::Integrity(
+            "sandbox worker response binding is invalid".into(),
+        ));
+    }
+    Ok(response)
+}
+
 fn read_worker_frame(path: &Path, maximum: usize) -> Result<Vec<u8>> {
     let mut file = OpenOptions::new().read(true).open(path)?;
     let metadata = file.metadata()?;
@@ -1604,6 +1625,61 @@ mod tests {
             Ok(SandboxOutput {
                 state: ProcessState::Completed,
                 exit_code: Some(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+
+        fn cancel(&self, _execution_id: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct FailedWorkerSandbox {
+        mismatch_stage_token: bool,
+    }
+
+    impl SandboxBackend for FailedWorkerSandbox {
+        fn execute(&self, plan: &ResolvedProcessPlan) -> Result<SandboxOutput> {
+            let request = serde_json::from_slice::<Value>(&read_worker_frame(
+                &plan.working_directory.join("python-request.frame"),
+                MAX_SANDBOX_FRAME_BYTES,
+            )?)?;
+            let response = json!({
+                "version": 1,
+                "kind": "python.execute.failed",
+                "request_id": request["request_id"],
+                "stage_token": if self.mismatch_stage_token {
+                    json!("mismatched-stage-token")
+                } else {
+                    request["stage_token"].clone()
+                },
+                "result": {
+                    "status": "failed",
+                    "stdout": "observed stdout\n",
+                    "stderr": "observed failure\n",
+                    "tests": {
+                        "run": 1,
+                        "failures": 1,
+                        "errors": 0,
+                        "skipped": 0,
+                        "successful": false,
+                        "details": []
+                    }
+                }
+            });
+            let destination = plan.working_directory.join("python-response.frame");
+            make_writable_for_cleanup(&destination)?;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(destination)?;
+            file.write_all(&encode_worker_frame(&serde_json::to_vec(&response)?)?)?;
+            file.sync_all()?;
+            Ok(SandboxOutput {
+                state: ProcessState::Failed,
+                exit_code: Some(1),
                 stdout: Vec::new(),
                 stderr: Vec::new(),
             })
@@ -1932,6 +2008,74 @@ mod tests {
             "executionMode": "renderer_selected"
         }))
         .is_err());
+    }
+
+    #[test]
+    fn sandbox_python_preserves_bound_failure_evidence_and_rejects_mismatches() {
+        let execute = |root: &Path, sandbox: Arc<dyn SandboxBackend>| {
+            std::fs::write(root.join("failed-tests.py"), b"assert False\n").unwrap();
+            let packaged_runtime = root.join("cupcake-runtime.exe");
+            std::fs::write(&packaged_runtime, b"test executable fixture").unwrap();
+            let mut policy = PolicySet::default();
+            policy
+                .category
+                .insert(Effect::ExecuteSandboxed, CategoryDecision::Allow);
+            let service = NativeToolExecutorService::open(
+                root,
+                policy,
+                None,
+                Some(&packaged_runtime),
+                Arc::new(NoNetwork),
+                sandbox,
+                Arc::new(DisabledLocalModelBackend),
+            )
+            .unwrap();
+            let grant = service
+                .issue_filesystem_grant(
+                    root,
+                    [FilesystemPermission::Read].into_iter().collect(),
+                    GrantScope::Session,
+                    10_000,
+                )
+                .unwrap();
+            let intent = intent(
+                "native.sandbox.python",
+                json!({
+                    "grantId": grant,
+                    "scriptRelative": "failed-tests.py",
+                    "projectId": null,
+                    "executionMode": "module_test"
+                }),
+                [Effect::ExecuteSandboxed].into_iter().collect(),
+            );
+            let preflight = service.preflight(&intent, 1_000).unwrap();
+            service.execute(&intent, &preflight, None, 1_001)
+        };
+
+        let bound_root = tempdir().unwrap();
+        let failure = execute(
+            bound_root.path(),
+            Arc::new(FailedWorkerSandbox {
+                mismatch_stage_token: false,
+            }),
+        )
+        .unwrap();
+        assert_eq!(failure.status, ToolResultStatus::Failed);
+        assert_eq!(failure.output["result"]["stdout"], "observed stdout\n");
+        assert_eq!(failure.output["result"]["stderr"], "observed failure\n");
+        assert_eq!(failure.output["result"]["tests"]["successful"], false);
+
+        let mismatched_root = tempdir().unwrap();
+        assert!(matches!(
+            execute(
+                mismatched_root.path(),
+                Arc::new(FailedWorkerSandbox {
+                    mismatch_stage_token: true,
+                }),
+            ),
+            Err(BrokerError::Integrity(message))
+                if message == "sandbox worker response binding is invalid"
+        ));
     }
 
     #[test]
