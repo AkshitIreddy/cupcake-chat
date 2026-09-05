@@ -537,13 +537,14 @@ try {
     const model = chooseLocalModel(models, localStatus);
     if (!model) throw new Error('No loaded Cupcake Local model is available for the local demo');
     const hardware = await runtimeRequest(page, 'local_models.hardware', {}, 120_000);
-    if (!/nvidia/iu.test(String(hardware.gpu ?? '')) || !hasCudaEvidence(hardware, localStatus)) {
+    const gpuName = hardwareGpuName(hardware);
+    if (!/nvidia/iu.test(gpuName) || !hasCudaEvidence(hardware, localStatus)) {
       throw new Error('Local demo requires observed NVIDIA CUDA hardware/runtime evidence');
     }
     evidence.localRuntime = {
       activeModelId: String(localStatus.activeModelId ?? localStatus.active_model_id ?? model.id),
       modelId: model.id,
-      gpu: String(hardware.gpu ?? 'NVIDIA GPU'),
+      gpu: gpuName,
       acceleration: safeStringArray(hardware.acceleration),
       runtime: safeLocalRuntime(localStatus),
     };
@@ -904,7 +905,8 @@ async function ensureArtifact(activePage, projectId, conversationId, scenario, a
       activePage,
       projectId,
       existing.artifact,
-      assistant.id,
+      assistant,
+      scenario.artifactKind,
     );
     if (provenance.proven) {
       return runtimeRequest(
@@ -1200,7 +1202,8 @@ async function verifyArtifactProvenance(
   activePage,
   projectId,
   artifactRecord,
-  expectedSourceMessageId,
+  expectedAssistant,
+  artifactKind,
 ) {
   const history = await runtimeRequest(
     activePage,
@@ -1209,14 +1212,91 @@ async function verifyArtifactProvenance(
     120_000,
   );
   const revisions = Array.isArray(history) ? history : [];
-  const sourceRevision = revisions.find(
-    (revision) =>
-      (revision.source_message_id ?? revision.sourceMessageId) === expectedSourceMessageId,
+  const expectedContent = artifactContent(artifactKind, expectedAssistant?.content);
+  const expectedContentSha256 = sha256(expectedContent);
+  const headRevisionId = artifactRecord.head_revision_id ?? artifactRecord.headRevisionId;
+  const sourceCandidates = [];
+  for (const revision of revisions) {
+    if (revision.author_kind !== 'assistant') continue;
+    const exposedSourceMessageId = revision.source_message_id ?? revision.sourceMessageId;
+    if (exposedSourceMessageId && exposedSourceMessageId !== expectedAssistant?.id) continue;
+    const snapshot = await runtimeRequest(
+      activePage,
+      'artifacts.get',
+      { projectId, artifactId: artifactRecord.id, revisionId: revision.id },
+      120_000,
+    );
+    if (sha256(String(snapshot?.content ?? '')) !== expectedContentSha256) continue;
+    const lineage = inspectRevisionLineage(
+      revisions,
+      revision.id,
+      headRevisionId,
+      artifactRecord.id,
+    );
+    if (lineage.proven) {
+      sourceCandidates.push({
+        revision,
+        lineage,
+        sourceMessageMatched: exposedSourceMessageId === expectedAssistant?.id,
+      });
+    }
+  }
+  sourceCandidates.sort(
+    (left, right) => left.lineage.manualRevisionCount - right.lineage.manualRevisionCount,
   );
+  const source = sourceCandidates[0] ?? null;
   return {
-    proven: Boolean(sourceRevision),
-    sourceRevisionId: sourceRevision?.id ?? null,
+    proven: Boolean(source),
+    sourceRevisionId: source?.revision.id ?? null,
+    sourceMessageMatched: source?.sourceMessageMatched ?? false,
+    modelSourceContentMatched: Boolean(source),
+    manualRevisionCount: source?.lineage.manualRevisionCount ?? 0,
+    currentExecutionRevisionId: source?.lineage.currentExecutionRevisionId ?? null,
     revisionCount: revisions.length,
+  };
+}
+
+function inspectRevisionLineage(revisions, sourceRevisionId, headRevisionId, artifactId) {
+  if (!sourceRevisionId || !headRevisionId) {
+    return { proven: false, reason: 'missing_revision_id', manualRevisionCount: 0 };
+  }
+  const byId = new Map();
+  for (const revision of revisions) {
+    if (!revision?.id || revision.artifact_id !== artifactId || byId.has(revision.id)) {
+      return { proven: false, reason: 'invalid_revision_history', manualRevisionCount: 0 };
+    }
+    byId.set(revision.id, revision);
+  }
+  const descendants = [];
+  const visited = new Set();
+  let currentId = headRevisionId;
+  while (currentId !== sourceRevisionId) {
+    if (visited.has(currentId)) {
+      return { proven: false, reason: 'revision_cycle', manualRevisionCount: 0 };
+    }
+    visited.add(currentId);
+    const revision = byId.get(currentId);
+    if (!revision) {
+      return { proven: false, reason: 'source_not_in_head_lineage', manualRevisionCount: 0 };
+    }
+    descendants.push(revision);
+    currentId = revision.parent_revision_id ?? revision.parentRevisionId;
+    if (!currentId) {
+      return { proven: false, reason: 'source_not_in_head_lineage', manualRevisionCount: 0 };
+    }
+  }
+  const source = byId.get(sourceRevisionId);
+  if (!source) {
+    return { proven: false, reason: 'source_revision_missing', manualRevisionCount: 0 };
+  }
+  if (descendants.some((revision) => revision.author_kind !== 'user')) {
+    return { proven: false, reason: 'non_manual_descendant', manualRevisionCount: 0 };
+  }
+  return {
+    proven: true,
+    reason: null,
+    manualRevisionCount: descendants.length,
+    currentExecutionRevisionId: headRevisionId,
   };
 }
 
@@ -1394,7 +1474,8 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
             activePage,
             project.id,
             artifactRecord,
-            inspection.artifactSourceAssistant.id,
+            inspection.artifactSourceAssistant,
+            scenario.artifactKind,
           )
         : { proven: false, revisionCount: 0 };
       const memoryProof = scenario.memory
@@ -1411,7 +1492,7 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
             tasks,
             project.id,
             artifactRecord?.id,
-            artifactProof.sourceRevisionId,
+            artifactProof.currentExecutionRevisionId,
           )
         : [];
       let task = null;
@@ -1424,7 +1505,7 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
           activePage,
           candidate,
           artifactRecord,
-          artifactProof.sourceRevisionId,
+          artifactProof.currentExecutionRevisionId,
         );
         task ??= candidate;
         taskProof = candidateProof;
@@ -1433,7 +1514,8 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
           break;
         }
       }
-      const proven = artifactProof.proven && memoryProof;
+      const proven =
+        artifactProof.proven && memoryProof && (scenario.task ? taskProof.proven : true);
       let screenshot = null;
       if (proven) {
         screenshot = await captureConversation(
@@ -1454,6 +1536,11 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
         artifactId: artifactRecord?.id ?? null,
         artifactProvenance: artifactProof.proven,
         artifactProvenanceRevisionId: artifactProof.sourceRevisionId ?? null,
+        modelSourceRevisionId: artifactProof.sourceRevisionId ?? null,
+        modelSourceMessageMatched: artifactProof.sourceMessageMatched ?? false,
+        modelSourceContentMatched: artifactProof.modelSourceContentMatched ?? false,
+        manualRevisionCount: artifactProof.manualRevisionCount ?? 0,
+        currentExecutionRevisionId: artifactProof.currentExecutionRevisionId ?? null,
         artifactRevisionCount: artifactProof.revisionCount,
         memoryProvenance: memoryProof,
         taskRunId: task?.run_id ?? null,
@@ -1872,6 +1959,10 @@ function hasCudaEvidence(hardware, status) {
   return values.some((value) => /cuda/iu.test(String(value ?? '')));
 }
 
+function hardwareGpuName(hardware) {
+  return String(hardware?.gpu_name ?? hardware?.gpuName ?? hardware?.gpu ?? '').trim();
+}
+
 function safeLocalRuntime(status) {
   const runtime = status.activeRuntime ?? status.active_runtime ?? status.runtime ?? {};
   return {
@@ -1986,6 +2077,11 @@ function runSelfTests() {
   assert.equal(interruptedInspection.partialAssistantCount, 1);
   assert.equal(interruptedInspection.finalAssistant?.id, 'a-recovered');
   assert.notEqual(recoveryPromptFor('first request'), recoveryPromptFor('second request'));
+  assert.equal(
+    hardwareGpuName({ gpu_name: 'NVIDIA GeForce RTX 4070 Laptop GPU' }),
+    'NVIDIA GeForce RTX 4070 Laptop GPU',
+  );
+  assert.equal(hardwareGpuName({ gpu: 'NVIDIA fallback' }), 'NVIDIA fallback');
 
   const optionalPromptScenario = {
     prompts: ['analysis', 'obsolete expansion', 'bounded correction'],
@@ -2031,6 +2127,61 @@ function runSelfTests() {
   assert.equal(reviewedCodeInspection.finalAssistant?.id, 'a-review-correction');
   assert.equal(reviewedCodeInspection.artifactSourceAssistant?.id, 'a-review-correction');
 
+  const linearHistory = [
+    {
+      id: 'source-revision',
+      artifact_id: 'artifact-lineage',
+      parent_revision_id: null,
+      author_kind: 'assistant',
+    },
+    {
+      id: 'manual-review',
+      artifact_id: 'artifact-lineage',
+      parent_revision_id: 'source-revision',
+      author_kind: 'user',
+    },
+  ];
+  assert.deepEqual(
+    inspectRevisionLineage(linearHistory, 'source-revision', 'manual-review', 'artifact-lineage'),
+    {
+      proven: true,
+      reason: null,
+      manualRevisionCount: 1,
+      currentExecutionRevisionId: 'manual-review',
+    },
+  );
+  assert.equal(
+    inspectRevisionLineage(
+      [
+        ...linearHistory,
+        {
+          id: 'unrelated-head',
+          artifact_id: 'artifact-lineage',
+          parent_revision_id: null,
+          author_kind: 'user',
+        },
+      ],
+      'source-revision',
+      'unrelated-head',
+      'artifact-lineage',
+    ).proven,
+    false,
+  );
+  assert.equal(
+    inspectRevisionLineage(
+      [linearHistory[0], { ...linearHistory[1], author_kind: 'assistant' }],
+      'source-revision',
+      'manual-review',
+      'artifact-lineage',
+    ).proven,
+    false,
+  );
+  assert.equal(
+    inspectRevisionLineage(linearHistory, 'source-revision', 'manual-review', 'wrong-artifact')
+      .proven,
+    false,
+  );
+
   assert.equal(artifactContent('code', '```python\nvalue = 1\n```\n'), 'value = 1\n');
   assert.throws(() => artifactContent('code', '```python\nvalue = 1'), /exactly one non-empty/u);
   assert.throws(
@@ -2074,6 +2225,27 @@ function runSelfTests() {
   );
   assert.equal(
     hasTaskExecutionProof(taskResult, artifact, 'wrong-revision', artifactHistory),
+    false,
+  );
+  const reviewedTaskResult = {
+    ...taskResult,
+    toolEvidence: {
+      ...taskResult.toolEvidence,
+      artifactId: 'artifact-lineage',
+      revisionId: 'manual-review',
+    },
+  };
+  assert.equal(
+    hasTaskExecutionProof(
+      reviewedTaskResult,
+      { id: 'artifact-lineage' },
+      'manual-review',
+      linearHistory,
+    ),
+    true,
+  );
+  assert.equal(
+    hasTaskExecutionProof(taskResult, { id: 'artifact-lineage' }, 'manual-review', linearHistory),
     false,
   );
 

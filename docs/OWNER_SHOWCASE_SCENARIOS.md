@@ -83,12 +83,16 @@ The reviewed Groq Harbor scenario pins the latest NVIDIA artifact revision for a
 brief, then creates a separate `harbor_quality_checked.py` replacement. The NVIDIA attempts remain
 visible as failed quality evidence and are never described as tested code. The Groq scenario also
 creates one real durable code-execution task for its separate saved artifact. A `succeeded` task row
-alone is not proof. Verification requires the persisted terminal checkpoint to identify `python.run`
-and `native.sandbox.python`, bind the exact immutable revision sourced from the completed Groq
-response in the same project, report exit status 0, report successful tests, and contain non-empty
-sandbox provenance. Task lookup follows that persisted artifact/revision binding rather than relying
-on prompt wording, so a UI-created “Run tests” task is recognized without accepting a task for a
-stale or different artifact.
+alone is not proof. The completed Groq response remains the immutable model-source revision. If an
+owner review corrects that artifact in the visible editor, verification traces the current head's
+parent chain back to the content-matched assistant revision and accepts only explicit user-authored
+descendants. It reports the model-source revision, manual revision count, and current execution
+revision separately; it never describes the reviewed head as byte-identical model output. The
+persisted terminal checkpoint must identify `python.run` and `native.sandbox.python`, bind the exact
+current reviewed head in the same project, report exit status 0, report successful tests, and
+contain non-empty sandbox provenance. Task lookup follows that persisted artifact/revision binding
+rather than prompt wording, so a UI-created “Run tests” task is recognized without accepting a
+stale, unrelated, or pre-review revision.
 
 ## Intended low-quota run
 
@@ -159,10 +163,11 @@ error because the harness cannot safely guess which owner item to keep.
 The verification phase evaluates only scenarios that actually exist. A missing, failed, partial, or
 archived provider conversation is recorded as an observed outcome and does not become a mandatory
 scenario merely because its project exists. For a completed scenario, verification requires every
-declared prompt, a strictly completed source and final response, an artifact revision sourced from
-the right persisted assistant message, and exact memory provenance when the scenario saves a
-decision. Partial assistant messages are counted separately and never increase the completed-turn
-count.
+declared prompt, a strictly completed source and final response, an assistant-authored artifact
+revision whose immutable content matches that response, an intact parent chain from the current
+head, and exact memory provenance when the scenario saves a decision. Only user-authored manual
+descendants are allowed between the model source and current head. Partial assistant messages are
+counted separately and never increase the completed-turn count.
 
 The hosted phase requires an explicit comma-separated provider list. This prevents an old configured
 credential from silently consuming quota. The local phase refuses to run unless the coordinator has
