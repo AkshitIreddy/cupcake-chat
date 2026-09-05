@@ -390,7 +390,7 @@ def _install_process_network_guard() -> None:
     def denied(*_args: object, **_kwargs: object) -> NoReturn:
         raise WorkerNetworkDeniedError("network access is denied in the document worker")
 
-    socket.socket = denied  # type: ignore[assignment]
+    socket.socket = denied  # type: ignore[assignment,misc]
     socket.create_connection = denied  # type: ignore[assignment]
     socket.create_server = denied  # type: ignore[assignment]
     socket.getaddrinfo = denied  # type: ignore[assignment]

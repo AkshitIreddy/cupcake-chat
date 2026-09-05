@@ -317,6 +317,7 @@ class DoclingWorkerAdapter:
         staged_control: bool,
     ) -> DocumentWorkerLaunchSpec:
         executable = self.worker_executable or sys.executable
+        arguments: tuple[str, ...]
         if self.worker_executable or bool(getattr(sys, "frozen", False)):
             arguments = (
                 "--document-worker",

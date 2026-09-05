@@ -386,9 +386,13 @@ class DesktopRuntimeServer:
                 )
                 with self._pending_lock:
                     self._pending[correlation_id] = (future, cancellation)
-                future.add_done_callback(
-                    lambda _future, key=correlation_id: self._request_finished(key)
-                )
+
+                def request_finished(
+                    _future: concurrent.futures.Future[None], key: str = correlation_id
+                ) -> None:
+                    self._request_finished(key)
+
+                future.add_done_callback(request_finished)
         finally:
             self._cancel_all_pending()
             self._finish_pending(timeout=5)

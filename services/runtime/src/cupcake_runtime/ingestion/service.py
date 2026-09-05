@@ -391,13 +391,13 @@ class IngestionService:
         if zipfile.is_zipfile(io.BytesIO(data)):
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
                 self._validate_zip(archive)
-                for info in archive.infolist():
-                    if info.is_dir():
+                for zip_info in archive.infolist():
+                    if zip_info.is_dir():
                         continue
-                    member = validate_archive_member(info.filename)
+                    member = validate_archive_member(zip_info.filename)
                     if member.suffix.casefold() not in TEXT_EXTENSIONS | CODE_EXTENSIONS:
                         continue
-                    member_data = archive.read(info)
+                    member_data = archive.read(zip_info)
                     self._append_archive_member(
                         chunks, warnings, project_id, source_id, path.name, member, member_data
                     )
@@ -412,13 +412,13 @@ class IngestionService:
                         raise LimitExceededError(
                             "archive compression ratio exceeds configured limit"
                         )
-                    for info in members:
-                        if not info.isfile():
+                    for tar_info in members:
+                        if not tar_info.isfile():
                             continue
-                        member = validate_archive_member(info.name)
+                        member = validate_archive_member(tar_info.name)
                         if member.suffix.casefold() not in TEXT_EXTENSIONS | CODE_EXTENSIONS:
                             continue
-                        source = archive.extractfile(info)
+                        source = archive.extractfile(tar_info)
                         if source:
                             self._append_archive_member(
                                 chunks,

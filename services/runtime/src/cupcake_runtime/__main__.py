@@ -7,7 +7,7 @@ import json
 import sqlite3
 import sys
 from types import TracebackType
-from typing import Any
+from typing import Any, cast
 
 _DATABASE_FAILURE_MESSAGES = {
     "database-busy": "runtime database is busy",
@@ -134,7 +134,7 @@ def _install_frozen_metadata_fallback() -> None:
                 "latex2mathml": "0.0.0",
             }.get(name, "0.0.0")
 
-    metadata.version = packaged_version
+    metadata.version = cast(Any, packaged_version)
 
 
 def main() -> int:

@@ -8,7 +8,7 @@ from pydantic import Field, field_validator
 from cupcake_runtime.domain.ids import new_id
 from cupcake_runtime.domain.models import StrictModel, utc_now
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION: Literal[1] = 1
 
 
 class ProtocolEnvelope(StrictModel):
