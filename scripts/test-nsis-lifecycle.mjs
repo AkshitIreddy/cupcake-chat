@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { access, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -129,6 +129,7 @@ const evidence = {
   silentInstall: false,
   firstRun: false,
   silentUninstall: false,
+  installDirectoryRemoved: false,
   profileRetained: false,
 };
 let app;
@@ -175,14 +176,21 @@ try {
   }
   await run(join(installDirectory, uninstallers[0]), ['/S']);
   evidence.silentUninstall = true;
+  try {
+    await access(installDirectory);
+    throw new Error(`Uninstaller retained its install directory: ${installDirectory}`);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
+  evidence.installDirectoryRemoved = true;
   const profileFiles = await readdir(profile);
   evidence.profileRetained = profileFiles.length > 0;
 } finally {
   if (app && app.exitCode === null) app.kill();
-  // This path was validated above as a non-root child of LOCALAPPDATA and was
-  // created solely for this lifecycle test. The retained disposable profile
-  // is intentionally not removed so its data-retention evidence can be read.
-  await rm(installDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  // The product uninstaller is the only component allowed to remove the
+  // disposable install. If it fails, retain the install for inspection rather
+  // than masking the lifecycle defect with harness cleanup. The disposable
+  // profile is likewise retained as data-retention evidence.
   await writeFile(resultPath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
 }
 
@@ -190,6 +198,7 @@ if (
   !evidence.silentInstall ||
   !evidence.firstRun ||
   !evidence.silentUninstall ||
+  !evidence.installDirectoryRemoved ||
   !evidence.profileRetained
 ) {
   throw new Error(`NSIS lifecycle acceptance was incomplete: ${JSON.stringify(evidence)}`);
