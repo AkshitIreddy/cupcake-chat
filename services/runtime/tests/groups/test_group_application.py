@@ -544,6 +544,8 @@ def test_smart_reselects_after_reply_then_passes_without_repeat(tmp_path: Path) 
     assert result["responderCalls"] == 1
     assert len(engine.member_requests) == 1
     assert len(engine.selector_requests) == 2
+    assert engine.selector_requests[0].metadata["group_call"] is True
+    assert engine.member_requests[0].metadata["group_call"] is True
     assert len(engine.selector_requests[1].messages) == 1
     runtime.close()
 

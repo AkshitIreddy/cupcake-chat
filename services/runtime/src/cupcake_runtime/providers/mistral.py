@@ -130,12 +130,28 @@ class MistralAdapter(ProviderAdapter):
 
 
 def build_pydantic_model(
-    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+    model_name: str,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    disable_retries: bool = False,
 ):
     try:
+        from mistralai.client import Mistral
         from pydantic_ai.models.mistral import MistralModel
         from pydantic_ai.providers.mistral import MistralProvider
     except ImportError as exc:
         raise MissingProviderDependency("mistral", "pydantic-ai-slim[mistral]") from exc
     provider_type = cast(Any, MistralProvider)
-    return MistralModel(model_name, provider=provider_type(api_key=api_key, base_url=base_url))
+    provider = (
+        provider_type(
+            mistral_client=Mistral(
+                api_key=api_key,
+                server_url=base_url,
+                retry_config=None,
+            )
+        )
+        if disable_retries
+        else provider_type(api_key=api_key, base_url=base_url)
+    )
+    return MistralModel(model_name, provider=provider)

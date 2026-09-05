@@ -188,16 +188,28 @@ class GeminiAdapter(ProviderAdapter):
 
 
 def build_pydantic_model(
-    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+    model_name: str,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    disable_retries: bool = False,
 ):
     try:
+        from google.genai.types import HttpRetryOptions
         from pydantic_ai.models.google import GoogleModel
         from pydantic_ai.providers.google import GoogleProvider
     except ImportError as exc:
         raise MissingProviderDependency("google", "pydantic-ai-slim[google]") from exc
     if not api_key:
         raise ValueError("Google provider requires an API key")
-    return GoogleModel(model_name, provider=GoogleProvider(api_key=api_key, base_url=base_url))
+    return GoogleModel(
+        model_name,
+        provider=GoogleProvider(
+            api_key=api_key,
+            base_url=base_url,
+            retry_options=HttpRetryOptions(attempts=1) if disable_retries else None,
+        ),
+    )
 
 
 def _finish_reason_value(value: Any) -> str:

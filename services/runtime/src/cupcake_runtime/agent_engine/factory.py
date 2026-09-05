@@ -41,6 +41,7 @@ class PydanticModelFactory:
         config: ProviderConfig,
         request: ModelRequest,
     ) -> Any:
+        disable_retries = is_bounded_group_call(request)
         if descriptor.provider == "mock":
             try:
                 from pydantic_ai.models.test import TestModel
@@ -70,8 +71,13 @@ class PydanticModelFactory:
                 descriptor.model,
                 api_key=config.api_key,
                 base_url=base_url,
+                disable_retries=disable_retries,
             )
-        return builder(descriptor.model, api_key=config.api_key)
+        return builder(
+            descriptor.model,
+            api_key=config.api_key,
+            disable_retries=disable_retries,
+        )
 
     @staticmethod
     def _openai_compatible(
@@ -98,7 +104,7 @@ class PydanticModelFactory:
                     max_retries=0,
                 )
             )
-            if request.metadata.get("group_selector") is True
+            if is_bounded_group_call(request)
             else OpenAIProvider(
                 api_key=config.api_key or "not-required",
                 base_url=config.base_url,
@@ -118,3 +124,9 @@ class PydanticModelFactory:
                 ),
             )
         return OpenAIChatModel(descriptor.model, provider=provider)
+
+
+def is_bounded_group_call(request: ModelRequest) -> bool:
+    return request.metadata.get("group_call") is True or request.metadata.get(
+        "group_selector"
+    ) is True

@@ -191,13 +191,27 @@ class AnthropicAdapter(ProviderAdapter):
 
 
 def build_pydantic_model(
-    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+    model_name: str,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    disable_retries: bool = False,
 ):
     try:
+        from anthropic import AsyncAnthropic
         from pydantic_ai.models.anthropic import AnthropicModel
         from pydantic_ai.providers.anthropic import AnthropicProvider
     except ImportError as exc:
         raise MissingProviderDependency("anthropic", "pydantic-ai-slim[anthropic]") from exc
-    return AnthropicModel(
-        model_name, provider=AnthropicProvider(api_key=api_key, base_url=base_url)
+    provider = (
+        AnthropicProvider(
+            anthropic_client=AsyncAnthropic(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=0,
+            )
+        )
+        if disable_retries
+        else AnthropicProvider(api_key=api_key, base_url=base_url)
     )
+    return AnthropicModel(model_name, provider=provider)

@@ -3103,7 +3103,11 @@ class RuntimeService:
             ),
             tools=(),
             continuity=None,
-            metadata={"run_id": authorization.turn_id, "group_selector": True},
+            metadata={
+                "run_id": authorization.turn_id,
+                "group_selector": True,
+                "group_call": True,
+            },
         )
         instructions = (
             "You are CupcakeAI's bounded group router. Return one JSON object and nothing else. "
@@ -3924,7 +3928,7 @@ class RuntimeService:
         request = ModelRequest(
             model_id=model_id,
             messages=tuple(context_messages) + tuple(canonical_history),
-            metadata={"run_id": run_id},
+            metadata={"run_id": run_id, "group_call": group_speaker is not None},
             reasoning_effort=request_effort,
             max_output_tokens=(
                 int(params["maxOutputTokens"])

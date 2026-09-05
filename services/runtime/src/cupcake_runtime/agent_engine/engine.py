@@ -44,7 +44,7 @@ from cupcake_runtime.providers.types import (
 )
 
 from .cancellation import AgentCancellation
-from .factory import AgentModelFactory, PydanticModelFactory
+from .factory import AgentModelFactory, PydanticModelFactory, is_bounded_group_call
 from .history import prepare_visible_history
 from .models import AgentLimits, OutputLimitExceeded, PreparedAgentRequest
 from .toolset import BrokerDeferredToolset
@@ -146,13 +146,14 @@ class CupcakeAgentEngine:
             cast(Any, type(model)).request_stream is not cast(Any, Model).request_stream
         )
         toolsets = [BrokerDeferredToolset(request.tools)] if request.tools else []
+        bounded_group_call = is_bounded_group_call(request)
         agent: Agent[object, Any] = Agent(
             model,
             output_type=[str, DeferredToolRequests],
             name="cupcake_agent",
             description="CupcakeAI provider-neutral text agent",
             toolsets=toolsets,
-            retries={"tools": 0, "output": 1},
+            retries={"tools": 0, "output": 0 if bounded_group_call else 1},
         )
         queue: asyncio.Queue[NormalizedStreamEvent | object] = asyncio.Queue()
         open_calls: set[str] = set()
@@ -177,7 +178,9 @@ class CupcakeAgentEngine:
                     instructions=list(plan.system_instructions),
                     model_settings=self._model_settings(descriptor, request, output_tokens),
                     usage_limits=UsageLimits(
-                        request_limit=self._limits.max_model_requests,
+                        request_limit=(
+                            1 if bounded_group_call else self._limits.max_model_requests
+                        ),
                         tool_calls_limit=self._limits.max_tool_calls,
                         output_tokens_limit=output_tokens,
                         per_request_input_tokens_limit=context_budget,

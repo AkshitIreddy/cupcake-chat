@@ -341,16 +341,30 @@ class NvidiaNimAdapter(OpenAICompatibleAdapter):
         return payload
 
 
-def build_pydantic_model(model_name: str, *, api_key: str | None = None) -> Any:
+def build_pydantic_model(
+    model_name: str, *, api_key: str | None = None, disable_retries: bool = False
+) -> Any:
     try:
+        from openai import AsyncOpenAI
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
         from pydantic_ai.settings import ModelSettings
     except ImportError as exc:
         raise MissingProviderDependency(NVIDIA_NIM_PROVIDER, "pydantic-ai-slim[openai]") from exc
+    provider = (
+        OpenAIProvider(
+            openai_client=AsyncOpenAI(
+                api_key=api_key,
+                base_url=NVIDIA_NIM_BASE_URL,
+                max_retries=0,
+            )
+        )
+        if disable_retries
+        else OpenAIProvider(api_key=api_key, base_url=NVIDIA_NIM_BASE_URL)
+    )
     return OpenAIChatModel(
         model_name,
-        provider=OpenAIProvider(api_key=api_key, base_url=NVIDIA_NIM_BASE_URL),
+        provider=provider,
         settings=ModelSettings(
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         ),

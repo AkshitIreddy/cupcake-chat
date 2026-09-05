@@ -19,7 +19,9 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 
+import cupcake_runtime.agent_engine.engine as engine_module
 from cupcake_runtime.agent_engine import (
     AgentCancellation,
     CupcakeAgentEngine,
@@ -203,6 +205,55 @@ async def test_non_streaming_pydantic_model_is_normalized_to_text_events() -> No
         StreamEventType.FINISH,
     ]
     assert events[1].text == "Fallback response"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metadata", "expected_output_retries", "expected_request_limit"),
+    (
+        ({}, 1, 8),
+        ({"group_selector": True}, 0, 1),
+        ({"group_call": True}, 0, 1),
+    ),
+    ids=("solo", "selector", "responder"),
+)
+async def test_group_calls_disable_pydantic_output_and_request_retries(
+    metadata: dict[str, bool],
+    expected_output_retries: int,
+    expected_request_limit: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    real_agent = engine_module.Agent
+    real_usage_limits = engine_module.UsageLimits
+
+    def recorded_agent(*args: Any, **kwargs: Any) -> Any:
+        captured["retries"] = kwargs["retries"]
+        return real_agent(*args, **kwargs)
+
+    def recorded_usage_limits(**kwargs: Any) -> UsageLimits:
+        captured["request_limit"] = kwargs["request_limit"]
+        return real_usage_limits(**kwargs)
+
+    monkeypatch.setattr(engine_module, "Agent", recorded_agent)
+    monkeypatch.setattr(engine_module, "UsageLimits", recorded_usage_limits)
+    engine = CupcakeAgentEngine(
+        ProviderRegistry(),
+        model_factory=FixedFactory(TestModel(custom_output_text="bounded")),
+    )
+
+    events = await collect(
+        engine,
+        ModelRequest(
+            MOCK_DESCRIPTOR.id,
+            (CanonicalMessage("user", "Answer once"),),
+            metadata=metadata,
+        ),
+    )
+
+    assert events[-1].type is StreamEventType.FINISH
+    assert captured["retries"] == {"tools": 0, "output": expected_output_retries}
+    assert captured["request_limit"] == expected_request_limit
 
 
 @pytest.mark.asyncio

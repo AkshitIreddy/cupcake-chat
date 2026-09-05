@@ -227,14 +227,28 @@ class OpenAIResponsesAdapter(ProviderAdapter):
 
 
 def build_pydantic_model(
-    model_name: str, *, api_key: str | None = None, base_url: str | None = None
+    model_name: str,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    disable_retries: bool = False,
 ):
     """Build Pydantic AI's native OpenAI Responses model when installed."""
     try:
+        from openai import AsyncOpenAI
         from pydantic_ai.models.openai import OpenAIResponsesModel
         from pydantic_ai.providers.openai import OpenAIProvider
     except ImportError as exc:
         raise MissingProviderDependency("openai", "pydantic-ai-slim[openai]") from exc
-    return OpenAIResponsesModel(
-        model_name, provider=OpenAIProvider(api_key=api_key, base_url=base_url)
+    provider = (
+        OpenAIProvider(
+            openai_client=AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=0,
+            )
+        )
+        if disable_retries
+        else OpenAIProvider(api_key=api_key, base_url=base_url)
     )
+    return OpenAIResponsesModel(model_name, provider=provider)
