@@ -475,6 +475,8 @@ def test_code_execution_task_binds_project_code_and_persists_real_broker_evidenc
     assert request["request_type"] == "tool.preflight"
     assert request["payload"]["intent"]["arguments"]["execution_mode"] == "module_test"
     assert "WidgetTest" in request["payload"]["intent"]["arguments"]["source"]
+    executed, _ = runtime.handle("tasks.execute", {"runId": created["run"]["run_id"]})
+    assert executed["continuation"]["request"]["payload"]["intent"] == request["payload"]["intent"]
 
     completion = continuation["completion"]
     invocation_id = completion["invocationId"]

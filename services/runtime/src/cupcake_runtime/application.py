@@ -3806,6 +3806,7 @@ class RuntimeService:
             project_id=run.spec.project_id,
             tool_name=descriptor.name,
             tool_version=descriptor.version,
+            requested_at=run.created_at,
             arguments={
                 "source": source,
                 "input_files": [],
