@@ -40,6 +40,7 @@ fn run() -> Result<()> {
     let mut replay = ReplayGuard::default();
     let mut sequences: HashMap<Uuid, u64> = HashMap::new();
     let mut local_models_discovered = false;
+    let mut configured_providers = std::collections::HashSet::new();
 
     loop {
         let envelope: ProtocolEnvelope =
@@ -83,6 +84,23 @@ fn run() -> Result<()> {
                     thread::sleep(Duration::from_millis(1_500));
                 }
                 let result = match method {
+                    Some("providers.configure") => {
+                        let provider = envelope.payload["params"]["provider"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned();
+                        configured_providers.insert(provider);
+                        json!({"state":"ready"})
+                    }
+                    Some("test.clear_provider_memory") => {
+                        configured_providers.clear();
+                        json!({"cleared":true})
+                    }
+                    Some("conversations.participants.list") => json!([{
+                        "availability": {"status": if configured_providers.contains("cohere") {
+                            "ready"
+                        } else { "provider_unavailable" }}
+                    }]),
                     Some("local_models.discover") => {
                         local_models_discovered = true;
                         json!({

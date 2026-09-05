@@ -26,6 +26,39 @@ struct BrokerProcess {
     _data: TempDir,
 }
 
+#[cfg(windows)]
+#[test]
+fn saved_native_provider_is_restored_before_group_readiness_without_a_solo_send() {
+    let mut broker = BrokerProcess::launch();
+    let mut request = |method: &str, params: Value| {
+        broker.send(
+            uuid_v7(),
+            MessageType::Request,
+            object(json!({"method":method,"params":params})),
+        );
+        let response = broker.read();
+        assert_eq!(response.payload["ok"], true);
+        response.payload
+    };
+    let connected = request(
+        "providers.connect",
+        json!({
+            "provider":"cohere", "secret":"fixture-group-credential"
+        }),
+    );
+    assert_eq!(connected["result"]["configured"], true);
+    // Lose only runtime memory, retaining the real isolated Windows vault.
+    request("test.clear_provider_memory", json!({}));
+    let roster = request(
+        "conversations.participants.list",
+        json!({"conversationId":"fixture"}),
+    );
+    assert_eq!(roster["result"][0]["availability"]["status"], "ready");
+    assert!(!Value::Object(roster)
+        .to_string()
+        .contains("fixture-group-credential"));
+}
+
 impl BrokerProcess {
     fn launch() -> Self {
         let data = tempfile::tempdir().unwrap();

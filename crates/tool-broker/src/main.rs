@@ -962,8 +962,33 @@ fn dispatch_secure_request(
     let Some(method) = payload.get("method").and_then(Value::as_str) else {
         return Ok(None);
     };
-    if matches!(method, "app.bootstrap" | "models.list" | "providers.status") {
+    if matches!(
+        method,
+        "app.bootstrap"
+            | "models.list"
+            | "providers.status"
+            | "conversations.participants.list"
+            | "groups.turn.preflight"
+            | "groups.turn.send"
+    ) {
         hydrate_named_compatible_providers(runtime, vault)?;
+        // Group readiness and execution do not pass through chat.send. Restore
+        // saved native credentials before either path inspects the adapters.
+        // Trusted hydration performs no provider request and exposes no secret
+        // to the renderer, including while the workspace is offline.
+        for provider in provider_names()
+            .iter()
+            .filter(|p| !is_named_compatible_provider(p))
+        {
+            if let Some(secret) = vault.inner().load(&provider_account(provider))? {
+                configure_provider(
+                    provider,
+                    secret.expose(),
+                    &object(json!({"trustedHydration":true})),
+                    runtime,
+                )?;
+            }
+        }
     }
     match method {
         "providers.status" => {
