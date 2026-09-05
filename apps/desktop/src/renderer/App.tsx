@@ -3010,6 +3010,16 @@ function ChatView({
           models={workspace.models}
           onAdd={() => void openAddCupcake()}
           onEdit={(persona) => openPersonaEditor(persona)}
+          onEnabledChange={async (participant, enabled) => {
+            setGroupUiError('');
+            try {
+              await workspace.setConversationParticipantEnabled(participant.id, enabled);
+            } catch (reason) {
+              setGroupUiError(
+                reason instanceof Error ? reason.message : 'The Cupcake could not be updated.',
+              );
+            }
+          }}
           onRemove={async (participant) => {
             setGroupUiError('');
             try {

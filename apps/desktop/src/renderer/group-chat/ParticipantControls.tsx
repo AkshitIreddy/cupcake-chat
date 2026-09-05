@@ -30,6 +30,7 @@ export function ParticipantTray({
   onAdd,
   onEdit,
   onRemove,
+  onEnabledChange,
   onSettingsChange,
 }: {
   participants: ConversationParticipant[];
@@ -38,6 +39,7 @@ export function ParticipantTray({
   onAdd: () => void;
   onEdit: (persona: CupcakePersona) => void;
   onRemove: (participant: ConversationParticipant) => void | Promise<void>;
+  onEnabledChange: (participant: ConversationParticipant, enabled: boolean) => Promise<void>;
   onSettingsChange: (patch: {
     strategy?: GroupConversationStrategy;
     maxReplies?: 1 | 2 | 3;
@@ -45,6 +47,7 @@ export function ParticipantTray({
   }) => void | Promise<void>;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [changingMember, setChangingMember] = useState<string | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const sorted = useMemo(
     () => [...participants].sort((left, right) => left.position - right.position),
@@ -88,20 +91,22 @@ export function ParticipantTray({
             className={`participant-chip ${participant.availability.status !== 'ready' ? 'needs-attention' : ''}`}
             key={participant.id}
             onClick={() => onEdit(participant.persona)}
-            aria-label={`Edit ${participant.persona.name}, ${participant.persona.role}. ${participant.availability.message}`}
+            aria-label={`Edit ${participant.persona.name}, ${participant.persona.role}. ${participant.enabled ? participant.availability.message : 'Paused in this conversation'}`}
           >
             <PersonaPortrait value={participant.persona.avatar} name={participant.persona.name} />
             <span>
               <strong>{participant.persona.name}</strong>
               <small>
-                {participant.availability.status === 'ready'
-                  ? participant.persona.role
-                  : 'Needs attention'}
+                {!participant.enabled
+                  ? 'Paused'
+                  : participant.availability.status === 'ready'
+                    ? participant.persona.role
+                    : 'Needs attention'}
               </small>
             </span>
             {participant.isLead && <Sparkles size={12} aria-label="Smart lead" />}
             <i
-              className={`participant-state is-${participant.availability.status}`}
+              className={`participant-state is-${participant.enabled ? participant.availability.status : 'paused'}`}
               aria-hidden="true"
             />
           </button>
@@ -110,29 +115,31 @@ export function ParticipantTray({
           <Plus size={15} /> Add Cupcake
         </button>
       </div>
-      <div className="participant-tray__summary">
-        <span className={route.allLocal ? 'is-local' : 'is-mixed'}>
-          {route.allLocal ? <HardDrive size={13} /> : <Cloud size={13} />}
-          <strong>{route.label}</strong>
-          <small>{route.detail}</small>
-        </span>
-        {sorted.length > 0 && (
-          <button
-            type="button"
-            className="group-settings-trigger"
-            onClick={() => setSettingsOpen((value) => !value)}
-            aria-expanded={settingsOpen}
-            aria-controls="group-response-settings"
-            aria-haspopup="dialog"
-            data-testid="group-settings"
-          >
-            <Settings2 size={14} />
-            {strategy === 'smart-selective' ? 'Smart selection' : 'Mentions only'}
-            <b>Up to {maxReplies}</b>
-            <ChevronDown size={13} />
-          </button>
-        )}
-      </div>
+      {sorted.length > 0 && (
+        <div className="participant-tray__summary">
+          <span className={route.allLocal ? 'is-local' : 'is-mixed'}>
+            {route.allLocal ? <HardDrive size={13} /> : <Cloud size={13} />}
+            <strong>{route.label}</strong>
+            <small>{route.detail}</small>
+          </span>
+          {sorted.length > 0 && (
+            <button
+              type="button"
+              className="group-settings-trigger"
+              onClick={() => setSettingsOpen((value) => !value)}
+              aria-expanded={settingsOpen}
+              aria-controls="group-response-settings"
+              aria-haspopup="dialog"
+              data-testid="group-settings"
+            >
+              <Settings2 size={14} />
+              {strategy === 'smart-selective' ? 'Smart selection' : 'Mentions only'}
+              <b>Up to {maxReplies}</b>
+              <ChevronDown size={13} />
+            </button>
+          )}
+        </div>
+      )}
       {settingsOpen && (
         <div
           className="group-settings-popover"
@@ -225,7 +232,7 @@ export function ParticipantTray({
                   <option
                     key={participant.id}
                     value={participant.id}
-                    disabled={participant.availability.status !== 'ready'}
+                    disabled={!participant.enabled || participant.availability.status !== 'ready'}
                   >
                     {participant.persona.name} · {participant.persona.modelId}
                   </option>
@@ -248,8 +255,29 @@ export function ParticipantTray({
                 />
                 <span>
                   <strong>{participant.persona.name}</strong>
-                  <small>{participant.availability.message}</small>
+                  <small>
+                    {participant.enabled
+                      ? participant.availability.message
+                      : 'Paused · excluded from new turns'}
+                  </small>
                 </span>
+                <button
+                  type="button"
+                  disabled={changingMember !== null}
+                  aria-label={`${participant.enabled ? 'Pause' : 'Resume'} ${participant.persona.name} in this conversation`}
+                  onClick={() => {
+                    setChangingMember(participant.id);
+                    void onEnabledChange(participant, !participant.enabled).finally(() =>
+                      setChangingMember(null),
+                    );
+                  }}
+                >
+                  {changingMember === participant.id
+                    ? 'Saving…'
+                    : participant.enabled
+                      ? 'Pause'
+                      : 'Resume'}
+                </button>
                 <button type="button" onClick={() => onEdit(participant.persona)}>
                   Edit
                 </button>

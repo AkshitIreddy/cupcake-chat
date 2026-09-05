@@ -1,7 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 
 type GroupScenario =
-  'complete' | 'stop' | 'cloud' | 'unavailable' | 'all-disabled' | 'interrupted' | 'unloaded-local';
+  | 'complete'
+  | 'stop'
+  | 'cloud'
+  | 'unavailable'
+  | 'all-disabled'
+  | 'interrupted'
+  | 'unloaded-local'
+  | 'solo';
 
 const ids = {
   project: '01a07000-0000-7000-8000-000000000001',
@@ -114,6 +121,7 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
               ];
       if (scenario === 'all-disabled')
         participants = participants.map((item) => ({ ...item, enabled: false }));
+      if (scenario === 'solo') participants = [];
       const allPersonas = [mira, reviewer, cloud, broken];
       const conversation = {
         id: ids.conversation,
@@ -676,6 +684,13 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
                 participants = [...participants, saved];
                 return { ok: true, result: saved };
               }
+              if (method === 'conversations.participants.update') {
+                const saved = participants.find((item) => item.id === params.participantId);
+                if (!saved || typeof params.enabled !== 'boolean')
+                  throw new Error('Invalid member update');
+                saved.enabled = params.enabled;
+                return { ok: true, result: saved };
+              }
               return { ok: true, result: results[method] };
             },
           },
@@ -703,6 +718,63 @@ async function chooseMention(page: Page, handle: string) {
   await option.click();
   await expect(composer).toHaveValue(new RegExp(`^@${handle}\\s`));
 }
+
+test('solo chats offer Cupcakes without claiming a group route', async ({ page }) => {
+  await installGroupBridge(page, 'solo');
+  await openGroupChat(page);
+  await expect(page.getByTestId('add-cupcake')).toBeVisible();
+  await expect(page.locator('.participant-tray__summary')).toHaveCount(0);
+});
+
+test('a paused member is visible and can rejoin mention choices without inference', async ({
+  page,
+}, testInfo) => {
+  await installGroupBridge(page, 'complete');
+  await openGroupChat(page);
+  await page.getByTestId('group-settings').click();
+  const roster = page.locator('.group-roster-manage > div').filter({ hasText: 'Mira' }).last();
+  await roster
+    .getByRole('button', { name: 'Pause Mira in this conversation', exact: true })
+    .click();
+  await expect(roster).toContainText('Paused · excluded from new turns');
+  await page.getByRole('button', { name: 'Close group response settings' }).click();
+  await expect(page.locator('.participant-chip').last()).toContainText('Paused');
+  await page.getByLabel('Message Cupcake').fill('@mira-review');
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await page.getByLabel('Message Cupcake').fill('');
+  await page.getByTestId('group-settings').click();
+  await page.screenshot({
+    path: `E:/temp/cupcake-overhaul-20260905/paused-roster-${testInfo.project.name}.png`,
+  });
+  await roster
+    .getByRole('button', { name: 'Resume Mira in this conversation', exact: true })
+    .click();
+  await expect(roster).toContainText('Ready to answer');
+  await page.getByRole('button', { name: 'Close group response settings' }).click();
+  await page.getByLabel('Message Cupcake').fill('@mira-review');
+  await expect(page.getByRole('option').filter({ hasText: '@mira-review' })).toBeVisible();
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __groupQa: { logs: Array<{ method: string; params: Record<string, unknown> }> };
+        }
+      ).__groupQa.logs,
+  );
+  expect(
+    calls
+      .filter((call) => call.method === 'conversations.participants.update')
+      .map((call) => call.params.enabled),
+  ).toEqual([false, true]);
+  expect(
+    calls.filter(
+      (call) =>
+        call.method === 'groups.turn.send' ||
+        call.method === 'chat.send' ||
+        call.method === 'local_models.cupcake.load',
+    ),
+  ).toHaveLength(0);
+});
 
 test('mention routing preserves duplicate-name identity, keyboard focus, order, and speaker rows', async ({
   page,

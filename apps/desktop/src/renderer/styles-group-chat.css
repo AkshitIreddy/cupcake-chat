@@ -103,6 +103,11 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger), transparent 80%);
 }
 
+.participant-state.is-paused {
+  background: var(--muted);
+  box-shadow: none;
+}
+
 .participant-chip.needs-attention {
   border-style: dashed;
   background: color-mix(in srgb, var(--paper), var(--berry-soft) 18%);
@@ -111,8 +116,8 @@
 .participant-add {
   padding: 0 13px;
   border-style: dashed;
-  color: var(--berry-dark);
-  background: transparent;
+  color: var(--cocoa);
+  background: color-mix(in srgb, var(--paper), transparent 6%);
   font-size: 12px;
   font-weight: 700;
 }
@@ -318,7 +323,7 @@
 
 .group-roster-manage > div {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
   padding: 5px;
