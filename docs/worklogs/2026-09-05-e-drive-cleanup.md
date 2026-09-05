@@ -40,6 +40,33 @@ to `E:\uesless`, not reclaimed space.
 non-deleting validation after the conversion found all 79 old targets already absent, so it created
 no empty archive batch and moved no data.
 
+## Final reversible archive pass
+
+After the current package build started, the final acceptance owner released an additional fixed
+allowlist of 18 obsolete CupcakeAI directories. A fresh preflight verified that every source still
+resolved beneath either `E:\temp\cupcake-overhaul-20260905` or `E:\temp\cupcakeagi-out`, all source
+ancestors and `E:\uesless` were ordinary directories, the trees contained no reparse points, no
+active process referred to them, and none overlapped a protected path.
+
+The worker moved all 18 directories to
+`E:\uesless\CupcakeAI-cleanup-final-20260905-145615-e8f0a120`. The batch contains 3,022 files with
+12,951,766,048 logical bytes (about 12.06 GiB). Because this was a same-volume move from E: to E:,
+it did not reclaim drive capacity. No deletion occurred and the Recycle Bin was not involved.
+
+`archive-manifest.json` maps every original directory and relative file path to its archive path. It
+records each file's size plus matching pre-move and post-move SHA-256 values. The completed manifest
+SHA-256 is `C54EE9D4736519A3E20D4B84183F5650A3A4FD1FE511C4326893E7B75602F04E`. Independent
+postflight checks found all 18 original paths absent, all 18 archive destinations present, and zero
+recorded hash mismatches. The guarded restore worker is preserved at
+`E:\temp\cupcake-overhaul-20260905\restore-final-cleanup.ps1`; it refuses occupied original paths
+and verifies archived hashes before moving anything back.
+
+Three pytest trees containing reparse points remained in place. The complete Guarded security task
+evidence at
+`E:\temp\cupcake-security-native-20260905-provisional-green\final-task-4ad18e1-guarded-r1` also
+remained intact, together with current owner and WebView profiles, local model weights and runtime
+packs, build targets, rollback snapshots, and current group, browser, native, and security evidence.
+
 ## Protected paths
 
 The audit did not modify the current owner profile, current package/build roots, current overhaul
