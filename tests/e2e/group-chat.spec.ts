@@ -614,7 +614,12 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
                   localRuntimes: [],
                   suggestionsEnabled: false,
                 },
-                'settings.list': { 'onboarding.completed_v1': true },
+                'settings.list': {
+                  'onboarding.completed_v1': true,
+                  ...(scenario === 'unloaded-local'
+                    ? { 'appearance.wallpaper': 'copper-workshop' }
+                    : {}),
+                },
                 'models.list': [cloudModel],
                 'tasks.list': [],
                 'memory.list': [],

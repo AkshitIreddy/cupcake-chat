@@ -371,6 +371,14 @@
   backdrop-filter: blur(9px) saturate(0.85);
 }
 
+.group-dialog,
+.group-settings-popover {
+  --scrollbar-track: var(--paper);
+  --scrollbar-thumb: color-mix(in srgb, var(--muted), var(--paper) 35%);
+  --scrollbar-thumb-hover: var(--muted);
+  --scrollbar-thumb-active: var(--berry);
+}
+
 .group-dialog {
   display: grid;
   width: min(980px, calc(100vw - 48px));
