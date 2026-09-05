@@ -1308,12 +1308,8 @@ async function verifyTaskExecution(activePage, task, artifactRecord, expectedRev
     };
   }
   try {
-    const result = await runtimeRequest(
-      activePage,
-      'tasks.execute',
-      { runId: task.run_id },
-      120_000,
-    );
+    const savedRun = await runtimeRequest(activePage, 'tasks.get', { runId: task.run_id }, 120_000);
+    const result = { run: savedRun, toolEvidence: savedRun.tool_evidence };
     const projectId = artifactRecord.project_id ?? artifactRecord.projectId;
     const artifactHistory = projectId
       ? await runtimeRequest(
