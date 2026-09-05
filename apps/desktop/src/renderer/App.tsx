@@ -22,6 +22,7 @@ import { FormDialog } from './FormDialog';
 import { RichMarkdown } from './RichMarkdown';
 import { ContentProtectionSettings } from './ContentProtectionSettings';
 import { BackupRecoverySettings } from './BackupRecoverySettings';
+import { summarizeArtifactTestEvidence } from './artifact-test-result';
 import {
   MODEL_SIZE_OPTIONS,
   MODEL_TASK_OPTIONS,
@@ -51,6 +52,8 @@ import {
 } from './model-selection';
 import type {
   Conversation,
+  CupcakePersona,
+  GroupMention,
   LiveChatMessage,
   MemoryRecord,
   ModelDescriptor,
@@ -59,6 +62,22 @@ import type {
   ToolDescriptor,
   View,
 } from './types';
+import { PersonaEditor } from './group-chat/PersonaEditor';
+import { AddCupcakeDialog, ParticipantTray } from './group-chat/ParticipantControls';
+import {
+  GroupMentionMenu,
+  buildMentionMenuItems,
+  type MentionMenuItem,
+} from './group-chat/MentionMenu';
+import { GroupTurnDisclosureDialog, GroupTurnRail } from './group-chat/GroupTurnUI';
+import { PersonaPortrait } from './group-chat/PersonaPortrait';
+import {
+  insertParticipantMention,
+  mentionTokenAtCaret,
+  reconcileMentions,
+  type MentionToken,
+  type PersonaDraft,
+} from './group-chat/persona-utils';
 import {
   WorkspaceProvider,
   automaticRamBudgetGb,
@@ -69,6 +88,7 @@ import {
   type ArtifactRevisionRecord,
   type AttachmentRecord,
   type HardwareRecord,
+  type PreparedGroupTurn,
   type LocalRuntimeRecord,
   type MessageRecord,
   type OutboundIntent,
@@ -963,12 +983,16 @@ function Composer({
   onModel,
   selectedModel,
   offline,
+  groupMode = false,
+  onRepairPersona,
 }: {
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
   compact?: boolean;
   onModel: () => void;
   selectedModel: ModelDescriptor | null;
   offline: boolean;
+  groupMode?: boolean;
+  onRepairPersona?: (persona: CupcakePersona) => void;
 }) {
   const workspace = useWorkspace();
   const modelReady = selectedModel ? modelIsAvailableInChat(selectedModel) : false;
@@ -980,6 +1004,12 @@ function Composer({
   const [value, setValue] = useState('');
   const [reference, setReference] = useState(false);
   const [references, setReferences] = useState<ReferenceRecord[]>([]);
+  const [mentions, setMentions] = useState<GroupMention[]>([]);
+  const [mentionToken, setMentionToken] = useState<MentionToken | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [pendingGroupDisclosure, setPendingGroupDisclosure] = useState<PreparedGroupTurn | null>(
+    null,
+  );
   const [pendingDisclosure, setPendingDisclosure] = useState<null | {
     input: {
       content: string;
@@ -1004,6 +1034,14 @@ function Composer({
   const [attachments, setAttachments] = useState<StagedAttachmentRecord[]>([]);
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const draftIdentityRef = useRef('');
+  draftIdentityRef.current = JSON.stringify({
+    conversationId: workspace.activeConversationId,
+    value,
+    attachments: attachments.map((item) => item.handleId),
+    references: references.map((item) => `${item.type}:${item.id}`),
+    mentions,
+  });
   useEffect(() => {
     const draft = (event: Event) => {
       const prompt = (event as CustomEvent<unknown>).detail;
@@ -1020,6 +1058,8 @@ function Composer({
     setValue('');
     setAttachments([]);
     setReferences([]);
+    setMentions([]);
+    setMentionToken(null);
     setReference(false);
     const desktop = window.cupcake;
     if (desktop) {
@@ -1043,10 +1083,81 @@ function Composer({
       setSending(false);
     }
   };
+  const submitGroup = async (prepared: PreparedGroupTurn) => {
+    const submittedDraftIdentity = draftIdentityRef.current;
+    setSending(true);
+    setDisclosureError('');
+    try {
+      const success = await workspace.sendGroupTurn(prepared);
+      if (success) {
+        setPendingGroupDisclosure(null);
+        if (draftIdentityRef.current === submittedDraftIdentity) {
+          await clearSuccessfulDraft(prepared.input.attachments);
+        } else {
+          const desktop = window.cupcake;
+          if (desktop)
+            await Promise.allSettled(
+              prepared.input.attachments.map((item) => desktop.dialog.releaseHandle(item.handleId)),
+            );
+        }
+      } else {
+        setDisclosureError('Group turn not sent. Your draft and file access are still available.');
+      }
+      return success;
+    } catch (reason) {
+      setDisclosureError(reason instanceof Error ? reason.message : 'Group turn could not be sent');
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
   const send = async () => {
     if (sending) return;
     const clean = value.trim();
     if (!clean && attachments.length === 0) return;
+    if (groupMode) {
+      if (!workspace.activeConversationId || !workspace.activeBranchId) {
+        setDisclosureError('Open this conversation fully before starting a group turn.');
+        return;
+      }
+      if (workspace.groupSettings?.strategy === 'mentions-only' && mentions.length === 0) {
+        setDisclosureError('Mention at least one Cupcake for a Mentions only turn.');
+        return;
+      }
+      const maxReplies = workspace.groupSettings?.maxReplies ?? 2;
+      if (mentions.length > maxReplies) {
+        setDisclosureError(`Choose at most ${maxReplies} Cupcakes for this turn.`);
+        return;
+      }
+      setSending(true);
+      setDisclosureError('');
+      const activeConversation = workspace.conversations.find(
+        (conversation) => conversation.id === workspace.activeConversationId,
+      );
+      try {
+        const prepared = await workspace.preflightGroupTurn({
+          content: clean ? value : 'Please review the attached file.',
+          conversationId: workspace.activeConversationId,
+          branchId: workspace.activeBranchId,
+          projectId: activeConversation
+            ? (activeConversation.projectId ?? null)
+            : workspace.activeProjectId,
+          mentions,
+          attachments,
+          references,
+        });
+        if (!prepared.preflight.sendable || prepared.preflight.confirmationRequired) {
+          setPendingGroupDisclosure(prepared);
+          return;
+        }
+        await submitGroup(prepared);
+      } catch (reason) {
+        setDisclosureError(reason instanceof Error ? reason.message : 'Group preflight failed.');
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     if (!selectedModel) {
       setDisclosureError('Choose a ready model before sending. Your draft is still here.');
       return;
@@ -1159,11 +1270,47 @@ function Composer({
       ]);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (groupMode && mentionToken) {
+      const selectable = mentionItems
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => !item.disabled);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMentionToken(null);
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const current = selectable.findIndex(({ index }) => index === mentionActiveIndex);
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const next =
+          selectable[(Math.max(0, current) + delta + selectable.length) % selectable.length];
+        if (next) setMentionActiveIndex(next.index);
+        return;
+      }
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        const next = event.key === 'Home' ? selectable[0] : selectable.at(-1);
+        if (next) setMentionActiveIndex(next.index);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        const item = mentionItems[mentionActiveIndex];
+        if (item && !item.disabled) {
+          selectMentionItem(item);
+        } else if (item?.kind === 'participant') {
+          setDisclosureError(
+            `${item.participant.persona.name} needs attention before they can be mentioned.`,
+          );
+        }
+        return;
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void send();
     }
-    if (event.key === '@') setReference(true);
   };
   const referenceOptions: ReferenceRecord[] = workspace.fixtureMode
     ? [
@@ -1180,6 +1327,60 @@ function Composer({
         activeConversationId: workspace.activeConversationId,
       });
   const referenceScopeKey = referenceOptions.map((item) => `${item.type}:${item.id}`).join('|');
+  const mentionItems = buildMentionMenuItems(
+    workspace.participants,
+    referenceOptions,
+    mentionToken?.query ?? '',
+  );
+  const mentionItemKey = mentionItems.map((item) => `${item.key}:${item.disabled}`).join('|');
+  useEffect(() => {
+    if (!mentionToken) return;
+    const current = mentionItems[mentionActiveIndex];
+    if (current && !current.disabled) return;
+    const firstEnabled = mentionItems.findIndex((item) => !item.disabled);
+    setMentionActiveIndex(firstEnabled >= 0 ? firstEnabled : 0);
+  }, [mentionActiveIndex, mentionItemKey, mentionToken]);
+  function selectMentionItem(item: MentionMenuItem) {
+    if (!mentionToken) return;
+    if (item.kind === 'participant') {
+      if (mentions.some((mention) => mention.participantId === item.participant.id)) {
+        setDisclosureError(`@${item.participant.persona.handle} is already selected.`);
+        setMentionToken(null);
+        return;
+      }
+      const inserted = insertParticipantMention(value, mentionToken, item.participant);
+      setValue(inserted.content);
+      setMentions((current) =>
+        [...reconcileMentions(value, inserted.content, current), inserted.mention].sort(
+          (a, b) => a.start - b.start,
+        ),
+      );
+      setMentionToken(null);
+      setDisclosureError('');
+      window.setTimeout(() => {
+        textRef.current?.focus();
+        textRef.current?.setSelectionRange(inserted.caret, inserted.caret);
+      }, 0);
+      return;
+    }
+    const visibleToken = `@${item.reference.label}`;
+    const suffix = value.slice(mentionToken.end);
+    const insertion = `${visibleToken}${!suffix || !/^\s/.test(suffix) ? ' ' : ''}`;
+    const content = `${value.slice(0, mentionToken.start)}${insertion}${suffix}`;
+    const caret = mentionToken.start + insertion.length;
+    setValue(content);
+    setMentions((current) => reconcileMentions(value, content, current));
+    setReferences((current) =>
+      current.some((entry) => entry.id === item.reference.id && entry.type === item.reference.type)
+        ? current
+        : [...current, item.reference],
+    );
+    setMentionToken(null);
+    window.setTimeout(() => {
+      textRef.current?.focus();
+      textRef.current?.setSelectionRange(caret, caret);
+    }, 0);
+  }
   useEffect(() => {
     const allowed = new Set(referenceScopeKey.split('|').filter(Boolean));
     setReferences((current) => {
@@ -1199,7 +1400,16 @@ function Composer({
   }, [routeAtSend]);
   return (
     <div className={cx('composer', compact && 'composer--compact')}>
-      {reference && (
+      {groupMode && mentionToken && (
+        <GroupMentionMenu
+          items={mentionItems}
+          activeIndex={mentionActiveIndex}
+          onActiveIndex={setMentionActiveIndex}
+          onSelect={selectMentionItem}
+          onRepair={(participant) => onRepairPersona?.(participant.persona)}
+        />
+      )}
+      {!groupMode && reference && (
         <div className="reference-popover">
           <span>Reference</span>
           {referenceOptions.slice(0, 12).map((item) => (
@@ -1243,7 +1453,11 @@ function Composer({
             <span key={file.handleId}>
               <Icon name="file" />
               {file.name}
-              <RouteBadge route={routeAtSend === 'cloud' ? 'Cloud' : 'Local'} />
+              {groupMode ? (
+                <small className="group-context-route">Bound per Cupcake</small>
+              ) : (
+                <RouteBadge route={routeAtSend === 'cloud' ? 'Cloud' : 'Local'} />
+              )}
               <button
                 aria-label={`Remove ${file.name}`}
                 onClick={() => {
@@ -1285,13 +1499,46 @@ function Composer({
       <textarea
         ref={textRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          const token = mentionTokenAtCaret(nextValue, event.target.selectionStart);
+          setMentions((current) => reconcileMentions(value, nextValue, current));
+          setValue(nextValue);
+          if (groupMode) {
+            setMentionToken(token);
+            setMentionActiveIndex(0);
+          } else if (token) {
+            setReference(true);
+          }
+        }}
+        onClick={(event) => {
+          if (!groupMode) return;
+          setMentionToken(
+            mentionTokenAtCaret(event.currentTarget.value, event.currentTarget.selectionStart),
+          );
+        }}
+        onSelect={(event) => {
+          if (!groupMode) return;
+          setMentionToken(
+            mentionTokenAtCaret(event.currentTarget.value, event.currentTarget.selectionStart),
+          );
+        }}
         onKeyDown={onKeyDown}
         rows={compact ? 2 : 3}
         aria-label="Message Cupcake"
+        aria-expanded={groupMode ? Boolean(mentionToken) : undefined}
+        aria-autocomplete={groupMode ? 'list' : undefined}
+        aria-controls={groupMode && mentionToken ? 'composer-mention-options' : undefined}
+        aria-activedescendant={
+          groupMode && mentionToken && mentionItems[mentionActiveIndex]
+            ? `mention-option-${mentionActiveIndex}`
+            : undefined
+        }
         placeholder={
           compact
-            ? 'Ask a follow-up…'
+            ? groupMode
+              ? 'Ask the group, or type @ to choose who answers…'
+              : 'Ask a follow-up…'
             : 'Message Cupcake — add files or type @ to reference your work'
         }
       />
@@ -1305,10 +1552,19 @@ function Composer({
           >
             <Icon name="paperclip" />
           </button>
-          <span className="composer-chip" title={workspace.settings.enabledToolIds.join(', ')}>
-            <Icon name="tool" size={14} />
-            {workspace.settings.enabledToolIds.length} tools
-          </span>
+          {groupMode ? (
+            <span
+              className="composer-chip"
+              title="Group conversations are chat-only in this version"
+            >
+              <Icon name="chat" size={14} /> Chat only · no tools
+            </span>
+          ) : (
+            <span className="composer-chip" title={workspace.settings.enabledToolIds.join(', ')}>
+              <Icon name="tool" size={14} />
+              {workspace.settings.enabledToolIds.length} tools
+            </span>
+          )}
           <span className="composer-chip" title="Active privacy boundary">
             <Icon name="project" size={14} />
             {workspace.projects.find((project) => project.id === workspace.activeProjectId)?.name ??
@@ -1316,27 +1572,44 @@ function Composer({
           </span>
         </div>
         <div className="composer__send">
-          <button className="model-chip" onClick={onModel}>
-            {selectedModel ? (
-              <PublisherLogo
-                publisher={publisherForModel(selectedModel)}
-                className="composer-model-logo"
-              />
-            ) : (
-              <Icon name="model" size={15} />
-            )}
-            <span>
-              {!selectedModel
-                ? 'Choose a model'
-                : !modelReady
-                  ? `${selectedModel.name} unavailable`
-                  : offline && selectedModel.route !== 'Local'
-                    ? 'Choose a local model'
-                    : selectedModel.name}
+          {groupMode ? (
+            <span
+              className="model-chip group-model-chip"
+              title="Each Cupcake keeps its exact saved route"
+            >
+              <Icon name="chat" size={15} />
+              <span>
+                {workspace.participants.filter((item) => item.enabled).length}{' '}
+                {workspace.participants.filter((item) => item.enabled).length === 1
+                  ? 'Cupcake'
+                  : 'Cupcakes'}
+                {' · '}
+                {workspace.groupSettings?.strategy === 'mentions-only' ? 'Mentions only' : 'Smart'}
+              </span>
             </span>
-            <Icon name="chevron" size={13} />
-          </button>
-          {selectedModel && modelReady && supportedReasoning.length > 1 && (
+          ) : (
+            <button className="model-chip" onClick={onModel}>
+              {selectedModel ? (
+                <PublisherLogo
+                  publisher={publisherForModel(selectedModel)}
+                  className="composer-model-logo"
+                />
+              ) : (
+                <Icon name="model" size={15} />
+              )}
+              <span>
+                {!selectedModel
+                  ? 'Choose a model'
+                  : !modelReady
+                    ? `${selectedModel.name} unavailable`
+                    : offline && selectedModel.route !== 'Local'
+                      ? 'Choose a local model'
+                      : selectedModel.name}
+              </span>
+              <Icon name="chevron" size={13} />
+            </button>
+          )}
+          {!groupMode && selectedModel && modelReady && supportedReasoning.length > 1 && (
             <button
               className="reason-chip"
               onClick={() => {
@@ -1365,11 +1638,17 @@ function Composer({
             onClick={() => void send()}
             disabled={
               (!value.trim() && attachments.length === 0) ||
-              !modelReady ||
-              (offline && selectedModel?.route === 'Cloud') ||
+              (!groupMode && !modelReady) ||
+              (!groupMode && offline && selectedModel?.route === 'Cloud') ||
               sending
             }
-            aria-label={modelReady ? 'Send message' : 'Choose a ready model before sending'}
+            aria-label={
+              groupMode
+                ? 'Send group message'
+                : modelReady
+                  ? 'Send message'
+                  : 'Choose a ready model before sending'
+            }
           >
             <Icon name="send" size={18} />
           </button>
@@ -1394,7 +1673,7 @@ function Composer({
           </span>
         </div>
       )}
-      {offline && selectedModel?.route === 'Cloud' && (
+      {!groupMode && offline && selectedModel?.route === 'Cloud' && (
         <p className="field-error" role="alert">
           Offline mode blocks cloud sends. Choose a local model to continue.
         </p>
@@ -1484,6 +1763,21 @@ function Composer({
             </footer>
           </section>
         </div>
+      )}
+      {pendingGroupDisclosure && (
+        <GroupTurnDisclosureDialog
+          preflight={pendingGroupDisclosure.preflight}
+          attachments={pendingGroupDisclosure.input.attachments}
+          references={pendingGroupDisclosure.input.references}
+          pending={sending}
+          error={disclosureError}
+          onCancel={() => setPendingGroupDisclosure(null)}
+          onConfirm={() => void submitGroup(pendingGroupDisclosure)}
+          onRepair={(speaker) => {
+            setPendingGroupDisclosure(null);
+            onRepairPersona?.(speaker.persona);
+          }}
+        />
       )}
     </div>
   );
@@ -1688,6 +1982,7 @@ function ChatsView({
 
 function MessageActions({
   user = false,
+  groupMessage = false,
   message,
   onCopy,
   onRetry,
@@ -1696,6 +1991,7 @@ function MessageActions({
   onContinue,
 }: {
   user?: boolean;
+  groupMessage?: boolean;
   message?: MessageRecord;
   onCopy?: () => void;
   onRetry?: () => void;
@@ -1713,12 +2009,12 @@ function MessageActions({
       >
         <Icon name="copy" />
       </button>
-      {!user && (
+      {!user && !groupMessage && (
         <button aria-label="Retry response" title="Retry" onClick={onRetry} disabled={!onRetry}>
           <Icon name="retry" />
         </button>
       )}
-      {user && onEdit && (
+      {user && !groupMessage && onEdit && (
         <button aria-label="Edit message" title="Edit" onClick={onEdit}>
           <Icon name="edit" />
         </button>
@@ -1731,11 +2027,12 @@ function MessageActions({
       >
         <Icon name="branch" />
       </button>
-      {!user && onContinue && (
+      {!user && !groupMessage && onContinue && (
         <button aria-label="Continue response" title="Continue" onClick={onContinue}>
           <Icon name="play" />
         </button>
       )}
+      {groupMessage && <span className="group-route-locked">Roster route</span>}
     </div>
   );
 }
@@ -2163,6 +2460,8 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
               />
             ) : message.role === 'status' ? (
               <Icon name="task" />
+            ) : message.speaker ? (
+              <PersonaPortrait value={message.speaker.avatar} name={message.speaker.name} />
             ) : (
               <CupcakePortrait
                 value={workspace.settings.assistantAvatar}
@@ -2173,11 +2472,19 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
           <div className={cx('message', message.role === 'user' && 'message--user')}>
             <div className="message-meta">
               <strong>
-                {message.role === 'user' ? 'You' : message.role === 'status' ? 'Task' : 'Cupcake'}
+                {message.role === 'user'
+                  ? 'You'
+                  : message.role === 'status'
+                    ? 'Task'
+                    : (message.speaker?.name ?? 'Cupcake')}
               </strong>
               {message.role === 'assistant' && (
                 <span className="model-label">
-                  {message.modelId ?? selectedModel?.name ?? 'No model selected'}
+                  {message.speaker?.role && <b>{message.speaker.role} · </b>}
+                  {message.speaker?.modelId ??
+                    message.modelId ??
+                    selectedModel?.name ??
+                    'No model selected'}
                 </span>
               )}
               <time>
@@ -2259,41 +2566,43 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     </div>
                   </div>
                 )}
-                {message.finishReason === 'length' && !message.streaming && (
-                  <div className="response-limit-notice" role="note">
-                    <Icon name="info" size={17} />
-                    <div>
-                      <strong>Response limit reached</strong>
-                      <p>
-                        The provider stopped at its output limit. The partial response above is
-                        preserved.
-                      </p>
+                {message.finishReason === 'length' &&
+                  !message.streaming &&
+                  !message.groupTurnId && (
+                    <div className="response-limit-notice" role="note">
+                      <Icon name="info" size={17} />
+                      <div>
+                        <strong>Response limit reached</strong>
+                        <p>
+                          The provider stopped at its output limit. The partial response above is
+                          preserved.
+                        </p>
+                      </div>
+                      <button
+                        className="button button--primary"
+                        disabled={continuingMessageId !== null}
+                        onClick={() => {
+                          void (async () => {
+                            setContinuingMessageId(message.id);
+                            try {
+                              await runAction(message, 'continue');
+                            } catch (reason) {
+                              const text =
+                                reason instanceof Error
+                                  ? reason.message
+                                  : 'The response could not be continued.';
+                              setActionError(text);
+                              setActionNotice({ tone: 'error', text });
+                            } finally {
+                              setContinuingMessageId(null);
+                            }
+                          })();
+                        }}
+                      >
+                        {continuingMessageId === message.id ? 'Continuing…' : 'Continue response'}
+                      </button>
                     </div>
-                    <button
-                      className="button button--primary"
-                      disabled={continuingMessageId !== null}
-                      onClick={() => {
-                        void (async () => {
-                          setContinuingMessageId(message.id);
-                          try {
-                            await runAction(message, 'continue');
-                          } catch (reason) {
-                            const text =
-                              reason instanceof Error
-                                ? reason.message
-                                : 'The response could not be continued.';
-                            setActionError(text);
-                            setActionNotice({ tone: 'error', text });
-                          } finally {
-                            setContinuingMessageId(null);
-                          }
-                        })();
-                      }}
-                    >
-                      {continuingMessageId === message.id ? 'Continuing…' : 'Continue response'}
-                    </button>
-                  </div>
-                )}
+                  )}
                 {message.citations && message.citations.length > 0 && (
                   <div className="citations">
                     {message.citations.map((citation) => (
@@ -2317,6 +2626,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
             <div className="message-footer">
               <MessageActions
                 user={message.role === 'user'}
+                groupMessage={Boolean(message.groupTurnId)}
                 message={message}
                 onCopy={() => {
                   setActionNotice({ tone: 'pending', text: 'Copying message…' });
@@ -2337,10 +2647,12 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     );
                 }}
                 onRetry={
-                  message.role === 'assistant' ? () => void runAction(message, 'retry') : undefined
+                  message.role === 'assistant' && !message.groupTurnId
+                    ? () => void runAction(message, 'retry')
+                    : undefined
                 }
                 onEdit={
-                  message.role === 'user'
+                  message.role === 'user' && !message.groupTurnId
                     ? () => {
                         setEditTarget(message);
                         setEditContent(message.content);
@@ -2352,7 +2664,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                   void workspace.branchConversation(message.id, `Branch from ${message.role}`)
                 }
                 onContinue={
-                  message.role === 'assistant'
+                  message.role === 'assistant' && !message.groupTurnId
                     ? () => void runAction(message, 'continue')
                     : undefined
                 }
@@ -2537,6 +2849,13 @@ function ChatView({
   const workspace = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
   const [stopped, setStopped] = useState(false);
+  const [addCupcakeOpen, setAddCupcakeOpen] = useState(false);
+  const [personaEditorOpen, setPersonaEditorOpen] = useState(false);
+  const [editingPersona, setEditingPersona] = useState<CupcakePersona | null>(null);
+  const [addAfterCreate, setAddAfterCreate] = useState(false);
+  const [groupPendingId, setGroupPendingId] = useState<string | null>(null);
+  const [groupUiError, setGroupUiError] = useState('');
+  const [stoppingGroup, setStoppingGroup] = useState(false);
   const [followingLatest, setFollowingLatest] = useState(true);
   const conversationScrollRef = useRef<HTMLDivElement>(null);
   const conversationScroll = useRef(new ConversationScrollController());
@@ -2556,13 +2875,68 @@ function ChatView({
     setFollowingLatest(true);
   }, [workspace.activeConversationId]);
   useEffect(() => {
-    const stop = () => setStopped(true);
+    const stop = () => {
+      if (
+        workspace.activeRunConversationId === workspace.activeConversationId &&
+        !workspace.activeGroupTurn
+      )
+        setStopped(true);
+    };
     window.addEventListener('cupcake:stop', stop);
     return () => window.removeEventListener('cupcake:stop', stop);
-  }, []);
+  }, [
+    workspace.activeConversationId,
+    workspace.activeGroupTurn,
+    workspace.activeRunConversationId,
+  ]);
   useEffect(() => {
-    if (workspace.activeRunId) setStopped(false);
-  }, [workspace.activeRunId]);
+    if (
+      workspace.activeRunId &&
+      workspace.activeRunConversationId === workspace.activeConversationId
+    )
+      setStopped(false);
+  }, [workspace.activeConversationId, workspace.activeRunConversationId, workspace.activeRunId]);
+  const openAddCupcake = async () => {
+    setGroupUiError('');
+    if (!workspace.activeConversationId) {
+      const created = await workspace.createConversation('Group conversation');
+      if (!created) {
+        setGroupUiError('A conversation could not be created for this group.');
+        return;
+      }
+    }
+    setAddCupcakeOpen(true);
+  };
+  const openPersonaEditor = (persona?: CupcakePersona | null, shouldAdd = false) => {
+    setAddCupcakeOpen(false);
+    setEditingPersona(persona ?? null);
+    setAddAfterCreate(shouldAdd);
+    setGroupUiError('');
+    setPersonaEditorOpen(true);
+  };
+  const savePersona = async (draft: PersonaDraft) => {
+    setGroupPendingId(editingPersona?.id ?? 'new');
+    setGroupUiError('');
+    try {
+      if (editingPersona) {
+        await workspace.updatePersona(editingPersona.id, draft);
+      } else {
+        const created = await workspace.createPersona(draft);
+        if (addAfterCreate) await workspace.addConversationParticipant(created.id);
+      }
+      setPersonaEditorOpen(false);
+      setEditingPersona(null);
+      setAddAfterCreate(false);
+    } catch (reason) {
+      setGroupUiError(reason instanceof Error ? reason.message : 'The Cupcake could not be saved.');
+    } finally {
+      setGroupPendingId(null);
+    }
+  };
+  const groupTurnActive = Boolean(
+    workspace.activeGroupTurn &&
+    ['preparing', 'choosing', 'responding'].includes(workspace.activeGroupTurn.status),
+  );
   return (
     <div className={cx('chat-layout', contextOpen && 'is-context-open')}>
       <main className="chat-main">
@@ -2630,6 +3004,38 @@ function ChatView({
             </button>
           </div>
         </header>
+        <ParticipantTray
+          participants={workspace.participants}
+          settings={workspace.groupSettings}
+          models={workspace.models}
+          onAdd={() => void openAddCupcake()}
+          onEdit={(persona) => openPersonaEditor(persona)}
+          onRemove={async (participant) => {
+            setGroupUiError('');
+            try {
+              await workspace.removeConversationParticipant(participant.id);
+            } catch (reason) {
+              setGroupUiError(
+                reason instanceof Error ? reason.message : 'The Cupcake could not be removed.',
+              );
+            }
+          }}
+          onSettingsChange={async (patch) => {
+            setGroupUiError('');
+            try {
+              await workspace.updateGroupSettings(patch);
+            } catch (reason) {
+              setGroupUiError(
+                reason instanceof Error ? reason.message : 'Group settings could not be saved.',
+              );
+            }
+          }}
+        />
+        {groupUiError && (
+          <p className="group-inline-error" role="alert">
+            {groupUiError}
+          </p>
+        )}
         <div
           className="conversation-scroll"
           ref={conversationScrollRef}
@@ -2914,6 +3320,45 @@ function ChatView({
           )}
         </div>
         <footer className="chat-composer-wrap">
+          {workspace.activeRunId &&
+            workspace.activeRunConversationId &&
+            workspace.activeRunConversationId !== workspace.activeConversationId && (
+              <div className="group-background-run" role="status">
+                <Icon name="info" size={14} />
+                <span>
+                  <strong>Another conversation is still responding</strong>
+                  <small>Return to it to view progress or stop its turn.</small>
+                </span>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() =>
+                    void workspace.selectConversation(workspace.activeRunConversationId!)
+                  }
+                >
+                  Open conversation
+                </button>
+              </div>
+            )}
+          <GroupTurnRail
+            turn={workspace.activeGroupTurn}
+            stopping={stoppingGroup}
+            onStop={async () => {
+              if (stoppingGroup) return;
+              setStoppingGroup(true);
+              try {
+                await workspace.stopGroupTurn();
+              } finally {
+                setStoppingGroup(false);
+              }
+            }}
+            onRepair={(speaker) => {
+              const persona = workspace.personas.find(
+                (item) => item.id === speaker.speaker.personaId,
+              );
+              if (persona) openPersonaEditor(persona);
+            }}
+          />
           <Composer
             compact
             onSend={async (input) => {
@@ -2928,19 +3373,28 @@ function ChatView({
             onModel={setModelOpen}
             selectedModel={selectedModel}
             offline={offline}
+            groupMode={Boolean(
+              workspace.participants.length ||
+              workspace.groupSettings ||
+              workspace.messages.some((message) => message.groupTurnId),
+            )}
+            onRepairPersona={(persona) => openPersonaEditor(persona)}
           />
-          {workspace.activeRunId && !stopped && (
-            <button
-              className="stop-button"
-              onClick={() => {
-                setStopped(true);
-                void workspace.stopRun();
-              }}
-            >
-              <Icon name="pause" size={13} />
-              Stop
-            </button>
-          )}
+          {workspace.activeRunId &&
+            workspace.activeRunConversationId === workspace.activeConversationId &&
+            !groupTurnActive &&
+            !stopped && (
+              <button
+                className="stop-button"
+                onClick={() => {
+                  setStopped(true);
+                  void workspace.stopRun();
+                }}
+              >
+                <Icon name="pause" size={13} />
+                Stop
+              </button>
+            )}
         </footer>
       </main>
       <ContextInspector
@@ -2948,6 +3402,64 @@ function ChatView({
         close={() => setContextOpen(false)}
         selectedModel={selectedModel}
         offline={offline}
+      />
+      <AddCupcakeDialog
+        open={addCupcakeOpen}
+        personas={workspace.personas}
+        participants={workspace.participants}
+        models={workspace.models}
+        pendingId={groupPendingId}
+        error={groupUiError}
+        onClose={() => setAddCupcakeOpen(false)}
+        onCreate={() => openPersonaEditor(null, true)}
+        onAdd={async (persona) => {
+          setGroupPendingId(persona.id);
+          setGroupUiError('');
+          try {
+            await workspace.addConversationParticipant(persona.id);
+          } catch (reason) {
+            setGroupUiError(
+              reason instanceof Error ? reason.message : 'The Cupcake could not be added.',
+            );
+          } finally {
+            setGroupPendingId(null);
+          }
+        }}
+        onEdit={(persona) => openPersonaEditor(persona)}
+      />
+      <PersonaEditor
+        open={personaEditorOpen}
+        persona={editingPersona}
+        personas={workspace.personas}
+        models={workspace.models}
+        pending={groupPendingId !== null}
+        error={groupUiError}
+        onClose={() => {
+          if (groupPendingId) return;
+          setPersonaEditorOpen(false);
+          setEditingPersona(null);
+          setAddAfterCreate(false);
+        }}
+        onSave={savePersona}
+        onArchive={
+          editingPersona
+            ? async (persona) => {
+                setGroupPendingId(persona.id);
+                setGroupUiError('');
+                try {
+                  await workspace.archivePersona(persona.id);
+                  setPersonaEditorOpen(false);
+                  setEditingPersona(null);
+                } catch (reason) {
+                  setGroupUiError(
+                    reason instanceof Error ? reason.message : 'The Cupcake could not be archived.',
+                  );
+                } finally {
+                  setGroupPendingId(null);
+                }
+              }
+            : undefined
+        }
       />
     </div>
   );
@@ -3481,6 +3993,11 @@ function TasksView({ tasks, openTask }: { tasks: Task[]; openTask: (task: Task) 
           <strong>{tasks.filter((task) => task.status === 'complete').length}</strong>
           <small>Completed</small>
         </div>
+        <div className="task-summary-strip__failed">
+          <Icon name="x" />
+          <strong>{tasks.filter((task) => task.status === 'failed').length}</strong>
+          <small>Failed or cancelled</small>
+        </div>
         <span className="summary-divider" />
         <div>
           <strong>{tasks.length}</strong>
@@ -3501,38 +4018,64 @@ function TasksView({ tasks, openTask }: { tasks: Task[]; openTask: (task: Task) 
         </div>
       </div>
       <div className="tasks-list">
-        {shown.map((task) => (
-          <button className="task-row" key={task.id} onClick={() => openTask(task)}>
-            <div className={cx('task-state-icon', `is-${task.status}`)}>
-              {task.status === 'complete' ? (
-                <Icon name="check" />
-              ) : task.status === 'waiting' ? (
-                <Icon name="clock" />
-              ) : (
-                <span />
-              )}
-            </div>
-            <div className="task-row__body">
-              <header>
-                <strong>{task.title}</strong>
-                <span>{task.project}</span>
-              </header>
-              <p>{task.detail}</p>
-              <div className="task-progress">
-                <i style={{ width: `${task.progress}%` }} />
+        {shown.map((task) => {
+          const cancelled = task.runtimeStatus === 'cancelled';
+          const testResult = summarizeArtifactTestEvidence(task.evidence);
+          const completedTestRun = task.workKind === 'code_execution' && testResult.completed;
+          return (
+            <button className="task-row" key={task.id} onClick={() => openTask(task)}>
+              <div
+                className={cx('task-state-icon', `is-${task.status}`, cancelled && 'is-cancelled')}
+              >
+                {task.status === 'complete' ? (
+                  <Icon name="check" />
+                ) : task.status === 'waiting' ? (
+                  <Icon name="clock" />
+                ) : task.status === 'failed' ? (
+                  <Icon name={cancelled ? 'pause' : 'x'} />
+                ) : (
+                  <span />
+                )}
               </div>
-              <footer>
-                <span>{task.progress}% complete</span>
-                <span>{task.elapsed}</span>
-                <span>
-                  {task.steps.filter((s) => s.state === 'complete').length}/{task.steps.length}{' '}
-                  steps
-                </span>
-              </footer>
-            </div>
-            <Icon name="chevron" />
-          </button>
-        ))}
+              <div className="task-row__body">
+                <header>
+                  <strong>{task.title}</strong>
+                  <span>{task.project}</span>
+                  {task.status === 'failed' && (
+                    <span className={cx('task-outcome-badge', cancelled && 'is-cancelled')}>
+                      {cancelled ? 'Cancelled' : completedTestRun ? 'Tests failed' : 'Failed'}
+                    </span>
+                  )}
+                </header>
+                <p>{task.detail}</p>
+                <div className={cx('task-progress', task.status === 'failed' && 'is-failed')}>
+                  <i style={{ width: `${task.progress}%` }} />
+                </div>
+                <footer>
+                  <span>
+                    {task.status === 'complete'
+                      ? 'Completed'
+                      : cancelled
+                        ? 'Cancelled'
+                        : completedTestRun
+                          ? 'Tests finished · issues found'
+                          : task.status === 'failed'
+                            ? 'Failed'
+                            : `${task.progress}% complete`}
+                  </span>
+                  <span>{task.elapsed}</span>
+                  <span>
+                    {completedTestRun
+                      ? `${task.steps.length}/${task.steps.length}`
+                      : `${task.steps.filter((step) => step.state === 'complete').length}/${task.steps.length}`}{' '}
+                    steps {completedTestRun ? 'finished' : ''}
+                  </span>
+                </footer>
+              </div>
+              <Icon name="chevron" />
+            </button>
+          );
+        })}
       </div>
     </main>
   );
@@ -3549,6 +4092,10 @@ function TaskDetail({
 }) {
   const workspace = useWorkspace();
   const paused = task.status === 'waiting';
+  const terminal = task.status === 'complete' || task.status === 'failed';
+  const cancelled = task.runtimeStatus === 'cancelled';
+  const isPythonTestTask = task.workKind === 'code_execution';
+  const testResult = summarizeArtifactTestEvidence(task.evidence);
   const [note, setNote] = useState('');
   const [updates, setUpdates] = useState<string[]>([]);
   const [showDeveloperTrace, setShowDeveloperTrace] = useState(false);
@@ -3568,7 +4115,11 @@ function TaskDetail({
       : task.status === 'waiting'
         ? 'Waiting for input or approval'
         : task.status === 'failed'
-          ? 'Stopped before completion'
+          ? cancelled
+            ? 'Cancelled'
+            : isPythonTestTask && testResult.completed
+              ? 'Complete · tests need attention'
+              : 'Stopped before completion'
           : 'In progress';
   return (
     <main className="page task-detail">
@@ -3578,7 +4129,13 @@ function TaskDetail({
       </button>
       <div className="task-detail__head">
         <div>
-          <div className="status-line">
+          <div
+            className={cx(
+              'status-line',
+              task.status === 'failed' && 'is-failed',
+              cancelled && 'is-cancelled',
+            )}
+          >
             {task.status === 'working' && <span className="pulse-dot" />}
             {statusLabel}
           </div>
@@ -3594,44 +4151,48 @@ function TaskDetail({
               {task.elapsed}
             </span>
             <span>
-              <Icon name="model" />
-              {modelName}
+              <Icon name={isPythonTestTask ? 'terminal' : 'model'} />
+              {isPythonTestTask ? 'Local Python sandbox' : modelName}
             </span>
           </div>
         </div>
-        <div>
-          <button
-            className="button"
-            onClick={() => {
-              void (async () => {
-                setControlPending(true);
-                setTaskAction({
-                  tone: 'pending',
-                  text: paused ? 'Resuming from the saved checkpoint…' : 'Requesting a safe stop…',
-                });
-                try {
-                  await (paused ? workspace.resumeTask(task.id) : workspace.cancelTask(task.id));
+        {!terminal && (
+          <div className="task-detail__controls">
+            <button
+              className="button"
+              onClick={() => {
+                void (async () => {
+                  setControlPending(true);
                   setTaskAction({
-                    tone: 'success',
-                    text: paused ? 'Resume request accepted.' : 'Safe stop requested.',
+                    tone: 'pending',
+                    text: paused
+                      ? 'Resuming from the saved checkpoint…'
+                      : 'Requesting a safe stop…',
                   });
-                } catch (reason) {
-                  setTaskAction({
-                    tone: 'error',
-                    text:
-                      reason instanceof Error ? reason.message : 'The task could not be updated.',
-                  });
-                } finally {
-                  setControlPending(false);
-                }
-              })();
-            }}
-            disabled={task.status === 'complete' || task.status === 'failed' || controlPending}
-          >
-            <Icon name={paused ? 'play' : 'pause'} />
-            {controlPending ? 'Updating…' : paused ? 'Resume' : 'Cancel safely'}
-          </button>
-        </div>
+                  try {
+                    await (paused ? workspace.resumeTask(task.id) : workspace.cancelTask(task.id));
+                    setTaskAction({
+                      tone: 'success',
+                      text: paused ? 'Resume request accepted.' : 'Safe stop requested.',
+                    });
+                  } catch (reason) {
+                    setTaskAction({
+                      tone: 'error',
+                      text:
+                        reason instanceof Error ? reason.message : 'The task could not be updated.',
+                    });
+                  } finally {
+                    setControlPending(false);
+                  }
+                })();
+              }}
+              disabled={task.status === 'complete' || task.status === 'failed' || controlPending}
+            >
+              <Icon name={paused ? 'play' : 'pause'} />
+              {controlPending ? 'Updating…' : paused ? 'Resume' : 'Cancel safely'}
+            </button>
+          </div>
+        )}
       </div>
       {taskAction && (
         <div
@@ -3650,11 +4211,53 @@ function TaskDetail({
           {taskAction.text}
         </div>
       )}
+      {isPythonTestTask && task.evidence && (
+        <section
+          className={cx(
+            'task-test-result',
+            testResult.completed && task.status === 'failed' && 'has-test-issues',
+            !testResult.completed && task.status === 'failed' && 'has-runtime-error',
+          )}
+          aria-label="Python test results"
+        >
+          <span className="task-test-result__mark" aria-hidden="true">
+            <Icon
+              name={task.status === 'complete' ? 'check' : testResult.completed ? 'info' : 'x'}
+            />
+          </span>
+          <div>
+            <span className="eyebrow">
+              {testResult.completed ? 'Saved version tested locally' : 'Local test environment'}
+            </span>
+            <strong>{testResult.headline}</strong>
+            <p>
+              {testResult.detail ||
+                'The isolated Python environment could not complete this test run.'}
+            </p>
+            {testResult.output && (
+              <details>
+                <summary>View test output</summary>
+                <pre>{testResult.output}</pre>
+              </details>
+            )}
+          </div>
+        </section>
+      )}
       <div className="task-detail__grid">
         <section className="task-panel">
           <header>
             <h3>Progress</h3>
-            <strong>{task.progress}%</strong>
+            <strong>
+              {task.status === 'complete'
+                ? 'Finished'
+                : cancelled
+                  ? 'Cancelled'
+                  : task.status === 'failed'
+                    ? testResult.completed
+                      ? 'Finished'
+                      : 'Stopped'
+                    : `${task.progress}%`}
+            </strong>
           </header>
           <div className="large-progress">
             <i style={{ width: `${task.progress}%` }} />
@@ -3726,7 +4329,11 @@ function TaskDetail({
                       : step.state === 'active'
                         ? 'In progress'
                         : step.state === 'failed'
-                          ? 'Stopped at this checkpoint'
+                          ? cancelled
+                            ? 'Cancelled at this checkpoint'
+                            : isPythonTestTask && testResult.completed
+                              ? 'Tests finished with issues'
+                              : 'Stopped at this checkpoint'
                           : 'Queued'}
                   </small>
                 </span>
@@ -3752,53 +4359,69 @@ function TaskDetail({
             ))}
           </div>
           <div className="steer-task">
-            <label htmlFor="task-note">Steer this task</label>
-            <div>
-              <input
-                id="task-note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Add guidance without restarting…"
-              />
-              <button
-                aria-label="Queue task guidance"
-                disabled={!note.trim() || steerPending}
-                onClick={() => {
-                  void (async () => {
-                    const instruction = note.trim();
-                    if (!instruction) return;
-                    setSteerPending(true);
-                    setTaskAction({ tone: 'pending', text: 'Queueing guidance…' });
-                    try {
-                      await workspace.steerTask(task.id, instruction);
-                      setUpdates((items) => [...items, instruction]);
-                      setNote('');
-                      setTaskAction({
-                        tone: 'success',
-                        text: 'Guidance queued for the next safe checkpoint.',
-                      });
-                    } catch (reason) {
-                      setTaskAction({
-                        tone: 'error',
-                        text:
-                          reason instanceof Error
-                            ? reason.message
-                            : 'Guidance could not be queued.',
-                      });
-                    } finally {
-                      setSteerPending(false);
-                    }
-                  })();
-                }}
-              >
-                <Icon name="send" />
-              </button>
-            </div>
-            <small className="steer-task__status">
-              {steerPending
-                ? 'Waiting for the runtime…'
-                : 'Guidance is applied only after the runtime confirms it was queued.'}
-            </small>
+            {terminal ? (
+              <div className="task-terminal-note">
+                <Icon name={task.status === 'complete' ? 'check' : 'info'} />
+                <span>
+                  <strong>This task has finished</strong>
+                  <small>
+                    {cancelled
+                      ? 'This task was cancelled before it completed.'
+                      : 'Start a follow-up if you want Cupcake to act on these results.'}
+                  </small>
+                </span>
+              </div>
+            ) : (
+              <>
+                <label htmlFor="task-note">Steer this task</label>
+                <div className="steer-task__input">
+                  <input
+                    id="task-note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Add guidance without restarting…"
+                  />
+                  <button
+                    aria-label="Queue task guidance"
+                    disabled={!note.trim() || steerPending}
+                    onClick={() => {
+                      void (async () => {
+                        const instruction = note.trim();
+                        if (!instruction) return;
+                        setSteerPending(true);
+                        setTaskAction({ tone: 'pending', text: 'Queueing guidance…' });
+                        try {
+                          await workspace.steerTask(task.id, instruction);
+                          setUpdates((items) => [...items, instruction]);
+                          setNote('');
+                          setTaskAction({
+                            tone: 'success',
+                            text: 'Guidance queued for the next safe checkpoint.',
+                          });
+                        } catch (reason) {
+                          setTaskAction({
+                            tone: 'error',
+                            text:
+                              reason instanceof Error
+                                ? reason.message
+                                : 'Guidance could not be queued.',
+                          });
+                        } finally {
+                          setSteerPending(false);
+                        }
+                      })();
+                    }}
+                  >
+                    <Icon name="send" />
+                  </button>
+                </div>
+                <small className="steer-task__status">
+                  {steerPending
+                    ? 'Waiting for the runtime…'
+                    : 'Guidance is applied only after the runtime confirms it was queued.'}
+                </small>
+              </>
+            )}
             <button
               className="text-button"
               onClick={() => {
@@ -3986,17 +4609,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
     selected.kind.toLowerCase().includes('code') &&
     (selected.mimeType?.toLowerCase().includes('python') || selected.name.endsWith('.py')),
   );
-  const testSummary = testRun?.evidence?.testSummary;
-  const testSummaryRecord =
-    testSummary && typeof testSummary === 'object' && !Array.isArray(testSummary)
-      ? (testSummary as Record<string, unknown>)
-      : null;
-  const testsRun =
-    typeof testSummaryRecord?.run === 'number'
-      ? testSummaryRecord.run
-      : typeof testSummaryRecord?.total === 'number'
-        ? testSummaryRecord.total
-        : null;
+  const testResultSummary = summarizeArtifactTestEvidence(testRun?.evidence);
 
   const artifactKinds = [
     {
@@ -4689,18 +5302,19 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
                   : testState === 'complete'
                     ? 'Local sandbox result'
                     : testState === 'failed'
-                      ? 'Test run needs attention'
+                      ? testResultSummary.completed
+                        ? 'Test results'
+                        : 'Test run needs attention'
                       : 'Local sandbox'}
               </span>
               <strong>
                 {testState === 'approval'
                   ? 'Run tests for this saved version?'
-                  : testState === 'complete'
-                    ? testsRun === null
-                      ? 'Tests passed'
-                      : `${testsRun} ${testsRun === 1 ? 'test' : 'tests'} passed`
+                  : testState === 'complete' ||
+                      (testState === 'failed' && testResultSummary.completed)
+                    ? testResultSummary.headline
                     : testState === 'failed'
-                      ? 'Tests did not pass'
+                      ? testResultSummary.headline
                       : testState === 'creating'
                         ? 'Creating a durable test task…'
                         : 'Tests are running…'}
@@ -4708,16 +5322,17 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
               <p>
                 {testState === 'approval'
                   ? `Cupcake will run saved revision ${selected.revisionNumber ?? 'current'} of ${selected.name} in an isolated local Python environment. This permission applies only to this task and saved version.`
-                  : testMessage}
+                  : testState === 'complete' ||
+                      (testState === 'failed' && testResultSummary.completed)
+                    ? testResultSummary.detail
+                    : testMessage}
               </p>
-              {testState === 'complete' &&
-                typeof testRun?.evidence?.stdout === 'string' &&
-                testRun.evidence.stdout.trim() && (
-                  <details>
-                    <summary>View test output</summary>
-                    <pre>{testRun.evidence.stdout}</pre>
-                  </details>
-                )}
+              {(testState === 'complete' || testState === 'failed') && testResultSummary.output && (
+                <details>
+                  <summary>View test output</summary>
+                  <pre>{testResultSummary.output}</pre>
+                </details>
+              )}
             </div>
             <div className="artifact-test-panel__actions">
               {testState === 'approval' && testRun ? (
@@ -12297,9 +12912,21 @@ function LiveApp() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
   const [memoryRecords, setMemoryRecords] = useState(workspace.memories);
   const [toolRecords, setToolRecords] = useState(workspace.tools);
-  const stopRunRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const stopRunRef = useRef<() => Promise<void | boolean>>(() => Promise.resolve());
   const pendingProfileApplied = useRef(false);
-  stopRunRef.current = () => workspace.stopRun();
+  stopRunRef.current = () => {
+    const groupActive =
+      workspace.activeGroupTurn &&
+      workspace.activeGroupTurn.conversationId === workspace.activeConversationId &&
+      ['preparing', 'choosing', 'responding'].includes(workspace.activeGroupTurn.status);
+    if (groupActive) return workspace.stopGroupTurn();
+    if (
+      workspace.activeRunId &&
+      workspace.activeRunConversationId === workspace.activeConversationId
+    )
+      return workspace.stopRun();
+    return Promise.resolve(false);
+  };
   const selectedModel = selectedModelForChat(workspace.models);
   const activeTask = workspace.tasks.find((task) => task.id === activeTaskId) ?? workspace.tasks[0];
   useEffect(() => setMemoryRecords(workspace.memories), [workspace.memories]);

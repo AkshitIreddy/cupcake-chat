@@ -1234,6 +1234,9 @@
   grid-column: 1/-1;
   color: var(--muted);
 }
+.task-summary-strip__failed > svg {
+  color: var(--danger);
+}
 .summary-divider {
   height: 32px;
   border-left: 1px solid var(--line);
@@ -1285,6 +1288,14 @@
   background: color-mix(in srgb, var(--gold), transparent 85%);
   color: var(--gold);
 }
+.task-state-icon.is-failed {
+  background: color-mix(in srgb, var(--danger) 11%, var(--paper));
+  color: var(--danger);
+}
+.task-state-icon.is-failed.is-cancelled {
+  background: color-mix(in srgb, var(--muted) 10%, var(--paper));
+  color: var(--muted);
+}
 .task-row__body header {
   display: flex;
   align-items: center;
@@ -1299,6 +1310,15 @@
   background: var(--soft);
   color: var(--muted);
   font-size: 9px;
+}
+.task-row__body header .task-outcome-badge {
+  background: color-mix(in srgb, var(--danger) 10%, var(--paper));
+  color: var(--danger);
+  font-weight: 700;
+}
+.task-row__body header .task-outcome-badge.is-cancelled {
+  background: color-mix(in srgb, var(--muted) 10%, var(--paper));
+  color: var(--muted);
 }
 .task-row__body p {
   margin: 4px 0 10px;
@@ -1318,6 +1338,9 @@
   height: 100%;
   border-radius: 99px;
   background: var(--berry);
+}
+.task-progress.is-failed i {
+  background: var(--danger);
 }
 .task-row__body footer {
   display: flex;
@@ -1344,9 +1367,12 @@
   gap: 25px;
   margin-bottom: 26px;
 }
-.task-detail__head > div:last-child {
+.task-detail__controls {
   display: flex;
   gap: 7px;
+}
+.task-detail__head > div:first-child {
+  min-width: 0;
 }
 .status-line {
   display: flex;
@@ -1356,8 +1382,15 @@
   font: 500 9px 'IBM Plex Mono';
   text-transform: uppercase;
 }
+.status-line.is-failed {
+  color: var(--danger);
+}
+.status-line.is-cancelled {
+  color: var(--muted);
+}
 .task-detail__head h2 {
   margin: 8px 0 6px;
+  overflow-wrap: anywhere;
   font:
     650 34px 'Bricolage Grotesque Variable',
     'Bricolage Grotesque';
@@ -1378,6 +1411,82 @@
   display: flex;
   align-items: center;
   gap: 5px;
+}
+.task-test-result {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 13px;
+  margin: -8px 0 16px;
+  padding: 15px 17px;
+  border: 1px solid color-mix(in srgb, var(--pistachio) 28%, var(--line));
+  border-radius: 15px;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--pistachio) 7%, transparent), transparent 52%),
+    var(--paper);
+}
+.task-test-result.has-test-issues {
+  border-color: color-mix(in srgb, var(--berry) 32%, var(--line));
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--berry) 8%, transparent), transparent 52%),
+    var(--paper);
+}
+.task-test-result.has-runtime-error {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+}
+.task-test-result__mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--pistachio-soft);
+  color: var(--pistachio);
+}
+.task-test-result.has-test-issues .task-test-result__mark {
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+.task-test-result.has-runtime-error .task-test-result__mark {
+  background: color-mix(in srgb, var(--danger) 10%, var(--paper));
+  color: var(--danger);
+}
+.task-test-result .eyebrow {
+  display: block;
+  margin-bottom: 3px;
+}
+.task-test-result strong {
+  display: block;
+  font:
+    650 17px 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+.task-test-result p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.task-test-result details {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.task-test-result summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--berry);
+  font-weight: 700;
+}
+.task-test-result pre {
+  max-height: 240px;
+  margin: 8px 0 0;
+  overflow: auto;
+  border-radius: 9px;
+  background: var(--crumb);
+  padding: 11px;
+  color: var(--cocoa);
+  font: 9px/1.55 'IBM Plex Mono';
+  white-space: pre-wrap;
 }
 .task-detail__grid {
   display: grid;
@@ -1455,6 +1564,14 @@
   background: var(--berry);
   animation: pulse 1.8s infinite;
 }
+.step.is-failed > span:first-child {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+  background: color-mix(in srgb, var(--danger) 9%, var(--paper));
+  color: var(--danger);
+}
+.activity-stream > div.is-failed {
+  color: var(--danger);
+}
 .step div {
   display: grid;
   gap: 2px;
@@ -1503,7 +1620,7 @@
   font-size: 11px;
   font-weight: 700;
 }
-.steer-task > div {
+.steer-task__input {
   display: flex;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1518,13 +1635,41 @@
   background: transparent;
   font-size: 11px;
 }
-.steer-task button {
+.steer-task__input button {
   display: grid;
   place-items: center;
   width: 34px;
   border: 0;
   background: transparent;
   color: var(--berry);
+}
+.steer-task > .text-button {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  gap: 5px;
+  margin-top: 9px;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.task-terminal-note {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.task-terminal-note > svg {
+  color: var(--pistachio);
+}
+.task-terminal-note > span {
+  display: grid;
+  gap: 2px;
+}
+.task-terminal-note strong {
+  font-size: 11px;
+}
+.task-terminal-note small {
+  margin: 0;
 }
 .steer-task small {
   display: block;

@@ -19,6 +19,16 @@ import {
 import type { RuntimeEvent, RuntimeResponse } from '../shared/desktop-api';
 import type {
   Conversation,
+  ConversationGroupSettings,
+  ConversationParticipant,
+  CupcakePersona,
+  GroupEligibleSpeaker,
+  GroupMention,
+  GroupSelectionReason,
+  GroupSpeakerSnapshot,
+  GroupTurnPreflight,
+  GroupTurnSpeakerState,
+  GroupTurnState,
   LiveChatMessage,
   MemoryRecord,
   ModelDescriptor,
@@ -26,6 +36,8 @@ import type {
   ToolDescriptor,
 } from './types';
 import { createKeyedRequestCoalescer, mergeModelDescriptors } from './model-selection';
+import { modelAvailabilityDetail, modelIsAvailableInChat } from './model-intelligence';
+import type { GroupTurn as ContractGroupTurn } from '@cupcakeagi/contracts';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
@@ -59,6 +71,10 @@ export interface MessageRecord extends LiveChatMessage {
   reasoningSummary?: string;
   finishReason?: string;
   responseState?: 'cancelled';
+  groupTurnId?: string;
+  groupSequence?: number;
+  speaker?: GroupSpeakerSnapshot;
+  selectionReason?: GroupSelectionReason;
 }
 
 export interface AttachmentRecord {
@@ -374,6 +390,22 @@ interface RuntimeMessage {
   canonical_metadata?: Record<string, unknown>;
 }
 
+export interface GroupTurnDraftInput {
+  content: string;
+  mentions: GroupMention[];
+  attachments: StagedAttachmentRecord[];
+  references: ReferenceRecord[];
+  conversationId: string;
+  branchId: string;
+  projectId: string | null;
+  maxOutputTokens?: number;
+}
+
+export interface PreparedGroupTurn {
+  input: GroupTurnDraftInput;
+  preflight: GroupTurnPreflight;
+}
+
 interface RuntimeMemory {
   id: string;
   key: string;
@@ -392,8 +424,11 @@ interface RuntimeTask {
     title: string;
     prompt: string;
     project_id?: string | null;
+    work_kind?: string;
     steps: Array<{ key: string }>;
   };
+  tool_evidence?: Record<string, unknown>;
+  error?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -503,12 +538,17 @@ interface WorkspaceContextValue {
   localRuntimes: LocalRuntimeRecord[];
   toolActivity: ToolActivity[];
   providers: Record<string, boolean>;
+  personas: CupcakePersona[];
+  participants: ConversationParticipant[];
+  groupSettings: ConversationGroupSettings | null;
+  activeGroupTurn: GroupTurnState | null;
   legacyMigration: LegacyMigrationState | null;
   settings: WorkspaceSettings;
   activeProjectId: string | null;
   activeConversationId: string | null;
   activeBranchId: string | null;
   activeRunId: string | null;
+  activeRunConversationId: string | null;
   setActiveProject(projectId: string | null): Promise<void>;
   createProject(name: string, description?: string): Promise<void>;
   updateProject(projectId: string, name: string, description: string): Promise<void>;
@@ -521,6 +561,26 @@ interface WorkspaceContextValue {
   renameConversation(conversationId: string, title: string): Promise<void>;
   archiveConversation(conversationId: string, archived: boolean): Promise<void>;
   branchConversation(fromMessageId?: string, name?: string): Promise<void>;
+  createPersona(
+    input: Omit<CupcakePersona, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>,
+  ): Promise<CupcakePersona>;
+  updatePersona(
+    personaId: string,
+    input: Omit<CupcakePersona, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>,
+  ): Promise<CupcakePersona>;
+  archivePersona(personaId: string): Promise<void>;
+  addConversationParticipant(personaId: string): Promise<void>;
+  removeConversationParticipant(participantId: string): Promise<void>;
+  setConversationParticipantEnabled(participantId: string, enabled: boolean): Promise<void>;
+  reorderConversationParticipants(participantIds: string[]): Promise<void>;
+  updateGroupSettings(input: {
+    strategy?: ConversationGroupSettings['strategy'];
+    maxReplies?: 1 | 2 | 3;
+    leadParticipantId?: string;
+  }): Promise<void>;
+  preflightGroupTurn(input: GroupTurnDraftInput): Promise<PreparedGroupTurn>;
+  sendGroupTurn(prepared: PreparedGroupTurn): Promise<boolean>;
+  stopGroupTurn(): Promise<boolean>;
   sendMessage(input: {
     content: string;
     modelId: string;
@@ -696,6 +756,73 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function safeGroupSpeaker(value: unknown): GroupSpeakerSnapshot | undefined {
+  const item = recordValue(value);
+  if (!item) return undefined;
+  const privacyRoute = textValue(item.privacyRoute ?? item.privacy_route);
+  const required = {
+    participantId: textValue(item.participantId ?? item.participant_id),
+    personaId: textValue(item.personaId ?? item.persona_id),
+    name: textValue(item.name),
+    handle: textValue(item.handle),
+    avatar: textValue(item.avatar),
+    role: textValue(item.role),
+    modelId: textValue(item.modelId ?? item.model_id),
+    providerId: textValue(item.providerId ?? item.provider_id),
+  };
+  if (
+    !required.participantId ||
+    !required.personaId ||
+    !required.name ||
+    !required.handle ||
+    !required.modelId ||
+    !required.providerId ||
+    !['local', 'self_hosted', 'cloud'].includes(privacyRoute)
+  )
+    return undefined;
+  return { ...required, privacyRoute: privacyRoute as GroupSpeakerSnapshot['privacyRoute'] };
+}
+
+function safeSelectionReason(
+  value: unknown,
+  codeValue?: unknown,
+): GroupSelectionReason | undefined {
+  const item = recordValue(value);
+  const code = textValue(item?.code ?? codeValue);
+  const reason = textValue(item?.reason ?? value);
+  if (!code && !reason) return undefined;
+  return {
+    code: code || 'selected',
+    reason: reason || undefined,
+    label: textValue(item?.label) || undefined,
+  };
+}
+
+function withGroupMessageProvenance(
+  message: MessageRecord,
+  payload: Record<string, unknown>,
+): MessageRecord {
+  const persisted = recordValue(payload.message);
+  const metadata = recordValue(persisted?.canonical_metadata ?? persisted?.canonicalMetadata);
+  const group = recordValue(metadata?.group);
+  const speaker = safeGroupSpeaker(payload.speaker ?? group?.speaker ?? group);
+  const turnId = textValue(
+    payload.turnId ?? payload.turn_id ?? group?.turnId ?? group?.groupTurnId,
+  );
+  const sequence = Number(payload.sequence ?? group?.sequence);
+  const selectionReason = safeSelectionReason(
+    payload.selectionReason ?? group?.selectionReason,
+    payload.selectionReasonCode ?? group?.selectionReasonCode,
+  );
+  return {
+    ...message,
+    speaker: speaker ?? message.speaker,
+    groupTurnId: turnId || message.groupTurnId,
+    groupSequence: Number.isInteger(sequence) && sequence > 0 ? sequence : message.groupSequence,
+    selectionReason: selectionReason ?? message.selectionReason,
+  };
+}
+
 export function normalizeArtifactCounts(value: unknown): Record<string, number> {
   const record = recordValue(value);
   if (!record) return {};
@@ -743,8 +870,10 @@ function withFinalMessageProvenance(
     persisted.provider_id ?? persisted.providerId,
     message.providerId ?? '',
   );
+  const id = textValue(persisted.id, message.id);
   return {
     ...message,
+    id,
     branchId: branchId || message.branchId,
     createdAt: createdAt || message.createdAt,
     modelId: modelId || message.modelId,
@@ -762,6 +891,14 @@ function upsertAssistantMessage(
     return [...messages, update({ id: runId, role: 'assistant', content: '', streaming: true })];
   }
   return messages.map((message) => (message.id === runId ? update(message) : message));
+}
+
+function runtimeEventMessageKey(payload: Record<string, unknown>, runId: string): string {
+  const turnId = textValue(payload.turnId ?? payload.turn_id);
+  const sequence = Number(payload.sequence);
+  return turnId && Number.isInteger(sequence) && sequence > 0
+    ? `${turnId}:speaker:${sequence}`
+    : runId;
 }
 
 function runtimeFailureEvent(type: string): boolean {
@@ -799,23 +936,28 @@ export function applyRuntimeMessageEvent(
 ): MessageRecord[] {
   const payload = recordValue(event.payload) ?? {};
   const runId = runtimeEventRunId(payload, activeRunId);
+  const messageKey = runId ? runtimeEventMessageKey(payload, runId) : null;
 
-  if (event.type === 'message.started' && runId) {
-    return upsertAssistantMessage(messages, runId, (message) => ({
-      ...message,
+  if (event.type === 'message.started' && messageKey) {
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
+      ...withGroupMessageProvenance(message, payload),
       streaming: true,
     }));
   }
-  if (event.type === 'message.delta' && runId && typeof payload.delta === 'string') {
+  if (event.type === 'message.delta' && messageKey && typeof payload.delta === 'string') {
     const delta = payload.delta;
-    return upsertAssistantMessage(messages, runId, (message) => ({
-      ...message,
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
+      ...withGroupMessageProvenance(message, payload),
       content: message.content + delta,
       streaming: true,
     }));
   }
-  if (event.type === 'provider.fallback.started' && runId && payload.discardPriorDeltas === true) {
-    return upsertAssistantMessage(messages, runId, (message) => ({
+  if (
+    event.type === 'provider.fallback.started' &&
+    messageKey &&
+    payload.discardPriorDeltas === true
+  ) {
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
       ...message,
       content: '',
       reasoningSummary: undefined,
@@ -824,23 +966,23 @@ export function applyRuntimeMessageEvent(
       streaming: true,
     }));
   }
-  if (event.type === 'reasoning.summary.delta' && runId && typeof payload.delta === 'string') {
+  if (event.type === 'reasoning.summary.delta' && messageKey && typeof payload.delta === 'string') {
     const delta = payload.delta;
-    return upsertAssistantMessage(messages, runId, (message) => ({
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
       ...message,
       reasoningSummary: (message.reasoningSummary ?? '') + delta,
     }));
   }
-  if (event.type === 'reasoning.summary' && runId && typeof payload.summary === 'string') {
-    return upsertAssistantMessage(messages, runId, (message) => ({
+  if (event.type === 'reasoning.summary' && messageKey && typeof payload.summary === 'string') {
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
       ...message,
       reasoningSummary: payload.summary as string,
     }));
   }
-  if (event.type === 'usage.updated' && runId) {
+  if (event.type === 'usage.updated' && messageKey) {
     const usage = recordValue(payload.usage) ?? {};
     const cost = recordValue(payload.cost);
-    return upsertAssistantMessage(messages, runId, (message) => ({
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
       ...message,
       usage: {
         inputTokens: Number(usage.inputTokens ?? usage.input_tokens ?? 0),
@@ -849,8 +991,8 @@ export function applyRuntimeMessageEvent(
       },
     }));
   }
-  if (event.type === 'citation.created' && runId) {
-    return upsertAssistantMessage(messages, runId, (message) => {
+  if (event.type === 'citation.created' && messageKey) {
+    return upsertAssistantMessage(messages, messageKey, (message) => {
       const citation = {
         id: textValue(payload.id, String(event.sequence)),
         title: textValue(payload.title ?? payload.source, 'Source'),
@@ -862,28 +1004,34 @@ export function applyRuntimeMessageEvent(
         : { ...message, citations: [...citations, citation] };
     });
   }
-  if (event.type === 'message.completed' && runId) {
-    return upsertAssistantMessage(messages, runId, (message) => {
+  if (event.type === 'message.completed' && messageKey) {
+    return upsertAssistantMessage(messages, messageKey, (message) => {
       const persisted = recordValue(payload.message);
       const content = textValue(payload.content ?? persisted?.content, message.content);
-      return withFinalMessageProvenance({ ...message, content, streaming: false }, payload);
+      return withGroupMessageProvenance(
+        withFinalMessageProvenance({ ...message, content, streaming: false }, payload),
+        payload,
+      );
     });
   }
-  if (event.type === 'message.cancelled' && runId) {
-    return upsertAssistantMessage(messages, runId, (message) => {
+  if (event.type === 'message.cancelled' && messageKey) {
+    return upsertAssistantMessage(messages, messageKey, (message) => {
       const persisted = recordValue(payload.message);
       const partial = textValue(
         payload.partialContent ?? payload.partial_content ?? persisted?.content,
         message.content,
       );
-      return withFinalMessageProvenance(
-        { ...message, content: partial, streaming: false, responseState: 'cancelled' },
+      return withGroupMessageProvenance(
+        withFinalMessageProvenance(
+          { ...message, content: partial, streaming: false, responseState: 'cancelled' },
+          payload,
+        ),
         payload,
       );
     });
   }
-  if (runtimeFailureEvent(event.type) && runId) {
-    return upsertAssistantMessage(messages, runId, (message) => ({
+  if (runtimeFailureEvent(event.type) && messageKey) {
+    return upsertAssistantMessage(messages, messageKey, (message) => ({
       ...message,
       content: message.content || runtimeFailureMessage(payload),
       streaming: false,
@@ -1025,6 +1173,11 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
       : continuity && typeof continuity.modelFamily === 'string'
         ? continuity.modelFamily
         : undefined;
+  const group = recordValue(metadata.group);
+  const speaker = safeGroupSpeaker(group?.speaker ?? group);
+  const groupTurnId = textValue(group?.turnId ?? group?.groupTurnId) || undefined;
+  const groupSequence = Number(group?.sequence);
+  const selectionReason = safeSelectionReason(group?.selectionReason, group?.selectionReasonCode);
   return {
     id: item.id,
     role,
@@ -1037,9 +1190,168 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
     attachments: attachments.length ? attachments : undefined,
     references: references.length ? references : undefined,
     finishReason,
+    groupTurnId,
+    groupSequence: Number.isInteger(groupSequence) && groupSequence > 0 ? groupSequence : undefined,
+    speaker,
+    selectionReason,
     responseState:
       item.role === 'assistant' && item.state === 'cancelled' ? 'cancelled' : undefined,
   };
+}
+
+function mapPersistedGroupTurn(item: ContractGroupTurn): GroupTurnState {
+  const speakers: GroupTurnSpeakerState[] = item.members.map((member) => ({
+    sequence: member.sequence,
+    speaker: member.speaker,
+    status:
+      member.status === 'completed'
+        ? 'completed'
+        : member.status === 'failed'
+          ? 'failed'
+          : member.status === 'cancelled'
+            ? 'cancelled'
+            : 'selected',
+    messageId: member.messageId,
+    selectionReason: safeSelectionReason(member.selectionReason, member.selectionReasonCode),
+    error: member.errorCode ?? undefined,
+  }));
+  return {
+    turnId: item.turnId,
+    conversationId: item.conversationId,
+    branchId: item.branchId,
+    userMessageId: item.userMessageId,
+    planRevision: item.planRevision,
+    rosterRevision: item.rosterRevision,
+    status: item.status === 'running' ? (speakers.length ? 'responding' : 'choosing') : item.status,
+    mode: item.mode,
+    callIndex: item.selectorCalls,
+    maxSelectorCalls: item.maxSelectorCalls,
+    maxReplies: item.maxReplies,
+    selector: item.plan.selector,
+    speakers,
+    selectionSummary: [...item.selectorUsage]
+      .reverse()
+      .find((usage) => usage.selection?.decision === 'pass')?.selection?.reason,
+  };
+}
+
+export function applyGroupTurnEvent(
+  current: GroupTurnState | null,
+  event: RuntimeEvent,
+): GroupTurnState | null {
+  if (!event.type.startsWith('group.')) return current;
+  const payload = recordValue(event.payload) ?? {};
+  const turnRecord = recordValue(payload.turn);
+  const turnId = textValue(payload.turnId ?? payload.turn_id ?? turnRecord?.turnId);
+  if (!turnId) return current;
+  if (current && current.turnId !== turnId && event.type !== 'group.turn.started') return current;
+  if (
+    current &&
+    current.turnId === turnId &&
+    [
+      'completed',
+      'waiting_for_you',
+      'selection_failed',
+      'member_failed',
+      'cancelled',
+      'awaiting_tool',
+      'interrupted',
+    ].includes(current.status)
+  )
+    return current;
+  const initial: GroupTurnState = current ?? {
+    turnId,
+    conversationId: textValue(payload.conversationId ?? turnRecord?.conversationId),
+    branchId: textValue(payload.branchId ?? turnRecord?.branchId) || null,
+    userMessageId: textValue(payload.userMessageId ?? turnRecord?.userMessageId) || null,
+    planRevision: textValue(payload.planRevision ?? turnRecord?.planRevision),
+    rosterRevision: Number(payload.rosterRevision ?? turnRecord?.rosterRevision ?? 0),
+    status: 'preparing',
+    mode: payload.mode === 'mentions' ? 'mentions' : 'smart',
+    callIndex: 0,
+    maxSelectorCalls: Number(payload.maxSelectorCalls ?? turnRecord?.maxSelectorCalls ?? 0),
+    maxReplies: Number(payload.maxReplies ?? turnRecord?.maxReplies ?? 2),
+    selector: undefined,
+    speakers: [],
+  };
+  if (event.type === 'group.turn.started')
+    return {
+      ...initial,
+      status: initial.mode === 'smart' ? 'choosing' : 'responding',
+      conversationId: textValue(payload.conversationId, initial.conversationId),
+      branchId: textValue(payload.branchId, initial.branchId ?? '') || initial.branchId,
+      userMessageId:
+        textValue(payload.userMessageId, initial.userMessageId ?? '') || initial.userMessageId,
+    };
+  if (event.type === 'group.selector.started')
+    return {
+      ...initial,
+      status: 'choosing',
+      callIndex: Number(payload.callIndex ?? initial.callIndex + 1),
+      maxSelectorCalls: Number(payload.maxCalls ?? initial.maxSelectorCalls),
+    };
+  if (event.type === 'group.selector.failed')
+    return { ...initial, status: 'selection_failed', error: runtimeFailureMessage(payload) };
+  if (event.type === 'group.selector.completed') {
+    const selection = recordValue(payload.selection);
+    return {
+      ...initial,
+      selectionSummary: textValue(selection?.reason) || initial.selectionSummary,
+    };
+  }
+  if (event.type === 'group.speaker.selected' || event.type === 'group.speaker.started') {
+    const speaker = safeGroupSpeaker(payload.speaker);
+    if (!speaker) return initial;
+    const sequence = Number(payload.sequence ?? initial.speakers.length + 1);
+    const state: GroupTurnSpeakerState = {
+      sequence,
+      speaker,
+      status: event.type === 'group.speaker.started' ? 'speaking' : 'selected',
+      selectionReason: safeSelectionReason(payload.selectionReason, payload.selectionReasonCode),
+    };
+    const speakers = initial.speakers.some((item) => item.sequence === sequence)
+      ? initial.speakers.map((item) => (item.sequence === sequence ? { ...item, ...state } : item))
+      : [...initial.speakers, state].sort((left, right) => left.sequence - right.sequence);
+    return { ...initial, status: 'responding', speakers };
+  }
+  if (event.type === 'group.speaker.completed' || event.type === 'group.speaker.failed') {
+    const sequence = Number(payload.sequence);
+    const status: GroupTurnSpeakerState['status'] =
+      event.type === 'group.speaker.completed' ? 'completed' : 'failed';
+    const speakers = initial.speakers.map((item) =>
+      item.sequence === sequence
+        ? {
+            ...item,
+            status,
+            messageId: textValue(payload.messageId) || item.messageId,
+            error: status === 'failed' ? runtimeFailureMessage(payload) : item.error,
+          }
+        : item,
+    );
+    return {
+      ...initial,
+      status:
+        status === 'failed'
+          ? 'member_failed'
+          : initial.mode === 'smart'
+            ? 'choosing'
+            : 'responding',
+      speakers,
+      error: status === 'failed' ? runtimeFailureMessage(payload) : initial.error,
+    };
+  }
+  if (event.type === 'group.turn.completed') return { ...initial, status: 'completed' };
+  if (event.type === 'group.turn.cancelled')
+    return {
+      ...initial,
+      status: 'cancelled',
+      speakers: initial.speakers.map((item) =>
+        item.status === 'speaking' || item.status === 'selected'
+          ? { ...item, status: 'cancelled' as const }
+          : item,
+      ),
+    };
+  return initial;
 }
 
 export function cancelledSendWasCommitted(
@@ -1130,8 +1442,11 @@ export function scopedReferenceOptions(input: {
   return [...projectReferences, ...taskReferences, ...artifactReferences, ...memoryReferences];
 }
 
-function mapTask(run: RuntimeTask): Task {
+function mapTask(run: RuntimeTask, projects: ProjectRecord[] = []): Task {
   const steps = run.spec.steps ?? [];
+  const testSummary = recordValue(run.tool_evidence?.testSummary);
+  const completedTestSuite =
+    run.spec.work_kind === 'code_execution' && typeof testSummary?.run === 'number';
   const status: Task['status'] =
     run.status === 'succeeded'
       ? 'complete'
@@ -1145,8 +1460,15 @@ function mapTask(run: RuntimeTask): Task {
     title: run.spec.title,
     detail: run.spec.prompt,
     status,
-    progress: steps.length ? Math.min(100, Math.round((run.current_step / steps.length) * 100)) : 0,
-    project: run.spec.project_id ?? 'No project',
+    progress: completedTestSuite
+      ? 100
+      : steps.length
+        ? Math.min(100, Math.round((run.current_step / steps.length) * 100))
+        : 0,
+    project:
+      projects.find((project) => project.id === run.spec.project_id)?.name ??
+      run.spec.project_id ??
+      'No project',
     projectId: run.spec.project_id ?? null,
     elapsed: displayDate(run.updated_at ?? run.created_at),
     steps: steps.map((step, index) => ({
@@ -1160,6 +1482,9 @@ function mapTask(run: RuntimeTask): Task {
               ? 'failed'
               : 'queued',
     })),
+    workKind: run.spec.work_kind,
+    evidence: run.tool_evidence,
+    runtimeStatus: run.status,
   };
 }
 
@@ -1928,6 +2253,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [localRuntimes, setLocalRuntimes] = useState<LocalRuntimeRecord[]>([]);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [providers, setProviders] = useState<Record<string, boolean>>({});
+  const [personas, setPersonas] = useState<CupcakePersona[]>([]);
+  const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
+  const [groupSettings, setGroupSettings] = useState<ConversationGroupSettings | null>(null);
+  const [activeGroupTurn, setActiveGroupTurn] = useState<GroupTurnState | null>(null);
   const [legacyMigration, setLegacyMigration] = useState<LegacyMigrationState | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings>(() => {
     const stored = localStorage.getItem('cupcake-workspace-settings');
@@ -1950,6 +2279,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunConversationId, setActiveRunConversationId] = useState<string | null>(null);
   const bootstrapped = useRef(false);
   const nvidiaCatalogRefresh = useRef<Promise<void> | null>(null);
   const selectedModelIdRef = useRef<string | null>(
@@ -1957,8 +2287,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
   const coalesceModelSelection = useRef(createKeyedRequestCoalescer());
   const activeProjectIdRef = useRef(activeProjectId);
+  const activeConversationIdRef = useRef(activeConversationId);
   const activeRunIdRef = useRef(activeRunId);
+  const activeRunConversationIdRef = useRef(activeRunConversationId);
+  const groupRunConversationRef = useRef(new Map<string, string>());
   const projectsRef = useRef(projects);
+  const personasRef = useRef(personas);
   const cancelledChatRef = useRef<{
     runId?: string;
     messageId: string;
@@ -1969,12 +2303,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const conversationSelectionGeneration = useRef(0);
   const projectSelectionGeneration = useRef(0);
   activeProjectIdRef.current = activeProjectId;
+  activeConversationIdRef.current = activeConversationId;
   activeRunIdRef.current = activeRunId;
+  activeRunConversationIdRef.current = activeRunConversationId;
   projectsRef.current = projects;
+  personasRef.current = personas;
 
-  const updateActiveRunId = useCallback((runId: string | null) => {
+  const updateActiveRunId = useCallback((runId: string | null, conversationId?: string | null) => {
     activeRunIdRef.current = runId;
     setActiveRunId(runId);
+    const nextConversationId = runId
+      ? (conversationId ?? activeRunConversationIdRef.current)
+      : null;
+    activeRunConversationIdRef.current = nextConversationId;
+    setActiveRunConversationId(nextConversationId);
   }, []);
 
   const request = useCallback(
@@ -2118,6 +2460,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           permissionPolicy,
           migration,
           cupcakeStatus,
+          personaResult,
         ] = await Promise.all([
           recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
           recover('Memory', memoryRequest, []),
@@ -2144,9 +2487,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
             {},
           ),
+          recover('Cupcakes', request<CupcakePersona[]>('personas.list'), []),
         ]);
         const localStatus = cupcakeStatus ?? {};
-        setTasks(taskResult.map(mapTask));
+        setTasks(taskResult.map((run) => mapTask(run, projectRecords)));
         if (contextGeneration === conversationSelectionGeneration.current)
           setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
         setProviders(
@@ -2154,6 +2498,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             providerResult.providers.map((item) => [item.provider, item.configured]),
           ),
         );
+        setPersonas(personaResult);
         const configuredProviders = Object.fromEntries(
           providerResult.providers.map((item) => [item.provider, item.configured]),
         );
@@ -2367,6 +2712,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setRuntimeEvents((items) => [event, ...items].slice(0, 500));
       const payload = (event.payload ?? {}) as Record<string, unknown>;
       const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+      const groupTurnId = textValue(payload.turnId ?? payload.turn_id);
+      const persistedMessage = recordValue(payload.message);
+      const directConversationId = textValue(
+        payload.conversationId ??
+          payload.conversation_id ??
+          persistedMessage?.conversationId ??
+          persistedMessage?.conversation_id,
+      );
+      if (event.type === 'group.turn.started' && groupTurnId && directConversationId)
+        groupRunConversationRef.current.set(groupTurnId, directConversationId);
+      const eventConversationId =
+        directConversationId ||
+        (groupTurnId ? groupRunConversationRef.current.get(groupTurnId) : undefined) ||
+        (runId ? groupRunConversationRef.current.get(runId) : undefined);
+      const visibleConversation =
+        !eventConversationId || eventConversationId === activeConversationIdRef.current;
       if (event.type === 'message.cancelled') {
         const persisted = recordValue(payload.message);
         const messageId = textValue(persisted?.id);
@@ -2382,17 +2743,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           };
         }
       }
-      setMessages((items) => applyRuntimeMessageEvent(items, event, activeRunIdRef.current));
-      if (event.type === 'message.started' && runId) {
-        updateActiveRunId(runId);
+      if (visibleConversation) {
+        setMessages((items) => applyRuntimeMessageEvent(items, event, activeRunIdRef.current));
+        setActiveGroupTurn((current) => applyGroupTurnEvent(current, event));
+      }
+      if (event.type === 'group.turn.started' && runId) {
+        updateActiveRunId(runId, eventConversationId ?? null);
       } else if (
-        event.type === 'message.completed' ||
-        event.type === 'message.cancelled' ||
-        runtimeFailureEvent(event.type)
+        event.type === 'group.turn.completed' ||
+        event.type === 'group.turn.cancelled' ||
+        event.type === 'group.selector.failed' ||
+        event.type === 'group.speaker.failed'
       ) {
         if (!runId || activeRunIdRef.current === runId) updateActiveRunId(null);
-        if (runtimeFailureEvent(event.type)) setError(runtimeFailureMessage(payload));
+        if (visibleConversation && event.type.endsWith('.failed'))
+          setError(runtimeFailureMessage(payload));
+      } else if (event.type === 'message.started' && runId) {
+        updateActiveRunId(runId, eventConversationId ?? activeConversationIdRef.current);
+      } else if (
+        !groupTurnId &&
+        (event.type === 'message.completed' ||
+          event.type === 'message.cancelled' ||
+          runtimeFailureEvent(event.type))
+      ) {
+        if (!runId || activeRunIdRef.current === runId) updateActiveRunId(null);
+        if (visibleConversation && runtimeFailureEvent(event.type))
+          setError(runtimeFailureMessage(payload));
       }
+      if (
+        groupTurnId &&
+        (event.type === 'group.turn.completed' || event.type === 'group.turn.cancelled')
+      )
+        groupRunConversationRef.current.delete(groupTurnId);
       if (event.type.startsWith('artifact.')) {
         void loadArtifacts(activeProjectIdRef.current).catch(() => undefined);
         void request<Record<string, unknown>>('artifacts.counts')
@@ -2463,7 +2845,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       } else if (event.type.startsWith('task.')) {
         void request<RuntimeTask[]>('tasks.list')
-          .then((items) => setTasks(items.map(mapTask)))
+          .then((items) => setTasks(items.map((run) => mapTask(run, projectsRef.current))))
           .catch(() => undefined);
       } else if (event.type.startsWith('tool.') || event.type.startsWith('approval.')) {
         const activity: ToolActivity = {
@@ -2494,6 +2876,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const generation = ++projectSelectionGeneration.current;
       ++conversationSelectionGeneration.current;
       setActiveProjectId(projectId);
+      activeConversationIdRef.current = null;
       setActiveConversationId(null);
       setActiveBranchId(null);
       setMessages([]);
@@ -2645,8 +3028,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...items,
         ]);
         setActiveConversationId(id);
+        activeConversationIdRef.current = id;
         setActiveBranchId(branchId);
         setMessages([]);
+        setParticipants([]);
+        setGroupSettings(null);
+        setActiveGroupTurn(null);
         return { conversationId: id, branchId, projectId: activeProjectId };
       }
       let created: { conversationId: string; branchId: string; projectId: string | null } | null =
@@ -2671,8 +3058,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
         ]);
         setActiveConversationId(result.conversation.id);
+        activeConversationIdRef.current = result.conversation.id;
         setActiveBranchId(result.branch.id);
         setMessages([]);
+        setParticipants([]);
+        setGroupSettings(null);
+        setActiveGroupTurn(null);
         created = {
           conversationId: result.conversation.id,
           branchId: result.branch.id,
@@ -2693,10 +3084,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ? (selectedConversation.projectId ?? null)
         : activeProjectIdRef.current;
       setActiveProjectId(projectId);
+      activeConversationIdRef.current = conversationId;
       setActiveConversationId(conversationId);
       setActiveBranchId(null);
       setBranches([]);
       setMessages([]);
+      setParticipants([]);
+      setGroupSettings(null);
+      setActiveGroupTurn(null);
       if (fixtureMode) {
         setMemories((items) =>
           items.filter((item) => !item.projectId || item.projectId === projectId),
@@ -2728,6 +3123,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           parentMessageId: item.parent_message_id,
         }));
         const branchId = result.activeBranchId ?? branchRecords[0]?.id ?? null;
+        const groupRequest = Promise.allSettled([
+          request<ConversationParticipant[]>('conversations.participants.list', {
+            conversationId,
+          }),
+          request<ConversationGroupSettings>('conversations.group.settings.get', {
+            conversationId,
+          }),
+          request<ContractGroupTurn | null>('groups.turn.get', {
+            conversationId,
+            branchId,
+            projectId,
+          }),
+        ] as const);
         const history = branchId
           ? request<RuntimeMessage[]>('chat.history', { branchId })
           : Promise.resolve([]);
@@ -2736,6 +3144,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setBranches(branchRecords);
         setActiveBranchId(branchId);
         setMessages(historyResult.map(mapRuntimeMessage));
+        const [participantResult, settingsResult, turnResult] = await groupRequest;
+        if (generation !== conversationSelectionGeneration.current) return;
+        setParticipants(participantResult.status === 'fulfilled' ? participantResult.value : []);
+        setGroupSettings(settingsResult.status === 'fulfilled' ? settingsResult.value : null);
+        setActiveGroupTurn(
+          turnResult.status === 'fulfilled' && turnResult.value
+            ? mapPersistedGroupTurn(turnResult.value)
+            : null,
+        );
         const [memoryResult, artifactResult] = await contextRequest;
         if (generation !== conversationSelectionGeneration.current) return;
         if (memoryResult.status === 'fulfilled')
@@ -2765,12 +3182,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!branch) return;
       const generation = ++conversationSelectionGeneration.current;
       setActiveConversationId(branch.conversationId);
+      activeConversationIdRef.current = branch.conversationId;
       setActiveBranchId(branchId);
       if (fixtureMode) return;
       await guard(async () => {
-        const history = await request<RuntimeMessage[]>('chat.history', { branchId });
+        const [history, turn] = await Promise.all([
+          request<RuntimeMessage[]>('chat.history', { branchId }),
+          request<ContractGroupTurn | null>('groups.turn.get', {
+            conversationId: branch.conversationId,
+            branchId,
+          }).catch(() => null),
+        ]);
         if (generation !== conversationSelectionGeneration.current) return;
         setMessages(history.map(mapRuntimeMessage));
+        setActiveGroupTurn(turn ? mapPersistedGroupTurn(turn) : null);
       });
     },
     [branches, fixtureMode, guard, request],
@@ -2820,6 +3245,217 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
     },
     [activeConversationId, fixtureMode, guard, request],
+  );
+
+  const refreshGroupRoster = useCallback(
+    async (conversationId: string) => {
+      if (fixtureMode) return;
+      const generation = conversationSelectionGeneration.current;
+      const [nextParticipants, nextSettings] = await Promise.all([
+        request<ConversationParticipant[]>('conversations.participants.list', {
+          conversationId,
+        }),
+        request<ConversationGroupSettings>('conversations.group.settings.get', {
+          conversationId,
+        }),
+      ]);
+      if (
+        generation === conversationSelectionGeneration.current &&
+        activeConversationIdRef.current === conversationId
+      ) {
+        setParticipants(nextParticipants);
+        setGroupSettings(nextSettings);
+      }
+    },
+    [fixtureMode, request],
+  );
+
+  const createPersona = useCallback(
+    async (input: Omit<CupcakePersona, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>) => {
+      const created = fixtureMode
+        ? ({
+            ...input,
+            id: `fixture-persona-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            archivedAt: null,
+          } satisfies CupcakePersona)
+        : await request<CupcakePersona>('personas.create', input);
+      setPersonas((items) => {
+        const next = [...items, created].sort((a, b) => a.name.localeCompare(b.name));
+        personasRef.current = next;
+        return next;
+      });
+      return created;
+    },
+    [fixtureMode, request],
+  );
+
+  const updatePersona = useCallback(
+    async (
+      personaId: string,
+      input: Omit<CupcakePersona, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>,
+    ) => {
+      const existing = personas.find((item) => item.id === personaId);
+      if (!existing) throw new Error('That Cupcake is no longer available.');
+      const updated = fixtureMode
+        ? ({ ...existing, ...input, updatedAt: new Date().toISOString() } satisfies CupcakePersona)
+        : await request<CupcakePersona>('personas.update', { personaId, ...input });
+      setPersonas((items) => {
+        const next = items.map((item) => (item.id === personaId ? updated : item));
+        personasRef.current = next;
+        return next;
+      });
+      if (activeConversationId) await refreshGroupRoster(activeConversationId);
+      return updated;
+    },
+    [activeConversationId, fixtureMode, personas, refreshGroupRoster, request],
+  );
+
+  const archivePersona = useCallback(
+    async (personaId: string) => {
+      if (!fixtureMode) await request<CupcakePersona>('personas.archive', { personaId });
+      setPersonas((items) => {
+        const next = items.filter((item) => item.id !== personaId);
+        personasRef.current = next;
+        return next;
+      });
+      if (activeConversationId) await refreshGroupRoster(activeConversationId);
+    },
+    [activeConversationId, fixtureMode, refreshGroupRoster, request],
+  );
+
+  const addConversationParticipant = useCallback(
+    async (personaId: string) => {
+      if (!activeConversationId) throw new Error('Open a conversation before adding a Cupcake.');
+      if (participants.length >= 8)
+        throw new Error('This conversation already has the maximum of eight Cupcakes.');
+      if (fixtureMode) {
+        const persona = personasRef.current.find((item) => item.id === personaId);
+        if (!persona) throw new Error('That Cupcake is no longer available.');
+        const model = models.find(
+          (item) => item.id === persona.modelId || item.runtimeModelId === persona.modelId,
+        );
+        const modelReady = Boolean(model && modelIsAvailableInChat(model));
+        const participant: ConversationParticipant = {
+          id: `fixture-participant-${Date.now()}`,
+          conversationId: activeConversationId,
+          personaId,
+          position: participants.length,
+          enabled: true,
+          isLead: participants.length === 0,
+          addedAt: new Date().toISOString(),
+          persona,
+          availability: modelReady
+            ? { status: 'ready', message: 'Ready to reply.' }
+            : {
+                status: !model
+                  ? 'model_missing'
+                  : model.route === 'Local'
+                    ? 'local_not_loaded'
+                    : 'provider_unavailable',
+                message: model ? modelAvailabilityDetail(model) : 'The saved model is missing.',
+              },
+        };
+        setParticipants((items) => [...items, participant]);
+        setGroupSettings((current) => ({
+          conversationId: activeConversationId,
+          strategy: current?.strategy ?? 'smart-selective',
+          maxReplies: current?.maxReplies ?? 2,
+          leadParticipantId: current?.leadParticipantId ?? participant.id,
+          rosterRevision: (current?.rosterRevision ?? 0) + 1,
+          updatedAt: new Date().toISOString(),
+        }));
+        return;
+      }
+      await request('conversations.participants.add', {
+        conversationId: activeConversationId,
+        personaId,
+      });
+      await refreshGroupRoster(activeConversationId);
+    },
+    [activeConversationId, fixtureMode, models, participants.length, refreshGroupRoster, request],
+  );
+
+  const removeConversationParticipant = useCallback(
+    async (participantId: string) => {
+      if (!activeConversationId) return;
+      if (!fixtureMode)
+        await request('conversations.participants.remove', {
+          conversationId: activeConversationId,
+          participantId,
+        });
+      if (fixtureMode) {
+        setParticipants((items) => items.filter((item) => item.id !== participantId));
+      } else await refreshGroupRoster(activeConversationId);
+    },
+    [activeConversationId, fixtureMode, refreshGroupRoster, request],
+  );
+
+  const setConversationParticipantEnabled = useCallback(
+    async (participantId: string, enabled: boolean) => {
+      if (!activeConversationId) return;
+      if (!fixtureMode)
+        await request('conversations.participants.update', {
+          conversationId: activeConversationId,
+          participantId,
+          enabled,
+        });
+      if (fixtureMode)
+        setParticipants((items) =>
+          items.map((item) => (item.id === participantId ? { ...item, enabled } : item)),
+        );
+      else await refreshGroupRoster(activeConversationId);
+    },
+    [activeConversationId, fixtureMode, refreshGroupRoster, request],
+  );
+
+  const reorderConversationParticipants = useCallback(
+    async (participantIds: string[]) => {
+      if (!activeConversationId) return;
+      if (!fixtureMode)
+        await request('conversations.participants.reorder', {
+          conversationId: activeConversationId,
+          participantIds,
+        });
+      if (fixtureMode)
+        setParticipants((items) =>
+          participantIds.flatMap((id, position) => {
+            const item = items.find((candidate) => candidate.id === id);
+            return item ? [{ ...item, position }] : [];
+          }),
+        );
+      else await refreshGroupRoster(activeConversationId);
+    },
+    [activeConversationId, fixtureMode, refreshGroupRoster, request],
+  );
+
+  const updateGroupSettings = useCallback(
+    async (input: {
+      strategy?: ConversationGroupSettings['strategy'];
+      maxReplies?: 1 | 2 | 3;
+      leadParticipantId?: string;
+    }) => {
+      if (!activeConversationId) throw new Error('Open a conversation first.');
+      const next = fixtureMode
+        ? ({
+            conversationId: activeConversationId,
+            strategy: input.strategy ?? groupSettings?.strategy ?? 'smart-selective',
+            maxReplies: input.maxReplies ?? groupSettings?.maxReplies ?? 2,
+            leadParticipantId: input.leadParticipantId ?? groupSettings?.leadParticipantId ?? null,
+            rosterRevision: (groupSettings?.rosterRevision ?? 0) + 1,
+            updatedAt: new Date().toISOString(),
+          } satisfies ConversationGroupSettings)
+        : await request<ConversationGroupSettings>('conversations.group.settings.set', {
+            conversationId: activeConversationId,
+            strategy: input.strategy ?? groupSettings?.strategy,
+            maxReplies: input.maxReplies ?? groupSettings?.maxReplies,
+            leadParticipantId:
+              input.leadParticipantId ?? groupSettings?.leadParticipantId ?? undefined,
+          });
+      setGroupSettings(next);
+    },
+    [activeConversationId, fixtureMode, groupSettings, request],
   );
 
   const sendMessage = useCallback(
@@ -2915,6 +3551,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           120_000,
         );
         setActiveConversationId(result.conversationId);
+        activeConversationIdRef.current = result.conversationId;
         setActiveBranchId(result.branchId);
         if (result.content) {
           const messageId = result.runId ?? result.message?.run_id ?? result.message?.id;
@@ -3009,6 +3646,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 setMessages(history.map(mapRuntimeMessage));
                 setActiveBranchId(branchId);
                 if (conversationId) {
+                  activeConversationIdRef.current = conversationId;
                   setActiveConversationId(conversationId);
                   const projectId =
                     stableIntent?.projectId ??
@@ -3068,6 +3706,311 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       settings,
     ],
   );
+
+  const preflightGroupTurn = useCallback(
+    async (input: GroupTurnDraftInput): Promise<PreparedGroupTurn> => {
+      if (!participants.some((item) => item.enabled))
+        throw new Error('Add at least one Cupcake before sending to this group.');
+      const payload = {
+        content: input.content,
+        conversationId: input.conversationId,
+        branchId: input.branchId,
+        projectId: input.projectId,
+        mentions: input.mentions,
+        attachments: structuredAttachments(input.attachments),
+        attachmentHandles: input.attachments.map((item) => item.handleId),
+        references: structuredReferences(input.references),
+        referenceIds: input.references.map((item) => item.id),
+        memoryIds: memories.filter((item) => item.enabled).map((item) => item.id),
+        toolIds: [],
+        toolNames: [],
+        offline: settings.offline,
+        maxReplies: groupSettings?.maxReplies,
+        maxOutputTokens: input.maxOutputTokens,
+      };
+      if (fixtureMode) {
+        const eligibleSpeakers: GroupEligibleSpeaker[] = participants
+          .filter((item) => item.enabled && item.availability.status === 'ready')
+          .map((item) => {
+            const model = models.find(
+              (candidate) =>
+                candidate.id === item.persona.modelId ||
+                candidate.runtimeModelId === item.persona.modelId,
+            );
+            return {
+              participantId: item.id,
+              persona: item.persona,
+              model: {
+                id: item.persona.modelId,
+                provider: model?.provider ?? 'Fixture route',
+                privacyRoute: model?.route === 'Local' ? 'local' : 'cloud',
+                costClass: model?.cost ?? 'unknown',
+              },
+              selectionReason: input.mentions.length ? 'direct_mention' : null,
+              attachmentCompatibility: 'compatible',
+            };
+          });
+        const selected = input.mentions.length
+          ? input.mentions.flatMap((mention) => {
+              const item = eligibleSpeakers.find(
+                (candidate) => candidate.participantId === mention.participantId,
+              );
+              return item ? [item] : [];
+            })
+          : eligibleSpeakers;
+        const preflight = {
+          turnId: `fixture-turn-${Date.now()}`,
+          planRevision: '0'.repeat(64),
+          digest: '1'.repeat(64),
+          rosterRevision: groupSettings?.rosterRevision ?? 1,
+          headMessageId: null,
+          userMessageId: null,
+          mode: input.mentions.length ? ('mentions' as const) : ('smart' as const),
+          strategy: groupSettings?.strategy ?? 'smart-selective',
+          maxReplies: groupSettings?.maxReplies ?? 2,
+          maxSelectorCalls: input.mentions.length ? 0 : (groupSettings?.maxReplies ?? 2),
+          selectorMaxOutputTokens: input.mentions.length ? 0 : 256,
+          selector: input.mentions.length ? null : (selected[0] ?? null),
+          eligibleSpeakers: selected,
+          ineligibleSpeakers: [],
+          confirmationRequired: false,
+          confirmationToken: null,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          disclosure: {
+            selector: input.mentions.length ? null : (selected[0] ?? null),
+            candidateRoutes: selected,
+            ineligibleRoutes: [],
+            maxSelectorCalls: input.mentions.length ? 0 : (groupSettings?.maxReplies ?? 2),
+            selectorMaxOutputTokens: input.mentions.length ? 0 : 256,
+            maxReplies: groupSettings?.maxReplies ?? 2,
+          },
+          sendable: selected.length > 0,
+        } satisfies GroupTurnPreflight;
+        return { input, preflight };
+      }
+      const preflight = await request<GroupTurnPreflight>('groups.turn.preflight', payload);
+      return { input, preflight };
+    },
+    [fixtureMode, groupSettings, memories, models, participants, request, settings.offline],
+  );
+
+  const sendGroupTurn = useCallback(
+    async (prepared: PreparedGroupTurn) => {
+      const { input, preflight } = prepared;
+      if (!preflight.sendable) {
+        setError('Repair or remove unavailable Cupcakes before starting this turn.');
+        return false;
+      }
+      const optimisticId = `group-user-${Date.now()}`;
+      const initialTurn: GroupTurnState = {
+        turnId: preflight.turnId,
+        conversationId: input.conversationId,
+        branchId: input.branchId,
+        userMessageId: null,
+        planRevision: preflight.planRevision,
+        rosterRevision: preflight.rosterRevision,
+        status: 'preparing',
+        mode: preflight.mode,
+        callIndex: 0,
+        maxSelectorCalls: preflight.maxSelectorCalls,
+        maxReplies: preflight.maxReplies,
+        selector: preflight.selector,
+        speakers: [],
+      };
+      setActiveGroupTurn(initialTurn);
+      setMessages((items) => [
+        ...items,
+        {
+          id: optimisticId,
+          role: 'user',
+          content: input.content,
+          attachments: input.attachments,
+          references: input.references,
+        },
+      ]);
+      if (fixtureMode) {
+        const selected = preflight.eligibleSpeakers.slice(0, preflight.maxReplies);
+        const now = new Date().toISOString();
+        const fixtureMessages = selected.map((item, index): MessageRecord => ({
+          id: `${preflight.turnId}:fixture:${index + 1}`,
+          role: 'assistant',
+          content: `${item.persona.name} is ready in this deterministic preview. The desktop bridge is absent, so no model provider was contacted.`,
+          createdAt: now,
+          modelId: item.model.id,
+          providerId: item.model.provider,
+          groupTurnId: preflight.turnId,
+          groupSequence: index + 1,
+          speaker: {
+            participantId: item.participantId,
+            personaId: item.persona.id,
+            name: item.persona.name,
+            handle: item.persona.handle,
+            avatar: item.persona.avatar,
+            role: item.persona.role,
+            modelId: item.model.id,
+            providerId: item.model.provider,
+            privacyRoute:
+              item.model.privacyRoute === 'local'
+                ? 'local'
+                : item.model.privacyRoute === 'self_hosted'
+                  ? 'self_hosted'
+                  : 'cloud',
+          },
+        }));
+        setMessages((items) => [...items, ...fixtureMessages]);
+        setActiveGroupTurn({
+          ...initialTurn,
+          status: 'completed',
+          speakers: fixtureMessages.flatMap((message, index) =>
+            message.speaker
+              ? [
+                  {
+                    sequence: index + 1,
+                    speaker: message.speaker,
+                    messageId: message.id,
+                    status: 'completed' as const,
+                  },
+                ]
+              : [],
+          ),
+        });
+        return true;
+      }
+      setBusy(true);
+      setError(null);
+      const attachmentItems = structuredAttachments(input.attachments);
+      const referenceItems = structuredReferences(input.references);
+      try {
+        const result = await request<{
+          turnId: string;
+          conversationId: string;
+          branchId: string;
+          userMessageId: string;
+          status: ContractGroupTurn['status'];
+        }>(
+          'groups.turn.send',
+          {
+            content: input.content,
+            conversationId: input.conversationId,
+            branchId: input.branchId,
+            projectId: input.projectId,
+            mentions: input.mentions,
+            attachments: attachmentItems,
+            attachmentHandles: attachmentItems.map((item) => item.handleId),
+            references: referenceItems,
+            referenceIds: referenceItems.map((item) => item.id),
+            memoryIds: memories.filter((item) => item.enabled).map((item) => item.id),
+            toolIds: [],
+            toolNames: [],
+            offline: settings.offline,
+            maxReplies: groupSettings?.maxReplies,
+            maxOutputTokens: input.maxOutputTokens,
+            turnId: preflight.turnId,
+            planRevision: preflight.planRevision,
+            digest: preflight.digest,
+            confirmationToken: preflight.confirmationToken,
+          },
+          300_000,
+        );
+        const stillVisible = activeConversationIdRef.current === result.conversationId;
+        if (stillVisible) setActiveBranchId(result.branchId);
+        const [historyResult, persistedTurnResult] = await Promise.allSettled([
+          request<RuntimeMessage[]>('chat.history', { branchId: result.branchId }),
+          request<ContractGroupTurn>('groups.turn.get', { turnId: result.turnId }),
+        ]);
+        if (stillVisible && historyResult.status === 'fulfilled') {
+          setMessages(historyResult.value.map(mapRuntimeMessage));
+        } else if (stillVisible) {
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === optimisticId ? { ...item, id: result.userMessageId } : item,
+            ),
+          );
+        }
+        if (stillVisible && persistedTurnResult.status === 'fulfilled') {
+          setActiveGroupTurn(mapPersistedGroupTurn(persistedTurnResult.value));
+        } else if (stillVisible) {
+          setActiveGroupTurn((current) =>
+            current?.turnId === result.turnId
+              ? { ...current, userMessageId: result.userMessageId }
+              : current,
+          );
+        }
+        if (
+          stillVisible &&
+          historyResult.status === 'rejected' &&
+          persistedTurnResult.status === 'rejected'
+        )
+          setError('The group turn was sent, but its latest state could not be refreshed yet.');
+        return true;
+      } catch (reason) {
+        const cancelled = reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED';
+        const [historyResult, persistedTurnResult] = await Promise.allSettled([
+          request<RuntimeMessage[]>('chat.history', { branchId: input.branchId }),
+          request<ContractGroupTurn | null>('groups.turn.get', {
+            turnId: preflight.turnId,
+          }),
+        ]);
+        const persistedTurn =
+          persistedTurnResult.status === 'fulfilled' ? persistedTurnResult.value : null;
+        const committed = Boolean(persistedTurn?.userMessageId);
+        const stillVisible = activeConversationIdRef.current === input.conversationId;
+        if (stillVisible && historyResult.status === 'fulfilled') {
+          setMessages(historyResult.value.map(mapRuntimeMessage));
+        } else if (stillVisible && !committed) {
+          setMessages((items) => items.filter((item) => item.id !== optimisticId));
+        }
+        if (stillVisible && persistedTurn) setActiveGroupTurn(mapPersistedGroupTurn(persistedTurn));
+        else if (stillVisible && !committed) setActiveGroupTurn(null);
+        if (stillVisible && (!cancelled || !committed))
+          setError(reason instanceof Error ? reason.message : 'The group turn could not finish.');
+        return committed;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fixtureMode, groupSettings?.maxReplies, memories, request, settings.offline],
+  );
+
+  const stopGroupTurn = useCallback(async (): Promise<boolean> => {
+    if (
+      !activeGroupTurn ||
+      !['preparing', 'choosing', 'responding'].includes(activeGroupTurn.status)
+    )
+      return false;
+    if (fixtureMode || !window.cupcake) {
+      setActiveGroupTurn((current) =>
+        current?.turnId === activeGroupTurn.turnId
+          ? applyGroupTurnEvent(current, {
+              sequence: Date.now(),
+              type: 'group.turn.cancelled',
+              payload: { turnId: activeGroupTurn.turnId },
+              timestamp: new Date().toISOString(),
+            })
+          : current,
+      );
+      return true;
+    }
+    const accepted = await window.cupcake.runtime.cancel(activeGroupTurn.turnId);
+    if (accepted) return true;
+    try {
+      const persistedTurn = await request<ContractGroupTurn | null>('groups.turn.get', {
+        turnId: activeGroupTurn.turnId,
+      });
+      if (persistedTurn) {
+        const reconciled = mapPersistedGroupTurn(persistedTurn);
+        setActiveGroupTurn(reconciled);
+        if (!['preparing', 'choosing', 'responding'].includes(reconciled.status)) {
+          if (activeRunIdRef.current === activeGroupTurn.turnId) updateActiveRunId(null);
+          return true;
+        }
+      }
+    } catch {
+      // The cancellation result remains authoritative when reconciliation is unavailable.
+    }
+    setError('This group turn could not be stopped. It may still be responding.');
+    return false;
+  }, [activeGroupTurn, fixtureMode, request, updateActiveRunId]);
 
   const stopRun = useCallback(async () => {
     if (!activeRunId) return;
@@ -3132,7 +4075,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!fixtureMode) await request(method, { runId, ...params });
       if (!fixtureMode) {
         const items = await request<RuntimeTask[]>('tasks.list');
-        setTasks(items.map(mapTask));
+        setTasks(items.map((run) => mapTask(run, projectsRef.current)));
       }
     },
     [fixtureMode, request],
@@ -3141,12 +4084,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (result: RuntimeArtifactTestResponse): ArtifactTestRun => {
       const runtimeRun = result.run ?? result.task;
       if (!runtimeRun) throw new Error('The runtime did not return a durable test task.');
-      const mappedTask = mapTask(runtimeRun);
+      const mappedTask = mapTask(runtimeRun, projects);
+      const evidence = result.toolEvidence ?? result.tool_evidence ?? mappedTask.evidence;
       const task = {
         ...mappedTask,
         project:
           projects.find((project) => project.id === mappedTask.projectId)?.name ??
           mappedTask.project,
+        evidence,
       };
       setTasks((items) => [task, ...items.filter((item) => item.id !== task.id)]);
       const execution = recordValue(result.execution) ?? {};
@@ -3170,9 +4115,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         brokerPreflight: recordValue(execution.preflight) ?? undefined,
         brokerApprovalChallenge:
           recordValue(execution.approvalChallenge ?? execution.approval_challenge) ?? undefined,
-        evidence: result.toolEvidence ?? result.tool_evidence,
+        evidence,
         message:
           textValue(execution.message ?? execution.errorMessage ?? execution.error_message) ||
+          textValue(runtimeRun.error) ||
           undefined,
       };
     },
@@ -3194,6 +4140,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           projectId: artifact.projectId,
           elapsed: 'now',
           steps: [{ label: 'Python unit tests', state: 'queued' }],
+          workKind: 'code_execution',
+          runtimeStatus: approvalRequired ? 'waiting_approval' : 'waiting_external',
         };
         setTasks((items) => [task, ...items]);
         return {
@@ -3238,23 +4186,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const executeArtifactTestRun = useCallback(
     async (run: ArtifactTestRun): Promise<ArtifactTestRun> => {
       if (fixtureMode) {
+        const fixtureFailure =
+          new URLSearchParams(window.location.search).get('artifactTestOutcome') === 'failure';
+        const evidence = {
+          stdout: fixtureFailure ? '' : 'Ran 3 tests in 0.04s\nOK',
+          stderr: fixtureFailure
+            ? 'Ran 8 tests in 0.01s\nFAILED (errors=1)\nKeyError: sample field'
+            : '',
+          exitStatus: fixtureFailure ? 1 : 0,
+          testSummary: fixtureFailure
+            ? { run: 8, failures: 0, errors: 1, skipped: 0, successful: false }
+            : { run: 3, failures: 0, errors: 0, skipped: 0, successful: true },
+          provenance: ['fixture:local-python-sandbox'],
+        };
         const task: Task = {
           ...run.task,
-          status: 'complete',
+          status: fixtureFailure ? 'failed' : 'complete',
           progress: 100,
-          steps: run.task.steps.map((step) => ({ ...step, state: 'complete' })),
+          steps: run.task.steps.map((step) => ({
+            ...step,
+            state: fixtureFailure ? 'failed' : 'complete',
+          })),
+          workKind: 'code_execution',
+          evidence,
+          runtimeStatus: fixtureFailure ? 'failed' : 'succeeded',
         };
         setTasks((items) => [task, ...items.filter((item) => item.id !== task.id)]);
         return {
           task,
-          status: 'completed',
-          evidence: {
-            stdout: 'Ran 3 tests in 0.04s\nOK',
-            stderr: '',
-            exitStatus: 0,
-            testSummary: { run: 3, failures: 0, errors: 0, skipped: 0, successful: true },
-            provenance: ['fixture:local-python-sandbox'],
-          },
+          status: fixtureFailure ? 'failed' : 'completed',
+          evidence,
         };
       }
       const params: Record<string, unknown> = { runId: run.task.id };
@@ -3277,7 +4238,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (fixtureMode)
         setTasks((items) =>
           items.map((item) =>
-            item.id === run.task.id ? { ...item, status: 'failed', progress: 0 } : item,
+            item.id === run.task.id
+              ? { ...item, status: 'failed', progress: 0, runtimeStatus: 'cancelled' }
+              : item,
           ),
         );
     },
@@ -3999,12 +4962,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       localRuntimes,
       toolActivity,
       providers,
+      personas,
+      participants,
+      groupSettings,
+      activeGroupTurn,
       settings,
       legacyMigration,
       activeProjectId,
       activeConversationId,
       activeBranchId,
       activeRunId,
+      activeRunConversationId,
       setActiveProject,
       createProject,
       updateProject,
@@ -4015,6 +4983,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       renameConversation,
       archiveConversation,
       branchConversation,
+      createPersona,
+      updatePersona,
+      archivePersona,
+      addConversationParticipant,
+      removeConversationParticipant,
+      setConversationParticipantEnabled,
+      reorderConversationParticipants,
+      updateGroupSettings,
+      preflightGroupTurn,
+      sendGroupTurn,
+      stopGroupTurn,
       sendMessage,
       preflightCloudDisclosure,
       stopRun,
@@ -4079,12 +5058,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       localRuntimes,
       toolActivity,
       providers,
+      personas,
+      participants,
+      groupSettings,
+      activeGroupTurn,
       settings,
       legacyMigration,
       activeProjectId,
       activeConversationId,
       activeBranchId,
       activeRunId,
+      activeRunConversationId,
       setActiveProject,
       createProject,
       updateProject,
@@ -4095,6 +5079,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       renameConversation,
       archiveConversation,
       branchConversation,
+      createPersona,
+      updatePersona,
+      archivePersona,
+      addConversationParticipant,
+      removeConversationParticipant,
+      setConversationParticipantEnabled,
+      reorderConversationParticipants,
+      updateGroupSettings,
+      preflightGroupTurn,
+      sendGroupTurn,
+      stopGroupTurn,
       sendMessage,
       preflightCloudDisclosure,
       stopRun,

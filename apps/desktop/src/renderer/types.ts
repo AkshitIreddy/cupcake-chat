@@ -1,3 +1,17 @@
+import type {
+  ConversationGroupSettings as ContractConversationGroupSettings,
+  ConversationParticipant as ContractConversationParticipant,
+  GroupDisclosure as ContractGroupDisclosure,
+  GroupEligibleSpeaker as ContractGroupEligibleSpeaker,
+  GroupIneligibleSpeaker as ContractGroupIneligibleSpeaker,
+  GroupModelRoute as ContractGroupModelRoute,
+  GroupSpeakerSnapshot as ContractGroupSpeakerSnapshot,
+  GroupStrategy as ContractGroupStrategy,
+  GroupTurnPreflight as ContractGroupTurnPreflight,
+  ParticipantAvailability as ContractParticipantAvailability,
+  Persona as ContractPersona,
+} from '@cupcakeagi/contracts';
+
 export type Theme = 'light' | 'dark' | 'minimal' | 'classic';
 export type View =
   | 'home'
@@ -25,7 +39,77 @@ export interface Conversation {
   pinned?: boolean;
   archived?: boolean;
   unread?: boolean;
+  group?: ConversationGroupSettings;
 }
+
+export type GroupConversationStrategy = ContractGroupStrategy;
+export type CupcakePersona = ContractPersona;
+export type ParticipantAvailability = ContractParticipantAvailability;
+export type ParticipantAvailabilityStatus = ContractParticipantAvailability['status'];
+export type ConversationParticipant = ContractConversationParticipant;
+export type ConversationGroupSettings = ContractConversationGroupSettings;
+
+export interface GroupMention {
+  participantId: string;
+  personaId: string;
+  start: number;
+  end: number;
+  token: string;
+}
+
+export type GroupSpeakerSnapshot = ContractGroupSpeakerSnapshot;
+
+export interface GroupSelectionReason {
+  code: string;
+  label?: string;
+  reason?: string;
+}
+
+export type GroupTurnStatus =
+  | 'preparing'
+  | 'awaiting-confirmation'
+  | 'choosing'
+  | 'responding'
+  | 'completed'
+  | 'waiting_for_you'
+  | 'selection_failed'
+  | 'member_failed'
+  | 'cancelled'
+  | 'awaiting_tool'
+  | 'interrupted';
+
+export interface GroupTurnSpeakerState {
+  sequence: number;
+  speaker: GroupSpeakerSnapshot;
+  status: 'selected' | 'speaking' | 'completed' | 'failed' | 'cancelled';
+  selectionReason?: GroupSelectionReason | null;
+  messageId?: string | null;
+  error?: string;
+}
+
+export interface GroupTurnState {
+  turnId: string;
+  conversationId: string;
+  branchId?: string | null;
+  userMessageId?: string | null;
+  planRevision: string;
+  rosterRevision: number;
+  status: GroupTurnStatus;
+  mode: 'mentions' | 'smart';
+  callIndex: number;
+  maxSelectorCalls: number;
+  maxReplies: number;
+  selector?: GroupEligibleSpeaker | null;
+  speakers: GroupTurnSpeakerState[];
+  selectionSummary?: string;
+  error?: string;
+}
+
+export type GroupModelRoute = ContractGroupModelRoute;
+export type GroupEligibleSpeaker = ContractGroupEligibleSpeaker;
+export type GroupIneligibleSpeaker = ContractGroupIneligibleSpeaker;
+export type GroupTurnDisclosure = ContractGroupDisclosure;
+export type GroupTurnPreflight = ContractGroupTurnPreflight;
 
 export interface Task {
   id: string;
@@ -37,6 +121,9 @@ export interface Task {
   projectId?: string | null;
   elapsed: string;
   steps: { label: string; state: 'complete' | 'active' | 'queued' | 'failed' }[];
+  workKind?: string;
+  evidence?: Record<string, unknown>;
+  runtimeStatus?: string;
 }
 
 export interface MemoryRecord {

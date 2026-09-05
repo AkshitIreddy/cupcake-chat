@@ -80,7 +80,7 @@ describe('workspace runtime message stream', () => {
 
     expect(completed).toEqual([
       expect.objectContaining({
-        id: 'run-2',
+        id: 'message-2',
         branchId: 'branch-2',
         content: 'Final answer',
         modelId: 'model-2',

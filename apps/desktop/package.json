@@ -17,10 +17,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
+    "@cupcakeagi/contracts": "workspace:*",
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@tauri-apps/api": "^2.11.1",
     "katex": "^0.18.4",
     "lucide-react": "^1.35.0",
     "react": "^19.2.8",
