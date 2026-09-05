@@ -218,16 +218,8 @@ try {
   }
   await run(join(installDirectory, uninstallers[0]), ['/S']);
   evidence.silentUninstall = true;
-  if (installedRecords().length !== 0) {
-    throw new Error(`${productName} uninstall record remained after silent uninstall`);
-  }
+  await waitForUninstallCompletion();
   evidence.uninstallRecordRemoved = true;
-  try {
-    await access(installDirectory);
-    throw new Error(`Uninstaller retained its install directory: ${installDirectory}`);
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-  }
   evidence.installDirectoryRemoved = true;
   const profileFiles = await readdir(profile);
   evidence.profileRetained = profileFiles.length > 0;
@@ -302,6 +294,28 @@ async function waitForPage(activeBrowser, timeoutMs = 30_000) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
   }
   throw new Error('Installed Tauri WebView page did not become available');
+}
+
+async function waitForUninstallCompletion(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const recordRemoved = installedRecords().length === 0;
+    let directoryRemoved = false;
+    try {
+      await access(installDirectory);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        directoryRemoved = true;
+      } else {
+        throw error;
+      }
+    }
+    if (recordRemoved && directoryRemoved) return;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  }
+  throw new Error(
+    `${productName} uninstall did not remove its registry record and install directory within ${timeoutMs} ms`,
+  );
 }
 
 async function runtimeRequest(page, method, params) {
