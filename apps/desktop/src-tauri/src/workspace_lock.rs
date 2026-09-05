@@ -337,9 +337,7 @@ fn enforce_retry_boundary(inner: &LockInner) -> HostResult<()> {
 }
 
 fn status_for(inner: &LockInner) -> WorkspaceLockStatus {
-    let state = if inner.record.is_none() {
-        WorkspaceLockState::Unlocked
-    } else if inner.unlocked {
+    let state = if inner.record.is_none() || inner.unlocked {
         WorkspaceLockState::Unlocked
     } else {
         WorkspaceLockState::Locked
