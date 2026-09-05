@@ -4,6 +4,7 @@ import type {
   GroupMention,
   ModelDescriptor,
 } from '../types';
+import { modelIsAvailableInChat } from '../model-intelligence';
 
 export interface MentionToken {
   start: number;
@@ -27,6 +28,10 @@ export function personaModelId(model: ModelDescriptor): string {
   return model.id.startsWith('cupcake-local:')
     ? `openai-compatible:cupcake-local/${model.id.slice('cupcake-local:'.length)}`
     : model.id;
+}
+
+export function personaModelReady(model: ModelDescriptor): boolean {
+  return model.route === 'Local' ? model.status === 'ready' : modelIsAvailableInChat(model);
 }
 
 export function normalizePersonaHandle(value: string): string {

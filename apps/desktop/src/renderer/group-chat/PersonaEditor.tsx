@@ -1,13 +1,14 @@
 import { Check, ChevronDown, Cloud, HardDrive, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CupcakePersona, ModelDescriptor } from '../types';
-import { modelAvailabilityDetail, modelIsAvailableInChat } from '../model-intelligence';
+import { modelAvailabilityDetail } from '../model-intelligence';
 import { PersonaPortrait } from './PersonaPortrait';
 import {
   modelCanBackPersona,
   normalizePersonaHandle,
   personaDraft,
   personaModelId,
+  personaModelReady,
   validatePersonaDraft,
   type PersonaDraft,
 } from './persona-utils';
@@ -23,6 +24,15 @@ const PRESETS: Array<{
   { id: 'warm', label: 'Friendly', detail: 'Conversational' },
   { id: 'analytical', label: 'Analytical', detail: 'Methodical' },
 ];
+
+function personaAvailabilityDetail(model: ModelDescriptor): string {
+  if (model.route === 'Local' && !personaModelReady(model)) {
+    return model.status === 'installed'
+      ? 'Installed · load in Models before sending'
+      : 'Configure now · install and load in Models before sending';
+  }
+  return modelAvailabilityDetail(model);
+}
 
 export function PersonaEditor({
   open,
@@ -84,15 +94,14 @@ export function PersonaEditor({
     return models
       .filter(
         (model) =>
-          (showUnavailableModels || modelIsAvailableInChat(model)) &&
+          (showUnavailableModels || personaModelReady(model)) &&
           (!query ||
             `${model.name} ${model.provider} ${model.publisher ?? ''}`
               .toLocaleLowerCase()
               .includes(query)),
       )
       .sort((left, right) => {
-        const readiness =
-          Number(modelIsAvailableInChat(right)) - Number(modelIsAvailableInChat(left));
+        const readiness = Number(personaModelReady(right)) - Number(personaModelReady(left));
         return (
           readiness ||
           left.provider.localeCompare(right.provider) ||
@@ -158,9 +167,7 @@ export function PersonaEditor({
             <span>@{normalizePersonaHandle(draft.handle) || 'handle'}</span>
             <p>{draft.role.trim() || 'Add a clear role for this voice.'}</p>
             {selectedModel ? (
-              <small
-                className={modelIsAvailableInChat(selectedModel) ? 'is-ready' : 'needs-attention'}
-              >
+              <small className={personaModelReady(selectedModel) ? 'is-ready' : 'needs-attention'}>
                 {selectedModel.route === 'Local' ? <HardDrive size={13} /> : <Cloud size={13} />}
                 {selectedModel.name}
               </small>
@@ -363,7 +370,7 @@ export function PersonaEditor({
                     <span>
                       <strong>{selectedModel.name}</strong>
                       <small>
-                        {selectedModel.provider} · {modelAvailabilityDetail(selectedModel)}
+                        {selectedModel.provider} · {personaAvailabilityDetail(selectedModel)}
                       </small>
                     </span>
                   </>
@@ -422,7 +429,7 @@ export function PersonaEditor({
                           <span>
                             <strong>{model.name}</strong>
                             <small>
-                              {model.provider} · {modelAvailabilityDetail(model)}
+                              {model.provider} · {personaAvailabilityDetail(model)}
                             </small>
                           </span>
                           {draft.modelId === canonicalId && <Check size={15} />}
@@ -434,7 +441,7 @@ export function PersonaEditor({
                 </div>
               )}
               {selectedModel &&
-                !modelIsAvailableInChat(selectedModel) &&
+                !personaModelReady(selectedModel) &&
                 persona?.modelId === draft.modelId && (
                   <p className="persona-route-warning" role="status">
                     You can save other edits, but this Cupcake will stay in Needs attention until{' '}

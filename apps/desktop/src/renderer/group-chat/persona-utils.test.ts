@@ -10,6 +10,7 @@ import {
   mentionTokenAtCaret,
   normalizePersonaHandle,
   personaModelId,
+  personaModelReady,
   reconcileMentions,
   validatePersonaDraft,
 } from './persona-utils';
@@ -67,6 +68,8 @@ describe('persona handles', () => {
     });
     const canonical = 'openai-compatible:cupcake-local/qwen3-8b-q4-k-m';
     expect(personaModelId(local)).toBe(canonical);
+    expect(personaModelReady(local)).toBe(false);
+    expect(personaModelReady({ ...local, status: 'ready' })).toBe(true);
     expect(validatePersonaDraft({ ...persona(), modelId: canonical }, [], [local])).toEqual({});
     expect(
       validatePersonaDraft({ ...persona(), modelId: 'qwen3-8b-q4-k-m' }, [], [local]).modelId,
