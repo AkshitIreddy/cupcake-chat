@@ -1351,6 +1351,8 @@ function hasTaskExecutionProof(result, artifactRecord, expectedRevisionId, artif
     evidence?.status === 'succeeded' &&
     evidence?.exitStatus === 0 &&
     evidence?.testSummary?.successful === true &&
+    Number.isSafeInteger(evidence?.testSummary?.run) &&
+    evidence.testSummary.run >= 1 &&
     Array.isArray(evidence?.provenance) &&
     evidence.provenance.length > 0 &&
     evidence?.tool === 'python.run' &&
@@ -2195,7 +2197,7 @@ function runSelfTests() {
     toolEvidence: {
       status: 'succeeded',
       exitStatus: 0,
-      testSummary: { successful: true },
+      testSummary: { successful: true, run: 10 },
       provenance: ['sandbox:packaged-worker-appcontainer-job'],
       tool: 'python.run',
       nativeTool: 'native.sandbox.python',
@@ -2217,6 +2219,21 @@ function runSelfTests() {
   assert.equal(
     hasTaskExecutionProof(
       { ...taskResult, toolEvidence: { ...taskResult.toolEvidence, exitStatus: 1 } },
+      artifact,
+      'revision-1',
+      artifactHistory,
+    ),
+    false,
+  );
+  assert.equal(
+    hasTaskExecutionProof(
+      {
+        ...taskResult,
+        toolEvidence: {
+          ...taskResult.toolEvidence,
+          testSummary: { successful: true, run: 0 },
+        },
+      },
       artifact,
       'revision-1',
       artifactHistory,

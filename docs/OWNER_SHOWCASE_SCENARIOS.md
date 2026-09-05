@@ -2,9 +2,11 @@
 
 **Profile:** `E:\temp\cupcakeai-owner-test-20260902`
 
-**Harness:** `scripts/create-owner-showcase.mjs`
+**Harnesses:** `scripts/create-owner-showcase.mjs` and `scripts/accept-owner-group-showcase.mjs`
 
 **Evidence root:** `E:\temp\cupcakeai-owner-showcase-20260905`
+
+**Group evidence root:** `E:\temp\cupcakeai-owner-group-showcase-20260905`
 
 This showcase is created only in the owner test profile through the packaged Tauri renderer. The
 harness attaches to an existing WebView2 CDP port; it never launches the app, changes the GPU lock,
@@ -177,3 +179,65 @@ manifest path must be a child of `E:\temp`.
 The visible renderer and harness now use the same `artifacts.create` contract: `title`, `kind`,
 `mimeType`, and actual generated `content`, with a persisted assistant source message when the
 artifact came from a model turn.
+
+## Small launch council group acceptance
+
+The optional group acceptance harness creates one stable conversation named
+`[GROUP] A small launch council` inside the existing Harbor project. It fails before creating any
+record unless the connected renderer is the packaged Tauri app, its broker is ready, and the live
+project has the owner profile's immutable Harbor project ID. This sentinel prevents a matching
+project name in another profile from being treated as owner data. The harness attaches to the
+operator's existing CDP port and never launches the app, changes provider setup, loads a local
+model, or touches the GPU lock.
+
+The council contains two harness-owned Cupcakes on exact connected routes:
+
+- **Mara, Launch planner** uses Groq `openai/gpt-oss-20b` and is the Smart lead.
+- **Quill, Independent evidence critic** uses Cohere `command-a-plus-05-2026`.
+
+Smart selection is fixed to at most two visible replies. One short Harbor prompt asks Mara for a
+prioritized 48-hour rollout with owners and stop/go evidence, and asks Quill for an independent
+falsification check. The real disclosure must show both exact model routes, at most two selector
+decisions, and at most two replies before the harness confirms the turn through the visible UI. A
+second prompt uses the product's structured `@quill` mention and asks Quill to replace the weakest
+gate with a measurable threshold. Its disclosure must show exactly that one Cohere destination; a
+direct mention makes zero selector calls and at most one response.
+
+A third Smart turn says, “Thanks, that is all. No further replies are needed.” It is a real bounded
+Groq selector request and must return `pass`, leaving the durable turn in `waiting_for_you` with one
+selector call, zero responder calls, and no assistant message. This proves that named Cupcakes can
+stay quiet when the user explicitly closes the discussion. If the selector chooses a speaker, the
+harness records the observed result as a quality failure and never pretends it passed or retries the
+prompt.
+
+The expected complete run uses at most six provider requests: up to two Groq selector requests and
+two responder requests on the first turn, one Cohere direct-mention response, and one Groq selector
+request for the quiet turn. The runtime may stop initial Smart selection early, but that does not
+qualify this fixed showcase: acceptance requires one completed response from each council member.
+Any unexpected selector behavior and its actual call/usage counts remain evidence rather than being
+hidden by another attempt. There is no fallback route and no OpenRouter, Cloudflare, Google,
+Mistral, or NVIDIA NIM hosted inference. If a frozen prompt already exists without accepted terminal
+evidence, the harness stops and never retries it.
+
+After all three hosted turns finish, the harness may add **Juniper, Private local reviewer** if an
+installed or already loaded Qwen route is present in the real catalog. Juniper is initially disabled
+so an unloaded local model cannot enter Smart selection. The harness never loads the model and does
+not send Juniper a turn, so adding the optional persona consumes no local or hosted inference. If no
+configured Qwen route exists, the evidence records that the optional member was skipped. A later
+explicit local mention test may enable Juniper only after the operator has loaded that exact route
+under the GPU lock.
+
+Run the acceptance only after the final packaged group UI has passed its own gates:
+
+```powershell
+node scripts/accept-owner-group-showcase.mjs --port 10071
+```
+
+Every outbound call must pass the runtime's single-use group preflight and the user-visible
+**Confirm possible destinations** dialog. The manifest records the durable turn and message IDs,
+plan and roster revisions, exact speaker/persona/model/provider snapshots, selector and responder
+call counts, bounded numeric usage evidence, terminal finish reasons, and response hashes. It never
+copies model response text. Each member message must be persisted with state `complete`, finish
+reason `stop` or `end_turn`, and canonical group metadata matching the durable turn, sequence,
+speaker, and exact route. Rerunning after all three accepted turns performs verification and
+screenshots only; it sends no model request and does not rewrite the council.
