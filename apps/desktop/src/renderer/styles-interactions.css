@@ -1,0 +1,242 @@
+.form-dialog-layer {
+  position: fixed;
+  inset: var(--titlebar-height) 0 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--cocoa) 23%, transparent);
+  backdrop-filter: blur(10px) saturate(0.82);
+}
+
+.form-dialog {
+  width: min(520px, 100%);
+  max-height: min(760px, calc(100vh - var(--titlebar-height) - 32px));
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--line), var(--berry) 20%);
+  border-radius: 24px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--berry-soft), transparent 74%),
+      transparent 42%
+    ),
+    color-mix(in srgb, var(--paper-raised), transparent 4%);
+  box-shadow: 0 26px 80px color-mix(in srgb, var(--cocoa) 28%, transparent);
+}
+
+.form-dialog::before {
+  content: '';
+  display: block;
+  height: 5px;
+  background: linear-gradient(90deg, var(--berry), var(--gold), var(--pistachio));
+}
+
+.form-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 26px 0;
+}
+
+.form-dialog__header h2 {
+  margin: 5px 0 0;
+  font-family: 'Bricolage Grotesque Variable', sans-serif;
+  font-size: clamp(1.45rem, 3vw, 1.85rem);
+  line-height: 1.05;
+}
+
+.form-dialog__header .icon-button span {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.form-dialog__description {
+  max-width: 58ch;
+  margin: 13px 26px 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.form-dialog__fields {
+  display: grid;
+  gap: 14px;
+  padding: 18px 26px;
+}
+
+.form-dialog__fields label {
+  display: grid;
+  gap: 7px;
+  color: var(--cocoa);
+  font-weight: 650;
+}
+
+.form-dialog__fields label > small,
+.form-dialog__fields .field-hint {
+  color: var(--muted);
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.form-dialog__fields input,
+.form-dialog__fields textarea,
+.form-dialog__fields select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--paper), transparent 5%);
+  color: var(--cocoa);
+  font: inherit;
+  font-weight: 470;
+  line-height: 1.45;
+  padding: 11px 13px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.form-dialog__fields textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.form-dialog__fields input:hover,
+.form-dialog__fields textarea:hover,
+.form-dialog__fields select:hover {
+  border-color: color-mix(in srgb, var(--muted), var(--berry) 22%);
+}
+
+.form-dialog__fields input:focus-visible,
+.form-dialog__fields textarea:focus-visible,
+.form-dialog__fields select:focus-visible {
+  outline: none;
+  border-color: var(--berry);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--berry), transparent 78%);
+  background: var(--paper-raised);
+}
+
+.form-dialog__error {
+  margin: -5px 26px 20px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 66%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger), transparent 91%);
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.form-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 26px 22px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--crumb), transparent 38%);
+}
+
+.interaction-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: min(100%, 680px);
+  margin: 0 0 16px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--pistachio), transparent 62%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pistachio-soft), transparent 12%);
+  color: var(--pistachio-ink);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.interaction-notice.is-error {
+  border-color: color-mix(in srgb, var(--danger), transparent 62%);
+  background: color-mix(in srgb, var(--danger), transparent 91%);
+  color: var(--danger);
+}
+
+.interaction-notice.is-pending {
+  border-color: color-mix(in srgb, var(--blueberry), transparent 62%);
+  background: var(--blueberry-soft);
+  color: var(--blueberry);
+}
+
+.interaction-notice .pulse-dot {
+  flex: 0 0 auto;
+}
+
+.chat-list__row.is-busy {
+  opacity: 0.64;
+}
+
+.chat-list__row .icon-button:disabled,
+.message-actions button:disabled {
+  cursor: wait;
+}
+
+.steer-task__status {
+  min-height: 1.35em;
+}
+
+.memory-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pistachio-ink);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.activity-stream .is-failed {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .form-dialog-layer {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .form-dialog {
+    max-height: calc(100vh - var(--titlebar-height) - 10px);
+    border-radius: 20px 20px 12px 12px;
+  }
+
+  .form-dialog__header,
+  .form-dialog__fields {
+    padding-left: 19px;
+    padding-right: 19px;
+  }
+
+  .form-dialog__description {
+    margin-left: 19px;
+    margin-right: 19px;
+  }
+
+  .form-dialog__actions {
+    padding: 15px 19px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form-dialog__fields input,
+  .form-dialog__fields textarea,
+  .form-dialog__fields select {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .form-dialog,
+  .form-dialog__error,
+  .interaction-notice {
+    border: 1px solid CanvasText;
+  }
+
+  .form-dialog::before {
+    background: Highlight;
+  }
+}
