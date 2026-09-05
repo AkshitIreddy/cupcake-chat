@@ -177,7 +177,12 @@ an update feed.
 
 Measure startup-to-interactive and steady-state working set on the reference machine and compare
 with the recorded rejected baseline using the same method. Report numbers; do not assume Tauri is
-faster. No corrective installer lifecycle or performance result exists yet.
+faster. The `e2465b3` local reference-machine NSIS lifecycle passed: installed first run, product
+uninstall, registration/path removal, retained data, and portable reopening of the exact saved
+project. Evidence is under `E:\temp\cupcake-overhaul-20260905\final-nsis-lifecycle-e2465b3-r2`. This
+is not clean-VM Windows 10/11 or a two-distinct-version upgrade result. The dated native audit
+records measured startup and memory results and identifies which source snapshot each measurement
+actually tested.
 
 ## Final handoff
 
