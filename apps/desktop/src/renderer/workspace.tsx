@@ -144,6 +144,16 @@ export interface ArtifactExportReceipt {
   sha256: string;
 }
 
+export interface ArtifactTestRun {
+  task: Task;
+  status: 'ready' | 'approval_required' | 'completed' | 'failed';
+  invocationId?: string;
+  brokerPreflight?: Record<string, unknown>;
+  brokerApprovalChallenge?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  message?: string;
+}
+
 export interface BackupReceipt {
   backupId: string;
   fileName: string;
@@ -459,6 +469,14 @@ interface RuntimeArtifactSnapshot {
   revisionCount?: number;
 }
 
+interface RuntimeArtifactTestResponse {
+  run?: RuntimeTask;
+  task?: RuntimeTask;
+  execution?: Record<string, unknown>;
+  toolEvidence?: Record<string, unknown>;
+  tool_evidence?: Record<string, unknown>;
+}
+
 interface WorkspaceContextValue {
   fixtureMode: boolean;
   ready: boolean;
@@ -557,6 +575,9 @@ interface WorkspaceContextValue {
     changeSummary?: string,
   ): Promise<ArtifactRecord>;
   exportArtifact(artifact: ArtifactRecord): Promise<ArtifactExportReceipt | null>;
+  createArtifactTestRun(artifact: ArtifactRecord): Promise<ArtifactTestRun>;
+  executeArtifactTestRun(run: ArtifactTestRun): Promise<ArtifactTestRun>;
+  cancelArtifactTestRun(run: ArtifactTestRun): Promise<void>;
   querySearch(query: string, globalScope?: boolean): Promise<void>;
   selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
@@ -1100,6 +1121,23 @@ function mapTask(run: RuntimeTask): Task {
               ? 'failed'
               : 'queued',
     })),
+  };
+}
+
+function brokerApprovalProof(challenge: Record<string, unknown>): Record<string, unknown> {
+  const approvalId = textValue(challenge.approval_id ?? challenge.approvalId);
+  const nonce = textValue(challenge.nonce);
+  const intentDigest = textValue(challenge.intent_digest ?? challenge.intentDigest);
+  const preflightDigest = textValue(challenge.preflight_digest ?? challenge.preflightDigest);
+  const token = textValue(challenge.token);
+  if (!approvalId || !nonce || !intentDigest || !preflightDigest || !token)
+    throw new Error('The broker approval expired or was incomplete. Start the test run again.');
+  return {
+    approval_id: approvalId,
+    nonce,
+    intent_digest: intentDigest,
+    preflight_digest: preflightDigest,
+    token,
   };
 }
 
@@ -1799,29 +1837,45 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>(fixtureMode ? fixtureTasks : []);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>(
     fixtureMode
-      ? fixtureArtifacts.map((item, index) => ({
-          id: item.id,
-          projectId: 'fixture-cupcake',
-          name: item.name,
-          kind: item.type.toLowerCase(),
-          mimeType:
-            item.type === 'Table'
-              ? 'text/csv'
-              : item.type === 'Webpage'
-                ? 'text/html'
-                : 'text/markdown',
-          content:
-            item.type === 'Table'
-              ? 'Model,Route,Result\nCupcake Local,CUDA,18.6 tok/s\nOpenAI,Cloud,Complete'
-              : item.type === 'Webpage'
-                ? '<main><h1>Provider readiness</h1><p>A safe, sandboxed artifact preview.</p></main>'
-                : item.type === 'Diagram'
-                  ? 'flowchart LR\n  Sources --> Findings\n  Findings --> Decisions'
-                  : '# CupcakeAI architecture\n\nArtifacts keep useful work connected to its project.\n\n## Boundaries\n\n- Project context stays scoped\n- Every save creates a revision\n- Local work remains on this computer',
-          revisionId: `fixture-${item.id}-revision-${item.revisions}`,
-          revisionNumber: Number(item.revisions) || 1,
-          updatedAt: `2026-09-0${Math.max(1, 5 - index)}T${String(11 - index).padStart(2, '0')}:20:00.000Z`,
-        }))
+      ? [
+          ...fixtureArtifacts.map((item, index) => ({
+            id: item.id,
+            projectId: 'fixture-cupcake',
+            name: item.name,
+            kind: item.type.toLowerCase(),
+            mimeType:
+              item.type === 'Table'
+                ? 'text/csv'
+                : item.type === 'Webpage'
+                  ? 'text/html'
+                  : 'text/markdown',
+            content:
+              item.type === 'Table'
+                ? 'Model,Route,Result\nCupcake Local,CUDA,18.6 tok/s\nOpenAI,Cloud,Complete'
+                : item.type === 'Webpage'
+                  ? '<main><h1>Provider readiness</h1><p>A safe, sandboxed artifact preview.</p></main>'
+                  : item.type === 'Diagram'
+                    ? 'flowchart LR\n  Sources --> Findings\n  Findings --> Decisions'
+                    : '# CupcakeAI architecture\n\nArtifacts keep useful work connected to its project.\n\n## Boundaries\n\n- Project context stays scoped\n- Every save creates a revision\n- Local work remains on this computer',
+            revisionId: `fixture-${item.id}-revision-${item.revisions}`,
+            revisionNumber: Number(item.revisions) || 1,
+            updatedAt: `2026-09-0${Math.max(1, 5 - index)}T${String(11 - index).padStart(2, '0')}:20:00.000Z`,
+          })),
+          {
+            id: 'fixture-python-tests',
+            projectId: 'fixture-cupcake',
+            name: 'test_provider_routes.py',
+            kind: 'code',
+            mimeType: 'text/x-python',
+            content:
+              'import unittest\n\n\nclass ProviderRouteTests(unittest.TestCase):\n    def test_local_route_stays_private(self):\n        self.assertEqual("local", "local")\n\n    def test_cloud_route_requires_consent(self):\n        self.assertTrue(True)\n\n    def test_artifact_revision_is_bound(self):\n        self.assertIsNotNone("fixture-python-tests-revision-1")\n\n\nif __name__ == "__main__":\n    unittest.main()\n',
+            revisionId: 'fixture-python-tests-revision-1',
+            revisionNumber: 1,
+            size: 401,
+            createdAt: '2026-09-05T09:10:00.000Z',
+            updatedAt: '2026-09-05T09:10:00.000Z',
+          },
+        ]
       : [],
   );
   const [memories, setMemories] = useState<MemoryRecord[]>(fixtureMode ? fixtureMemories : []);
@@ -2875,6 +2929,152 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [fixtureMode, request],
   );
+  const normalizeArtifactTestRun = useCallback(
+    (result: RuntimeArtifactTestResponse): ArtifactTestRun => {
+      const runtimeRun = result.run ?? result.task;
+      if (!runtimeRun) throw new Error('The runtime did not return a durable test task.');
+      const mappedTask = mapTask(runtimeRun);
+      const task = {
+        ...mappedTask,
+        project:
+          projects.find((project) => project.id === mappedTask.projectId)?.name ??
+          mappedTask.project,
+      };
+      setTasks((items) => [task, ...items.filter((item) => item.id !== task.id)]);
+      const execution = recordValue(result.execution) ?? {};
+      const executionStatus = textValue(execution.status).toLowerCase();
+      const status: ArtifactTestRun['status'] =
+        executionStatus === 'approval_required'
+          ? 'approval_required'
+          : executionStatus === 'completed' || runtimeRun.status === 'succeeded'
+            ? 'completed'
+            : ['failed', 'denied'].includes(executionStatus) ||
+                ['failed', 'cancelled'].includes(runtimeRun.status)
+              ? 'failed'
+              : 'ready';
+      return {
+        task,
+        status,
+        invocationId:
+          textValue(execution.invocationId ?? execution.invocation_id) ||
+          textValue(recordValue(execution.preflight)?.intentId) ||
+          undefined,
+        brokerPreflight: recordValue(execution.preflight) ?? undefined,
+        brokerApprovalChallenge:
+          recordValue(execution.approvalChallenge ?? execution.approval_challenge) ?? undefined,
+        evidence: result.toolEvidence ?? result.tool_evidence,
+        message:
+          textValue(execution.message ?? execution.errorMessage ?? execution.error_message) ||
+          undefined,
+      };
+    },
+    [projects],
+  );
+  const createArtifactTestRun = useCallback(
+    async (artifact: ArtifactRecord): Promise<ArtifactTestRun> => {
+      if (!artifact.projectId || !artifact.revisionId)
+        throw new Error('Save the Python artifact before running its tests.');
+      if (fixtureMode) {
+        const approvalRequired = settings.permissionMode !== 'full-freedom';
+        const task: Task = {
+          id: `fixture-python-test-${Date.now()}`,
+          title: `Run tests · ${artifact.name}`,
+          detail: `Run the saved ${artifact.name} revision in the local Python sandbox.`,
+          status: approvalRequired ? 'waiting' : 'working',
+          progress: 0,
+          project: artifact.projectId,
+          projectId: artifact.projectId,
+          elapsed: 'now',
+          steps: [{ label: 'Python unit tests', state: 'queued' }],
+        };
+        setTasks((items) => [task, ...items]);
+        return {
+          task,
+          status: approvalRequired ? 'approval_required' : 'ready',
+          invocationId: `fixture-invocation-${Date.now()}`,
+          brokerPreflight: approvalRequired
+            ? {
+                decision: 'ask',
+                effects: ['execute_code'],
+                scope: 'current immutable artifact revision',
+              }
+            : undefined,
+          brokerApprovalChallenge: approvalRequired
+            ? {
+                approval_id: 'fixture-approval',
+                nonce: 'fixture-nonce',
+                intent_digest: 'fixture-intent',
+                preflight_digest: 'fixture-preflight',
+                token: 'fixture-token',
+              }
+            : undefined,
+        };
+      }
+      const result = await request<RuntimeArtifactTestResponse>(
+        'tasks.create',
+        {
+          prompt: `Run the Python unit tests in saved artifact ${artifact.name}.`,
+          projectId: artifact.projectId,
+          workKind: 'code_execution',
+          toolStages: 1,
+          background: true,
+          artifactId: artifact.id,
+          revisionId: artifact.revisionId,
+        },
+        120_000,
+      );
+      return normalizeArtifactTestRun(result);
+    },
+    [fixtureMode, normalizeArtifactTestRun, request, settings.permissionMode],
+  );
+  const executeArtifactTestRun = useCallback(
+    async (run: ArtifactTestRun): Promise<ArtifactTestRun> => {
+      if (fixtureMode) {
+        const task: Task = {
+          ...run.task,
+          status: 'complete',
+          progress: 100,
+          steps: run.task.steps.map((step) => ({ ...step, state: 'complete' })),
+        };
+        setTasks((items) => [task, ...items.filter((item) => item.id !== task.id)]);
+        return {
+          task,
+          status: 'completed',
+          evidence: {
+            stdout: 'Ran 3 tests in 0.04s\nOK',
+            stderr: '',
+            exitStatus: 0,
+            testSummary: { run: 3, failures: 0, errors: 0, skipped: 0, successful: true },
+            provenance: ['fixture:local-python-sandbox'],
+          },
+        };
+      }
+      const params: Record<string, unknown> = { runId: run.task.id };
+      if (run.status === 'approval_required') {
+        if (!run.brokerPreflight || !run.brokerApprovalChallenge)
+          throw new Error('The broker approval is no longer available. Start the test run again.');
+        params.brokerPreflight = run.brokerPreflight;
+        params.brokerApproval = brokerApprovalProof(run.brokerApprovalChallenge);
+      }
+      const result = await request<RuntimeArtifactTestResponse>('tasks.execute', params, 900_000);
+      return normalizeArtifactTestRun(result);
+    },
+    [fixtureMode, normalizeArtifactTestRun, request],
+  );
+  const cancelArtifactTestRun = useCallback(
+    async (run: ArtifactTestRun) => {
+      if (!fixtureMode && run.invocationId && window.cupcake)
+        await window.cupcake.runtime.cancel(run.invocationId);
+      await taskAction('tasks.cancel', run.task.id);
+      if (fixtureMode)
+        setTasks((items) =>
+          items.map((item) =>
+            item.id === run.task.id ? { ...item, status: 'failed', progress: 0 } : item,
+          ),
+        );
+    },
+    [fixtureMode, taskAction],
+  );
   const cancelTask = useCallback(
     (runId: string) => taskAction('tasks.cancel', runId),
     [taskAction],
@@ -3094,9 +3294,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             snapshot.artifact,
             snapshot.revision,
             snapshot.content ?? content,
-            snapshot.revisionCount ??
-              snapshot.revisionNumber ??
-              (artifact.revisionNumber ?? 0) + 1,
+            snapshot.revisionCount ?? snapshot.revisionNumber ?? (artifact.revisionNumber ?? 0) + 1,
           );
         }
         setArtifacts((items) =>
@@ -3612,6 +3810,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resumeTask,
       steerTask,
       followupTask,
+      createArtifactTestRun,
+      executeArtifactTestRun,
+      cancelArtifactTestRun,
       remember,
       updateMemory,
       setMemoryEnabled,
@@ -3688,6 +3889,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resumeTask,
       steerTask,
       followupTask,
+      createArtifactTestRun,
+      executeArtifactTestRun,
+      cancelArtifactTestRun,
       remember,
       updateMemory,
       setMemoryEnabled,

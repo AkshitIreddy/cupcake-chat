@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import hashlib
 import json
 import os
@@ -12,7 +13,7 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType
 from typing import Any, NoReturn, cast
 
 PROTOCOL_VERSION = 1
@@ -38,6 +39,28 @@ _SENSITIVE_MARKERS = (
     "AWS_",
     "AZURE_",
     "GOOGLE_",
+)
+_MODULE_TEST_IMPORTS = frozenset(
+    {
+        "argparse",
+        "collections",
+        "csv",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "enum",
+        "functools",
+        "io",
+        "itertools",
+        "json",
+        "math",
+        "re",
+        "statistics",
+        "string",
+        "sys",
+        "typing",
+        "unittest",
+    }
 )
 
 
@@ -72,6 +95,21 @@ class _BoundedOutput:
         self.parts.append(rendered)
         self.length += len(rendered)
 
+    def write(self, value: str) -> int:
+        if not isinstance(value, str):
+            raise PythonWorkerError("captured output must be text")
+        if self.length + len(value) > self.max_characters:
+            raise PythonWorkerLimitError("captured output exceeds its character limit")
+        self.parts.append(value)
+        self.length += len(value)
+        return len(value)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
     def value(self) -> str:
         return "".join(self.parts)
 
@@ -95,7 +133,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         limits = _object(payload["limits"], "limits")
         response = {
             "version": PROTOCOL_VERSION,
-            "kind": "python.execute.complete",
+            "kind": (
+                "python.execute.failed"
+                if result.get("status") == "failed"
+                else "python.execute.complete"
+            ),
             "request_id": request_id,
             "stage_token": stage_token,
             "result": result,
@@ -134,8 +176,9 @@ def _execute(stage: Path, payload: Mapping[str, object]) -> Mapping[str, object]
         script_text = script.decode("utf-8", errors="strict")
     except UnicodeError as exc:
         raise PythonWorkerError("script is not strict UTF-8") from exc
-    tree = ast.parse(script_text, filename="<sandboxed-script>", mode="exec")
-    _validate_ast(tree)
+    execution_mode = payload.get("execution_mode", "expression")
+    if execution_mode not in {"expression", "module_test"}:
+        raise PythonWorkerError("unsupported Python execution mode")
     input_payload = _array(payload["inputs"], "inputs")
     if len(input_payload) > 64:
         raise PythonWorkerLimitError("input manifest has too many entries")
@@ -153,6 +196,17 @@ def _execute(stage: Path, payload: Mapping[str, object]) -> Mapping[str, object]
         total_input += len(data)
         inputs[logical_name] = data
     _check_deadline(_integer(limits["deadline_unix_ms"], "deadline_unix_ms"))
+    if execution_mode == "module_test":
+        if inputs:
+            raise PythonWorkerError("module test mode does not accept input files")
+        return _execute_module_tests(
+            script_text,
+            max_result_characters=max_result_characters,
+            max_output_characters=max_stdout_characters,
+        )
+
+    tree = ast.parse(script_text, filename="<sandboxed-script>", mode="exec")
+    _validate_ast(tree)
     captured = _BoundedOutput(max_stdout_characters)
     builtins = _safe_builtins(captured.print)
     globals_scope: dict[str, object] = {
@@ -195,7 +249,13 @@ def _validate_request(
     request_id = _identifier(request["request_id"], "request_id")
     stage_token = _identifier(request["stage_token"], "stage_token")
     payload = _object(request["payload"], "payload")
-    _exact(payload, {"script", "inputs", "limits"})
+    allowed_payload = {"script", "inputs", "limits", "execution_mode"}
+    if set(payload) not in ({"script", "inputs", "limits"}, allowed_payload):
+        raise PythonWorkerError("payload has missing or unknown fields")
+    if "execution_mode" in payload:
+        mode = _string(payload["execution_mode"], "execution_mode")
+        if mode not in {"expression", "module_test"}:
+            raise PythonWorkerError("unsupported Python execution mode")
     _validate_manifest_descriptor(_object(payload["script"], "script"), "script")
     for index, item in enumerate(_array(payload["inputs"], "inputs")):
         entry = _object(item, f"inputs[{index}]")
@@ -291,6 +351,140 @@ def _validate_ast(tree: ast.AST) -> None:
             and node.func.id in forbidden_calls
         ):
             raise PythonWorkerError(f"call {node.func.id} is unavailable")
+
+
+def _validate_module_test_ast(tree: ast.AST) -> None:
+    forbidden_calls = {
+        "breakpoint",
+        "compile",
+        "eval",
+        "exec",
+        "input",
+        "__import__",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            if isinstance(node, ast.ImportFrom):
+                if node.level or not node.module:
+                    raise PythonWorkerError("relative imports are unavailable in module test mode")
+                names = [node.module]
+            for name in names:
+                if name.split(".", 1)[0] not in _MODULE_TEST_IMPORTS:
+                    raise PythonWorkerError(
+                        f"import {name.split('.', 1)[0]} is unavailable in module test mode"
+                    )
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            raise PythonWorkerError("private and dunder attributes are unavailable")
+        if isinstance(node, ast.Name) and node.id.startswith("__") and node.id != "__name__":
+            raise PythonWorkerError("dunder names are unavailable")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in forbidden_calls
+        ):
+            raise PythonWorkerError(f"call {node.func.id} is unavailable")
+
+
+def _module_test_import(
+    name: str,
+    globals: Mapping[str, object] | None = None,
+    locals: Mapping[str, object] | None = None,
+    fromlist: Sequence[str] = (),
+    level: int = 0,
+) -> object:
+    root_name = name.split(".", 1)[0]
+    if level or root_name not in _MODULE_TEST_IMPORTS:
+        raise PythonWorkerError(f"import {root_name} is unavailable in module test mode")
+    if root_name == "sys":
+        safe_sys = ModuleType("sys")
+        safe_sys.version_info = sys.version_info  # type: ignore[attr-defined]
+        safe_sys.platform = sys.platform  # type: ignore[attr-defined]
+        safe_sys.maxsize = sys.maxsize  # type: ignore[attr-defined]
+        return safe_sys
+    return builtins.__import__(name, globals, locals, fromlist, level)
+
+
+def _execute_module_tests(
+    script_text: str,
+    *,
+    max_result_characters: int,
+    max_output_characters: int,
+) -> Mapping[str, object]:
+    import unittest
+
+    tree = ast.parse(script_text, filename="<project-artifact>", mode="exec")
+    _validate_module_test_ast(tree)
+    stdout = _BoundedOutput(max_output_characters)
+    stderr = _BoundedOutput(max_output_characters)
+    safe_builtins = dict(vars(builtins))
+    for name in ("breakpoint", "compile", "eval", "exec", "input", "open"):
+        safe_builtins.pop(name, None)
+    safe_builtins["__import__"] = _module_test_import
+    module = ModuleType("cupcake_project_artifact")
+    module.__dict__.update(
+        {
+            "__builtins__": safe_builtins,
+            "__file__": "<project-artifact>",
+            "__name__": module.__name__,
+            "__package__": None,
+        }
+    )
+    original_stdout, original_stderr = sys.stdout, sys.stderr
+    module_name = module.__name__
+    previous_module = sys.modules.get(module_name)
+    try:
+        sys.modules[module_name] = module
+        sys.stdout, sys.stderr = stdout, stderr  # type: ignore[assignment]
+        # Test modules must retain ordinary ``assert`` statements. Optimizing
+        # this compilation could silently remove the evidence being checked.
+        code = compile(tree, "<project-artifact>", "exec", dont_inherit=True, optimize=0)
+        exec(code, module.__dict__)
+        suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+        test_count = suite.countTestCases()
+        if test_count < 1:
+            raise PythonWorkerError("module test mode found no unittest test cases")
+        result = unittest.TextTestRunner(stream=stderr, verbosity=2).run(suite)
+    finally:
+        sys.stdout, sys.stderr = original_stdout, original_stderr
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+
+    executed_tests = result.testsRun - len(result.skipped)
+    successful = result.wasSuccessful() and executed_tests > 0
+    failures = [
+        {"test": str(test), "message": _sanitize_test_failure(message)}
+        for test, message in (*result.failures, *result.errors)
+    ]
+    payload: dict[str, object] = {
+        "status": "complete" if successful else "failed",
+        "exit_status": 0 if successful else 1,
+        "stdout": stdout.value(),
+        "stderr": stderr.value(),
+        "value": None,
+        "tests": {
+            "run": result.testsRun,
+            "failures": len(result.failures),
+            "errors": len(result.errors),
+            "skipped": len(result.skipped),
+            "successful": successful,
+            "details": failures,
+        },
+        "metadata": {
+            "network_access": False,
+            "network_enforcement": "broker-appcontainer-required",
+            "execution_mode": "module_test",
+        },
+    }
+    _normalize_result(payload, max_result_characters)
+    return payload
+
+
+def _sanitize_test_failure(message: str) -> str:
+    sanitized = re.sub(r'File "(?:[A-Za-z]:)?[^"\r\n]*[\\/]', 'File "', message)
+    return sanitized[:16_384]
 
 
 def _safe_builtins(print_function: Callable[..., None]) -> dict[str, object]:
@@ -466,7 +660,7 @@ def _install_network_guard() -> None:
     def denied(*_args: object, **_kwargs: object) -> NoReturn:
         raise PythonWorkerError("network access is unavailable")
 
-    socket.socket = denied  # type: ignore[assignment]
+    socket.socket = denied  # type: ignore[assignment,misc]
     socket.create_connection = denied  # type: ignore[assignment]
     socket.create_server = denied  # type: ignore[assignment]
     socket.getaddrinfo = denied  # type: ignore[assignment]

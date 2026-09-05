@@ -16,7 +16,7 @@ from cupcake_runtime.events import (
     deterministic_event_id,
 )
 
-from .durability import DeterministicCheckpointAdapter, DurabilityStore
+from .durability import CheckpointConflictError, DeterministicCheckpointAdapter, DurabilityStore
 from .executors import StepContext, StepExecutor
 from .models import (
     ApprovalRecord,
@@ -114,6 +114,119 @@ class DurableTaskCoordinator:
             max_steps=1,
             approval_prechecked=approval_prechecked,
         )
+
+    def prepare_external_step(self, run_id: str, step_index: int) -> tuple[RunRecord, str]:
+        """Persist a broker-owned step boundary without executing it in Python.
+
+        The returned digest binds the immutable task step to the eventual broker
+        receipt. A recovered ``waiting_input`` run can safely recreate the same
+        request, but is never executed automatically after a process restart.
+        """
+
+        run = self.store.get_run(run_id)
+        self.compatibility.assert_can_resume(run.runtime_revision)
+        if step_index < 0 or step_index >= len(run.spec.steps):
+            raise IndexError(step_index)
+        if run.current_step != step_index:
+            raise RuntimeError(
+                f"task step ordering changed: expected {run.current_step}, got {step_index}"
+            )
+        if run.status.terminal:
+            return run, self.external_step_input_digest(run, step_index)
+        if run.cancellation_requested or run.status is RunStatus.CANCELLING:
+            return self._finish_cancellation(run), self.external_step_input_digest(run, step_index)
+        if run.status is RunStatus.QUEUED:
+            run = self._transition(run, RunStatus.RUNNING)
+        if run.status is RunStatus.RUNNING:
+            step = run.spec.steps[step_index]
+            self._emit(
+                run,
+                EventKind.STEP_STARTED,
+                f"step:{step.key}:external",
+                {"step_key": step.key, "operation": step.operation, "owner": "tool_broker"},
+            )
+            run = self._transition(run, RunStatus.WAITING_INPUT)
+        if run.status not in {RunStatus.WAITING_INPUT, RunStatus.WAITING_APPROVAL}:
+            raise RuntimeError(f"task is not ready for broker execution: {run.status.value}")
+        return run, self.external_step_input_digest(run, step_index)
+
+    def complete_external_step(
+        self,
+        run_id: str,
+        step_index: int,
+        *,
+        input_digest: str,
+        output: Mapping[str, Any],
+        outcome: str,
+        error: str | None = None,
+    ) -> RunRecord:
+        """Checkpoint one broker result and apply its truthful terminal state."""
+
+        run = self.store.get_run(run_id)
+        self.compatibility.assert_can_resume(run.runtime_revision)
+        if step_index < 0 or step_index >= len(run.spec.steps):
+            raise IndexError(step_index)
+        if run.current_step != step_index:
+            existing = self.store.get_checkpoint(run_id, run.spec.steps[step_index].key)
+            if existing is not None and existing["input_digest"] == input_digest:
+                return run
+            raise RuntimeError(
+                f"task step ordering changed: expected {run.current_step}, got {step_index}"
+            )
+        if run.status.terminal:
+            return run
+        expected_digest = self.external_step_input_digest(run, step_index)
+        if input_digest != expected_digest:
+            raise CheckpointConflictError("broker result does not match the persisted task step")
+        if run.cancellation_requested or run.status is RunStatus.CANCELLING:
+            outcome = "cancelled"
+        if outcome not in {
+            "succeeded",
+            "failed",
+            "cancelled",
+            "denied",
+            "timed_out",
+            "output_limit_exceeded",
+        }:
+            raise ValueError(f"unsupported external step outcome: {outcome}")
+
+        step = run.spec.steps[step_index]
+        self.store.save_checkpoint(
+            run_id,
+            step.key,
+            input_digest,
+            output,
+            self.runtime_revision,
+        )
+        self._emit(
+            run,
+            EventKind.STEP_CHECKPOINTED,
+            f"step:{step.key}:broker-checkpoint",
+            {
+                "step_key": step.key,
+                "output_keys": sorted(str(key) for key in output),
+                "outcome": outcome,
+            },
+        )
+        run = self.store.get_run(run_id)
+        if outcome == "cancelled":
+            self.store.request_cancellation(run_id)
+            return self._finish_cancellation(self.store.get_run(run_id))
+        if outcome != "succeeded":
+            message = error or f"broker tool finished with status {outcome}"
+            return self._transition(run, RunStatus.FAILED, error=message)
+
+        run = self._transition(run, RunStatus.RUNNING, current_step=step_index + 1)
+        if run.current_step == len(run.spec.steps):
+            return self._transition(run, RunStatus.SUCCEEDED)
+        return run
+
+    @classmethod
+    def external_step_input_digest(cls, run: RunRecord, step_index: int) -> str:
+        if step_index < 0 or step_index >= len(run.spec.steps):
+            raise IndexError(step_index)
+        step = run.spec.steps[step_index]
+        return cls._step_input_digest(step.operation, step.arguments, [])
 
     def prepare_step_approval(self, run_id: str, step_index: int) -> ApprovalRecord | None:
         """Create or retrieve the stable approval seam for one product step."""

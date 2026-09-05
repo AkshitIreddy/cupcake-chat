@@ -36,6 +36,7 @@ def _stage_request(
     *,
     inputs: dict[str, bytes] | None = None,
     overrides: dict[str, int] | None = None,
+    execution_mode: str | None = None,
 ) -> dict[str, object]:
     script_data = script.encode()
     script_name = f"{uuid.uuid4().hex}.py.input"
@@ -63,20 +64,23 @@ def _stage_request(
         "max_stdout_characters": 64 * 1024,
     }
     limits.update(overrides or {})
+    payload: dict[str, object] = {
+        "script": {
+            "staged_name": script_name,
+            "size": len(script_data),
+            "sha256": hashlib.sha256(script_data).hexdigest(),
+        },
+        "inputs": manifest,
+        "limits": limits,
+    }
+    if execution_mode is not None:
+        payload["execution_mode"] = execution_mode
     request: dict[str, object] = {
         "version": 1,
         "kind": "python.execute",
         "request_id": uuid.uuid4().hex,
         "stage_token": uuid.uuid4().hex,
-        "payload": {
-            "script": {
-                "staged_name": script_name,
-                "size": len(script_data),
-                "sha256": hashlib.sha256(script_data).hexdigest(),
-            },
-            "inputs": manifest,
-            "limits": limits,
-        },
+        "payload": payload,
     }
     (stage / REQUEST_FILE).write_bytes(_frame(request))
     os.chmod(stage / REQUEST_FILE, stat.S_IRUSR)
@@ -189,6 +193,154 @@ def test_stdout_limit_is_enforced_inside_worker(tmp_path: Path) -> None:
     assert _run(tmp_path).returncode == 1
     response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
     assert response["error"]["code"] == "limit_exceeded"
+
+
+def test_module_test_mode_runs_only_embedded_unittest_and_captures_evidence(
+    tmp_path: Path,
+) -> None:
+    _stage_request(
+        tmp_path,
+        """import sys
+import unittest
+
+def add(left: int, right: int) -> int:
+    return left + right
+
+class AddTests(unittest.TestCase):
+    def test_adds(self) -> None:
+        print("observed-add")
+        self.assertEqual(add(2, 4), 6)
+
+if __name__ == "__main__":
+    sys.exit(99)
+""",
+        execution_mode="module_test",
+    )
+    process = _run(tmp_path)
+    assert process.returncode == 0
+    assert process.stdout == b""
+    assert process.stderr == b""
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.complete"
+    result = cast(dict[str, Any], response["result"])
+    assert result["exit_status"] == 0
+    assert result["stdout"] == "observed-add\n"
+    assert "test_adds" in result["stderr"]
+    assert result["tests"] == {
+        "run": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "successful": True,
+        "details": [],
+    }
+
+
+def test_module_test_mode_returns_structured_failed_test_evidence(tmp_path: Path) -> None:
+    _stage_request(
+        tmp_path,
+        """import unittest
+
+class BrokenTests(unittest.TestCase):
+    def test_observed_failure(self) -> None:
+        self.assertEqual(2 + 2, 5)
+""",
+        execution_mode="module_test",
+    )
+    process = _run(tmp_path)
+    assert process.returncode == 0
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.failed"
+    result = cast(dict[str, Any], response["result"])
+    assert result["exit_status"] == 1
+    assert result["tests"]["run"] == 1
+    assert result["tests"]["failures"] == 1
+    assert result["tests"]["successful"] is False
+    assert "<project-artifact>" in result["tests"]["details"][0]["message"]
+    assert str(tmp_path) not in result["tests"]["details"][0]["message"]
+
+
+def test_module_test_mode_keeps_plain_assertions_and_dormant_cli_open(tmp_path: Path) -> None:
+    _stage_request(
+        tmp_path,
+        """import unittest
+
+def main(path: str) -> None:
+    with open(path, "r", encoding="utf-8") as source:
+        print(source.read())
+
+class PlainAssertTests(unittest.TestCase):
+    def test_plain_assert_is_not_optimized_away(self) -> None:
+        assert False, "observed assertion"
+
+if __name__ == "__main__":
+    main("input.csv")
+""",
+        execution_mode="module_test",
+    )
+    assert _run(tmp_path).returncode == 0
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.failed"
+    result = cast(dict[str, Any], response["result"])
+    assert result["tests"]["failures"] == 1
+    assert "observed assertion" in result["tests"]["details"][0]["message"]
+
+
+def test_module_test_mode_does_not_treat_all_skipped_suite_as_passed(tmp_path: Path) -> None:
+    _stage_request(
+        tmp_path,
+        """import unittest
+
+class SkippedTests(unittest.TestCase):
+    @unittest.skip("no evidence")
+    def test_skipped(self) -> None:
+        pass
+""",
+        execution_mode="module_test",
+    )
+    assert _run(tmp_path).returncode == 0
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.failed"
+    result = cast(dict[str, Any], response["result"])
+    assert result["tests"]["run"] == 1
+    assert result["tests"]["skipped"] == 1
+    assert result["tests"]["successful"] is False
+
+
+def test_module_test_mode_registers_module_for_dataclass_resolution(tmp_path: Path) -> None:
+    _stage_request(
+        tmp_path,
+        """from dataclasses import dataclass
+import unittest
+
+@dataclass
+class Reading:
+    value: int
+
+class DataclassTests(unittest.TestCase):
+    def test_generated_dataclass(self) -> None:
+        self.assertEqual(Reading(7).value, 7)
+""",
+        execution_mode="module_test",
+    )
+    assert _run(tmp_path).returncode == 0
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.complete"
+    result = cast(dict[str, Any], response["result"])
+    assert result["tests"]["run"] == 1
+    assert result["tests"]["successful"] is True
+
+
+def test_module_test_mode_rejects_unapproved_imports(tmp_path: Path) -> None:
+    _stage_request(
+        tmp_path,
+        "import os\nimport unittest\nclass T(unittest.TestCase):\n    pass\n",
+        execution_mode="module_test",
+    )
+    assert _run(tmp_path).returncode == 1
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["kind"] == "python.execute.failed"
+    assert "import os is unavailable" in response["error"]["message"]
 
 
 def test_staged_script_digest_tampering_is_rejected(tmp_path: Path) -> None:

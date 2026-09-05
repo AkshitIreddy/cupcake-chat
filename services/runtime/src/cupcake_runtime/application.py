@@ -39,7 +39,8 @@ from cupcake_runtime.agents import (
     BudgetLedger,
     BudgetLimits,
     DelegateCoordinator,
-    DeterministicDelegateExecutor,
+    DelegateStatus,
+    UnavailableDelegateExecutor,
 )
 from cupcake_runtime.artifacts import ArtifactKind, ArtifactStore, safe_export_name
 from cupcake_runtime.backup import (
@@ -126,6 +127,7 @@ from cupcake_runtime.storage.database import Database, DatabaseConfig
 from cupcake_runtime.storage.repositories import ProductRepository
 from cupcake_runtime.tasks import (
     DurableTaskCoordinator,
+    RunRecord,
     RunStatus,
     SqliteDurabilityStore,
     StepContext,
@@ -250,7 +252,7 @@ class RuntimeService:
         self.events = SqliteEventJournal(self.database.connection)
         self.durability = SqliteDurabilityStore(str(self.runtime_path))
         self.delegates = DelegateCoordinator(
-            DeterministicDelegateExecutor(),
+            UnavailableDelegateExecutor(),
             self.events,
             BudgetLedger(
                 BudgetLimits(
@@ -511,6 +513,7 @@ class RuntimeService:
             "tasks.steer": self._tasks_steer,
             "tasks.followup": self._tasks_followup,
             "tasks.approval.resolve": self._tasks_approval_resolve,
+            "tasks.tool.complete.private": self._tasks_tool_complete_private,
             "tasks.events": self._tasks_events,
             "artifacts.list": self._artifacts_list,
             "artifacts.create": self._artifacts_create,
@@ -1346,15 +1349,15 @@ class RuntimeService:
                 models = [_jsonable(descriptor)]
             elif provider == NVIDIA_NIM_PROVIDER and params.get("modelId") is not None:
                 model_id = _required_string(params, "modelId")
-                descriptor = verified_hosted_descriptor(model_id)
-                if descriptor is None:
+                verified_descriptor = verified_hosted_descriptor(model_id)
+                if verified_descriptor is None:
                     raise RuntimeCommandError(
                         "MODEL_NOT_VERIFIED",
                         "The saved NVIDIA NIM model no longer has verified hosted-chat metadata.",
                     )
-                self.providers.catalog.register(descriptor, replace=True)
+                self.providers.catalog.register(verified_descriptor, replace=True)
                 self.providers.configure(provider, config)
-                models = [_jsonable(descriptor)]
+                models = [_jsonable(verified_descriptor)]
             else:
                 self.providers.configure(provider, config)
                 models = []
@@ -2367,6 +2370,8 @@ class RuntimeService:
         created = self._create_task_for_prompt(
             content,
             project_id=_optional_string(params, "projectId"),
+            artifact_id=_optional_string(params, "artifactId"),
+            revision_id=_optional_string(params, "revisionId"),
             work_kind=work_kind,
             estimated_seconds=estimated,
             tool_stages=max(1, stages),
@@ -3496,17 +3501,30 @@ class RuntimeService:
     def _tasks_list(self, params: Mapping[str, Any]) -> Any:
         statuses = params.get("statuses")
         parsed = tuple(RunStatus(value) for value in statuses) if statuses else ()
-        return _jsonable(
-            self.durability.list_runs(statuses=parsed, limit=int(params.get("limit") or 200))
-        )
+        return [
+            self._task_public_record(run)
+            for run in self.durability.list_runs(
+                statuses=parsed, limit=int(params.get("limit") or 200)
+            )
+        ]
 
     def _tasks_get(self, params: Mapping[str, Any]) -> Any:
-        return _jsonable(self.durability.get_run(_required_string(params, "runId")))
+        return self._task_public_record(self.durability.get_run(_required_string(params, "runId")))
+
+    def _task_public_record(self, run: RunRecord) -> dict[str, Any]:
+        record = cast(dict[str, Any], _jsonable(run))
+        if run.spec.work_kind is WorkKind.CODE_EXECUTION and run.spec.steps:
+            checkpoint = self.durability.get_checkpoint(run.run_id, run.spec.steps[0].key)
+            if checkpoint is not None:
+                record["tool_evidence"] = checkpoint["output"]
+        return record
 
     def _tasks_create(self, params: Mapping[str, Any]) -> Any:
         return self._create_task_for_prompt(
             _required_string(params, "prompt"),
             project_id=_optional_string(params, "projectId"),
+            artifact_id=_optional_string(params, "artifactId"),
+            revision_id=_optional_string(params, "revisionId"),
             work_kind=WorkKind(str(params.get("workKind") or "tool_workflow")),
             estimated_seconds=float(params["estimatedSeconds"])
             if "estimatedSeconds" in params
@@ -3517,6 +3535,9 @@ class RuntimeService:
 
     def _tasks_execute(self, params: Mapping[str, Any]) -> Any:
         run_id = _required_string(params, "runId")
+        run = self.durability.get_run(run_id)
+        if run.spec.work_kind is WorkKind.CODE_EXECUTION:
+            return self._code_task_execution_response(run_id)
         if self.task_runtime is not None:
             return {
                 "runId": run_id,
@@ -3527,6 +3548,9 @@ class RuntimeService:
 
     def _tasks_resume(self, params: Mapping[str, Any]) -> Any:
         run_id = _required_string(params, "runId")
+        run = self.durability.get_run(run_id)
+        if run.spec.work_kind is WorkKind.CODE_EXECUTION:
+            return self._code_task_execution_response(run_id)
         if self.task_runtime is not None:
             return _jsonable(self.task_runtime.resume(run_id))
         return _jsonable(self.tasks.run(run_id))
@@ -3536,6 +3560,8 @@ class RuntimeService:
         prompt: str,
         *,
         project_id: str | None,
+        artifact_id: str | None,
+        revision_id: str | None,
         work_kind: WorkKind,
         estimated_seconds: float | None,
         tool_stages: int,
@@ -3547,6 +3573,58 @@ class RuntimeService:
             AgentRole.REVIEWER,
             AgentRole.DOCUMENT_ANALYST,
         )
+        if work_kind is WorkKind.CODE_EXECUTION and project_id is None:
+            raise RuntimeCommandError(
+                "PROJECT_REQUIRED", "Code execution tasks require an exact project artifact"
+            )
+        artifact_input = (
+            self._select_code_task_artifact(
+                prompt,
+                cast(str, project_id),
+                artifact_id=artifact_id,
+                revision_id=revision_id,
+            )
+            if work_kind is WorkKind.CODE_EXECUTION
+            else None
+        )
+        steps: list[TaskStep] = []
+        effective_stages = 1 if work_kind is WorkKind.CODE_EXECUTION else tool_stages
+        for index in range(effective_stages):
+            role = (
+                AgentRole.CODER
+                if work_kind is WorkKind.CODE_EXECUTION
+                else roles[index % len(roles)]
+            )
+            arguments: dict[str, Any] = {
+                "role": role.value,
+                "instruction": prompt,
+            }
+            if work_kind is WorkKind.CODE_EXECUTION:
+                assert artifact_input is not None
+                artifact_binding = {
+                    key: value for key, value in artifact_input.items() if key != "content"
+                }
+                arguments.update(
+                    {
+                        "requestedTools": ["python.run"],
+                        "requiresToolEvidence": True,
+                        "artifactInputs": [artifact_binding],
+                        "invocationId": new_id(),
+                        "sourceSha256": artifact_input["contentSha256"],
+                        "executionMode": "module_test",
+                    }
+                )
+            steps.append(
+                TaskStep(
+                    key=f"stage-{index + 1}",
+                    operation=(
+                        "tool.python.run"
+                        if work_kind is WorkKind.CODE_EXECUTION
+                        else "agent.delegate"
+                    ),
+                    arguments=arguments,
+                )
+            )
         spec = TaskSpec(
             title=_title_from_prompt(prompt),
             prompt=prompt,
@@ -3554,30 +3632,280 @@ class RuntimeService:
             estimated_seconds=estimated_seconds,
             explicitly_background=explicitly_background,
             project_id=project_id,
-            steps=tuple(
-                TaskStep(
-                    key=f"stage-{index + 1}",
-                    operation="agent.delegate",
-                    arguments={
-                        "role": roles[index % len(roles)].value,
-                        "instruction": prompt,
-                    },
-                )
-                for index in range(tool_stages)
-            ),
+            steps=tuple(steps),
         )
         run, promotion = self.tasks.create(spec)
         result: dict[str, Any] = {
             "run": _jsonable(run),
             "promotion": {**_jsonable(promotion), "promoted": promotion.promoted},
         }
-        if self.task_runtime is not None:
+        if work_kind is WorkKind.CODE_EXECUTION:
+            result.update(self._code_task_execution_response(run.run_id))
+        elif self.task_runtime is not None:
             handle = self.task_runtime.start(run.run_id)
             self.repository.link_dbos_workflow(
                 run.task_id, self.task_runtime.workflow_id_for(run.run_id)
             )
             result["execution"] = _jsonable(handle)
         return result
+
+    def _code_task_artifact_inputs(self, project_id: str) -> tuple[dict[str, Any], ...]:
+        """Bind bounded project code artifacts to exact immutable revisions."""
+
+        inputs: list[dict[str, Any]] = []
+        maximum_bytes = 512 * 1024
+        for artifact in self.artifacts.list_project(project_id, limit=20):
+            if artifact.kind is not ArtifactKind.CODE:
+                continue
+            snapshot = self.artifacts.get(
+                artifact.id,
+                project_id=project_id,
+                revision_id=artifact.head_revision_id,
+            )
+            try:
+                content = snapshot.content.decode("utf-8", errors="strict")
+            except UnicodeDecodeError:
+                continue
+            if len(snapshot.content) > maximum_bytes:
+                continue
+            content_sha256 = hashlib.sha256(snapshot.content).hexdigest()
+            inputs.append(
+                {
+                    "artifactId": artifact.id,
+                    "revisionId": snapshot.revision.id,
+                    "title": artifact.title,
+                    "mimeType": artifact.mime_type,
+                    "objectDigest": snapshot.revision.object_digest,
+                    "contentSha256": content_sha256,
+                    "byteSize": len(snapshot.content),
+                    "content": content,
+                    "truncated": False,
+                }
+            )
+        return tuple(inputs)
+
+    def _select_code_task_artifact(
+        self,
+        prompt: str,
+        project_id: str,
+        *,
+        artifact_id: str | None,
+        revision_id: str | None,
+    ) -> dict[str, Any]:
+        if (artifact_id is None) != (revision_id is None):
+            raise RuntimeCommandError(
+                "CODE_ARTIFACT_BINDING_REQUIRED",
+                "artifactId and revisionId must be supplied together",
+            )
+        if artifact_id is not None and revision_id is not None:
+            snapshot = self.artifacts.get(
+                artifact_id,
+                project_id=project_id,
+                revision_id=revision_id,
+            )
+            if snapshot.artifact.kind is not ArtifactKind.CODE:
+                raise RuntimeCommandError(
+                    "CODE_ARTIFACT_REQUIRED", "The selected artifact is not Python code"
+                )
+            if len(snapshot.content) > 512 * 1024:
+                raise RuntimeCommandError(
+                    "CODE_ARTIFACT_TOO_LARGE",
+                    "The selected Python artifact is larger than 512 KiB",
+                )
+            try:
+                content = snapshot.content.decode("utf-8", errors="strict")
+            except UnicodeDecodeError as exc:
+                raise RuntimeCommandError(
+                    "CODE_ARTIFACT_ENCODING",
+                    "The selected Python artifact must be valid UTF-8",
+                ) from exc
+            return {
+                "artifactId": snapshot.artifact.id,
+                "revisionId": snapshot.revision.id,
+                "title": snapshot.artifact.title,
+                "mimeType": snapshot.artifact.mime_type,
+                "objectDigest": snapshot.revision.object_digest,
+                "contentSha256": hashlib.sha256(snapshot.content).hexdigest(),
+                "byteSize": len(snapshot.content),
+                "content": content,
+                "truncated": False,
+            }
+        artifacts = self._code_task_artifact_inputs(project_id)
+        if not artifacts:
+            raise RuntimeCommandError(
+                "CODE_ARTIFACT_REQUIRED",
+                "The project needs one UTF-8 Python artifact no larger than 512 KiB",
+            )
+        mentioned = [
+            item for item in artifacts if str(item["title"]).casefold() in prompt.casefold()
+        ]
+        candidates = mentioned or list(artifacts)
+        if len(candidates) != 1:
+            raise RuntimeCommandError(
+                "CODE_ARTIFACT_AMBIGUOUS",
+                "Name exactly one project code artifact in the task prompt",
+            )
+        return candidates[0]
+
+    def _code_task_execution_response(self, run_id: str) -> dict[str, Any]:
+        run, input_digest = self.tasks.prepare_external_step(run_id, 0)
+        response: dict[str, Any] = {"run": _jsonable(run)}
+        if run.status.terminal:
+            checkpoint = self.durability.get_checkpoint(run_id, run.spec.steps[0].key)
+            if checkpoint is not None:
+                response["toolEvidence"] = checkpoint["output"]
+            return response
+
+        step = run.spec.steps[0]
+        artifact_values = step.arguments.get("artifactInputs")
+        if not isinstance(artifact_values, (list, tuple)) or len(artifact_values) != 1:
+            raise RuntimeCommandError(
+                "INVALID_CODE_TASK", "The persisted code task artifact binding is invalid"
+            )
+        artifact = artifact_values[0]
+        if not isinstance(artifact, Mapping):
+            raise RuntimeCommandError(
+                "INVALID_CODE_TASK", "The persisted code task artifact binding is invalid"
+            )
+        artifact_id = str(artifact.get("artifactId") or "")
+        revision_id = str(artifact.get("revisionId") or "")
+        snapshot = self.artifacts.get(
+            artifact_id,
+            project_id=cast(str, run.spec.project_id),
+            revision_id=revision_id,
+        )
+        try:
+            source = snapshot.content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise RuntimeCommandError(
+                "INVALID_CODE_TASK", "The bound code artifact revision is not valid UTF-8"
+            ) from exc
+        if (
+            snapshot.revision.object_digest != artifact.get("objectDigest")
+            or len(snapshot.content) != artifact.get("byteSize")
+            or hashlib.sha256(snapshot.content).hexdigest() != artifact.get("contentSha256")
+            or hashlib.sha256(snapshot.content).hexdigest()
+            != step.arguments.get("sourceSha256")
+        ):
+            raise RuntimeCommandError(
+                "INVALID_CODE_TASK", "The persisted code artifact content digest changed"
+            )
+        invocation_id = str(step.arguments.get("invocationId") or "")
+        descriptor = self.tools.get("python.run", "1.0.0")
+        intent = ToolIntent(
+            invocation_id=invocation_id,
+            run_id=run.run_id,
+            task_id=run.task_id,
+            project_id=run.spec.project_id,
+            tool_name=descriptor.name,
+            tool_version=descriptor.version,
+            arguments={
+                "source": source,
+                "input_files": [],
+                "execution_mode": "module_test",
+                "timeout_seconds": 120,
+                "memory_mb": 512,
+            },
+        )
+        response["continuation"] = {
+            "request": BrokerPreflightRequest(intent, descriptor).to_wire(),
+            "completion": {
+                "runId": run.run_id,
+                "taskId": run.task_id,
+                "stepIndex": 0,
+                "stepKey": step.key,
+                "inputDigest": input_digest,
+                "invocationId": invocation_id,
+                "artifactId": artifact.get("artifactId"),
+                "revisionId": artifact.get("revisionId"),
+                "objectDigest": artifact.get("objectDigest"),
+                "sourceSha256": artifact.get("contentSha256"),
+            },
+        }
+        return response
+
+    def _tasks_tool_complete_private(self, params: Mapping[str, Any]) -> Any:
+        run_id = _required_string(params, "runId")
+        task_id = _required_string(params, "taskId")
+        invocation_id = _required_string(params, "invocationId")
+        input_digest = _required_string(params, "inputDigest")
+        broker_result = _required_mapping(params, "brokerResult")
+        run = self.durability.get_run(run_id)
+        if run.task_id != task_id or run.spec.work_kind is not WorkKind.CODE_EXECUTION:
+            raise RuntimeCommandError("TASK_BINDING_MISMATCH", "Broker result task binding failed")
+        step = run.spec.steps[0]
+        if step.arguments.get("invocationId") != invocation_id:
+            raise RuntimeCommandError(
+                "TASK_BINDING_MISMATCH", "Broker result invocation binding failed"
+            )
+        artifact_values = step.arguments.get("artifactInputs")
+        artifact = (
+            artifact_values[0]
+            if isinstance(artifact_values, (list, tuple))
+            and len(artifact_values) == 1
+            and isinstance(artifact_values[0], Mapping)
+            else None
+        )
+        if artifact is None or any(
+            params.get(parameter) != artifact.get(field)
+            for parameter, field in (
+                ("artifactId", "artifactId"),
+                ("revisionId", "revisionId"),
+                ("objectDigest", "objectDigest"),
+                ("sourceSha256", "contentSha256"),
+            )
+        ):
+            raise RuntimeCommandError(
+                "TASK_BINDING_MISMATCH", "Broker result artifact revision binding failed"
+            )
+        if broker_result.get("invocation_id") != invocation_id:
+            raise RuntimeCommandError(
+                "TASK_BINDING_MISMATCH", "Broker result identity does not match the task"
+            )
+        status = str(broker_result.get("status") or "failed")
+        output_value = broker_result.get("output")
+        output = output_value if isinstance(output_value, Mapping) else {}
+        native_value = (
+            output.get("native")
+            or output.get("nativeResult")
+            or output.get("native_result")
+            or output
+        )
+        native = native_value if isinstance(native_value, Mapping) else {}
+        worker_value = native.get("output")
+        worker = worker_value if isinstance(worker_value, Mapping) else {}
+        result_value = worker.get("result")
+        worker_result = result_value if isinstance(result_value, Mapping) else {}
+        evidence = {
+            "tool": "python.run",
+            "nativeTool": "native.sandbox.python",
+            "invocationId": invocation_id,
+            "artifactId": params.get("artifactId"),
+            "revisionId": params.get("revisionId"),
+            "objectDigest": params.get("objectDigest"),
+            "sourceSha256": params.get("sourceSha256"),
+            "status": status,
+            "exitStatus": worker_result.get("exit_status", worker.get("exitCode")),
+            "stdout": worker_result.get("stdout", ""),
+            "stderr": worker_result.get("stderr", ""),
+            "testSummary": worker_result.get("tests"),
+            "provenance": native.get("provenance", output.get("provenance", [])),
+            "brokerResult": broker_result,
+        }
+        error = broker_result.get("error_message") or broker_result.get("error")
+        completed = self.tasks.complete_external_step(
+            run_id,
+            0,
+            input_digest=input_digest,
+            output=evidence,
+            outcome=status,
+            error=str(error) if error else None,
+        )
+        checkpoint = self.durability.get_checkpoint(run_id, step.key)
+        return {
+            "run": _jsonable(completed),
+            "toolEvidence": checkpoint["output"] if checkpoint is not None else evidence,
+        }
 
     def _tasks_cancel(self, params: Mapping[str, Any]) -> Any:
         run_id = _required_string(params, "runId")
@@ -4086,14 +4414,34 @@ class DelegateStepExecutor:
         instruction = str(step.arguments.get("instruction") or "")
         if context.steering:
             instruction += "\n\nSteering:\n" + "\n".join(context.steering)
+        requested_tools_value = step.arguments.get("requestedTools", ())
+        requested_tools: frozenset[str] = frozenset()
+        if isinstance(requested_tools_value, (list, tuple)):
+            requested_tool_items = cast(Sequence[object], requested_tools_value)
+            requested_tools = frozenset(str(item) for item in requested_tool_items)
+        task_context: dict[str, Any] = {
+            "taskId": context.task_id,
+            "idempotencyKey": idempotency_key,
+        }
+        artifact_inputs = step.arguments.get("artifactInputs")
+        if isinstance(artifact_inputs, (list, tuple)):
+            task_context["artifactInputs"] = list(cast(Sequence[object], artifact_inputs))
         request = self.delegates.make_request(
             context.run_id,
             role,
             instruction,
+            requested_tools=requested_tools,
             project_id=context.project_id,
-            context={"taskId": context.task_id, "idempotencyKey": idempotency_key},
+            context=task_context,
         )
         result = self.delegates.execute(request)
+        if result.status is not DelegateStatus.SUCCEEDED:
+            detail = result.error or "delegate returned no error detail"
+            raise RuntimeError(f"{role.value} delegate {result.status.value}: {detail}")
+        if bool(step.arguments.get("requiresToolEvidence")) and not result.tool_outputs:
+            raise RuntimeError(
+                f"{role.value} delegate reported success without required sandbox tool evidence"
+            )
         return {
             "delegate_id": result.delegate_id,
             "role": role.value,

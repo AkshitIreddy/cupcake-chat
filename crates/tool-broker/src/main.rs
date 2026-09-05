@@ -11,7 +11,7 @@ use cupcake_tool_broker::framing::{
 use cupcake_tool_broker::integration::{ArtifactExportRequest, BrokerIntegration};
 use cupcake_tool_broker::protocol::{
     decode_transport_secret, uuid_v7, MessageType, ProtocolEnvelope, ProtocolLineage, ReplayGuard,
-    RuntimeBrokerRequest,
+    RuntimeBrokerRequest, RuntimeRequestType,
 };
 use cupcake_tool_broker::registry::native_descriptor_catalog;
 use cupcake_tool_broker::runtime::RuntimeChild;
@@ -194,6 +194,23 @@ fn run() -> Result<()> {
                                         &mut integration,
                                         &data_dir,
                                     );
+                                    let response = complete_task_tool_response_with_dispatch(
+                                        &envelope.payload,
+                                        response,
+                                        runtime.as_mut(),
+                                        &mut integration,
+                                        &mut |request, integration| {
+                                            dispatch_task_tool_with_control(
+                                                request,
+                                                integration,
+                                                &incoming_rx,
+                                                &mut queued,
+                                                &mut output,
+                                                &mut outgoing_sequences,
+                                                &secret,
+                                            )
+                                        },
+                                    );
                                     if cleanup_migration
                                         && response.get("ok").and_then(Value::as_bool) == Some(true)
                                     {
@@ -321,6 +338,10 @@ enum RuntimeStreamMessage {
     Done(Result<Map<String, Value>>),
 }
 
+enum TaskToolExecutionMessage {
+    Done(Map<String, Value>),
+}
+
 #[allow(clippy::too_many_arguments)]
 fn proxy_runtime_stream<W: Write>(
     runtime: &mut RuntimeChild,
@@ -405,6 +426,100 @@ fn proxy_runtime_stream<W: Write>(
             }
         }
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dispatch_task_tool_with_control<W: Write>(
+    request: RuntimeBrokerRequest,
+    integration: &mut BrokerIntegration,
+    incoming: &mpsc::Receiver<Result<ProtocolEnvelope>>,
+    queued: &mut VecDeque<ProtocolEnvelope>,
+    output: &mut W,
+    outgoing_sequences: &mut HashMap<Uuid, u64>,
+    secret: &[u8],
+) -> Map<String, Value> {
+    let invocation_id = request
+        .payload
+        .get("intent")
+        .and_then(Value::as_object)
+        .and_then(|intent| intent.get("invocation_id"))
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let Some(invocation_id) = invocation_id else {
+        return failure(
+            "TASK_TOOL_CONTINUATION_FAILED",
+            "The task tool invocation identity is invalid",
+            false,
+        );
+    };
+    let cancellation = integration.python_cancellation();
+    let controlled = std::thread::scope(|scope| -> Result<Map<String, Value>> {
+        let (execution_tx, execution_rx) = mpsc::channel();
+        scope.spawn(move || {
+            let response = integration.dispatch(request);
+            let _ = execution_tx.send(TaskToolExecutionMessage::Done(response));
+        });
+        let mut cancel_pending = false;
+
+        loop {
+            if let Ok(TaskToolExecutionMessage::Done(response)) = execution_rx.try_recv() {
+                return Ok(response);
+            }
+            if cancel_pending && cancellation.cancel(&invocation_id.to_string()).is_ok() {
+                cancel_pending = false;
+            }
+
+            match incoming.recv_timeout(StdDuration::from_millis(10)) {
+                Ok(Ok(envelope)) if envelope.message_type == MessageType::Cancel => {
+                    let target = envelope
+                        .payload
+                        .get("targetId")
+                        .and_then(Value::as_str)
+                        .and_then(|value| Uuid::parse_str(value).ok());
+                    if target == Some(invocation_id) {
+                        cancel_pending = cancellation.cancel(&invocation_id.to_string()).is_err();
+                        let response = success(json!({
+                            "targetId": invocation_id,
+                            "cancelRequested": true
+                        }));
+                        write_outbound(
+                            output,
+                            outgoing_sequences,
+                            secret,
+                            envelope.correlation_id,
+                            envelope.session_id,
+                            envelope.lineage,
+                            MessageType::Response,
+                            response,
+                        )?;
+                    } else {
+                        queued.push_back(envelope);
+                    }
+                }
+                Ok(Ok(envelope)) if envelope.message_type == MessageType::Ping => {
+                    write_outbound(
+                        output,
+                        outgoing_sequences,
+                        secret,
+                        envelope.correlation_id,
+                        envelope.session_id,
+                        envelope.lineage,
+                        MessageType::Pong,
+                        Map::new(),
+                    )?;
+                }
+                Ok(Ok(envelope)) => queued.push_back(envelope),
+                Ok(Err(BrokerError::TruncatedFrame)) => return Err(BrokerError::TruncatedFrame),
+                Ok(Err(error)) => return Err(error),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(BrokerError::TruncatedFrame)
+                }
+            }
+        }
+    });
+    controlled
+        .unwrap_or_else(|error| failure("TASK_TOOL_CONTINUATION_FAILED", &safe_error(&error), true))
 }
 
 fn prepare_chat_attachments(
@@ -1661,6 +1776,290 @@ fn load_openai_compatible_endpoint(
     Ok(Some(validated))
 }
 
+#[cfg(test)]
+fn complete_task_tool_response(
+    desktop_request: &Map<String, Value>,
+    runtime_response: Map<String, Value>,
+    runtime: Option<&mut RuntimeChild>,
+    integration: &mut BrokerIntegration,
+) -> Map<String, Value> {
+    complete_task_tool_response_with_dispatch(
+        desktop_request,
+        runtime_response,
+        runtime,
+        integration,
+        &mut |request, integration| integration.dispatch(request),
+    )
+}
+
+fn complete_task_tool_response_with_dispatch<F>(
+    desktop_request: &Map<String, Value>,
+    mut runtime_response: Map<String, Value>,
+    runtime: Option<&mut RuntimeChild>,
+    integration: &mut BrokerIntegration,
+    execute_dispatch: &mut F,
+) -> Map<String, Value>
+where
+    F: FnMut(RuntimeBrokerRequest, &mut BrokerIntegration) -> Map<String, Value>,
+{
+    let method = desktop_request.get("method").and_then(Value::as_str);
+    if !matches!(
+        method,
+        Some("tasks.create" | "tasks.execute" | "tasks.resume")
+    ) || runtime_response.get("ok").and_then(Value::as_bool) != Some(true)
+    {
+        return runtime_response;
+    }
+    let Some(result) = runtime_response
+        .get_mut("result")
+        .and_then(Value::as_object_mut)
+    else {
+        return runtime_response;
+    };
+    let Some(continuation) = result
+        .remove("continuation")
+        .and_then(|value| value.as_object().cloned())
+    else {
+        return runtime_response;
+    };
+    let mut complete = || -> Result<(Value, Value)> {
+        let request_value = continuation
+            .get("request")
+            .cloned()
+            .ok_or_else(|| BrokerError::Integrity("task tool request is missing".into()))?;
+        let request: RuntimeBrokerRequest = serde_json::from_value(request_value)?;
+        request.validate()?;
+        if request.request_type != RuntimeRequestType::ToolPreflight {
+            return Err(BrokerError::Integrity(
+                "task continuation is not a tool preflight".into(),
+            ));
+        }
+        let intent = request
+            .payload
+            .get("intent")
+            .cloned()
+            .ok_or_else(|| BrokerError::Integrity("task tool intent is missing".into()))?;
+        let parameters = desktop_request
+            .get("params")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let supplied_preflight = parameters.get("brokerPreflight").cloned();
+        let supplied_approval = parameters.get("brokerApproval").cloned();
+
+        let preflight = if let (Some(preflight), Some(approval)) =
+            (supplied_preflight, supplied_approval)
+        {
+            let verify = RuntimeBrokerRequest {
+                protocol_version: PROTOCOL_VERSION,
+                request_type: RuntimeRequestType::ToolApprovalVerify,
+                payload: object(json!({"preflight": preflight, "approval": approval})),
+            };
+            let verified = integration.dispatch(verify);
+            if verified.get("ok").and_then(Value::as_bool) != Some(true) {
+                return Err(BrokerError::PermissionDenied(
+                    "task tool approval was rejected".into(),
+                ));
+            }
+            parameters
+                .get("brokerPreflight")
+                .cloned()
+                .ok_or_else(|| BrokerError::Integrity("approved preflight is missing".into()))?
+        } else {
+            let preflight_response = integration.dispatch(request);
+            if preflight_response.get("ok").and_then(Value::as_bool) != Some(true) {
+                return Ok((
+                    json!({
+                        "status": "failed",
+                        "invocation_id": task_invocation_id(&continuation)?,
+                        "error_message": "The broker rejected the task tool preflight.",
+                        "output": {"broker": preflight_response}
+                    }),
+                    Value::Null,
+                ));
+            }
+            let broker_result = preflight_response
+                .get("result")
+                .and_then(Value::as_object)
+                .ok_or_else(|| BrokerError::Integrity("tool preflight result is missing".into()))?;
+            let preflight = broker_result
+                .get("preflight")
+                .cloned()
+                .ok_or_else(|| BrokerError::Integrity("tool preflight is missing".into()))?;
+            let decision = preflight
+                .get("decision")
+                .and_then(Value::as_str)
+                .unwrap_or("deny");
+            if decision == "ask"
+                || preflight
+                    .get("requires_fresh_approval")
+                    .and_then(Value::as_bool)
+                    == Some(true)
+            {
+                return Ok((
+                    Value::Null,
+                    json!({
+                        "status": "approval_required",
+                        "invocationId": task_invocation_id(&continuation)?,
+                        "preflight": preflight,
+                        "approvalChallenge": broker_result.get("approvalChallenge")
+                    }),
+                ));
+            }
+            if decision != "allow" {
+                return Ok((
+                    json!({
+                        "status": "denied",
+                        "invocation_id": task_invocation_id(&continuation)?,
+                        "error_message": "The broker policy denied this sandbox task.",
+                        "output": {"preflight": preflight}
+                    }),
+                    Value::Null,
+                ));
+            }
+            if method == Some("tasks.create") {
+                return Ok((
+                    Value::Null,
+                    json!({
+                        "status": "ready",
+                        "invocationId": task_invocation_id(&continuation)?,
+                        "preflight": preflight
+                    }),
+                ));
+            }
+            preflight
+        };
+
+        let execute = RuntimeBrokerRequest {
+            protocol_version: PROTOCOL_VERSION,
+            request_type: RuntimeRequestType::ToolExecute,
+            payload: object(json!({
+                "intent": intent,
+                "preflight": preflight,
+                "approval": null
+            })),
+        };
+        let execution = execute_dispatch(execute, integration);
+        let broker_result = if execution.get("ok").and_then(Value::as_bool) == Some(true) {
+            execution.get("result").cloned().unwrap_or_else(|| {
+                json!({
+                    "status": "failed",
+                    "invocation_id": task_invocation_id(&continuation).unwrap_or_default(),
+                    "error_message": "The broker returned no task tool result.",
+                    "output": {}
+                })
+            })
+        } else {
+            json!({
+                "status": "failed",
+                "invocation_id": task_invocation_id(&continuation)?,
+                "error_message": "The broker could not execute the sandbox task.",
+                "output": {"broker": execution}
+            })
+        };
+        Ok((broker_result, Value::Null))
+    };
+
+    let (broker_result, approval) = match complete() {
+        Ok(value) => value,
+        Err(_) => {
+            return failure(
+                "TASK_TOOL_CONTINUATION_FAILED",
+                "The task tool continuation could not be verified",
+                true,
+            )
+        }
+    };
+    if !approval.is_null() {
+        if let Some(result) = runtime_response
+            .get_mut("result")
+            .and_then(Value::as_object_mut)
+        {
+            result.insert("execution".into(), approval);
+        }
+        return runtime_response;
+    }
+
+    let Some(runtime) = runtime else {
+        return failure(
+            "TASK_TOOL_CONTINUATION_FAILED",
+            "The packaged runtime is unavailable for task completion",
+            true,
+        );
+    };
+    let mut completion = match continuation
+        .get("completion")
+        .and_then(Value::as_object)
+        .cloned()
+    {
+        Some(value) => value,
+        None => {
+            return failure(
+                "TASK_TOOL_CONTINUATION_FAILED",
+                "The task completion binding is missing",
+                false,
+            )
+        }
+    };
+    completion.insert("brokerResult".into(), broker_result);
+    let private_request = object(json!({
+        "method": "tasks.tool.complete.private",
+        "params": completion
+    }));
+    let private_response = match runtime.request_streaming(&private_request, |_| Ok(())) {
+        Ok(response) if response.get("ok").and_then(Value::as_bool) == Some(true) => response,
+        _ => {
+            return failure(
+                "TASK_TOOL_CONTINUATION_FAILED",
+                "The runtime rejected the broker task result",
+                true,
+            )
+        }
+    };
+    let Some(private_result) = private_response.get("result").and_then(Value::as_object) else {
+        return failure(
+            "TASK_TOOL_CONTINUATION_FAILED",
+            "The runtime task completion receipt is missing",
+            false,
+        );
+    };
+    if let Some(result) = runtime_response
+        .get_mut("result")
+        .and_then(Value::as_object_mut)
+    {
+        for key in ["run", "toolEvidence"] {
+            if let Some(value) = private_result.get(key) {
+                result.insert(key.into(), value.clone());
+            }
+        }
+        let execution_status = private_result
+            .get("run")
+            .and_then(Value::as_object)
+            .and_then(|run| run.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("failed");
+        result.insert(
+            "execution".into(),
+            json!({
+                "status": execution_status,
+                "invocationId": task_invocation_id(&continuation).unwrap_or_default()
+            }),
+        );
+    }
+    runtime_response
+}
+
+fn task_invocation_id(continuation: &Map<String, Value>) -> Result<String> {
+    continuation
+        .get("completion")
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("invocationId"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| BrokerError::Integrity("task invocation binding is missing".into()))
+}
+
 fn success(result: Value) -> Map<String, Value> {
     object(json!({"ok": true, "result": result}))
 }
@@ -2260,5 +2659,98 @@ mod tests {
         assert_eq!(response["ok"], false);
         assert_eq!(response["error"]["code"], "BACKUP_RESTORE_FAILED");
         assert!(!data.path().join("broker-restore").exists());
+    }
+
+    #[test]
+    fn task_tool_continuation_returns_digest_bound_approval_without_source() {
+        let data = tempdir().unwrap();
+        let mut integration = BrokerIntegration::open(data.path()).unwrap();
+        let invocation_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
+        let desktop = object(json!({
+            "method": "tasks.create",
+            "params": {"prompt": "Run task.py", "workKind": "code_execution"}
+        }));
+        let runtime = success(json!({
+            "run": {"run_id": "run-task-1", "status": "waiting_input"},
+            "continuation": {
+                "request": {
+                    "protocol_version": 1,
+                    "request_type": "tool.preflight",
+                    "payload": {
+                        "intent": {
+                            "invocation_id": invocation_id,
+                            "run_id": "run-task-1",
+                            "tool_name": "python.run",
+                            "tool_version": "1.0.0",
+                            "arguments": {
+                                "source": "print('private source')",
+                                "input_files": [],
+                                "execution_mode": "module_test",
+                                "timeout_seconds": 30,
+                                "memory_mb": 256
+                            },
+                            "project_id": "project-task-1",
+                            "task_id": "task-task-1",
+                            "requested_at": "2026-09-05T12:00:00Z"
+                        },
+                        "descriptor": {
+                            "name": "python.run",
+                            "version": "1.0.0",
+                            "display_name": "Run Python",
+                            "description": "Run a staged Python program in the offline sandbox.",
+                            "input_schema": {"type": "object"},
+                            "output_schema": {"type": "object"},
+                            "effects": ["execute_code"],
+                            "required_grants": ["sandbox.execute"],
+                            "default_data_flows": [],
+                            "timeout_seconds": 900,
+                            "cancellable": true,
+                            "category": "native"
+                        }
+                    }
+                },
+                "completion": {
+                    "runId": "run-task-1",
+                    "taskId": "task-task-1",
+                    "stepIndex": 0,
+                    "stepKey": "stage-1",
+                    "inputDigest": "ab".repeat(32),
+                    "invocationId": invocation_id,
+                    "artifactId": "artifact-task-1",
+                    "revisionId": "revision-task-1",
+                    "objectDigest": "cd".repeat(32),
+                    "sourceSha256": "ef".repeat(32)
+                }
+            }
+        }));
+
+        let ready_runtime = runtime.clone();
+        let response = complete_task_tool_response(&desktop, runtime, None, &mut integration);
+
+        assert_eq!(response["ok"], true, "{response:?}");
+        assert_eq!(
+            response["result"]["execution"]["status"],
+            "approval_required"
+        );
+        assert_eq!(
+            response["result"]["execution"]["preflight"]["invocation_id"],
+            invocation_id
+        );
+        assert_eq!(
+            response["result"]["execution"]["invocationId"],
+            invocation_id
+        );
+        assert!(response["result"].get("continuation").is_none());
+        assert!(!Value::Object(response)
+            .to_string()
+            .contains("private source"));
+
+        integration.set_permission_mode("full-freedom").unwrap();
+        let ready = complete_task_tool_response(&desktop, ready_runtime, None, &mut integration);
+        assert_eq!(ready["ok"], true);
+        assert_eq!(ready["result"]["execution"]["status"], "ready");
+        assert_eq!(ready["result"]["execution"]["invocationId"], invocation_id);
+        assert!(ready["result"].get("continuation").is_none());
+        assert!(!Value::Object(ready).to_string().contains("private source"));
     }
 }

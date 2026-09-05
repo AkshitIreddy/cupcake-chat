@@ -17,7 +17,14 @@ DEFAULT_ROLE_PROFILES = {
         role=AgentRole.CODER,
         system_purpose="Prepare scoped code changes and verified patch proposals.",
         allowed_tools=frozenset(
-            {"project.read", "repo.inspect", "patch.propose", "sandbox.python", "test.run"}
+            {
+                "project.read",
+                "repo.inspect",
+                "patch.propose",
+                "sandbox.python",
+                "python.run",
+                "test.run",
+            }
         ),
         default_budget=BudgetLimits(max_output_tokens=8_000, max_tool_calls=20, max_cost_usd=3.0),
     ),

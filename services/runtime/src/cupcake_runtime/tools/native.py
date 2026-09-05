@@ -146,6 +146,10 @@ def native_tool_descriptors() -> tuple[ToolDescriptor, ...]:
             {
                 "source": path,
                 "input_files": {"type": "array"},
+                "execution_mode": {
+                    "type": "string",
+                    "enum": ["expression", "module_test"],
+                },
                 "timeout_seconds": {"type": "integer"},
                 "memory_mb": {"type": "integer"},
             },

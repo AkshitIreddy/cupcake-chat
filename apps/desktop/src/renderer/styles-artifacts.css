@@ -846,6 +846,19 @@
   justify-content: center;
 }
 
+.artifact-test-button {
+  min-width: 108px;
+  justify-content: center;
+  border-color: color-mix(in srgb, var(--berry) 24%, var(--line));
+  background: color-mix(in srgb, var(--berry) 6%, var(--paper-raised));
+  color: var(--berry);
+}
+
+.artifact-test-button:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--berry) 45%, var(--line));
+  background: color-mix(in srgb, var(--berry) 10%, var(--paper-raised));
+}
+
 .artifact-export-status {
   position: absolute;
   z-index: 5;
@@ -864,6 +877,120 @@
 .artifact-export-status.is-error {
   border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
   color: var(--danger);
+}
+
+.artifact-test-panel {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 18px 0;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--pistachio));
+  border-radius: 14px;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--pistachio) 7%, transparent), transparent 48%),
+    var(--paper-raised);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--cocoa) 7%, transparent);
+}
+
+.artifact-test-panel.is-approval {
+  border-color: color-mix(in srgb, var(--berry) 30%, var(--line));
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--berry) 8%, transparent), transparent 52%),
+    var(--paper-raised);
+}
+
+.artifact-test-panel.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--danger) 7%, transparent), transparent 52%),
+    var(--paper-raised);
+}
+
+.artifact-test-panel__mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--pistachio) 13%, var(--paper));
+  color: var(--pistachio);
+}
+
+.artifact-test-panel.is-approval .artifact-test-panel__mark {
+  background: color-mix(in srgb, var(--berry) 12%, var(--paper));
+  color: var(--berry);
+}
+
+.artifact-test-panel.is-failed .artifact-test-panel__mark {
+  background: color-mix(in srgb, var(--danger) 11%, var(--paper));
+  color: var(--danger);
+}
+
+.artifact-test-panel.is-creating .artifact-test-panel__mark,
+.artifact-test-panel.is-running .artifact-test-panel__mark {
+  animation: artifact-pulse 850ms ease-in-out infinite alternate;
+}
+
+.artifact-test-panel__body {
+  min-width: 0;
+}
+
+.artifact-test-panel__body > .eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+}
+
+.artifact-test-panel__body > strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+
+.artifact-test-panel__body > p {
+  max-width: 720px;
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.artifact-test-panel__body details {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.artifact-test-panel__body summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.artifact-test-panel__body pre {
+  max-height: 150px;
+  margin: 7px 0 0;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--crumb);
+  padding: 9px;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+.artifact-test-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.artifact-test-panel__actions .button {
+  white-space: nowrap;
 }
 
 .artifact-save-state > span {
@@ -1266,6 +1393,33 @@
   }
   .artifact-save-state > span {
     color: var(--pistachio);
+  }
+  .artifact-header-actions {
+    gap: 5px;
+  }
+  .artifact-test-button,
+  .artifact-export-button {
+    min-width: 34px;
+    padding-inline: 8px;
+    font-size: 0;
+  }
+  .artifact-test-button svg,
+  .artifact-export-button svg {
+    width: 15px;
+    height: 15px;
+  }
+  .artifact-test-panel {
+    grid-template-columns: 34px minmax(0, 1fr);
+    margin: 9px 11px 0;
+    padding: 11px;
+  }
+  .artifact-test-panel__mark {
+    width: 32px;
+    height: 32px;
+  }
+  .artifact-test-panel__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
   .revision-view--folio {
     grid-template-columns: 1fr;

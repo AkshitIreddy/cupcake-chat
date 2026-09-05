@@ -12,6 +12,13 @@ from typing import Any
 
 import pytest
 
+from cupcake_runtime.agents import (
+    DelegateControl,
+    DelegateRequest,
+    DelegateResult,
+    DelegateStatus,
+    RoleProfile,
+)
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.domain.models import Setting
 from cupcake_runtime.local_models.types import (
@@ -338,6 +345,228 @@ def test_memory_and_background_task_commands_share_profile(tmp_path: Path) -> No
     assert task["promotion"]["promoted"] is True
     listed, _ = runtime.handle("tasks.list")
     assert listed[0]["run_id"] == task["run"]["run_id"]
+    runtime.close()
+
+
+def test_code_execution_task_binds_project_code_and_persists_real_broker_evidence(
+    tmp_path: Path,
+) -> None:
+    privacy_sentinel = "CUPCAKE_PRIVATE_SOURCE_7F29C4A1D8E64B92"
+    runtime = service(tmp_path)
+    project, _ = runtime.handle("projects.create", {"name": "Sandbox evidence"})
+    artifact, _ = runtime.handle(
+        "artifacts.create",
+        {
+            "projectId": project["id"],
+            "title": "test_widget.py",
+            "kind": "code",
+            "mimeType": "text/x-python",
+            "content": (
+                f"# {privacy_sentinel}\n"
+                "import unittest\n\nclass WidgetTest(unittest.TestCase):\n    pass\n"
+            ),
+        },
+    )
+    assert artifact["revisionNumber"] == 1
+    assert artifact["revisionCount"] == 1
+
+    created, _ = runtime.handle(
+        "tasks.create",
+        {
+            "prompt": "Run the selected unit tests in the Python sandbox.",
+            "projectId": project["id"],
+            "artifactId": artifact["artifact"]["id"],
+            "revisionId": artifact["revision"]["id"],
+            "workKind": "code_execution",
+            "toolStages": 1,
+            "background": True,
+        },
+    )
+    step = created["run"]["spec"]["steps"][0]
+    artifact_input = step["arguments"]["artifactInputs"][0]
+
+    assert step["arguments"]["requestedTools"] == ["python.run"]
+    assert step["operation"] == "tool.python.run"
+    assert artifact_input["artifactId"] == artifact["artifact"]["id"]
+    assert artifact_input["revisionId"] == artifact["revision"]["id"]
+    assert "content" not in artifact_input
+    assert "WidgetTest" not in str(created["run"])
+    for database_file in tmp_path.glob("cupcake-runtime.db*"):
+        assert privacy_sentinel.encode() not in database_file.read_bytes()
+    assert created["run"]["status"] == "waiting_input"
+    continuation = created["continuation"]
+    request = continuation["request"]
+    assert request["request_type"] == "tool.preflight"
+    assert request["payload"]["intent"]["arguments"]["execution_mode"] == "module_test"
+    assert "WidgetTest" in request["payload"]["intent"]["arguments"]["source"]
+
+    completion = continuation["completion"]
+    invocation_id = completion["invocationId"]
+    completed, _ = runtime.handle(
+        "tasks.tool.complete.private",
+        {
+            **completion,
+            "brokerResult": {
+                "invocation_id": invocation_id,
+                "status": "succeeded",
+                "output": {
+                    "native": {
+                        "status": "completed",
+                        "output": {
+                            "kind": "python.execute.complete",
+                            "result": {
+                                "status": "complete",
+                                "exit_status": 0,
+                                "stdout": "test_widget ... ok\n",
+                                "stderr": "Ran 1 test\nOK\n",
+                                "tests": {
+                                    "run": 1,
+                                    "failures": 0,
+                                    "errors": 0,
+                                    "skipped": 0,
+                                    "successful": True,
+                                },
+                            },
+                        },
+                        "provenance": ["sandbox:packaged-worker-appcontainer-job"],
+                    }
+                },
+            },
+        },
+    )
+
+    assert completed["run"]["status"] == "succeeded"
+    evidence = completed["toolEvidence"]
+    assert evidence["exitStatus"] == 0
+    assert evidence["stdout"] == "test_widget ... ok\n"
+    assert evidence["testSummary"]["successful"] is True
+    assert evidence["provenance"] == ["sandbox:packaged-worker-appcontainer-job"]
+    persisted, _ = runtime.handle("tasks.get", {"runId": created["run"]["run_id"]})
+    assert persisted["tool_evidence"] == evidence
+    runtime.close()
+
+
+def test_code_execution_restart_preserves_waiting_continuation_and_never_reexecutes(
+    tmp_path: Path,
+) -> None:
+    runtime = service(tmp_path)
+    project, _ = runtime.handle("projects.create", {"name": "Restartable sandbox"})
+    runtime.handle(
+        "artifacts.create",
+        {
+            "projectId": project["id"],
+            "title": "restart_test.py",
+            "kind": "code",
+            "mimeType": "text/x-python",
+            "content": "import unittest\nclass T(unittest.TestCase):\n    pass\n",
+        },
+    )
+    created, _ = runtime.handle(
+        "tasks.create",
+        {
+            "prompt": "Run restart_test.py in the sandbox",
+            "projectId": project["id"],
+            "workKind": "code_execution",
+        },
+    )
+    run_id = created["run"]["run_id"]
+    invocation_id = created["continuation"]["completion"]["invocationId"]
+    input_digest = created["continuation"]["completion"]["inputDigest"]
+    runtime.close()
+
+    reopened = service(tmp_path)
+    recovered, _ = reopened.handle("tasks.get", {"runId": run_id})
+    assert recovered["status"] == "waiting_input"
+    resumed, _ = reopened.handle("tasks.resume", {"runId": run_id})
+    assert resumed["run"]["status"] == "waiting_input"
+    assert resumed["continuation"]["completion"]["invocationId"] == invocation_id
+    assert resumed["continuation"]["completion"]["inputDigest"] == input_digest
+    reopened.close()
+
+
+def test_cancelled_code_task_rejects_late_success_and_stays_cancelled(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    project, _ = runtime.handle("projects.create", {"name": "Cancelled sandbox"})
+    runtime.handle(
+        "artifacts.create",
+        {
+            "projectId": project["id"],
+            "title": "cancel_test.py",
+            "kind": "code",
+            "mimeType": "text/x-python",
+            "content": "import unittest\nclass T(unittest.TestCase):\n    pass\n",
+        },
+    )
+    created, _ = runtime.handle(
+        "tasks.create",
+        {
+            "prompt": "Run cancel_test.py in the sandbox",
+            "projectId": project["id"],
+            "workKind": "code_execution",
+        },
+    )
+    completion = created["continuation"]["completion"]
+    cancelled, _ = runtime.handle("tasks.cancel", {"runId": created["run"]["run_id"]})
+    assert cancelled["status"] == "cancelled"
+    late, _ = runtime.handle(
+        "tasks.tool.complete.private",
+        {
+            **completion,
+            "brokerResult": {
+                "invocation_id": completion["invocationId"],
+                "status": "succeeded",
+                "output": {},
+            },
+        },
+    )
+    assert late["run"]["status"] == "cancelled"
+    assert runtime.durability.get_checkpoint(created["run"]["run_id"], "stage-1") is None
+    runtime.close()
+
+
+def test_failed_delegate_fails_durable_task(tmp_path: Path) -> None:
+    class FailingDelegateExecutor:
+        def execute(
+            self,
+            request: DelegateRequest,
+            profile: RoleProfile,
+            control: DelegateControl,
+        ) -> DelegateResult:
+            del profile, control
+            return DelegateResult(
+                request.delegate_id,
+                DelegateStatus.FAILED,
+                "",
+                error="observed provider failure",
+            )
+
+    runtime = service(tmp_path)
+    runtime.delegates.executor = FailingDelegateExecutor()
+    created, _ = runtime.handle(
+        "tasks.create",
+        {"prompt": "Review this work", "workKind": "tool_workflow", "background": True},
+    )
+
+    executed, _ = runtime.handle("tasks.execute", {"runId": created["run"]["run_id"]})
+
+    assert executed["status"] == "failed"
+    assert executed["current_step"] == 0
+    assert executed["error"] == "researcher delegate failed: observed provider failure"
+    runtime.close()
+
+
+def test_unconfigured_production_delegate_fails_without_fabricated_output(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    created, _ = runtime.handle(
+        "tasks.create",
+        {"prompt": "Research the current design", "workKind": "tool_workflow"},
+    )
+
+    executed, _ = runtime.handle("tasks.execute", {"runId": created["run"]["run_id"]})
+
+    assert executed["status"] == "failed"
+    assert "real model-backed delegate" in executed["error"]
+    assert "deterministic:" not in executed["error"]
     runtime.close()
 
 

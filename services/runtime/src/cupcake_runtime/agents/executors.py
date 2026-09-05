@@ -76,6 +76,29 @@ class DeterministicDelegateExecutor:
         return result
 
 
+class UnavailableDelegateExecutor:
+    """Fail closed when no real model-backed background executor is configured."""
+
+    def execute(
+        self,
+        request: DelegateRequest,
+        profile: RoleProfile,
+        control: DelegateControl,
+    ) -> DelegateResult:
+        del profile
+        control.raise_if_cancelled()
+        return DelegateResult(
+            delegate_id=request.delegate_id,
+            status=DelegateStatus.FAILED,
+            content="",
+            usage=BudgetUsage(),
+            error=(
+                "Background agent execution is unavailable until a real model-backed "
+                "delegate is configured."
+            ),
+        )
+
+
 class PydanticAIExecutor:
     """Duck-typed Pydantic AI adapter with no mandatory runtime dependency.
 

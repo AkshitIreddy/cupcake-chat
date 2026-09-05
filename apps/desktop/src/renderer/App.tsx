@@ -63,6 +63,7 @@ import {
   automaticRamBudgetGb,
   scopedReferenceOptions,
   useWorkspace,
+  type ArtifactTestRun,
   type ArtifactRecord,
   type ArtifactRevisionRecord,
   type AttachmentRecord,
@@ -1983,7 +1984,8 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
         ? resolvePersistedMessageModel(workspace.models, message)
         : selectedModel;
     if (!actionModel) {
-      const text = 'The original provider route is unavailable, so this response was not continued.';
+      const text =
+        'The original provider route is unavailable, so this response was not continued.';
       setActionError(text);
       setActionNotice({ tone: 'error', text });
       return false;
@@ -3846,7 +3848,7 @@ function ArtifactPreview({ artifact, content }: { artifact: ArtifactRecord; cont
   );
 }
 
-function ArtifactsView() {
+function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
   const workspace = useWorkspace();
   const requestedArtifactId = useRef(sessionStorage.getItem('cupcake-open-artifact'));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -3873,6 +3875,11 @@ function ArtifactsView() {
     'idle',
   );
   const [exportMessage, setExportMessage] = useState('');
+  const [testRun, setTestRun] = useState<ArtifactTestRun | null>(null);
+  const [testState, setTestState] = useState<
+    'idle' | 'creating' | 'approval' | 'running' | 'complete' | 'failed'
+  >('idle');
+  const [testMessage, setTestMessage] = useState('');
   const draftPending = saveState === 'dirty' || saveState === 'saving' || saveState === 'error';
   const activeProject = workspace.projects.find((item) => item.id === workspace.activeProjectId);
   const projectArtifacts = useMemo(
@@ -3886,6 +3893,22 @@ function ArtifactsView() {
     projectArtifacts.find((item) => item.id === selectedId) ??
     (requestedArtifactId.current ? undefined : projectArtifacts[0]);
   const [content, setContent] = useState(selected?.content ?? '');
+  const isPythonArtifact = Boolean(
+    selected &&
+    selected.kind.toLowerCase().includes('code') &&
+    (selected.mimeType?.toLowerCase().includes('python') || selected.name.endsWith('.py')),
+  );
+  const testSummary = testRun?.evidence?.testSummary;
+  const testSummaryRecord =
+    testSummary && typeof testSummary === 'object' && !Array.isArray(testSummary)
+      ? (testSummary as Record<string, unknown>)
+      : null;
+  const testsRun =
+    typeof testSummaryRecord?.run === 'number'
+      ? testSummaryRecord.run
+      : typeof testSummaryRecord?.total === 'number'
+        ? testSummaryRecord.total
+        : null;
 
   const artifactKinds = [
     {
@@ -3964,6 +3987,12 @@ function ArtifactsView() {
     setTab('preview');
     setHistory([]);
   }, [workspace.activeProjectId]);
+
+  useEffect(() => {
+    setTestRun(null);
+    setTestState('idle');
+    setTestMessage('');
+  }, [selected?.id]);
 
   useEffect(() => {
     const requested = requestedArtifactId.current;
@@ -4131,6 +4160,73 @@ function ArtifactsView() {
       setExportState('error');
       setExportMessage(
         reason instanceof Error ? reason.message : 'The artifact could not be exported.',
+      );
+    }
+  };
+  const applyTestResult = (run: ArtifactTestRun) => {
+    setTestRun(run);
+    if (run.status === 'approval_required') {
+      setTestState('approval');
+      setTestMessage('Review this one-time local sandbox run.');
+    } else if (run.status === 'completed') {
+      setTestState('complete');
+      setTestMessage('The saved revision finished in the local Python sandbox.');
+    } else if (run.status === 'failed') {
+      setTestState('failed');
+      setTestMessage(run.message ?? 'The local Python test run did not complete.');
+    } else {
+      setTestState('running');
+      setTestMessage('Running the saved revision in the local Python sandbox…');
+    }
+  };
+  const executeTestRun = async (run: ArtifactTestRun) => {
+    setTestRun(run);
+    setTestState('running');
+    setTestMessage('Running the saved revision in the local Python sandbox…');
+    try {
+      applyTestResult(await workspace.executeArtifactTestRun(run));
+    } catch (reason) {
+      setTestState('failed');
+      setTestMessage(reason instanceof Error ? reason.message : 'The test run could not start.');
+    }
+  };
+  const beginTestRun = async () => {
+    if (!selected || !isPythonArtifact || draftPending || !selected.revisionId) return;
+    setTestState('creating');
+    setTestMessage('Binding a test task to this saved revision…');
+    try {
+      const run = await workspace.createArtifactTestRun(selected);
+      setTestRun(run);
+      if (run.status === 'ready') await executeTestRun(run);
+      else applyTestResult(run);
+    } catch (reason) {
+      setTestState('failed');
+      setTestMessage(
+        reason instanceof Error ? reason.message : 'The test task could not be created.',
+      );
+    }
+  };
+  const cancelTestApproval = async () => {
+    if (!testRun) return;
+    try {
+      await workspace.cancelTask(testRun.task.id);
+    } catch {
+      // The approval is still dismissed locally when a terminal task no longer accepts cancellation.
+    }
+    setTestState('idle');
+    setTestMessage('');
+    setTestRun(null);
+  };
+  const cancelRunningTest = async () => {
+    if (!testRun) return;
+    setTestMessage('Stopping the local test run safely…');
+    try {
+      await workspace.cancelArtifactTestRun(testRun);
+      setTestState('failed');
+      setTestMessage('The test run was stopped. The saved artifact was not changed.');
+    } catch (reason) {
+      setTestMessage(
+        reason instanceof Error ? reason.message : 'The test run could not be stopped.',
       );
     }
   };
@@ -4406,6 +4502,35 @@ function ArtifactsView() {
                       ? 'Revision saved'
                       : 'Saved locally'}
             </div>
+            {isPythonArtifact && (
+              <button
+                className="button artifact-test-button"
+                onClick={() => void beginTestRun()}
+                disabled={
+                  draftPending ||
+                  !selected.revisionId ||
+                  testState === 'creating' ||
+                  testState === 'running' ||
+                  testState === 'approval'
+                }
+                title={
+                  draftPending
+                    ? 'Save this draft before running tests'
+                    : selected.revisionNumber
+                      ? `Run saved revision ${selected.revisionNumber}`
+                      : 'Save this artifact before running tests'
+                }
+              >
+                <Icon name={testState === 'complete' ? 'check' : 'play'} />
+                {testState === 'creating'
+                  ? 'Preparing…'
+                  : testState === 'running'
+                    ? 'Running…'
+                    : testState === 'complete'
+                      ? 'Run again'
+                      : 'Run tests'}
+              </button>
+            )}
             {!workspace.fixtureMode && (
               <button
                 className="button artifact-export-button"
@@ -4449,6 +4574,94 @@ function ArtifactsView() {
           >
             {exportMessage}
           </div>
+        )}
+        {testState !== 'idle' && (
+          <section
+            className={cx('artifact-test-panel', `is-${testState}`)}
+            aria-live="polite"
+            aria-label="Python test run"
+          >
+            <span className="artifact-test-panel__mark" aria-hidden="true">
+              <Icon
+                name={
+                  testState === 'complete'
+                    ? 'check'
+                    : testState === 'failed'
+                      ? 'info'
+                      : testState === 'approval'
+                        ? 'shield'
+                        : 'play'
+                }
+              />
+            </span>
+            <div className="artifact-test-panel__body">
+              <span className="eyebrow">
+                {testState === 'approval'
+                  ? 'Permission needed'
+                  : testState === 'complete'
+                    ? 'Local sandbox result'
+                    : testState === 'failed'
+                      ? 'Test run needs attention'
+                      : 'Local sandbox'}
+              </span>
+              <strong>
+                {testState === 'approval'
+                  ? 'Run tests for this saved version?'
+                  : testState === 'complete'
+                    ? testsRun === null
+                      ? 'Tests passed'
+                      : `${testsRun} ${testsRun === 1 ? 'test' : 'tests'} passed`
+                    : testState === 'failed'
+                      ? 'Tests did not pass'
+                      : testState === 'creating'
+                        ? 'Creating a durable test task…'
+                        : 'Tests are running…'}
+              </strong>
+              <p>
+                {testState === 'approval'
+                  ? `Cupcake will run saved revision ${selected.revisionNumber ?? 'current'} of ${selected.name} in an isolated local Python environment. This permission applies only to this task and saved version.`
+                  : testMessage}
+              </p>
+              {testState === 'complete' &&
+                typeof testRun?.evidence?.stdout === 'string' &&
+                testRun.evidence.stdout.trim() && (
+                  <details>
+                    <summary>View test output</summary>
+                    <pre>{testRun.evidence.stdout}</pre>
+                  </details>
+                )}
+            </div>
+            <div className="artifact-test-panel__actions">
+              {testState === 'approval' && testRun ? (
+                <>
+                  <button className="button" onClick={() => void cancelTestApproval()}>
+                    Not now
+                  </button>
+                  <button
+                    className="button button--primary"
+                    onClick={() => void executeTestRun(testRun)}
+                  >
+                    <Icon name="play" /> Allow once
+                  </button>
+                </>
+              ) : testState === 'running' && testRun ? (
+                <>
+                  <button className="button" onClick={() => void cancelRunningTest()}>
+                    Stop tests
+                  </button>
+                  <button className="button" onClick={() => openTask(testRun.task)}>
+                    Open task <Icon name="chevron" />
+                  </button>
+                </>
+              ) : (
+                testRun && (
+                  <button className="button" onClick={() => openTask(testRun.task)}>
+                    Open task <Icon name="chevron" />
+                  </button>
+                )
+              )}
+            </div>
+          </section>
         )}
         <div className="artifact-tabs">
           {(['preview', 'edit', 'revisions'] as const).map((item) => (
@@ -10816,7 +11029,15 @@ function LegacyFixtureApp() {
         onBack={() => navigate('tasks')}
       />
     );
-  else if (view === 'artifacts') content = <ArtifactsView />;
+  else if (view === 'artifacts')
+    content = (
+      <ArtifactsView
+        openTask={(task) => {
+          setActiveTask(task);
+          navigate('task');
+        }}
+      />
+    );
   else if (view === 'memory')
     content = <MemoryView records={memoryRecords} setRecords={setMemoryRecords} />;
   else if (view === 'models')
@@ -12206,7 +12427,15 @@ function LiveApp() {
         onBack={() => navigate('tasks')}
       />
     );
-  else if (view === 'artifacts') content = <ArtifactsView />;
+  else if (view === 'artifacts')
+    content = (
+      <ArtifactsView
+        openTask={(task) => {
+          setActiveTaskId(task.id);
+          navigate('task');
+        }}
+      />
+    );
   else if (view === 'memory')
     content = <MemoryView records={memoryRecords} setRecords={setMemoryRecords} />;
   else if (view === 'models')

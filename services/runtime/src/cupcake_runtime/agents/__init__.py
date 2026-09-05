@@ -6,6 +6,7 @@ from .executors import (
     DelegateExecutor,
     DeterministicDelegateExecutor,
     PydanticAIExecutor,
+    UnavailableDelegateExecutor,
 )
 from .models import (
     AgentRole,
@@ -37,5 +38,6 @@ __all__ = [
     "DeterministicDelegateExecutor",
     "PydanticAIExecutor",
     "RoleProfile",
+    "UnavailableDelegateExecutor",
     "get_role_profile",
 ]

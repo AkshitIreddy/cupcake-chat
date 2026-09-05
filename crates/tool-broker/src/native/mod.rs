@@ -183,6 +183,17 @@ pub struct NativeToolExecutorService {
     sandbox_stage_root: PathBuf,
 }
 
+#[derive(Clone)]
+pub struct NativeSandboxCancellation {
+    sandbox: Arc<dyn SandboxBackend>,
+}
+
+impl NativeSandboxCancellation {
+    pub fn cancel(&self, execution_id: &str) -> Result<()> {
+        self.sandbox.cancel(execution_id)
+    }
+}
+
 impl NativeToolExecutorService {
     #[allow(clippy::too_many_arguments)]
     pub fn open(
@@ -232,6 +243,12 @@ impl NativeToolExecutorService {
     pub fn replace_policy(&self, policy: PolicySet) -> Result<()> {
         *self.policy.write().map_err(poisoned)? = policy;
         Ok(())
+    }
+
+    pub fn sandbox_cancellation(&self) -> NativeSandboxCancellation {
+        NativeSandboxCancellation {
+            sandbox: self.sandbox.clone(),
+        }
     }
 
     pub fn issue_filesystem_grant(
@@ -587,7 +604,10 @@ impl NativeToolExecutorService {
                     now,
                     args.project_id.as_deref(),
                 )?;
-                Ok(Operation::SandboxPython { script })
+                Ok(Operation::SandboxPython {
+                    script,
+                    execution_mode: args.execution_mode,
+                })
             }
             "native.models.manage" => {
                 let operation: LocalModelOperation = parse(&intent.arguments)?;
@@ -874,9 +894,10 @@ impl NativeToolExecutorService {
                     preflight.limits.max_output_bytes.min(MAX_WEB_BYTES),
                 )?,
             ),
-            Operation::SandboxPython { script } => {
-                self.execute_sandbox_worker(intent, preflight, &script)
-            }
+            Operation::SandboxPython {
+                script,
+                execution_mode,
+            } => self.execute_sandbox_worker(intent, preflight, &script, execution_mode),
             Operation::LocalModel { operation } => {
                 let output = self.local_models.execute(&operation, &preflight.limits)?;
                 Ok(completed(
@@ -928,6 +949,7 @@ impl NativeToolExecutorService {
         intent: &ToolIntent,
         preflight: &ToolPreflight,
         script: &ResolvedPath,
+        execution_mode: PythonExecutionMode,
     ) -> Result<ToolResult> {
         let runtime = self.packaged_runtime_executable.as_ref().ok_or_else(|| {
             BrokerError::SandboxUnavailable(
@@ -951,6 +973,7 @@ impl NativeToolExecutorService {
             "request_id": request_id,
             "stage_token": stage_token,
             "payload": {
+                "execution_mode": execution_mode,
                 "script": {
                     "staged_name": script_name,
                     "size": source.len(),
@@ -1085,6 +1108,7 @@ enum Operation {
     },
     SandboxPython {
         script: ResolvedPath,
+        execution_mode: PythonExecutionMode,
     },
     LocalModel {
         operation: LocalModelOperation,
@@ -1132,7 +1156,7 @@ impl Operation {
             Self::ProposeWrites { writes, .. } | Self::ApplyWrites { writes, .. } => {
                 writes.iter().map(|write| write.grant_id.clone()).collect()
             }
-            Self::SandboxPython { script } => [script.grant_id().expose_opaque().to_owned()]
+            Self::SandboxPython { script, .. } => [script.grant_id().expose_opaque().to_owned()]
                 .into_iter()
                 .collect(),
             Self::ArtifactExport { write, .. } => {
@@ -1299,6 +1323,16 @@ struct PythonArgs {
     grant_id: String,
     script_relative: PathBuf,
     project_id: Option<String>,
+    #[serde(default)]
+    execution_mode: PythonExecutionMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PythonExecutionMode {
+    #[default]
+    Expression,
+    ModuleTest,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1844,16 +1878,28 @@ mod tests {
             .unwrap();
         let intent = intent(
             "native.sandbox.python",
-            json!({"grantId": grant, "scriptRelative": "calculation.py", "projectId": null}),
+            json!({
+                "grantId": grant,
+                "scriptRelative": "calculation.py",
+                "projectId": null,
+                "executionMode": "module_test"
+            }),
             [Effect::ExecuteSandboxed].into_iter().collect(),
         );
         let preflight = service.preflight(&intent, 1_000).unwrap();
         let result = service.execute(&intent, &preflight, None, 1_001).unwrap();
         assert_eq!(result.status, ToolResultStatus::Completed);
         assert_eq!(result.output["result"]["value"], 6);
+        assert_eq!(result.output["result"]["status"], "complete");
+        assert_eq!(result.output["result"]["stdout"], "six\n");
+        assert_eq!(
+            result.provenance,
+            ["sandbox:packaged-worker-appcontainer-job"]
+        );
         let requests = sandbox.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0]["payload"]["inputs"], json!([]));
+        assert_eq!(requests[0]["payload"]["execution_mode"], "module_test");
         assert_eq!(
             requests[0]["payload"]["script"]["sha256"],
             hex::encode(Sha256::digest(b"print(2 + 4)\nresult = 6\n"))
@@ -1865,6 +1911,27 @@ mod tests {
             .read_dir()
             .unwrap()
             .any(|_| true));
+    }
+
+    #[test]
+    fn sandbox_python_execution_mode_defaults_closed_and_rejects_unknown_values() {
+        let default: PythonArgs = parse(&json!({
+            "grantId": "opaque",
+            "scriptRelative": "task.py",
+            "projectId": null
+        }))
+        .unwrap();
+        assert!(matches!(
+            default.execution_mode,
+            PythonExecutionMode::Expression
+        ));
+        assert!(parse::<PythonArgs>(&json!({
+            "grantId": "opaque",
+            "scriptRelative": "task.py",
+            "projectId": null,
+            "executionMode": "renderer_selected"
+        }))
+        .is_err());
     }
 
     #[test]

@@ -15,14 +15,16 @@ use crate::grants::{
 use crate::mcp::{ConnectionState, McpTransportConfig, OAuthPkceConfig};
 use crate::mcp_transport::{McpConnectionSnapshot, McpTransportService};
 use crate::native::{
-    atomic_replace, sync_directory, DisabledLocalModelBackend, NativeToolExecutorService,
-    StrictHttpsClient,
+    atomic_replace, sync_directory, DisabledLocalModelBackend, NativeSandboxCancellation,
+    NativeToolExecutorService, StrictHttpsClient,
 };
 use crate::policy::{CategoryDecision, Effect, PolicyDecision, PolicySet, ScopeKey};
 use crate::protocol::{canonical_json, RuntimeBrokerRequest, RuntimeRequestType};
 use crate::registry::native_descriptor_catalog;
-use crate::registry::ResourceLimits;
-use crate::registry::{ToolIntent, ToolPreflight};
+use crate::registry::{
+    DataDestination as NativeDataDestination, ResourceLimits, ToolIntent, ToolPreflight,
+    ToolResult as NativeToolResult, ToolResultStatus as NativeToolResultStatus,
+};
 use crate::sandbox::{NetworkPolicy, ProcessState, ResolvedProcessPlan, SandboxBackend};
 use crate::security_db::{
     SecurityDatabase, SecurityGrant, SecurityGrantScope, StoredApprovalChallenge, StoredPolicy,
@@ -50,6 +52,8 @@ const MAX_ATTACHMENT_MANIFEST_BYTES: u64 = 16 * 1024;
 const MAX_MIGRATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_MIGRATION_SNAPSHOT_FILES: usize = 50_000;
 const MAX_ARTIFACT_EXPORT_BYTES: usize = 5 * 1024 * 1024;
+const MAX_PYTHON_SOURCE_BYTES: usize = 1024 * 1024;
+const MAX_PYTHON_MEMORY_MIB: u64 = 4096;
 const GRANT_LIFETIME_DAYS: i64 = 30;
 const APPROVAL_LIFETIME_MINUTES: i64 = 5;
 
@@ -212,6 +216,26 @@ struct WireExecutePayload {
 struct WireCancelPayload {
     invocation_id: String,
     reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WirePythonArguments {
+    source: String,
+    #[serde(default)]
+    input_files: Vec<Value>,
+    timeout_seconds: Option<u64>,
+    memory_mb: Option<u64>,
+    #[serde(default)]
+    execution_mode: WirePythonExecutionMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WirePythonExecutionMode {
+    #[default]
+    Expression,
+    ModuleTest,
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,6 +465,10 @@ impl BrokerIntegration {
                     .map(|()| json!({"cancelled":true}))
             });
         integration_result(result)
+    }
+
+    pub fn python_cancellation(&self) -> NativeSandboxCancellation {
+        self.native.sandbox_cancellation()
     }
 
     pub fn permission_mode(&self) -> &'static str {
@@ -1421,6 +1449,9 @@ impl BrokerIntegration {
     fn preflight(&mut self, payload: Map<String, Value>) -> Result<Value> {
         let parsed: WirePreflightPayload = serde_json::from_value(Value::Object(payload))?;
         validate_intent_and_descriptor(&parsed.intent, &parsed.descriptor)?;
+        if parsed.intent.tool_name == "python.run" {
+            parse_python_arguments(&parsed.intent.arguments)?;
+        }
         let native_descriptor = catalog_descriptor(&parsed.descriptor.name)
             .ok_or_else(|| BrokerError::NotFound(format!("tool {}", parsed.descriptor.name)))?;
         let declared_effects: BTreeSet<_> = parsed
@@ -1612,23 +1643,37 @@ impl BrokerIntegration {
                 "tool policy denied this invocation".into(),
             ));
         }
-        if prepared.decision == "ask" && !self.approved.remove(&parsed.intent.invocation_id) {
-            return Err(BrokerError::InvalidApproval);
-        }
+        let outer_approval_consumed = if prepared.decision == "ask" {
+            if !self.approved.remove(&parsed.intent.invocation_id) {
+                return Err(BrokerError::InvalidApproval);
+            }
+            true
+        } else {
+            false
+        };
 
-        let output = match parsed.intent.tool_name.as_str() {
-            "files.read" => self.execute_file_read(&prepared)?,
+        let result = match parsed.intent.tool_name.as_str() {
+            "files.read" => tool_result(
+                &parsed.intent.invocation_id,
+                "succeeded",
+                self.execute_file_read(&prepared)?,
+                None,
+            ),
+            "python.run" => self.execute_python_continuation(&prepared, outer_approval_consumed)?,
             _ => {
                 return Err(BrokerError::InvalidConfig(
                     "privileged execution adapter is not connected for this tool".into(),
                 ))
             }
         };
-        let result = tool_result(&parsed.intent.invocation_id, "succeeded", output, None);
+        let outcome = result
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("failed");
         self.audit.append(AuditEvent {
             category: "tool".into(),
             action: "execute".into(),
-            outcome: "succeeded".into(),
+            outcome: outcome.into(),
             fields: json!({
                 "invocationId": parsed.intent.invocation_id,
                 "runId": parsed.intent.run_id,
@@ -1637,6 +1682,127 @@ impl BrokerIntegration {
         })?;
         self.prepared.remove(&parsed.intent.invocation_id);
         Ok(result)
+    }
+
+    fn execute_python_continuation(
+        &self,
+        prepared: &PreparedInvocation,
+        outer_approval_consumed: bool,
+    ) -> Result<Value> {
+        let arguments = parse_python_arguments(&prepared.intent.arguments)?;
+        let started_at = Utc::now();
+        let continuation_id = Uuid::parse_str(&prepared.intent.invocation_id).map_err(|_| {
+            BrokerError::InvalidConfig("python.run invocation ID must be a UUID".into())
+        })?;
+        let stage_root = self.data_dir.join("runtime").join("task-continuations");
+        std::fs::create_dir_all(&stage_root)?;
+        let stage = stage_root.join(continuation_id.to_string());
+        std::fs::create_dir(&stage)?;
+        let cleanup = IntegrationStageCleanup(stage.clone());
+        let script_relative = PathBuf::from("task.py");
+        let script_path = stage.join(&script_relative);
+        let mut script = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&script_path)?;
+        script.write_all(arguments.source.as_bytes())?;
+        script.sync_all()?;
+        drop(script);
+        sync_directory(&stage)?;
+
+        let now_unix_ms = Utc::now().timestamp_millis();
+        let grant_id = self.native.issue_filesystem_grant(
+            &stage,
+            [FilesystemPermission::Read].into_iter().collect(),
+            GrantScope::Once,
+            now_unix_ms.saturating_add(
+                i64::try_from(
+                    arguments
+                        .timeout_seconds
+                        .saturating_add(60)
+                        .saturating_mul(1_000),
+                )
+                .unwrap_or(i64::MAX),
+            ),
+        )?;
+        let grant_cleanup = NativeGrantCleanup {
+            native: &self.native,
+            grant_id: grant_id.clone(),
+        };
+        let limits = ResourceLimits {
+            timeout_ms: arguments.timeout_seconds.saturating_mul(1_000),
+            max_output_bytes: 1024 * 1024,
+            max_memory_bytes: Some(arguments.memory_mb.saturating_mul(1024 * 1024)),
+            max_cpu_seconds: Some(arguments.timeout_seconds),
+        };
+        let native_intent = ToolIntent {
+            intent_id: continuation_id,
+            tool_id: "native.sandbox.python".into(),
+            tool_version: "1.0.0".into(),
+            arguments: json!({
+                "grantId": grant_id,
+                "scriptRelative": script_relative,
+                "projectId": prepared.intent.project_id,
+                "executionMode": arguments.execution_mode,
+            }),
+            effects: [Effect::ExecuteSandboxed].into_iter().collect(),
+            grant_ids: [grant_cleanup.grant_id.clone()].into_iter().collect(),
+            data_destinations: [NativeDataDestination::LocalOnly].into_iter().collect(),
+            limits,
+            user_visible_summary: "Run the approved task code in the offline Python sandbox".into(),
+        };
+        match self.policy.evaluate(&ScopeKey {
+            tool_id: native_intent.tool_id.clone(),
+            effect: Effect::ExecuteSandboxed,
+            resource_id: Some(grant_cleanup.grant_id.clone()),
+        }) {
+            PolicyDecision::Deny(_) => {
+                return Err(BrokerError::PermissionDenied(
+                    "native tool policy denied this operation".into(),
+                ))
+            }
+            PolicyDecision::Ask(_) if !outer_approval_consumed => {
+                return Err(BrokerError::InvalidApproval)
+            }
+            PolicyDecision::Allow(_) | PolicyDecision::Ask(_) => {}
+        }
+        let native_preflight = self.native.preflight(&native_intent, now_unix_ms)?;
+        let native_approval = if native_preflight.requires_approval {
+            if !outer_approval_consumed {
+                return Err(BrokerError::InvalidApproval);
+            }
+            let challenge = self.native.issue_approval(
+                &native_intent,
+                &native_preflight,
+                now_unix_ms.saturating_add(
+                    i64::try_from(
+                        arguments
+                            .timeout_seconds
+                            .saturating_add(60)
+                            .saturating_mul(1_000),
+                    )
+                    .unwrap_or(i64::MAX),
+                ),
+            )?;
+            Some(ApprovalProof::from(&challenge))
+        } else {
+            None
+        };
+        let native_result = self.native.execute(
+            &native_intent,
+            &native_preflight,
+            native_approval.as_ref(),
+            Utc::now().timestamp_millis(),
+        )?;
+        let output = python_continuation_result(
+            &prepared.intent,
+            continuation_id,
+            started_at,
+            native_result,
+        );
+        drop(grant_cleanup);
+        drop(cleanup);
+        Ok(output)
     }
 
     fn cancel(&mut self, payload: Map<String, Value>) -> Result<Value> {
@@ -1837,6 +2003,15 @@ impl BrokerIntegration {
         descriptor: &WireToolDescriptor,
     ) -> Result<(Vec<String>, Option<String>, Option<PathBuf>)> {
         if descriptor.required_grants.is_empty() {
+            return Ok((Vec::new(), None, None));
+        }
+        if intent.tool_name == "python.run"
+            && descriptor.required_grants.len() == 1
+            && descriptor.required_grants.contains("sandbox.execute")
+        {
+            // The runtime supplies code, not a native path. After this exact
+            // intent is authorized, the broker creates a one-use private stage
+            // and read grant for the native sandbox adapter.
             return Ok((Vec::new(), None, None));
         }
         if !descriptor
@@ -2352,6 +2527,116 @@ fn validate_display_name(value: &str) -> Result<()> {
     }
 }
 
+#[derive(Debug)]
+struct ValidatedPythonArguments {
+    source: String,
+    timeout_seconds: u64,
+    memory_mb: u64,
+    execution_mode: WirePythonExecutionMode,
+}
+
+fn parse_python_arguments(arguments: &Map<String, Value>) -> Result<ValidatedPythonArguments> {
+    let parsed: WirePythonArguments = serde_json::from_value(Value::Object(arguments.clone()))
+        .map_err(|_| {
+            BrokerError::InvalidConfig(
+                "python.run arguments do not match the versioned tool schema".into(),
+            )
+        })?;
+    if parsed.source.is_empty()
+        || parsed.source.len() > MAX_PYTHON_SOURCE_BYTES
+        || parsed.source.contains('\0')
+    {
+        return Err(BrokerError::InvalidConfig(
+            "python.run source is empty or exceeds the sandbox bound".into(),
+        ));
+    }
+    if !parsed.input_files.is_empty() {
+        return Err(BrokerError::InvalidGrant);
+    }
+    let timeout_seconds = parsed.timeout_seconds.unwrap_or(30);
+    if !(1..=900).contains(&timeout_seconds) {
+        return Err(BrokerError::InvalidConfig(
+            "python.run timeout is outside the 1 to 900 second bound".into(),
+        ));
+    }
+    let memory_mb = parsed.memory_mb.unwrap_or(512);
+    if !(64..=MAX_PYTHON_MEMORY_MIB).contains(&memory_mb) {
+        return Err(BrokerError::InvalidConfig(
+            "python.run memory is outside the 64 to 4096 MiB bound".into(),
+        ));
+    }
+    Ok(ValidatedPythonArguments {
+        source: parsed.source,
+        timeout_seconds,
+        memory_mb,
+        execution_mode: parsed.execution_mode,
+    })
+}
+
+struct IntegrationStageCleanup(PathBuf);
+
+impl Drop for IntegrationStageCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+struct NativeGrantCleanup<'a> {
+    native: &'a NativeToolExecutorService,
+    grant_id: String,
+}
+
+impl Drop for NativeGrantCleanup<'_> {
+    fn drop(&mut self) {
+        let _ = self.native.revoke_filesystem_grant(&self.grant_id);
+    }
+}
+
+fn python_continuation_result(
+    outer: &WireToolIntent,
+    native_intent_id: Uuid,
+    started_at: DateTime<Utc>,
+    native: NativeToolResult,
+) -> Value {
+    let (status, error_code) = match native.status {
+        NativeToolResultStatus::Completed => ("succeeded", None),
+        NativeToolResultStatus::Cancelled => ("cancelled", None),
+        NativeToolResultStatus::Denied => ("denied", None),
+        NativeToolResultStatus::TimedOut => ("failed", Some("SANDBOX_TIMED_OUT")),
+        NativeToolResultStatus::OutputLimitExceeded => {
+            ("failed", Some("SANDBOX_OUTPUT_LIMIT_EXCEEDED"))
+        }
+        NativeToolResultStatus::Failed => ("failed", Some("SANDBOX_EXECUTION_FAILED")),
+    };
+    json!({
+        "invocation_id": outer.invocation_id,
+        "status": status,
+        "output": {
+            "continuation": {
+                "runId": outer.run_id,
+                "taskId": outer.task_id,
+                "projectId": outer.project_id,
+                "runtimeTool": "python.run",
+                "nativeTool": "native.sandbox.python",
+                "nativeIntentId": native_intent_id,
+            },
+            "native": {
+                "status": native.status,
+                "output": native.output,
+                "generatedResourceIds": native.generated_resource_ids,
+                "durationMs": native.duration_ms,
+                "provenance": native.provenance,
+                "redactedError": native.redacted_error,
+            }
+        },
+        "error_code": error_code,
+        "error_message": native.redacted_error,
+        "artifacts": native.generated_resource_ids,
+        "started_at": started_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+        "finished_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    })
+}
+
 fn parent_and_name(path: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
     let parent = path.parent().ok_or(BrokerError::PathEscape)?.to_path_buf();
     let name = path.file_name().ok_or(BrokerError::PathEscape)?;
@@ -2619,7 +2904,66 @@ fn policy_from_security(records: Vec<StoredPolicy>) -> Result<PolicySet> {
 mod tests {
     use super::*;
     use crate::protocol::RuntimeRequestType;
+    use crate::sandbox::SandboxOutput;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    #[derive(Default)]
+    struct RecordingPythonSandbox {
+        sources: Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl SandboxBackend for RecordingPythonSandbox {
+        fn execute(&self, plan: &ResolvedProcessPlan) -> Result<SandboxOutput> {
+            assert_eq!(plan.network, NetworkPolicy::Denied);
+            let frame = std::fs::read(plan.working_directory.join("python-request.frame"))?;
+            let declared = u32::from_be_bytes(
+                frame[..4]
+                    .try_into()
+                    .map_err(|_| BrokerError::InvalidEnvelope("short test frame".into()))?,
+            ) as usize;
+            if frame.len() != declared + 4 {
+                return Err(BrokerError::InvalidEnvelope(
+                    "invalid test request frame".into(),
+                ));
+            }
+            let request: Value = serde_json::from_slice(&frame[4..])?;
+            let staged_name = request["payload"]["script"]["staged_name"]
+                .as_str()
+                .ok_or_else(|| BrokerError::InvalidEnvelope("staged script missing".into()))?;
+            self.sources
+                .lock()
+                .unwrap()
+                .push(std::fs::read(plan.working_directory.join(staged_name))?);
+            let response = json!({
+                "version": 1,
+                "kind": "python.execute.complete",
+                "request_id": request["request_id"],
+                "stage_token": request["stage_token"],
+                "result": {"value": 6},
+                "stdout": "6\n",
+                "stderr": ""
+            });
+            let body = serde_json::to_vec(&response)?;
+            let mut response_frame = Vec::with_capacity(body.len() + 4);
+            response_frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            response_frame.extend_from_slice(&body);
+            std::fs::write(
+                plan.working_directory.join("python-response.frame"),
+                response_frame,
+            )?;
+            Ok(SandboxOutput {
+                state: ProcessState::Completed,
+                exit_code: Some(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+
+        fn cancel(&self, _execution_id: &str) -> Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn permission_mode_is_persisted_in_the_security_store() {
@@ -2723,6 +3067,174 @@ mod tests {
         assert!(!Value::Object(execute_response)
             .to_string()
             .contains(selected.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn authorized_python_continuation_reaches_native_sandbox_and_preserves_lineage() {
+        let data = tempdir().unwrap();
+        let runtime = data.path().join("cupcake-runtime.exe");
+        std::fs::write(&runtime, b"test packaged runtime").unwrap();
+        let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        let sandbox = Arc::new(RecordingPythonSandbox::default());
+        broker.native = NativeToolExecutorService::open(
+            data.path(),
+            broker.policy.clone(),
+            None,
+            Some(&runtime),
+            Arc::new(StrictHttpsClient::new(None).unwrap()),
+            sandbox.clone(),
+            Arc::new(DisabledLocalModelBackend),
+        )
+        .unwrap();
+
+        let source = "print(2 + 4)\nresult = 6\n";
+        let invocation_id = "018f1e2d-3c4b-7a69-8def-111111111111";
+        let preflight_response = broker.dispatch(python_request(
+            invocation_id,
+            source,
+            json!([]),
+            RuntimeRequestType::ToolPreflight,
+            None,
+        ));
+        assert_eq!(preflight_response["ok"], true);
+        assert_eq!(preflight_response["result"]["preflight"]["decision"], "ask");
+        let preflight = preflight_response["result"]["preflight"].clone();
+        let challenge: ApprovalChallenge =
+            serde_json::from_value(preflight_response["result"]["approvalChallenge"].clone())
+                .unwrap();
+
+        let changed_execution = broker.dispatch(python_request(
+            invocation_id,
+            "print('different')\n",
+            json!([]),
+            RuntimeRequestType::ToolExecute,
+            Some(preflight.clone()),
+        ));
+        assert_eq!(changed_execution["ok"], false);
+        assert_eq!(changed_execution["error"]["code"], "INTEGRITY_CHECK_FAILED");
+        assert!(sandbox.sources.lock().unwrap().is_empty());
+
+        let missing_approval = broker.dispatch(python_request(
+            invocation_id,
+            source,
+            json!([]),
+            RuntimeRequestType::ToolExecute,
+            Some(preflight.clone()),
+        ));
+        assert_eq!(missing_approval["ok"], false);
+        assert_eq!(missing_approval["error"]["code"], "INVALID_APPROVAL");
+        assert!(sandbox.sources.lock().unwrap().is_empty());
+
+        let approval = ApprovalProof::from(&challenge);
+        let approval_response = broker.dispatch(RuntimeBrokerRequest {
+            protocol_version: crate::PROTOCOL_VERSION,
+            request_type: RuntimeRequestType::ToolApprovalVerify,
+            payload: json!({"preflight": preflight, "approval": approval})
+                .as_object()
+                .unwrap()
+                .clone(),
+        });
+        assert_eq!(approval_response["ok"], true, "{approval_response:?}");
+
+        let execute_response = broker.dispatch(python_request(
+            invocation_id,
+            source,
+            json!([]),
+            RuntimeRequestType::ToolExecute,
+            Some(preflight_response["result"]["preflight"].clone()),
+        ));
+        assert_eq!(execute_response["ok"], true, "{execute_response:?}");
+        let result = &execute_response["result"];
+        assert_eq!(result["status"], "succeeded");
+        assert_eq!(result["output"]["native"]["status"], "completed");
+        assert_eq!(result["output"]["native"]["output"]["result"]["value"], 6);
+        assert_eq!(result["output"]["native"]["output"]["stdout"], "6\n");
+        assert_eq!(result["output"]["native"]["output"]["stderr"], "");
+        assert_eq!(
+            result["output"]["continuation"]["runtimeTool"],
+            "python.run"
+        );
+        assert_eq!(
+            result["output"]["continuation"]["nativeTool"],
+            "native.sandbox.python"
+        );
+        assert_eq!(result["output"]["continuation"]["runId"], "run-python-1");
+        assert_eq!(result["output"]["continuation"]["taskId"], "task-python-1");
+        assert_eq!(
+            result["output"]["native"]["provenance"],
+            json!(["sandbox:packaged-worker-appcontainer-job"])
+        );
+        assert_eq!(
+            sandbox.sources.lock().unwrap().as_slice(),
+            [source.as_bytes()]
+        );
+        assert!(!Value::Object(execute_response)
+            .to_string()
+            .contains(data.path().to_str().unwrap()));
+        assert!(!data
+            .path()
+            .join("runtime")
+            .join("task-continuations")
+            .read_dir()
+            .unwrap()
+            .any(|_| true));
+    }
+
+    #[test]
+    fn python_continuation_rejects_unmapped_input_files_before_authorization() {
+        let data = tempdir().unwrap();
+        let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        let response = broker.dispatch(python_request(
+            "invoke-python-input",
+            "print('no input mapping')\n",
+            json!([{"artifactId": "artifact-1"}]),
+            RuntimeRequestType::ToolPreflight,
+            None,
+        ));
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "INVALID_GRANT");
+    }
+
+    #[test]
+    fn failed_native_python_result_cannot_be_reported_as_outer_success() {
+        let outer = WireToolIntent {
+            invocation_id: "invoke-python-failed".into(),
+            run_id: "run-python-failed".into(),
+            tool_name: "python.run".into(),
+            tool_version: "1.0.0".into(),
+            arguments: Map::new(),
+            project_id: Some("project-python-1".into()),
+            task_id: Some("task-python-1".into()),
+            requested_at: "2026-09-05T12:00:00Z".into(),
+        };
+        let native = NativeToolResult {
+            intent_id: Uuid::now_v7(),
+            status: NativeToolResultStatus::Failed,
+            output: json!({
+                "kind": "python.execute.failed",
+                "result": {"status": "failed", "stdout": "before failure\n", "stderr": "boom\n"}
+            }),
+            generated_resource_ids: BTreeSet::new(),
+            duration_ms: 17,
+            provenance: vec!["sandbox:packaged-worker-appcontainer-job".into()],
+            redacted_error: Some("sandbox worker rejected execution".into()),
+        };
+        let result = python_continuation_result(&outer, native.intent_id, Utc::now(), native);
+
+        assert_eq!(result["status"], "failed");
+        assert_eq!(result["error_code"], "SANDBOX_EXECUTION_FAILED");
+        assert_eq!(
+            result["output"]["native"]["output"]["result"]["stdout"],
+            "before failure\n"
+        );
+        assert_eq!(
+            result["output"]["native"]["output"]["result"]["stderr"],
+            "boom\n"
+        );
+        assert_eq!(
+            result["output"]["native"]["provenance"],
+            json!(["sandbox:packaged-worker-appcontainer-job"])
+        );
     }
 
     #[test]
@@ -3084,6 +3596,54 @@ mod tests {
             }})
         } else {
             json!({"intent":intent,"preflight":preflight.unwrap(),"approval":null})
+        };
+        RuntimeBrokerRequest {
+            protocol_version: crate::PROTOCOL_VERSION,
+            request_type,
+            payload: payload.as_object().unwrap().clone(),
+        }
+    }
+
+    fn python_request(
+        invocation_id: &str,
+        source: &str,
+        input_files: Value,
+        request_type: RuntimeRequestType,
+        preflight: Option<Value>,
+    ) -> RuntimeBrokerRequest {
+        let intent = json!({
+            "invocation_id": invocation_id,
+            "run_id": "run-python-1",
+            "tool_name": "python.run",
+            "tool_version": "1.0.0",
+            "arguments": {
+                "source": source,
+                "input_files": input_files,
+                "timeout_seconds": 45,
+                "memory_mb": 256,
+                "execution_mode": "module_test"
+            },
+            "project_id": "project-python-1",
+            "task_id": "task-python-1",
+            "requested_at": "2026-09-05T12:00:00Z"
+        });
+        let payload = if request_type == RuntimeRequestType::ToolPreflight {
+            json!({"intent": intent, "descriptor": {
+                "name": "python.run",
+                "version": "1.0.0",
+                "display_name": "Run Python",
+                "description": "Run a staged Python program in the offline sandbox",
+                "input_schema": {"type": "object"},
+                "output_schema": {"type": "object"},
+                "effects": ["execute_code"],
+                "required_grants": ["sandbox.execute"],
+                "default_data_flows": [],
+                "timeout_seconds": 900,
+                "cancellable": true,
+                "category": "native"
+            }})
+        } else {
+            json!({"intent": intent, "preflight": preflight.unwrap(), "approval": null})
         };
         RuntimeBrokerRequest {
             protocol_version: crate::PROTOCOL_VERSION,

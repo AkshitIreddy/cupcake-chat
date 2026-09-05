@@ -61,7 +61,14 @@ LEGAL_TRANSITIONS: Mapping[RunStatus, frozenset[RunStatus]] = {
         {RunStatus.QUEUED, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED}
     ),
     RunStatus.WAITING_INPUT: frozenset(
-        {RunStatus.QUEUED, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED}
+        {
+            RunStatus.QUEUED,
+            RunStatus.RUNNING,
+            RunStatus.WAITING_APPROVAL,
+            RunStatus.CANCELLING,
+            RunStatus.CANCELLED,
+            RunStatus.FAILED,
+        }
     ),
     RunStatus.CANCELLING: frozenset({RunStatus.CANCELLED, RunStatus.FAILED}),
     RunStatus.SUCCEEDED: frozenset(),
