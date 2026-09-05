@@ -38,6 +38,43 @@ const variants = [
   },
 ];
 const views = ['Home', 'Chats', 'Projects', 'Tasks', 'Artifacts', 'Memory', 'Models', 'Tools'];
+const populatedSurfaceVariants = [
+  {
+    name: 'populated-copper-dark-wide',
+    width: 1440,
+    height: 900,
+    theme: 'dark',
+    wallpaper: 'Copper workshop',
+  },
+  {
+    name: 'populated-copper-dark-narrow',
+    width: 390,
+    height: 844,
+    theme: 'dark',
+    wallpaper: 'Copper workshop',
+  },
+  {
+    name: 'populated-ink-light-wide',
+    width: 1440,
+    height: 900,
+    theme: 'light',
+    wallpaper: 'Ink snow garden',
+  },
+  {
+    name: 'populated-ink-light-narrow',
+    width: 390,
+    height: 844,
+    theme: 'light',
+    wallpaper: 'Ink snow garden',
+  },
+];
+const populatedSurfaceViews = [
+  ['Chats', '.chat-list__row'],
+  ['Projects', '.project-card--workbench'],
+  ['Artifacts', '.artifact-list'],
+  ['Memory', '.memory-card'],
+  ['Search', '.search-results'],
+];
 
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({
@@ -55,6 +92,8 @@ const report = {
   highContrast: [],
   browserErrors: [],
   accessibility: [],
+  populatedSurfaces: [],
+  markdownTables: [],
 };
 
 function slug(value) {
@@ -199,6 +238,39 @@ async function metrics(page) {
   });
 }
 
+async function surfaceMetrics(page, selector) {
+  return page
+    .locator(selector)
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      const directControls = [...element.children]
+        .filter((child) => child.matches('time, .icon-button, svg'))
+        .map((child) => {
+          const bounds = child.getBoundingClientRect();
+          return {
+            tag: child.tagName.toLowerCase(),
+            centerY: Math.round(bounds.top + bounds.height / 2),
+          };
+        });
+      const controlCenters = directControls.map((control) => control.centerY);
+      return {
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        backdropFilter: style.backdropFilter,
+        color: style.color,
+        directControls,
+        controlCenterSpread: controlCenters.length
+          ? Math.max(...controlCenters) - Math.min(...controlCenters)
+          : 0,
+        protectedSurface:
+          style.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+          style.backgroundImage !== 'none' ||
+          style.backdropFilter !== 'none',
+      };
+    });
+}
+
 async function capture(page, name) {
   const path = join(output, `${name}.png`);
   await page.screenshot({ path, animations: 'disabled' });
@@ -313,6 +385,50 @@ for (const variant of variants) {
   await context.close();
 }
 
+for (const variant of populatedSurfaceVariants) {
+  const context = await browser.newContext({
+    viewport: { width: variant.width, height: variant.height },
+    reducedMotion: 'reduce',
+    colorScheme: variant.theme,
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (error) =>
+    report.browserErrors.push({ variant: variant.name, type: 'pageerror', message: error.message }),
+  );
+  page.on('console', (message) => {
+    if (message.type() === 'error')
+      report.browserErrors.push({
+        variant: variant.name,
+        type: 'console',
+        message: message.text(),
+      });
+  });
+  await waitForRenderer(page, `/?view=home&theme=${variant.theme}`);
+  await setAppearance(page, variant.theme, variant.wallpaper);
+
+  for (const [view, selector] of populatedSurfaceViews) {
+    if (view === 'Search') {
+      await page.keyboard.press('Control+F');
+      await page
+        .getByRole('heading', { name: /Search/ })
+        .first()
+        .waitFor({ state: 'visible' });
+      await settle(page);
+    } else {
+      await clickNavigation(page, view);
+    }
+    report.populatedSurfaces.push({
+      variant: variant.name,
+      view,
+      selector,
+      file: await capture(page, `${variant.name}-${slug(view)}`),
+      surface: await surfaceMetrics(page, selector),
+      metrics: await metrics(page),
+    });
+  }
+  await context.close();
+}
+
 const keyboardContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const keyboardPage = await keyboardContext.newPage();
 await waitForRenderer(keyboardPage, '/?view=home&theme=light');
@@ -370,6 +486,80 @@ report.navigation.push({
 await capture(navigationPage, 'navigation-settings-to-home-reset');
 await navigationContext.close();
 
+const markdownTableFixture = `<div class="rich-markdown">
+  <h2>14-day launch plan</h2>
+  <div class="markdown-table-wrap" aria-label="Cohere showcase table fixture">
+    <table>
+      <thead><tr><th>Day</th><th>Owner</th><th>Deliverable</th><th>Evidence required</th><th>Stop/go gate</th></tr></thead>
+      <tbody>
+        <tr><td>11</td><td>Founder</td><td>Internal QA report &amp; WCAG AA compliance checklist</td><td>All AA checks pass; no critical defects</td><td>If AA fails, <strong>FIX</strong> before release</td></tr>
+        <tr><td>12</td><td>Founder</td><td>Beta enrollment list (30 students + 5 teachers) &amp; onboarding materials</td><td>Participants onboarded; devices provisioned</td><td>If enrollment &lt;80% of target, <strong>PAUSE</strong> and recruit</td></tr>
+        <tr><td>13</td><td>Engineer</td><td>Usage dashboard, crash logs, &amp; CSAT survey results (first week)</td><td>Data collected; initial analysis complete</td><td>If crash rate &gt;2% or CSAT &lt;60%, <strong>TRIGGER MITIGATION</strong></td></tr>
+        <tr><td>14</td><td>Founder</td><td>Decision brief (continue/pivot/stop) with full metric report</td><td>Full metric report; guardrail compliance verified</td><td>If guardrails not met, <strong>STOP</strong>; else proceed to next phase</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Long-token proof: <a href="#">https://example.com/research/launch/accessibility/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</a> and <code>extremelyLongUnbrokenIdentifierForTableVerification()</code></p>
+</div>`;
+
+for (const variant of [
+  { name: 'markdown-table-copper-wide', width: 2160, height: 1380 },
+  { name: 'markdown-table-copper-narrow', width: 390, height: 844 },
+]) {
+  const context = await browser.newContext({
+    viewport: { width: variant.width, height: variant.height },
+    reducedMotion: 'reduce',
+    colorScheme: 'dark',
+  });
+  const page = await context.newPage();
+  await waitForRenderer(page, '/?view=home&theme=dark');
+  await setAppearance(page, 'dark', 'Copper workshop');
+  await clickNavigation(page, 'Home');
+  await page.keyboard.press('Control+N');
+  await page.locator('.chat-main').waitFor({ state: 'visible' });
+  await page.evaluate((html) => {
+    const target = document.querySelector('#turn-answer .message');
+    if (!(target instanceof HTMLElement)) throw new Error('Fixture answer message is missing');
+    target.innerHTML = html;
+    target.scrollIntoView({ block: 'center' });
+  }, markdownTableFixture);
+  await settle(page);
+  const table = page.locator('.markdown-table-wrap');
+  const tableMetrics = await table.evaluate((element) => {
+    const cells = [...element.querySelectorAll('th, td')];
+    const tokenCells = cells.filter((cell) =>
+      /^(Day|Owner|11|12|13|14|Founder|Engineer)$/u.test(cell.textContent?.trim() ?? ''),
+    );
+    return {
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      horizontallyScrollable: element.scrollWidth > element.clientWidth + 1,
+      tokenCells: tokenCells.map((cell) => ({
+        text: cell.textContent?.trim() ?? '',
+        width: Math.round(cell.getBoundingClientRect().width),
+        overflowWrap: getComputedStyle(cell).overflowWrap,
+        wordBreak: getComputedStyle(cell).wordBreak,
+      })),
+    };
+  });
+  const fullFile = await capture(page, variant.name);
+  const tableFile = join(output, `${variant.name}-closeup.png`);
+  await table.screenshot({ path: tableFile, animations: 'disabled' });
+  await table.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const tableScrolledFile = join(output, `${variant.name}-closeup-scrolled-right.png`);
+  await table.screenshot({ path: tableScrolledFile, animations: 'disabled' });
+  report.markdownTables.push({
+    ...variant,
+    fullFile,
+    tableFile,
+    tableScrolledFile,
+    metrics: tableMetrics,
+  });
+  await context.close();
+}
+
 const highContrastContext = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   forcedColors: 'active',
@@ -426,6 +616,25 @@ const failures = report.variants.flatMap((variant) =>
     return failures;
   }),
 );
+for (const screen of report.populatedSurfaces) {
+  if (screen.metrics.horizontalOverflow)
+    failures.push(`${screen.variant}/${screen.view}: horizontal overflow`);
+  if (!screen.surface.protectedSurface)
+    failures.push(`${screen.variant}/${screen.view}: content is transparent over wallpaper`);
+  if (screen.view === 'Chats' && screen.surface.controlCenterSpread > 3)
+    failures.push(
+      `${screen.variant}/${screen.view}: row actions split across ${screen.surface.controlCenterSpread}px`,
+    );
+}
+for (const table of report.markdownTables) {
+  const brokenTokens = table.metrics.tokenCells.filter(
+    (cell) => cell.width < 60 || cell.overflowWrap !== 'normal' || cell.wordBreak !== 'normal',
+  );
+  if (brokenTokens.length)
+    failures.push(`${table.name}: short table tokens can fragment (${brokenTokens.length} cells)`);
+  if (table.width <= 390 && !table.metrics.horizontallyScrollable)
+    failures.push(`${table.name}: wide table did not expose horizontal scrolling`);
+}
 if (report.browserErrors.length) failures.push(`${report.browserErrors.length} renderer errors`);
 for (const probe of report.navigation) {
   if (!probe.passed) failures.push(`${probe.action}: scroll/focus target was not reset`);

@@ -66,6 +66,31 @@
   margin-bottom: 28px;
 }
 
+.app-shell--wallpaper .chat-list {
+  display: grid;
+  gap: 8px;
+  border-top: 0;
+}
+
+.app-shell--wallpaper .chat-list__row {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(
+    112deg,
+    color-mix(in srgb, var(--wallpaper-panel-strong), transparent 3%),
+    color-mix(in srgb, var(--wallpaper-panel), var(--wallpaper-panel-strong) 38%)
+  );
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.app-shell--wallpaper .chat-list__row:focus-within,
+.app-shell--wallpaper .chat-list__row:hover {
+  border-color: color-mix(in srgb, var(--berry), var(--line) 48%);
+  background: var(--wallpaper-panel-strong);
+}
+
 .app-shell--wallpaper .home-hero {
   width: min(820px, 100%);
   margin: 0 auto;
@@ -160,5 +185,25 @@
   .app-shell--wallpaper .home-hero {
     padding: 18px 14px 20px;
     border-radius: 20px;
+  }
+
+  .app-shell--wallpaper .chat-list {
+    gap: 9px;
+  }
+
+  .app-shell--wallpaper .chat-list__row,
+  .app-shell--wallpaper .chat-list__row:not(:has(> svg)) {
+    grid-template-columns: minmax(0, 1fr) repeat(3, 34px);
+    gap: 6px;
+    padding: 12px 11px;
+  }
+
+  .app-shell--wallpaper .chat-list__main {
+    grid-column: 1 / -1;
+  }
+
+  .app-shell--wallpaper .chat-list__row > time {
+    grid-column: 1;
+    padding-left: 51px;
   }
 }

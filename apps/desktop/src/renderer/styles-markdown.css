@@ -290,9 +290,18 @@
 .markdown-table-wrap th,
 .markdown-table-wrap td {
   border-bottom: 1px solid var(--line);
+  max-inline-size: 32ch;
+  min-inline-size: 8ch;
+  overflow-wrap: normal;
   padding: 0.62em 0.8em;
   text-align: start;
   vertical-align: top;
+  word-break: normal;
+}
+
+.markdown-table-wrap :is(a, code) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-table-wrap th {

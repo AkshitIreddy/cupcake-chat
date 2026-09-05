@@ -2045,11 +2045,14 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
 }
 .chat-list__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 20px 34px;
+  grid-template-columns: minmax(0, 1fr) auto 20px 34px 34px;
   align-items: center;
   gap: 14px;
   padding: 10px 5px;
   border-bottom: 1px solid var(--line);
+}
+.chat-list__row:not(:has(> svg)) {
+  grid-template-columns: minmax(0, 1fr) auto 34px 34px;
 }
 .chat-list__main {
   display: flex;
