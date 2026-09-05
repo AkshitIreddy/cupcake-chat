@@ -7878,7 +7878,7 @@ function SettingsView({
             <section className="settings-section profile-editor">
               <header>
                 <h2>Your local profile</h2>
-                <p>This information personalizes the app and stays in your encrypted workspace.</p>
+                <p>This information personalizes the app and stays in this local workspace.</p>
               </header>
               <div className="profile-editor__identity">
                 <span className="profile-editor__portrait">
