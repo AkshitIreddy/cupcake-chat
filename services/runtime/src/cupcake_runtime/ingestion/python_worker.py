@@ -556,6 +556,17 @@ def _normalize_result(value: object, max_characters: int) -> object:
 def _validate_stage(stage: Path) -> Path:
     if stage.is_symlink():
         raise PythonWorkerError("stage root cannot be a symbolic link")
+    # The broker launches this worker with a freshly created AppContainer
+    # LocalState/work directory as its cwd and passes the literal ``.``. The
+    # lowbox can use that directory, but Windows deliberately denies traversal
+    # through the private package-profile parent; Path.resolve() would therefore
+    # reject the valid broker-owned cwd before the worker could read its bound
+    # request. Keep this one closed broker contract relative. Standalone worker
+    # paths retain strict canonicalization below.
+    if stage == Path("."):
+        if not stage.is_dir():
+            raise PythonWorkerError("stage root is not a directory")
+        return stage
     resolved = stage.resolve(strict=True)
     if not resolved.is_dir():
         raise PythonWorkerError("stage root is not a directory")

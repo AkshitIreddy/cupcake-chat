@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import pytest
 
-from cupcake_runtime.ingestion.python_worker import REQUEST_FILE, RESPONSE_FILE
+from cupcake_runtime.ingestion.python_worker import REQUEST_FILE, RESPONSE_FILE, main as worker_main
 
 
 def _frame(payload: dict[str, object]) -> bytes:
@@ -132,6 +132,23 @@ def test_broker_private_working_directory_accepts_literal_dot(tmp_path: Path) ->
     assert process.returncode == 0
     response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
     assert response["result"]["value"] == 7
+
+
+def test_broker_private_stage_does_not_canonicalize_its_denied_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stage_request(tmp_path, "result = 11")
+    monkeypatch.chdir(tmp_path)
+
+    def denied_resolve(_path: Path, *, strict: bool = False) -> Path:
+        del strict
+        raise PermissionError("AppContainer parent traversal is denied")
+
+    monkeypatch.setattr(Path, "resolve", denied_resolve)
+
+    assert worker_main(("--stage-root", ".")) == 0
+    response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
+    assert response["result"]["value"] == 11
 
 
 def test_packaged_entry_executes_bounded_script_and_input_manifest(tmp_path: Path) -> None:
