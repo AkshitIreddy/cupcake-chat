@@ -279,6 +279,16 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('https://tauri.localhost/?view=models', { waitUntil: 'domcontentloaded' });
   await page.locator('.models-page').waitFor({ timeout: 180_000 });
+  await dismissOnboarding(page, 1_000);
+  await page
+    .waitForFunction(
+      () =>
+        !document.body.textContent?.includes('Refreshing…') &&
+        document.querySelectorAll('.model-card').length > 0,
+      undefined,
+      { timeout: 180_000 },
+    )
+    .catch(() => undefined);
   await capture(page, '30-models-narrow', output, evidence, { closeups: true });
   await page.keyboard.press('Control+M');
   const narrowPicker = page.getByRole('dialog', { name: 'Choose model' });
