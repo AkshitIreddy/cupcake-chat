@@ -9,6 +9,7 @@
  * desktop bridge.
  */
 import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
@@ -29,6 +30,7 @@ const PROVIDERS = {
   },
   google: {
     displayName: 'Google Gemini',
+    rowName: 'Google',
     aliases: ['google', 'google gemini', 'gemini'],
     modelPreferences: ['gemini-3.8-flash'],
   },
@@ -149,6 +151,8 @@ const SCENARIOS = {
     title: '[LIVE • NVIDIA NIM] Sensor data triage and Python quality check',
     artifact: 'harbor_sensor_triage.py',
     artifactKind: 'code',
+    maxOutputTokens: 6144,
+    requiredPromptIndexes: [2],
     modelPreferences: [
       'nvidia/nemotron-3-super-120b-a12b',
       'nvidia/nemotron-3.5-lightning-30b-a3b',
@@ -158,6 +162,7 @@ const SCENARIOS = {
     prompts: [
       `Analyze this small incident sample and state what is supported by the data before proposing code:\n\ntimestamp,sensor_id,reading,status\n2026-08-11T10:00:00Z,A17,18.2,ok\n2026-08-11T10:01:00Z,A17,91.4,alert\n2026-08-11T10:01:00Z,A17,91.4,alert\n2026-08-11T10:02:00Z,B04,,missing\n2026-08-11T10:03:00Z,B04,19.1,ok\n2026-08-11T10:04:00Z,A17,not-a-number,error\n\nThen write a dependency-free Python 3.12 function that accepts CSV text and returns a JSON-serializable quality report with duplicates, invalid readings, missing readings, status counts, and per-sensor valid-reading statistics. Include type hints and preserve source row numbers.`,
       `Turn that into a complete, production-minded harbor_sensor_triage.py module. Add an argparse CLI, deterministic JSON output, tests runnable with “python -m unittest”, clear error handling, and no third-party packages. Keep the evidence claims limited to the supplied rows. Return the complete final module in one fenced code block followed by a short test command.`,
+      `The saved answer stopped in the middle of the module. Produce a complete compact replacement, at most 180 lines, in exactly one closed Python code block. Include the analyzer, CLI and embedded unittest classes. Validate finite readings and malformed rows. Explicitly count every valid row, including duplicates, in sensor statistics: the supplied A17 values are 18.2, 91.4 and 91.4, so its count is 3 and mean is 67.0; separately flag the repeated timestamp/sensor pair. Include tests for those exact facts, missing and invalid readings, non-finite input, bad headers and empty input. Running python -m unittest harbor_sensor_triage must execute the tests. Do not claim they passed until the app actually runs them.`,
     ],
     task: {
       prompt:
@@ -193,6 +198,7 @@ const SCENARIOS = {
     title: '[LIVE • GEMINI] Grounded decision memo with revision pinning',
     artifact: 'Atlas source memo — Gemini.md',
     artifactKind: 'document',
+    reasoningEffort: 'low',
     prompts: [
       `Create a fictional but internally consistent source memo for “Atlas Library Pilot”. Include exactly six dated facts, three stakeholder quotes clearly labeled as fictional, a budget table totaling $48,000, two unresolved questions, and a decision deadline. Put the memo date at the top and make it suitable for a document-grounding demonstration. Do not add recommendations yet.`,
       `Using only the pinned Atlas source memo artifact supplied as context, write a decision brief with: supported facts, unresolved questions, arithmetic check, three risks, and a recommendation. Cite each claim by the memo section heading. If the artifact does not support a claim, label it unknown.`,
@@ -265,10 +271,18 @@ const SCENARIOS = {
   },
 };
 
+class ShowcaseSkip extends Error {
+  constructor(outcome, message) {
+    super(message);
+    this.name = 'ShowcaseSkip';
+    this.outcome = outcome;
+  }
+}
+
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
   process.stdout.write(
-    `Usage:\n  node scripts/create-owner-showcase.mjs --list-key-providers\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase hosted --providers groq,mistral,google\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase hosted --providers openrouter,cloudflare\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase local --gpu-marker "C:/.../gpu use.txt"\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase verify\n\nThe packaged app must already be running against ${OWNER_PROFILE}.\n`,
+    `Usage:\n  node scripts/create-owner-showcase.mjs --self-test\n  node scripts/create-owner-showcase.mjs --list-key-providers\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase hosted --providers groq,mistral,google\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase hosted --providers openrouter,cloudflare\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase local --gpu-marker "C:/.../gpu use.txt"\n  node scripts/create-owner-showcase.mjs --port <cdp-port> --phase verify\n\nThe packaged app must already be running against ${OWNER_PROFILE}.\n`,
   );
   process.exit(0);
 }
@@ -280,6 +294,11 @@ const option = (name, fallback = undefined) => {
   if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
   return value;
 };
+if (args.includes('--self-test')) {
+  runSelfTests();
+  process.stdout.write('Owner showcase guard self-tests passed.\n');
+  process.exit(0);
+}
 if (args.includes('--list-key-providers')) {
   const inspectedKeyFile = resolve(option('--key-file', DEFAULT_KEY_FILE));
   const inspected = await parseAuthorizedCredentials(inspectedKeyFile);
@@ -395,6 +414,9 @@ try {
     await waitForWorkbench(page);
     const status = await runtimeRequest(page, 'providers.status', {}, 180_000);
     const configured = configuredProviderIds(status);
+    if (requestedProviders.has('nvidia-nim') && configured.has('nvidia-nim')) {
+      await runtimeRequest(page, 'providers.catalog.refresh', { provider: 'nvidia-nim' }, 180_000);
+    }
     const models = await runtimeRequest(page, 'models.list', {}, 180_000);
     for (const providerId of requestedProviders) {
       if (!configured.has(providerId)) continue;
@@ -450,7 +472,7 @@ try {
             modelId: model.id,
             routeType: 'hosted',
             date: new Date().toISOString(),
-            outcome: 'failed',
+            outcome: error instanceof ShowcaseSkip ? error.outcome : 'failed',
             error: safeError(error),
           });
         }
@@ -567,23 +589,29 @@ async function runtimeRequest(activePage, method, params = {}, timeoutMs = 120_0
 async function runScenario(activePage, scenario, model, routeType) {
   const project = await ensureProject(activePage, PROJECTS[scenario.project]);
   const conversation = await ensureConversation(activePage, project.id, scenario.title);
+  if (conversation.status === 'archived') {
+    throw new ShowcaseSkip(
+      'skipped_archived',
+      'The existing showcase conversation is archived and was preserved without inference',
+    );
+  }
   let branchId = conversation.branchId;
   let firstAssistant;
-  let artifact = await findArtifact(activePage, project.id, scenario.artifact);
+  let artifact;
   const assistants = [];
+  const requiredIndexes = requiredPromptIndexes(scenario);
   for (let index = 0; index < scenario.prompts.length; index += 1) {
+    if (!requiredIndexes.includes(index)) continue;
     let references = [];
     if (index === 1 && scenario.groundSecondTurn) {
-      if (!artifact) {
-        if (!firstAssistant) throw new Error('Grounding source response is unavailable');
-        artifact = await ensureArtifact(
-          activePage,
-          project.id,
-          conversation.id,
-          scenario,
-          firstAssistant,
-        );
-      }
+      if (!firstAssistant) throw new Error('Grounding source response is unavailable');
+      artifact = await ensureArtifact(
+        activePage,
+        project.id,
+        conversation.id,
+        scenario,
+        firstAssistant,
+      );
       references = [
         {
           id: artifact.artifact.id,
@@ -603,6 +631,7 @@ async function runScenario(activePage, scenario, model, routeType) {
       references,
       maxOutputTokens: scenario.maxOutputTokens,
       retryOnInterrupted: scenario.retryOnInterrupted !== false,
+      reasoningEffort: scenario.reasoningEffort ?? 'none',
     });
     branchId = turn.branchId;
     assistants.push(turn.assistant);
@@ -610,19 +639,23 @@ async function runScenario(activePage, scenario, model, routeType) {
   }
   const finalAssistant = assistants.at(-1);
   if (!finalAssistant?.content?.trim()) throw new Error('Final model response is empty');
-  if (!artifact) {
-    artifact = await ensureArtifact(
-      activePage,
-      project.id,
-      conversation.id,
-      scenario,
-      finalAssistant,
-    );
-  }
+  assertCompleteAssistant(finalAssistant);
+  const artifactSourceAssistant = scenario.groundSecondTurn ? firstAssistant : finalAssistant;
+  if (!artifactSourceAssistant) throw new Error('Artifact source response is unavailable');
+  artifact = await ensureArtifact(
+    activePage,
+    project.id,
+    conversation.id,
+    scenario,
+    artifactSourceAssistant,
+  );
   const memory = scenario.memory
     ? await ensureDecisionMemory(activePage, project.id, scenario.memory, finalAssistant)
     : null;
-  const task = scenario.task ? await ensureTask(activePage, project.id, scenario.task) : null;
+  const task =
+    scenario.task && !args.includes('--skip-tasks')
+      ? await ensureTask(activePage, project.id, scenario.task)
+      : null;
   return {
     project,
     conversation: { ...conversation, branchId },
@@ -648,6 +681,7 @@ async function ensureTurn(
     references,
     maxOutputTokens,
     retryOnInterrupted,
+    reasoningEffort,
   },
 ) {
   let history = await runtimeRequest(activePage, 'chat.history', { branchId }, 120_000);
@@ -660,8 +694,7 @@ async function ensureTurn(
         'This short showcase turn has a prior provider interruption; retry is disabled',
       );
     }
-    const recovery =
-      'The provider stopped after the previous request. Complete that exact request now without discussing the interruption.';
+    const recovery = recoveryPromptFor(content);
     const recovered = assistantAfterPrompt(history, recovery);
     if (recovered) return { assistant: recovered, branchId };
     if (history.some((message) => message.role === 'user' && message.content === recovery)) {
@@ -675,7 +708,7 @@ async function ensureTurn(
     projectId,
     conversationId,
     branchId,
-    reasoningEffort: 'none',
+    reasoningEffort,
     offline: routeType === 'local',
     enabledToolIds: [],
     memoryIds: [],
@@ -721,6 +754,7 @@ async function ensureTurn(
     120_000,
   );
   const persisted = history.find((message) => message.id === assistant.id) ?? assistant;
+  assertCompleteAssistant(persisted);
   return { assistant: persisted, branchId: result.branchId };
 }
 
@@ -778,14 +812,6 @@ async function ensureConversation(activePage, projectId, title) {
     branchId = created.branch.id;
   } else {
     conversation = matches[0];
-    if (conversation.status === 'archived') {
-      conversation = await runtimeRequest(
-        activePage,
-        'conversations.archive',
-        { conversationId: conversation.id, archived: false },
-        120_000,
-      );
-    }
     const state = await runtimeRequest(
       activePage,
       'conversations.get',
@@ -812,10 +838,45 @@ async function findArtifact(activePage, projectId, title) {
 }
 
 async function ensureArtifact(activePage, projectId, conversationId, scenario, assistant) {
+  assertCompleteAssistant(assistant);
   const existing = await findArtifact(activePage, projectId, scenario.artifact);
-  if (existing) return existing;
   if (!String(assistant.content ?? '').trim()) {
     throw new Error('Refusing to save an artifact without actual model output');
+  }
+  const content = artifactContent(scenario.artifactKind, assistant.content);
+  if (existing) {
+    const provenance = await verifyArtifactProvenance(
+      activePage,
+      projectId,
+      existing.artifact,
+      assistant.id,
+    );
+    if (provenance.proven) {
+      return runtimeRequest(
+        activePage,
+        'artifacts.get',
+        {
+          projectId,
+          artifactId: existing.artifact.id,
+          revisionId: provenance.sourceRevisionId,
+        },
+        120_000,
+      );
+    }
+    return runtimeRequest(
+      activePage,
+      'artifacts.revise',
+      {
+        projectId,
+        artifactId: existing.artifact.id,
+        expectedRevisionId: existing.revision.id,
+        sourceMessageId: assistant.id,
+        content,
+        authorKind: 'assistant',
+        changeSummary: 'Replace incomplete showcase output with a completed provider response',
+      },
+      120_000,
+    );
   }
   return runtimeRequest(
     activePage,
@@ -827,11 +888,78 @@ async function ensureArtifact(activePage, projectId, conversationId, scenario, a
       title: scenario.artifact,
       kind: scenario.artifactKind,
       mimeType: scenario.artifactKind === 'code' ? 'text/x-python' : 'text/markdown',
-      content: artifactContent(scenario.artifactKind, assistant.content),
+      content,
       authorKind: 'assistant',
     },
     120_000,
   );
+}
+
+function assertCompleteAssistant(assistant) {
+  const issue = completeAssistantIssue(assistant);
+  if (issue) throw new Error(issue);
+}
+
+function completeAssistantIssue(assistant) {
+  if (!assistant || assistant.role !== 'assistant' || !String(assistant.content ?? '').trim()) {
+    return 'Model response is missing a non-empty persisted assistant message';
+  }
+  if (assistant.state !== 'complete') {
+    return 'Model response is not in the complete persisted state';
+  }
+  const reason = assistant.canonical_metadata?.finishReason;
+  if (!['stop', 'end_turn'].includes(reason)) {
+    return `Model response has no accepted terminal finish reason (${safeToken(reason) || 'missing'})`;
+  }
+  return null;
+}
+
+function isCompleteAssistant(assistant) {
+  return completeAssistantIssue(assistant) === null;
+}
+
+function requiredPromptIndexes(scenario) {
+  return scenario.requiredPromptIndexes ?? scenario.prompts.map((_, index) => index);
+}
+
+function recoveryPromptFor(prompt) {
+  const promptId = sha256(prompt).slice(0, 12);
+  return `The provider stopped after showcase request ${promptId}. Complete that exact request now without discussing the interruption.`;
+}
+
+function completeAssistantForPrompt(history, prompt) {
+  const promptPresent = history.some(
+    (message) => message.role === 'user' && message.content === prompt,
+  );
+  if (!promptPresent) return null;
+  return (
+    assistantAfterPrompt(history, prompt) ??
+    assistantAfterPrompt(history, recoveryPromptFor(prompt))
+  );
+}
+
+function inspectScenarioHistory(history, scenario) {
+  const indexes = requiredPromptIndexes(scenario);
+  const turns = indexes.map((index) => ({
+    index,
+    assistant: completeAssistantForPrompt(history, scenario.prompts[index]),
+  }));
+  const finalAssistant = turns.at(-1)?.assistant ?? null;
+  const artifactSourceAssistant = scenario.groundSecondTurn
+    ? (turns.find((turn) => turn.index === 0)?.assistant ?? null)
+    : finalAssistant;
+  return {
+    complete: Boolean(
+      finalAssistant && artifactSourceAssistant && turns.every((turn) => turn.assistant),
+    ),
+    requiredTurnCount: indexes.length,
+    completeTurnCount: turns.filter((turn) => turn.assistant).length,
+    partialAssistantCount: history.filter(
+      (message) => message.role === 'assistant' && !isCompleteAssistant(message),
+    ).length,
+    finalAssistant,
+    artifactSourceAssistant,
+  };
 }
 
 function artifactContent(kind, content) {
@@ -928,7 +1056,9 @@ async function connectProviderThroughUi(activePage, providerId, credential, outp
   }
   await activePage.getByRole('button', { name: 'Settings', exact: true }).click();
   await activePage.getByRole('button', { name: 'Providers', exact: true }).click();
-  const row = activePage.locator('.provider-row').filter({ hasText: definition.displayName });
+  const row = activePage
+    .locator('.provider-row')
+    .filter({ hasText: definition.rowName ?? definition.displayName });
   await row.waitFor({ timeout: 30_000 });
   if ((await row.count()) !== 1) {
     throw new Error(`Expected exactly one provider row for ${definition.displayName}`);
@@ -1004,6 +1134,109 @@ async function captureConversation(activePage, title, outputDirectory, slug) {
   return path;
 }
 
+async function verifyArtifactProvenance(
+  activePage,
+  projectId,
+  artifactRecord,
+  expectedSourceMessageId,
+) {
+  const history = await runtimeRequest(
+    activePage,
+    'artifacts.history',
+    { projectId, artifactId: artifactRecord.id },
+    120_000,
+  );
+  const revisions = Array.isArray(history) ? history : [];
+  const sourceRevision = revisions.find(
+    (revision) =>
+      (revision.source_message_id ?? revision.sourceMessageId) === expectedSourceMessageId,
+  );
+  return {
+    proven: Boolean(sourceRevision),
+    sourceRevisionId: sourceRevision?.id ?? null,
+    revisionCount: revisions.length,
+  };
+}
+
+async function verifyTaskExecution(activePage, task, artifactRecord, expectedRevisionId) {
+  if (!artifactRecord || task?.status !== 'succeeded' || !task?.run_id) {
+    return {
+      proven: false,
+      outcome: task?.status === 'succeeded' ? 'artifact_unavailable' : 'not_succeeded',
+    };
+  }
+  try {
+    const result = await runtimeRequest(
+      activePage,
+      'tasks.execute',
+      { runId: task.run_id },
+      120_000,
+    );
+    const projectId = artifactRecord.project_id ?? artifactRecord.projectId;
+    const artifactHistory = projectId
+      ? await runtimeRequest(
+          activePage,
+          'artifacts.history',
+          { projectId, artifactId: artifactRecord.id },
+          120_000,
+        )
+      : [];
+    const proven = hasTaskExecutionProof(
+      result,
+      artifactRecord,
+      expectedRevisionId,
+      artifactHistory,
+    );
+    return {
+      proven,
+      outcome: proven ? 'execution_proven' : 'status_without_execution_evidence',
+    };
+  } catch (error) {
+    return { proven: false, outcome: 'evidence_unavailable', error: safeError(error) };
+  }
+}
+
+function hasTaskExecutionProof(result, artifactRecord, expectedRevisionId, artifactHistory) {
+  const evidence = result?.toolEvidence;
+  const revisionId = safeToken(evidence?.revisionId);
+  const revisionBelongsToArtifact = Array.isArray(artifactHistory)
+    ? artifactHistory.some(
+        (revision) => revision.id === revisionId && revision.artifact_id === artifactRecord?.id,
+      )
+    : false;
+  return Boolean(
+    result?.run?.status === 'succeeded' &&
+    evidence?.status === 'succeeded' &&
+    evidence?.exitStatus === 0 &&
+    evidence?.testSummary?.successful === true &&
+    Array.isArray(evidence?.provenance) &&
+    evidence.provenance.length > 0 &&
+    evidence?.tool === 'python.run' &&
+    evidence?.nativeTool === 'native.sandbox.python' &&
+    evidence?.artifactId === artifactRecord?.id &&
+    revisionId === expectedRevisionId &&
+    revisionBelongsToArtifact,
+  );
+}
+
+function tasksBoundToArtifact(tasks, projectId, artifactId, revisionId) {
+  if (!artifactId || !revisionId) return [];
+  return tasks.filter((task) => {
+    const spec = task?.spec;
+    if (!spec || (spec.project_id ?? spec.projectId) !== projectId) return false;
+    if ((spec.work_kind ?? spec.workKind) !== 'code_execution') return false;
+    const steps = Array.isArray(spec.steps) ? spec.steps : [];
+    return steps.some((step) => {
+      if (step?.operation !== 'tool.python.run') return false;
+      const values = step.arguments?.artifactInputs ?? step.arguments?.artifact_inputs;
+      const inputs = Array.isArray(values) ? values : [];
+      return inputs.some(
+        (input) => input?.artifactId === artifactId && input?.revisionId === revisionId,
+      );
+    });
+  });
+}
+
 async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
   const projects = await runtimeRequest(
     activePage,
@@ -1022,18 +1255,10 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
     );
     const artifacts = await runtimeRequest(activePage, 'artifacts.list', { projectId: project.id });
     const projectKey = Object.entries(PROJECTS).find(([, item]) => item === definition)?.[0];
-    const projectScenarios = Object.values(SCENARIOS).filter(
-      (scenario) =>
-        scenario.project === projectKey &&
-        conversations.some((conversation) => conversation.title === scenario.title),
+    const projectScenarios = Object.entries(SCENARIOS).filter(
+      ([, scenario]) => scenario.project === projectKey,
     );
-    const requiredMemoryKeys = projectScenarios
-      .map((scenario) => scenario.memory?.key)
-      .filter(Boolean);
-    const requiredTaskPrompts = projectScenarios
-      .map((scenario) => scenario.task?.prompt)
-      .filter(Boolean);
-    const memories = requiredMemoryKeys.length
+    const memories = projectScenarios.some(([, scenario]) => scenario.memory)
       ? await runtimeRequest(
           activePage,
           'memory.list',
@@ -1046,11 +1271,18 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
           120_000,
         )
       : [];
-    const tasks = requiredTaskPrompts.length
+    const tasks = projectScenarios.some(([, scenario]) => scenario.task)
       ? await runtimeRequest(activePage, 'tasks.list', { limit: 200 }, 120_000)
       : [];
-    let assistantTurns = 0;
-    for (const conversation of conversations) {
+    const scenarioResults = [];
+    for (const [scenarioId, scenario] of projectScenarios) {
+      const matches = conversations.filter((conversation) => conversation.title === scenario.title);
+      if (matches.length > 1) {
+        scenarioResults.push({ scenarioId, outcome: 'duplicate_conversation' });
+        continue;
+      }
+      const conversation = matches[0];
+      if (!conversation) continue;
       const state = await runtimeRequest(
         activePage,
         'conversations.get',
@@ -1058,63 +1290,141 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
         120_000,
       );
       const branchId = state.activeBranchId ?? state.branches?.[0]?.id;
-      if (!branchId) continue;
+      if (!branchId) {
+        scenarioResults.push({
+          scenarioId,
+          conversationId: conversation.id,
+          outcome: 'observed_incomplete',
+          reason: 'missing_branch',
+        });
+        continue;
+      }
       const history = await runtimeRequest(activePage, 'chat.history', { branchId }, 120_000);
-      assistantTurns += history.filter(
-        (message) => message.role === 'assistant' && String(message.content ?? '').trim(),
-      ).length;
-      const scenario = Object.entries(SCENARIOS).find(
-        ([, item]) => item.title === conversation.title,
+      const inspection = inspectScenarioHistory(history, scenario);
+      const archived = conversation.status === 'archived';
+      if (archived || !inspection.complete) {
+        scenarioResults.push({
+          scenarioId,
+          conversationId: conversation.id,
+          outcome: archived ? 'archived_preserved' : 'observed_incomplete',
+          requiredTurnCount: inspection.requiredTurnCount,
+          completeTurnCount: inspection.completeTurnCount,
+          partialAssistantCount: inspection.partialAssistantCount,
+        });
+        continue;
+      }
+      const artifactRecord = artifacts.find(
+        (artifact) => (artifact.title ?? artifact.name) === scenario.artifact,
       );
-      if (scenario) {
-        const screenshot = await captureConversation(
+      const artifactProof = artifactRecord
+        ? await verifyArtifactProvenance(
+            activePage,
+            project.id,
+            artifactRecord,
+            inspection.artifactSourceAssistant.id,
+          )
+        : { proven: false, revisionCount: 0 };
+      const memoryProof = scenario.memory
+        ? memories.some(
+            (memory) =>
+              memory.key === scenario.memory.key &&
+              ['active', 'candidate'].includes(memory.state) &&
+              (memory.evidence?.[0]?.source_id ?? memory.evidence?.[0]?.sourceId) ===
+                inspection.finalAssistant.id,
+          )
+        : true;
+      const taskCandidates = scenario.task
+        ? tasksBoundToArtifact(
+            tasks,
+            project.id,
+            artifactRecord?.id,
+            artifactProof.sourceRevisionId,
+          )
+        : [];
+      let task = null;
+      let taskProof = {
+        outcome: scenario.task ? 'no_exact_artifact_task' : 'not_applicable',
+        proven: false,
+      };
+      for (const candidate of taskCandidates) {
+        const candidateProof = await verifyTaskExecution(
+          activePage,
+          candidate,
+          artifactRecord,
+          artifactProof.sourceRevisionId,
+        );
+        task ??= candidate;
+        taskProof = candidateProof;
+        if (candidateProof.proven) {
+          task = candidate;
+          break;
+        }
+      }
+      const proven = artifactProof.proven && memoryProof;
+      let screenshot = null;
+      if (proven) {
+        screenshot = await captureConversation(
           activePage,
           conversation.title,
           outputDirectory,
-          `verify-${scenario[0]}`,
+          `verify-${scenarioId}`,
         );
         manifest.screenshots.push(screenshot);
       }
+      scenarioResults.push({
+        scenarioId,
+        conversationId: conversation.id,
+        outcome: proven ? 'persisted' : 'verification_failed',
+        requiredTurnCount: inspection.requiredTurnCount,
+        completeTurnCount: inspection.completeTurnCount,
+        partialAssistantCount: inspection.partialAssistantCount,
+        artifactId: artifactRecord?.id ?? null,
+        artifactProvenance: artifactProof.proven,
+        artifactProvenanceRevisionId: artifactProof.sourceRevisionId ?? null,
+        artifactRevisionCount: artifactProof.revisionCount,
+        memoryProvenance: memoryProof,
+        taskRunId: task?.run_id ?? null,
+        taskStatus: task?.status ?? null,
+        taskBindingCandidateCount: taskCandidates.length,
+        taskExecutionProven: taskProof.proven,
+        taskOutcome: taskProof.outcome,
+        screenshot,
+      });
     }
-    const savedMemories = requiredMemoryKeys.filter((key) =>
-      memories.some(
-        (memory) =>
-          memory.key === key &&
-          ['active', 'candidate'].includes(memory.state) &&
-          Boolean(memory.evidence?.[0]?.source_id ?? memory.evidence?.[0]?.sourceId),
-      ),
+    const completeCandidates = scenarioResults.filter((item) =>
+      ['persisted', 'verification_failed'].includes(item.outcome),
     );
-    const savedTasks = requiredTaskPrompts.filter((prompt) =>
-      tasks.some((task) => task.spec?.prompt === prompt && task.run_id && task.status),
-    );
-    const savedScenarioArtifacts = projectScenarios.filter((scenario) =>
-      artifacts.some((artifact) => (artifact.title ?? artifact.name) === scenario.artifact),
-    );
-    const expectedAssistantTurns = projectScenarios.reduce(
-      (total, scenario) => total + scenario.prompts.length,
+    const verifiedScenarios = scenarioResults.filter((item) => item.outcome === 'persisted');
+    const incompleteProof =
+      completeCandidates.some((item) => item.outcome === 'verification_failed') ||
+      scenarioResults.some((item) => item.outcome === 'duplicate_conversation');
+    const completeAssistantTurns = scenarioResults.reduce(
+      (total, item) => total + Number(item.completeTurnCount ?? 0),
       0,
     );
-    const complete =
-      projectScenarios.length > 0 &&
-      savedScenarioArtifacts.length === projectScenarios.length &&
-      assistantTurns >= expectedAssistantTurns &&
-      savedMemories.length === requiredMemoryKeys.length &&
-      savedTasks.length === requiredTaskPrompts.length;
+    const partialAssistantTurns = scenarioResults.reduce(
+      (total, item) => total + Number(item.partialAssistantCount ?? 0),
+      0,
+    );
     manifest.demos.push({
       routeType: definition === PROJECTS.local ? 'local-cuda' : 'hosted',
-      outcome: complete ? 'persisted' : 'incomplete',
+      outcome: incompleteProof
+        ? 'incomplete'
+        : verifiedScenarios.length > 0
+          ? 'persisted'
+          : 'no_completed_showcase_observed',
       projectId: project.id,
       projectName: project.name,
       conversationCount: conversations.length,
       artifactCount: artifacts.length,
-      assistantTurns,
-      expectedAssistantTurns,
-      expectedArtifactCount: projectScenarios.length,
-      savedScenarioArtifactCount: savedScenarioArtifacts.length,
-      requiredMemoryCount: requiredMemoryKeys.length,
-      savedMemoryCount: savedMemories.length,
-      requiredTaskCount: requiredTaskPrompts.length,
-      savedTaskCount: savedTasks.length,
+      completeAssistantTurns,
+      partialAssistantTurns,
+      verifiedScenarioCount: verifiedScenarios.length,
+      observedIncompleteScenarioCount: scenarioResults.filter((item) =>
+        ['observed_incomplete', 'archived_preserved'].includes(item.outcome),
+      ).length,
+      taskExecutionProofCount: scenarioResults.filter((item) => item.taskExecutionProven).length,
+      scenarios: scenarioResults,
     });
   }
   await activePage.getByRole('button', { name: 'Projects', exact: true }).click();
@@ -1467,10 +1777,12 @@ function assistantAfterPrompt(history, prompt) {
     (message) => message.role === 'user' && message.content === prompt,
   );
   if (promptIndex < 0) return null;
+  const nextUserOffset = history
+    .slice(promptIndex + 1)
+    .findIndex((message) => message.role === 'user');
+  const exchangeEnd = nextUserOffset < 0 ? history.length : promptIndex + 1 + nextUserOffset;
   return (
-    history
-      .slice(promptIndex + 1)
-      .find((message) => message.role === 'assistant' && String(message.content ?? '').trim()) ??
+    history.slice(promptIndex + 1, exchangeEnd).find((message) => isCompleteAssistant(message)) ??
     null
   );
 }
@@ -1543,6 +1855,175 @@ function sha256(value) {
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function runSelfTests() {
+  const user = (id, content) => ({ id, role: 'user', content });
+  const assistant = (id, content, state = 'complete', finishReason = 'stop') => ({
+    id,
+    role: 'assistant',
+    content,
+    state,
+    canonical_metadata: finishReason === null ? {} : { finishReason },
+  });
+
+  assert.doesNotThrow(() => assertCompleteAssistant(assistant('a-stop', 'done')));
+  assert.doesNotThrow(() =>
+    assertCompleteAssistant(assistant('a-end', 'done', 'complete', 'end_turn')),
+  );
+  assert.throws(
+    () => assertCompleteAssistant(assistant('a-length', 'partial', 'complete', 'length')),
+    /terminal finish reason/u,
+  );
+  assert.throws(
+    () => assertCompleteAssistant(assistant('a-stream', 'partial', 'streaming', 'stop')),
+    /complete persisted state/u,
+  );
+  assert.throws(
+    () => assertCompleteAssistant(assistant('a-missing', 'text', 'complete', null)),
+    /terminal finish reason/u,
+  );
+  assert.throws(
+    () => assertCompleteAssistant(assistant('a-cancelled', 'text', 'cancelled', 'stop')),
+    /complete persisted state/u,
+  );
+
+  const boundedHistory = [
+    user('u-1', 'first'),
+    user('u-2', 'second'),
+    assistant('a-2', 'second answer'),
+  ];
+  assert.equal(assistantAfterPrompt(boundedHistory, 'first'), null);
+  assert.equal(assistantAfterPrompt(boundedHistory, 'second')?.id, 'a-2');
+
+  const interruptedPrompt = 'make the artifact';
+  const interruptedHistory = [
+    user('u-original', interruptedPrompt),
+    assistant('a-partial', 'unfinished', 'complete', 'length'),
+    user('u-recovery', recoveryPromptFor(interruptedPrompt)),
+    assistant('a-recovered', 'finished'),
+  ];
+  const interruptedInspection = inspectScenarioHistory(interruptedHistory, {
+    prompts: [interruptedPrompt],
+  });
+  assert.equal(interruptedInspection.complete, true);
+  assert.equal(interruptedInspection.completeTurnCount, 1);
+  assert.equal(interruptedInspection.partialAssistantCount, 1);
+  assert.equal(interruptedInspection.finalAssistant?.id, 'a-recovered');
+  assert.notEqual(recoveryPromptFor('first request'), recoveryPromptFor('second request'));
+
+  const optionalPromptScenario = {
+    prompts: ['analysis', 'obsolete expansion', 'bounded correction'],
+    requiredPromptIndexes: [0, 2],
+  };
+  assert.deepEqual(requiredPromptIndexes(SCENARIOS['nvidia-nim']), [2]);
+  const optionalPromptInspection = inspectScenarioHistory(
+    [
+      user('u-analysis', 'analysis'),
+      assistant('a-analysis', 'analysis complete'),
+      user('u-obsolete', 'obsolete expansion'),
+      assistant('a-obsolete', 'truncated', 'complete', 'length'),
+      user('u-correction', 'bounded correction'),
+      assistant('a-correction', 'correction complete'),
+    ],
+    optionalPromptScenario,
+  );
+  assert.equal(optionalPromptInspection.complete, true);
+  assert.equal(optionalPromptInspection.requiredTurnCount, 2);
+  assert.equal(optionalPromptInspection.completeTurnCount, 2);
+  assert.equal(optionalPromptInspection.partialAssistantCount, 1);
+
+  assert.equal(artifactContent('code', '```python\nvalue = 1\n```\n'), 'value = 1\n');
+  assert.throws(() => artifactContent('code', '```python\nvalue = 1'), /exactly one non-empty/u);
+  assert.throws(
+    () => artifactContent('code', '```python\na = 1\n```\n```python\nb = 2\n```\n'),
+    /exactly one non-empty/u,
+  );
+
+  const artifact = { id: 'artifact-1' };
+  const taskResult = {
+    run: { status: 'succeeded' },
+    toolEvidence: {
+      status: 'succeeded',
+      exitStatus: 0,
+      testSummary: { successful: true },
+      provenance: ['sandbox:packaged-worker-appcontainer-job'],
+      tool: 'python.run',
+      nativeTool: 'native.sandbox.python',
+      artifactId: artifact.id,
+      revisionId: 'revision-1',
+    },
+  };
+  const artifactHistory = [{ id: 'revision-1', artifact_id: artifact.id }];
+  assert.equal(hasTaskExecutionProof(taskResult, artifact, 'revision-1', artifactHistory), true);
+  assert.equal(
+    hasTaskExecutionProof(
+      { run: { status: 'succeeded' } },
+      artifact,
+      'revision-1',
+      artifactHistory,
+    ),
+    false,
+  );
+  assert.equal(
+    hasTaskExecutionProof(
+      { ...taskResult, toolEvidence: { ...taskResult.toolEvidence, exitStatus: 1 } },
+      artifact,
+      'revision-1',
+      artifactHistory,
+    ),
+    false,
+  );
+  assert.equal(
+    hasTaskExecutionProof(taskResult, artifact, 'wrong-revision', artifactHistory),
+    false,
+  );
+
+  const boundTask = {
+    run_id: 'run-bound',
+    spec: {
+      project_id: 'project-1',
+      prompt: 'A UI-authored prompt whose wording is intentionally irrelevant.',
+      work_kind: 'code_execution',
+      steps: [
+        {
+          operation: 'tool.python.run',
+          arguments: {
+            artifactInputs: [{ artifactId: artifact.id, revisionId: 'revision-1' }],
+          },
+        },
+      ],
+    },
+  };
+  const wrongArtifactTask = {
+    ...boundTask,
+    run_id: 'run-wrong-artifact',
+    spec: {
+      ...boundTask.spec,
+      prompt: SCENARIOS['nvidia-nim'].task.prompt,
+      steps: [
+        {
+          operation: 'tool.python.run',
+          arguments: {
+            artifactInputs: [{ artifactId: 'wrong-artifact', revisionId: 'revision-1' }],
+          },
+        },
+      ],
+    },
+  };
+  assert.deepEqual(
+    tasksBoundToArtifact(
+      [wrongArtifactTask, boundTask],
+      'project-1',
+      artifact.id,
+      'revision-1',
+    ).map((task) => task.run_id),
+    ['run-bound'],
+  );
+  assert.deepEqual(
+    tasksBoundToArtifact([boundTask], 'project-1', artifact.id, 'wrong-revision'),
+    [],
+  );
 }
 
 function delay(milliseconds) {

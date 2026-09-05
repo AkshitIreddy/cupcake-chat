@@ -68,40 +68,54 @@ and [Cloudflare Workers AI pricing](https://developers.cloudflare.com/workers-ai
 
 The main live conversations have two substantive user turns and two awaited assistant responses. The
 OpenRouter and Cloudflare quota-light smoke conversations have one short prompt, cap output at 200
-tokens, and disable automatic recovery retries. Artifact creation occurs only after a non-empty
-persisted assistant message is observed. Grounding scenarios save the first response, pin that exact
-artifact revision in cloud-disclosure preflight, and pass the same bound reference into the second
-request. The NVIDIA NIM grounded response ends with an explicit decision sentence; the harness saves
-that exact model-produced sentence as project-scoped decision memory and binds its provenance to the
+tokens, and disable automatic recovery retries. The already observed incomplete OpenRouter trial is
+archived and remains historical evidence; the harness will neither unarchive nor retry it. Artifact
+creation requires an assistant message whose persisted state is `complete` and whose canonical
+finish reason is exactly `stop` or `end_turn`. A response ending in `length`, a streaming or
+cancelled message, or a message without a canonical terminal reason cannot create an artifact or
+satisfy verification. Grounding scenarios save the first completed response, pin that exact artifact
+revision in cloud-disclosure preflight, and pass the same bound reference into the second request.
+The NVIDIA NIM grounded response ends with an explicit decision sentence; the harness saves that
+exact model-produced sentence as project-scoped decision memory and binds its provenance to the
 persisted assistant message ID.
 
 The Harbor scenario also creates one real durable code-execution task asking CupcakeAI to review the
 saved Python artifact and run its embedded tests in a sandbox. Its observed runtime status is
-recorded as returned. The showcase does not label that task or its generated Python as tested or
-complete unless the task system actually reaches that state with execution evidence.
+recorded as returned. A `succeeded` task row alone is not proof. Verification requires the persisted
+terminal checkpoint to identify `python.run` and `native.sandbox.python`, bind the exact immutable
+revision sourced from the completed model response in the same project, report exit status 0, report
+successful tests, and contain non-empty sandbox provenance. Task lookup follows that persisted
+artifact/revision binding rather than relying on prompt wording, so a UI-created “Run tests” task is
+recognized without accepting a task for a stale or different artifact. The showcase labels the
+generated Python as tested only when all of that evidence exists.
 
 ## Intended low-quota run
 
 1. Start the freshly packaged `CupcakeAI.exe` hidden with
    `CUPCAKE_TEST_DATA_DIR=E:\temp\cupcakeai-owner-test-20260902`, a dedicated WebView2 directory
    under `E:\temp`, and a chosen remote-debugging port.
-2. Run the main hosted work on the three priority routes:
+2. Continue the current hosted work only on the repaired Mistral and Google routes. The completed
+   Groq and Cohere examples are retained and should not consume another request:
 
    ```powershell
-   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers groq,mistral,google
+   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers mistral,google
    ```
 
-3. If the owner wants the pre-existing Cohere and NVIDIA NIM examples as well, run them explicitly:
+3. Run the repaired NVIDIA NIM code scenario explicitly. Its existing grounded NIM example is reused
+   without another request:
 
    ```powershell
-   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers cohere,nvidia-nim
+   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers nvidia-nim
    ```
 
-4. Exercise OpenRouter and Cloudflare only as quota-light smoke routes. Each produces one real,
-   short, saved response. Cloudflare setup requires both the labeled token and account ID.
+4. Do not rerun OpenRouter during the current acceptance pass. Its incomplete 200-token response is
+   retained and archived as historical evidence. Cloudflare's earlier attempt failed during catalog
+   parsing before any inference; after validating the repaired connection, it may make its first and
+   only bounded 200-token inference. Do not retry that inference if it fails. Cloudflare setup
+   requires both the labeled token and account ID.
 
    ```powershell
-   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers openrouter,cloudflare
+   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers cloudflare
    ```
 
 5. Inspect every `owner-showcase-hosted-*-evidence.json` and screenshot. The provider set is part of
@@ -130,11 +144,25 @@ complete unless the task system actually reaches that state with execution evide
 
 ## Idempotency and failure behavior
 
-Projects, conversations, and artifacts use stable exact names. A rerun reuses them and skips a turn
-that already has a persisted assistant response. If a provider fails after persisting the user turn,
-one clearly worded recovery turn is allowed; a second unresolved interruption stops the scenario
-instead of stacking duplicate prompts. Duplicate stable names are treated as an error because the
-harness cannot safely guess which owner item to keep.
+Projects, conversations, and artifacts use stable exact names. A rerun reuses them and skips only a
+turn with a strictly completed assistant response. If a provider fails after persisting the user
+turn, one request-specific recovery turn is allowed; its stable request hash prevents one failed
+turn from being mistaken for another. A second unresolved interruption stops the scenario instead of
+stacking duplicate prompts. The known incomplete NVIDIA analysis and code expansion remain in
+immutable chat history as observed partial turns. Neither is retried merely to increase the turn
+count; only the later bounded correction is required to produce the completed code artifact. When a
+repaired provider produces a valid replacement, the harness revises an existing stale artifact with
+the actual completed response and records that response as the revision source. Archived
+conversations stay archived and never trigger inference. Duplicate stable names are treated as an
+error because the harness cannot safely guess which owner item to keep.
+
+The verification phase evaluates only scenarios that actually exist. A missing, failed, partial, or
+archived provider conversation is recorded as an observed outcome and does not become a mandatory
+scenario merely because its project exists. For a completed scenario, verification requires every
+declared prompt, a strictly completed source and final response, an artifact revision sourced from
+the right persisted assistant message, and exact memory provenance when the scenario saves a
+decision. Partial assistant messages are counted separately and never increase the completed-turn
+count.
 
 The hosted phase requires an explicit comma-separated provider list. This prevents an old configured
 credential from silently consuming quota. The local phase refuses to run unless the coordinator has
