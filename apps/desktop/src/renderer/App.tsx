@@ -10,7 +10,6 @@ import {
   type RefObject,
 } from 'react';
 import {
-  artifacts as fixtureArtifacts,
   conversations as initialConversations,
   memories as initialMemories,
   models as initialModels,
@@ -19,21 +18,28 @@ import {
 } from './data';
 import { Icon, type IconName } from './icons';
 import { ConversationScrollController } from './conversation-scroll';
+import { FormDialog } from './FormDialog';
 import { RichMarkdown } from './RichMarkdown';
+import { ContentProtectionSettings } from './ContentProtectionSettings';
+import { BackupRecoverySettings } from './BackupRecoverySettings';
 import {
   MODEL_SIZE_OPTIONS,
   MODEL_TASK_OPTIONS,
   completeModelDescriptor,
   curatedProfileForModel,
+  modelAvailabilityDetail,
   modelIsAvailableInChat,
   modelIsCurated,
   modelPriority,
+  modelRouteDescription,
   modelSize,
   modelTasks,
   modelWasOperationallyTested,
   publisherForModel,
   publisherLogoAsset,
   publisherMonogram,
+  recommendModels,
+  recommendationReason,
   type ModelSize,
   type ModelTask,
 } from './model-intelligence';
@@ -54,6 +60,7 @@ import {
   scopedReferenceOptions,
   useWorkspace,
   type ArtifactRecord,
+  type ArtifactRevisionRecord,
   type AttachmentRecord,
   type HardwareRecord,
   type LocalRuntimeRecord,
@@ -103,6 +110,9 @@ const providerIdByName: Record<string, string> = {
   Mistral: 'mistral',
   Cohere: 'cohere',
   'NVIDIA NIM': 'nvidia-nim',
+  Groq: 'groq',
+  OpenRouter: 'openrouter',
+  'Cloudflare Workers AI': 'cloudflare',
 };
 
 interface RuntimeMemoryRecord {
@@ -365,10 +375,15 @@ function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
           onDoubleClick={() => void toggleMaximize()}
           aria-hidden="true"
         />
-        <button className="cupcake-titlebar__search" type="button" onClick={onSearch}>
+        <button
+          className="cupcake-titlebar__search"
+          aria-label="Search CupcakeAI"
+          type="button"
+          onClick={onSearch}
+          title="Search your workspace (Ctrl+F)"
+        >
           <Icon name="search" size={13} />
-          <span>Search CupcakeAI</span>
-          <kbd>Ctrl F</kbd>
+          <span>Find a chat, a file, an idea…</span>
         </button>
         <span
           className="cupcake-titlebar__drag"
@@ -415,10 +430,12 @@ function Toggle({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: () => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -428,6 +445,7 @@ function Toggle({
       aria-checked={checked}
       aria-label={label}
       onClick={onChange}
+      disabled={disabled}
     >
       <span />
     </button>
@@ -631,10 +649,10 @@ function Shelf({
             />
           </span>
           <span>
-            <strong>{profile?.displayName || 'Akshit'}</strong>
+            <strong>{profile?.displayName || 'Your workspace'}</strong>
             <small>{profile?.role || 'Local profile'}</small>
           </span>
-          <Icon name="more" />
+          <Icon name="settings" size={15} />
         </button>
       </div>
     </aside>
@@ -704,7 +722,7 @@ function HomeView({
   proactiveEnabled,
   conversations,
 }: {
-  openChat: () => void;
+  openChat: (conversationId?: string) => void;
   openTask: () => void;
   setView: (v: View) => void;
   composer: ReactNode;
@@ -718,19 +736,52 @@ function HomeView({
   return (
     <main className="page page--home">
       <section className="home-hero">
-        <div className="home-hero__mascot">
-          <CupcakePortrait
-            value={workspace.settings.assistantAvatar}
-            label="Selected CupcakeAI assistant"
-          />
-          <span className="home-hero__halo" aria-hidden="true" />
+        <div className="home-identity">
+          <div className="home-hero__mascot">
+            <CupcakePortrait
+              value={workspace.settings.assistantAvatar}
+              label="Selected CupcakeAI assistant"
+            />
+            <span className="home-hero__halo" aria-hidden="true" />
+          </div>
+          <p className="eyebrow">Your workbench is ready</p>
+          <h1>
+            <Greeting />
+          </h1>
+          <p>Bring an idea. We’ll give it somewhere to grow.</p>
         </div>
-        <p className="eyebrow">Your workbench is ready</p>
-        <h1>
-          <Greeting />
-        </h1>
-        <p>What would you like to make sense of?</p>
         <div className="home-composer">{composer}</div>
+        <div className="home-starts" aria-label="Ideas to start a conversation">
+          {[
+            [
+              'search',
+              'Make sense of a document',
+              'Help me understand a document. First ask me to attach it, then pull out the key claims, evidence, and open questions.',
+            ],
+            [
+              'code',
+              'Build something useful',
+              'Help me build a small, useful tool. Ask what problem I want to solve, then suggest a plan and a testable first version.',
+            ],
+            [
+              'project',
+              'Plan the next step',
+              'Help me turn an idea into a practical project. Ask about my goal, deadline, and constraints, then propose clear next steps.',
+            ],
+          ].map(([icon, label, prompt]) => (
+            <button
+              type="button"
+              key={label}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('cupcake:draft', { detail: prompt }))
+              }
+            >
+              <Icon name={icon as IconName} size={17} />
+              <span>{label}</span>
+              <Icon name="chevron" size={14} />
+            </button>
+          ))}
+        </div>
       </section>
       <div className="home-grid">
         <section className="home-section home-section--continue">
@@ -744,9 +795,11 @@ function HomeView({
             </button>
           </div>
           <div className="continue-list">
-            {conversations.slice(0, 3).map((c, i) => (
-              <button onClick={openChat} key={c.id} className="continue-card">
-                <span className={cx('continue-card__index', i === 0 && 'is-berry')}>{i + 1}</span>
+            {conversations.slice(0, 5).map((c, i) => (
+              <button onClick={() => openChat(c.id)} key={c.id} className="continue-card">
+                <span className={cx('continue-card__index', i === 0 && 'is-berry')}>
+                  <Icon name="chat" size={16} />
+                </span>
                 <span>
                   <strong>{c.title}</strong>
                   <small>{c.preview}</small>
@@ -779,10 +832,20 @@ function HomeView({
           {workingTask ? (
             <button className="working-card" onClick={openTask}>
               <div className="task-orbit">
-                <span>{workingTask.progress}</span>
+                <span>{workingTask.progress}%</span>
                 <svg viewBox="0 0 42 42">
                   <circle cx="21" cy="21" r="17" />
-                  <circle className="progress-ring" cx="21" cy="21" r="17" pathLength="100" />
+                  <circle
+                    className="progress-ring"
+                    cx="21"
+                    cy="21"
+                    r="17"
+                    pathLength="100"
+                    style={{
+                      strokeDasharray: '100',
+                      strokeDashoffset: 100 - Math.max(0, Math.min(100, workingTask.progress)),
+                    }}
+                  />
                 </svg>
               </div>
               <div>
@@ -804,25 +867,25 @@ function HomeView({
               </span>
               <div>
                 <strong>Your task queue is clear</strong>
-                <p>Ask CupcakeAI for longer work and its progress will stay visible here.</p>
+                <p>
+                  Turn a conversation into a task when it needs several steps. Its progress stays
+                  here.
+                </p>
               </div>
-              <button className="text-button" onClick={openChat}>
+              <button className="text-button" onClick={() => openChat()}>
                 Start something <Icon name="chevron" size={14} />
               </button>
             </div>
           )}
-          {proactiveEnabled && (
+          {proactiveEnabled && workspace.memories.some((memory) => !memory.enabled) && (
             <div className="notice-card">
               <Icon name="sparkle" />
               <div>
-                <strong>Cupcake noticed…</strong>
-                <p>The local runtime comparison still has one unanswered benchmark.</p>
+                <strong>Memories ready for review</strong>
+                <p>Review saved candidates and choose what CupcakeAI should keep using.</p>
               </div>
-              <button
-                aria-label="Dismiss"
-                onClick={() => void workspace.updateSettings({ proactiveEnabled: false })}
-              >
-                <Icon name="x" size={14} />
+              <button aria-label="Review memories" onClick={() => setView('memory')}>
+                <Icon name="chevron" size={14} />
               </button>
             </div>
           )}
@@ -935,6 +998,16 @@ function Composer({
   const [attachments, setAttachments] = useState<StagedAttachmentRecord[]>([]);
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const draft = (event: Event) => {
+      const prompt = (event as CustomEvent<unknown>).detail;
+      if (typeof prompt !== 'string') return;
+      setValue((current) => (current.trim() ? `${current}\n\n${prompt}` : prompt));
+      textRef.current?.focus();
+    };
+    window.addEventListener('cupcake:draft', draft);
+    return () => window.removeEventListener('cupcake:draft', draft);
+  }, []);
   const routeAtSend: AttachmentRecord['destination'] =
     selectedModel.route === 'Cloud' && !offline ? 'cloud' : 'local';
   const clearSuccessfulDraft = async (sentAttachments: StagedAttachmentRecord[]) => {
@@ -1232,27 +1305,30 @@ function Composer({
             </span>
             <Icon name="chevron" size={13} />
           </button>
-          <button
-            className="reason-chip"
-            onClick={() => {
-              const current = supportedReasoning.includes(workspace.settings.reasoningEffort)
-                ? workspace.settings.reasoningEffort
-                : supportedReasoning[0]!;
-              const next =
-                supportedReasoning[
-                  (supportedReasoning.indexOf(current) + 1) % supportedReasoning.length
-                ]!;
-              void workspace.updateSettings({ reasoningEffort: next });
-            }}
-            aria-label="Change reasoning effort"
-            disabled={supportedReasoning.length < 2}
-          >
-            {cap(
-              supportedReasoning.includes(workspace.settings.reasoningEffort)
-                ? workspace.settings.reasoningEffort
-                : supportedReasoning[0]!,
-            )}
-          </button>
+          {supportedReasoning.length > 1 && (
+            <button
+              className="reason-chip"
+              onClick={() => {
+                const current = supportedReasoning.includes(workspace.settings.reasoningEffort)
+                  ? workspace.settings.reasoningEffort
+                  : supportedReasoning[0]!;
+                const next =
+                  supportedReasoning[
+                    (supportedReasoning.indexOf(current) + 1) % supportedReasoning.length
+                  ]!;
+                void workspace.updateSettings({ reasoningEffort: next });
+              }}
+              aria-label="Change reasoning effort"
+              disabled={supportedReasoning.length < 2}
+            >
+              Thinking:{' '}
+              {cap(
+                supportedReasoning.includes(workspace.settings.reasoningEffort)
+                  ? workspace.settings.reasoningEffort
+                  : supportedReasoning[0]!,
+              )}
+            </button>
+          )}
           <button
             className="send-button"
             onClick={() => void send()}
@@ -1269,11 +1345,13 @@ function Composer({
       </div>
       {!compact && (
         <div className="composer__hint">
-          <RouteBadge route={offline ? 'Local' : selectedModel.route} />
+          <RouteBadge route={selectedModel.route} />
           <span>
-            {offline || selectedModel.route === 'Local'
+            {selectedModel.route === 'Local'
               ? 'Runs privately on this computer. Nothing is sent to a model provider.'
-              : `Sent to ${selectedModel.provider} only when you press Send.`}
+              : offline
+                ? `Sending to ${selectedModel.provider} is paused in offline mode.`
+                : `Sent to ${selectedModel.provider} only when you press Send.`}
           </span>
           <span className="composer__keys">
             <kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> newline
@@ -1382,15 +1460,20 @@ function ChatsView({
 }: {
   onOpen: (id: string) => void;
   onCreate: () => void;
-  onRename: (id: string, title: string) => void;
-  onArchive: (id: string, archived: boolean) => void;
+  onRename: (id: string, title: string) => void | Promise<void>;
+  onArchive: (id: string, archived: boolean) => void | Promise<void>;
   conversations: Conversation[];
 }) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'all' | 'pinned' | 'archived'>('all');
+  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [pendingRow, setPendingRow] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState('');
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const shown = conversations.filter(
     (c) =>
-      (tab === 'all' || (tab === 'pinned' ? c.pinned : c.archived)) &&
+      (tab === 'all' ? !c.archived : tab === 'pinned' ? c.pinned && !c.archived : c.archived) &&
       `${c.title} ${c.preview}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
@@ -1424,10 +1507,19 @@ function ChatsView({
           ))}
         </div>
       </div>
+      {notice && (
+        <div
+          className={cx('interaction-notice', notice.tone === 'error' && 'is-error')}
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+        >
+          <Icon name={notice.tone === 'error' ? 'info' : 'check'} size={15} />
+          {notice.text}
+        </div>
+      )}
       {shown.length ? (
         <div className="chat-list">
           {shown.map((c, i) => (
-            <article className="chat-list__row" key={c.id}>
+            <article className={cx('chat-list__row', pendingRow === c.id && 'is-busy')} key={c.id}>
               <button className="chat-list__main" onClick={() => onOpen(c.id)}>
                 <span
                   className={cx('chat-list__glyph', i % 3 === 1 && 'green', i % 3 === 2 && 'blue')}
@@ -1447,9 +1539,11 @@ function ChatsView({
                 aria-label={`Rename ${c.title}`}
                 title="Rename"
                 onClick={() => {
-                  const title = window.prompt('Rename conversation', c.title)?.trim();
-                  if (title) onRename(c.id, title);
+                  setRenameTarget(c);
+                  setRenameTitle(c.title);
+                  setDialogError('');
                 }}
+                disabled={pendingRow === c.id}
               >
                 <Icon name="edit" />
               </button>
@@ -1457,9 +1551,34 @@ function ChatsView({
                 className="icon-button"
                 aria-label={`${c.archived ? 'Restore' : 'Archive'} ${c.title}`}
                 title={c.archived ? 'Restore' : 'Archive'}
-                onClick={() => onArchive(c.id, !c.archived)}
+                onClick={() => {
+                  void (async () => {
+                    setPendingRow(c.id);
+                    setNotice(null);
+                    try {
+                      await onArchive(c.id, !c.archived);
+                      setNotice({
+                        tone: 'success',
+                        text: c.archived
+                          ? `Restored “${c.title}”.`
+                          : `Archived “${c.title}”. You can find it in Archived.`,
+                      });
+                    } catch (reason) {
+                      setNotice({
+                        tone: 'error',
+                        text:
+                          reason instanceof Error
+                            ? reason.message
+                            : 'The conversation could not be updated.',
+                      });
+                    } finally {
+                      setPendingRow(null);
+                    }
+                  })();
+                }}
+                disabled={pendingRow === c.id}
               >
-                <Icon name={c.archived ? 'retry' : 'trash'} />
+                <Icon name={c.archived ? 'retry' : 'archive'} />
               </button>
             </article>
           ))}
@@ -1473,6 +1592,58 @@ function ChatsView({
           onAction={onCreate}
         />
       )}
+      <FormDialog
+        open={Boolean(renameTarget)}
+        eyebrow="Conversation title"
+        title="Rename conversation"
+        description="Choose a clear title you will recognize in search, projects, and recent chats."
+        submitLabel="Save title"
+        pendingLabel="Saving title…"
+        pending={Boolean(renameTarget && pendingRow === renameTarget.id)}
+        error={dialogError}
+        onClose={() => {
+          if (renameTarget && pendingRow === renameTarget.id) return;
+          setRenameTarget(null);
+          setDialogError('');
+        }}
+        onSubmit={async () => {
+          const title = renameTitle.trim();
+          if (!renameTarget) return;
+          if (!title) {
+            setDialogError('Enter a conversation title.');
+            return;
+          }
+          if (title.length > 160) {
+            setDialogError('Keep the title to 160 characters or fewer.');
+            return;
+          }
+          setPendingRow(renameTarget.id);
+          setDialogError('');
+          try {
+            await onRename(renameTarget.id, title);
+            setNotice({ tone: 'success', text: `Renamed conversation to “${title}”.` });
+            setRenameTarget(null);
+          } catch (reason) {
+            setDialogError(
+              reason instanceof Error ? reason.message : 'The conversation could not be renamed.',
+            );
+          } finally {
+            setPendingRow(null);
+          }
+        }}
+      >
+        <label>
+          Title
+          <input
+            autoFocus
+            value={renameTitle}
+            onChange={(event) => setRenameTitle(event.target.value)}
+            maxLength={160}
+            autoComplete="off"
+          />
+          <small>{renameTitle.trim().length}/160 characters</small>
+        </label>
+      </FormDialog>
     </main>
   );
 }
@@ -1496,24 +1667,34 @@ function MessageActions({
 }) {
   return (
     <div className="message-actions" aria-label="Message actions">
-      <button title="Copy" onClick={onCopy} disabled={!message && !onCopy}>
+      <button
+        aria-label="Copy message"
+        title="Copy"
+        onClick={onCopy}
+        disabled={!message && !onCopy}
+      >
         <Icon name="copy" />
       </button>
       {!user && (
-        <button title="Retry" onClick={onRetry} disabled={!onRetry}>
+        <button aria-label="Retry response" title="Retry" onClick={onRetry} disabled={!onRetry}>
           <Icon name="retry" />
         </button>
       )}
       {user && onEdit && (
-        <button title="Edit" onClick={onEdit}>
+        <button aria-label="Edit message" title="Edit" onClick={onEdit}>
           <Icon name="edit" />
         </button>
       )}
-      <button title="Branch" onClick={onBranch} disabled={!onBranch}>
+      <button
+        aria-label="Branch from message"
+        title="Branch"
+        onClick={onBranch}
+        disabled={!onBranch}
+      >
         <Icon name="branch" />
       </button>
       {!user && onContinue && (
-        <button title="Continue" onClick={onContinue}>
+        <button aria-label="Continue response" title="Continue" onClick={onContinue}>
           <Icon name="play" />
         </button>
       )}
@@ -1716,6 +1897,15 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
     outboundIntent: OutboundIntent;
   }>(null);
   const [actionError, setActionError] = useState('');
+  const [actionNotice, setActionNotice] = useState<null | {
+    tone: 'pending' | 'success' | 'error';
+    text: string;
+  }>(null);
+  const [editTarget, setEditTarget] = useState<MessageRecord | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editPending, setEditPending] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [confirmingAction, setConfirmingAction] = useState(false);
   const windowSize = 80;
   useEffect(() => setWindowEnd(workspace.messages.length), [workspace.messages.length]);
   useEffect(() => {
@@ -1733,13 +1923,21 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
   const outline = workspace.messages.filter(
     (_, index) => index % outlineStep === 0 || index === workspace.messages.length - 1,
   );
-  const executeAction = (
+  const executeAction = async (
     message: MessageRecord,
     mode: 'retry' | 'edit' | 'regenerate' | 'continue',
     content: string,
     confirmation?: { confirmationToken: string; outboundIntent: OutboundIntent },
   ) => {
-    void workspace.sendMessage({
+    const labels = {
+      retry: ['Retrying response…', 'Response retry started.'],
+      edit: ['Creating an edited branch…', 'Edited branch created.'],
+      regenerate: ['Regenerating response…', 'Response regeneration started.'],
+      continue: ['Continuing response…', 'Continuation started.'],
+    } as const;
+    setActionError('');
+    setActionNotice({ tone: 'pending', text: labels[mode][0] });
+    const sent = await workspace.sendMessage({
       content,
       modelId: confirmation?.outboundIntent.modelId ?? canonicalModelId(selectedModel),
       attachments: [],
@@ -1751,23 +1949,33 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
       outboundConfirmationToken: confirmation?.confirmationToken,
       outboundIntent: confirmation?.outboundIntent,
     });
+    if (!sent) {
+      const text = workspace.error || 'CupcakeAI could not complete that message action.';
+      setActionError(text);
+      setActionNotice({ tone: 'error', text });
+      return false;
+    }
+    setActionNotice({ tone: 'success', text: labels[mode][1] });
+    return true;
   };
   const runAction = async (
     message: MessageRecord,
     mode: 'retry' | 'edit' | 'regenerate' | 'continue',
+    editedContent?: string,
   ) => {
-    let content = mode === 'continue' ? 'Continue from the previous response.' : message.content;
-    if (mode === 'edit') {
-      const edited = window.prompt('Edit message and create a sibling branch', content)?.trim();
-      if (!edited) return;
-      content = edited;
-    }
+    const content =
+      mode === 'continue'
+        ? 'Continue from the previous response.'
+        : mode === 'edit'
+          ? (editedContent?.trim() ?? '')
+          : message.content;
+    if (!content) return false;
     if (selectedModel.route !== 'Cloud' || workspace.fixtureMode) {
-      executeAction(message, mode, content);
-      return;
+      return executeAction(message, mode, content);
     }
     try {
       setActionError('');
+      setActionNotice({ tone: 'pending', text: 'Checking what will be sent…' });
       const result = await workspace.preflightCloudDisclosure({
         content,
         modelId: canonicalModelId(selectedModel),
@@ -1784,8 +1992,13 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
         confirmationToken: result.confirmationToken,
         outboundIntent: result.outboundIntent,
       });
+      setActionNotice(null);
+      return true;
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : 'Action preflight failed.');
+      const text = reason instanceof Error ? reason.message : 'Action preflight failed.';
+      setActionError(text);
+      setActionNotice({ tone: 'error', text });
+      return false;
     }
   };
   if (!workspace.activeConversationId && workspace.messages.length === 0) {
@@ -1804,10 +2017,27 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
       <div className="markdown-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {streamAnnouncement}
       </div>
-      {actionError && (
+      {actionError && !actionNotice && (
         <p className="field-error conversation-action-error" role="alert">
           {actionError}
         </p>
+      )}
+      {actionNotice && (
+        <div
+          className={cx(
+            'interaction-notice',
+            actionNotice.tone === 'pending' && 'is-pending',
+            actionNotice.tone === 'error' && 'is-error',
+          )}
+          role={actionNotice.tone === 'error' ? 'alert' : 'status'}
+        >
+          {actionNotice.tone === 'pending' ? (
+            <span className="pulse-dot" />
+          ) : (
+            <Icon name={actionNotice.tone === 'success' ? 'check' : 'info'} size={15} />
+          )}
+          {actionNotice.text}
+        </div>
       )}
       {workspace.branches.length > 1 && (
         <div className="branch-banner">
@@ -1968,11 +2198,36 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
               <MessageActions
                 user={message.role === 'user'}
                 message={message}
-                onCopy={() => void workspace.copyMessage(message.id)}
+                onCopy={() => {
+                  setActionNotice({ tone: 'pending', text: 'Copying message…' });
+                  void workspace
+                    .copyMessage(message.id)
+                    .then((copied) => {
+                      if (!copied) throw new Error('This message is no longer available to copy.');
+                      setActionNotice({ tone: 'success', text: 'Message copied.' });
+                    })
+                    .catch((reason) =>
+                      setActionNotice({
+                        tone: 'error',
+                        text:
+                          reason instanceof Error
+                            ? reason.message
+                            : 'The message could not be copied.',
+                      }),
+                    );
+                }}
                 onRetry={
                   message.role === 'assistant' ? () => void runAction(message, 'retry') : undefined
                 }
-                onEdit={message.role === 'user' ? () => void runAction(message, 'edit') : undefined}
+                onEdit={
+                  message.role === 'user'
+                    ? () => {
+                        setEditTarget(message);
+                        setEditContent(message.content);
+                        setEditError('');
+                      }
+                    : undefined
+                }
                 onBranch={() =>
                   void workspace.branchConversation(message.id, `Branch from ${message.role}`)
                 }
@@ -2050,27 +2305,96 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
                 </p>
               </div>
             </div>
+            {actionError && (
+              <p className="form-dialog__error" role="alert">
+                {actionError}
+              </p>
+            )}
             <footer>
-              <button className="button" onClick={() => setPendingAction(null)}>
+              <button
+                className="button"
+                onClick={() => setPendingAction(null)}
+                disabled={confirmingAction}
+              >
                 Cancel
               </button>
               <span />
               <button
                 className="button button--primary"
+                disabled={confirmingAction}
                 onClick={() => {
-                  executeAction(pendingAction.message, pendingAction.mode, pendingAction.content, {
-                    confirmationToken: pendingAction.confirmationToken,
-                    outboundIntent: pendingAction.outboundIntent,
-                  });
-                  setPendingAction(null);
+                  void (async () => {
+                    setConfirmingAction(true);
+                    try {
+                      const sent = await executeAction(
+                        pendingAction.message,
+                        pendingAction.mode,
+                        pendingAction.content,
+                        {
+                          confirmationToken: pendingAction.confirmationToken,
+                          outboundIntent: pendingAction.outboundIntent,
+                        },
+                      );
+                      if (sent) setPendingAction(null);
+                    } catch (reason) {
+                      const text =
+                        reason instanceof Error
+                          ? reason.message
+                          : 'The message action could not be sent.';
+                      setActionError(text);
+                      setActionNotice({ tone: 'error', text });
+                    } finally {
+                      setConfirmingAction(false);
+                    }
+                  })();
                 }}
               >
-                Confirm {pendingAction.mode}
+                {confirmingAction ? 'Sending…' : `Confirm ${pendingAction.mode}`}
               </button>
             </footer>
           </section>
         </div>
       )}
+      <FormDialog
+        open={Boolean(editTarget)}
+        eyebrow="Immutable conversation branch"
+        title="Edit your message"
+        description="CupcakeAI keeps the original thread intact and creates a sibling branch from this revised message."
+        submitLabel="Create edited branch"
+        pendingLabel="Preparing branch…"
+        pending={editPending}
+        error={editError}
+        onClose={() => {
+          if (editPending) return;
+          setEditTarget(null);
+          setEditError('');
+        }}
+        onSubmit={async () => {
+          const content = editContent.trim();
+          if (!editTarget) return;
+          if (!content) {
+            setEditError('Enter the message you want to send on the new branch.');
+            return;
+          }
+          setEditPending(true);
+          setEditError('');
+          const prepared = await runAction(editTarget, 'edit', content);
+          setEditPending(false);
+          if (prepared) setEditTarget(null);
+          else setEditError(actionError || 'The edited branch could not be created.');
+        }}
+      >
+        <label>
+          Revised message
+          <textarea
+            autoFocus
+            value={editContent}
+            onChange={(event) => setEditContent(event.target.value)}
+            rows={7}
+          />
+          <small>The original message remains available on its current branch.</small>
+        </label>
+      </FormDialog>
     </div>
   );
 }
@@ -2667,128 +2991,320 @@ function ContextSection({
   );
 }
 
-function ProjectsView({ openChat }: { openChat: () => void }) {
+function ProjectsView({ navigate }: { navigate: (view: 'chat' | 'artifacts') => void }) {
   const workspace = useWorkspace();
-  const [showContextHelp, setShowContextHelp] = useState(false);
-  const create = () => {
-    const name = window.prompt('Project name')?.trim();
-    if (!name) return;
-    const description = window.prompt('What belongs in this project?')?.trim() ?? '';
-    void workspace.createProject(name, description);
+  const [dialog, setDialog] = useState<'create' | 'edit' | 'archive' | null>(null);
+  const [dialogProjectId, setDialogProjectId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [pending, setPending] = useState(false);
+  const [dialogError, setDialogError] = useState('');
+  const activeProject =
+    workspace.projects.find((project) => project.id === workspace.activeProjectId) ??
+    workspace.projects[0];
+
+  const projectCounts = (projectId: string, projectName: string) => ({
+    chats: workspace.conversations.filter((item) => item.project === projectName).length,
+    artifacts: workspace.artifacts.filter((item) => item.projectId === projectId).length,
+    tasks: workspace.tasks.filter(
+      (item) =>
+        (item.project === projectId || item.project === projectName) && item.status === 'working',
+    ).length,
+  });
+  const beginCreate = () => {
+    setName('');
+    setDescription('');
+    setDialogProjectId(null);
+    setDialogError('');
+    setDialog('create');
   };
+  const beginEdit = (project: (typeof workspace.projects)[number]) => {
+    setName(project.name);
+    setDescription(project.description);
+    setDialogProjectId(project.id);
+    setDialogError('');
+    setDialog('edit');
+  };
+  const runDialogAction = async () => {
+    const cleanName = name.trim();
+    if (dialog !== 'archive' && !cleanName) {
+      setDialogError('Give this project a name.');
+      return;
+    }
+    setPending(true);
+    setDialogError('');
+    try {
+      if (dialog === 'create') await workspace.createProject(cleanName, description.trim());
+      else if (dialog === 'edit' && dialogProjectId)
+        await workspace.updateProject(dialogProjectId, cleanName, description.trim());
+      else if (dialog === 'archive' && dialogProjectId)
+        await workspace.archiveProject(dialogProjectId);
+      setDialog(null);
+    } catch (reason) {
+      setDialogError(
+        reason instanceof Error ? reason.message : 'The project change could not be saved.',
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+  const openProjectView = (projectId: string, view: 'chat' | 'artifacts') => {
+    void workspace.setActiveProject(projectId).catch(() => undefined);
+    navigate(view);
+  };
+
   return (
-    <main className="page">
-      <div className="page-intro">
+    <main className="page projects-workbench">
+      <div className="page-intro projects-intro">
         <div>
-          <p className="eyebrow">Context stays in its room</p>
+          <p className="eyebrow">A room for every body of work</p>
           <h2>Projects</h2>
-          <p>
-            Bring conversations, files, decisions, and permissions together without leaking context
-            across work.
-          </p>
+          <p>Keep chats, artifacts, tasks, and remembered decisions inside one clear boundary.</p>
         </div>
-        <button className="button button--primary" onClick={create}>
-          <Icon name="plus" />
-          New project
+        <button className="button button--primary" onClick={beginCreate}>
+          <Icon name="plus" /> New project
         </button>
       </div>
-      <div className="project-grid">
-        {workspace.projects.map((p, index) => (
-          <article
-            className={cx('project-card', workspace.activeProjectId === p.id && 'is-active')}
-            key={p.id}
-          >
-            <header>
-              <span
-                className={`project-sigil ${index % 3 === 0 ? 'berry' : index % 3 === 1 ? 'green' : 'blue'}`}
-              >
-                {p.name
-                  .split(/\s+/)
-                  .map((part) => part[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase()}
+
+      {activeProject ? (
+        <section className="project-focus" aria-label={`Active project: ${activeProject.name}`}>
+          <div className="project-focus__identity">
+            <span className="project-focus__sigil" aria-hidden="true">
+              {activeProject.name
+                .split(/\s+/)
+                .map((part) => part[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+            <div>
+              <span className="project-focus__state">
+                <Icon name="shield" size={14} /> Active context boundary
               </span>
-            </header>
-            <h3>{p.name}</h3>
-            <p>{p.description || 'No project instructions yet.'}</p>
-            <div className="project-stats">
-              <span>
-                <strong>
-                  {workspace.conversations.filter((item) => item.project === p.name).length}
-                </strong>{' '}
-                chats
-              </span>
-              <span>
-                <strong>
-                  {workspace.artifacts.filter((item) => item.projectId === p.id).length}
-                </strong>{' '}
-                artifacts
-              </span>
-              <span>
-                <strong>
-                  {
-                    workspace.tasks.filter(
-                      (item) => item.project === p.id && item.status === 'working',
-                    ).length
-                  }
-                </strong>{' '}
-                active
-              </span>
+              <h3>{activeProject.name}</h3>
+              <p>
+                {activeProject.description ||
+                  'Add a short brief so Cupcake knows what belongs here.'}
+              </p>
             </div>
-            <footer>
-              <span>
-                {workspace.activeProjectId === p.id
-                  ? 'Active privacy boundary'
-                  : p.updatedAt
-                    ? `Updated ${new Date(p.updatedAt).toLocaleDateString()}`
-                    : 'Ready'}
-              </span>
-              <button
-                onClick={() => {
-                  void workspace.setActiveProject(p.id);
-                  openChat();
-                }}
-              >
-                Open <Icon name="chevron" />
-              </button>
-            </footer>
-          </article>
-        ))}
-        <button className="project-new-card" onClick={create}>
+          </div>
+          <div className="project-focus__paths">
+            {(() => {
+              const counts = projectCounts(activeProject.id, activeProject.name);
+              return (
+                <>
+                  <button onClick={() => openProjectView(activeProject.id, 'chat')}>
+                    <span>
+                      <Icon name="chat" />
+                    </span>
+                    <strong>
+                      {counts.chats} {counts.chats === 1 ? 'chat' : 'chats'}
+                    </strong>
+                    <small>Open the conversation room</small>
+                    <Icon name="chevron" />
+                  </button>
+                  <button onClick={() => openProjectView(activeProject.id, 'artifacts')}>
+                    <span>
+                      <Icon name="artifact" />
+                    </span>
+                    <strong>
+                      {counts.artifacts} {counts.artifacts === 1 ? 'artifact' : 'artifacts'}
+                    </strong>
+                    <small>Read and revise project work</small>
+                    <Icon name="chevron" />
+                  </button>
+                  <div className="project-focus__task-state">
+                    <span>
+                      <Icon name="task" />
+                    </span>
+                    <strong>{counts.tasks} running</strong>
+                    <small>Durable work in progress</small>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+          <button className="project-focus__edit" onClick={() => beginEdit(activeProject)}>
+            <Icon name="edit" size={14} /> Edit project
+          </button>
+        </section>
+      ) : (
+        <section className="project-first-step">
           <span>
-            <Icon name="plus" />
+            <Icon name="project" size={28} />
           </span>
-          <strong>Create a project</strong>
-          <small>Add instructions and a folder when you’re ready.</small>
-        </button>
-      </div>
-      <section className="project-explainer">
-        <Icon name="shield" />
-        <div>
-          <strong>Project boundaries are private by default.</strong>
-          <p>
-            Cupcake only retrieves project files and memories when that project is active. You can
-            explicitly bring in outside context at any time.
-          </p>
-        </div>
-        <button
-          className="text-button"
-          aria-expanded={showContextHelp}
-          onClick={() => setShowContextHelp((value) => !value)}
-        >
-          How context works <Icon name="external" />
-        </button>
-      </section>
-      {showContextHelp && (
-        <section className="callout" role="status">
-          <Icon name="info" />
-          <p>
-            The active project limits retrieval, artifacts, files, and project-scoped memory. A
-            conversation can use outside context only after you attach or explicitly reference it.
-          </p>
+          <div>
+            <p className="eyebrow">Your first workspace</p>
+            <h3>Give a piece of work its own room</h3>
+            <p>
+              Start with a name and a plain-language brief. You can add chats and artifacts next.
+            </p>
+          </div>
+          <button className="button button--primary" onClick={beginCreate}>
+            Create project
+          </button>
         </section>
       )}
+
+      {workspace.projects.length > 0 && (
+        <section className="project-library">
+          <header>
+            <div>
+              <p className="eyebrow">Project library</p>
+              <h3>Switch context deliberately</h3>
+            </div>
+            <span>
+              {workspace.projects.length} {workspace.projects.length === 1 ? 'project' : 'projects'}
+            </span>
+          </header>
+          <div className="project-grid project-grid--workbench">
+            {workspace.projects.map((project, index) => {
+              const counts = projectCounts(project.id, project.name);
+              const active = workspace.activeProjectId === project.id;
+              return (
+                <article
+                  className={cx('project-card project-card--workbench', active && 'is-active')}
+                  key={project.id}
+                >
+                  <header>
+                    <span
+                      className={`project-sigil ${index % 3 === 0 ? 'berry' : index % 3 === 1 ? 'green' : 'blue'}`}
+                    >
+                      {project.name
+                        .split(/\s+/)
+                        .map((part) => part[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </span>
+                    {active && (
+                      <em>
+                        <span /> Active
+                      </em>
+                    )}
+                  </header>
+                  <button
+                    className="project-card__select"
+                    onClick={() =>
+                      void workspace.setActiveProject(project.id).catch(() => undefined)
+                    }
+                  >
+                    <strong>{project.name}</strong>
+                    <span>{project.description || 'No project brief yet.'}</span>
+                  </button>
+                  <div className="project-card__counts" aria-label="Project contents">
+                    <span>
+                      <Icon name="chat" size={14} />
+                      <strong>{counts.chats}</strong> Chats
+                    </span>
+                    <span>
+                      <Icon name="artifact" size={14} />
+                      <strong>{counts.artifacts}</strong> Artifacts
+                    </span>
+                    <span>
+                      <Icon name="task" size={14} />
+                      <strong>{counts.tasks}</strong> Running
+                    </span>
+                  </div>
+                  <footer>
+                    <small>
+                      {project.updatedAt
+                        ? `Updated ${new Date(project.updatedAt).toLocaleDateString()}`
+                        : 'Ready to use'}
+                    </small>
+                    <button onClick={() => beginEdit(project)} aria-label={`Edit ${project.name}`}>
+                      <Icon name="edit" size={14} />
+                    </button>
+                  </footer>
+                </article>
+              );
+            })}
+            <button className="project-new-card project-new-card--compact" onClick={beginCreate}>
+              <span>
+                <Icon name="plus" />
+              </span>
+              <strong>Start another project</strong>
+              <small>Create a separate context boundary.</small>
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="project-boundary-note">
+        <Icon name="shield" />
+        <div>
+          <strong>The active project controls what Cupcake can retrieve.</strong>
+          <p>
+            Its chats, artifacts, files, and project memory stay scoped here unless you explicitly
+            attach outside context.
+          </p>
+        </div>
+      </section>
+
+      <FormDialog
+        open={dialog === 'create' || dialog === 'edit'}
+        eyebrow={dialog === 'edit' ? 'Project settings' : 'New context boundary'}
+        title={dialog === 'edit' ? 'Edit project' : 'Create a project'}
+        description="Describe what belongs here. Clear project briefs make chat context and saved work easier to understand later."
+        submitLabel={dialog === 'edit' ? 'Save changes' : 'Create project'}
+        pendingLabel={dialog === 'edit' ? 'Saving…' : 'Creating…'}
+        pending={pending}
+        error={dialogError}
+        onClose={() => setDialog(null)}
+        onSubmit={runDialogAction}
+      >
+        <label>
+          <span>Project name</span>
+          <input
+            autoFocus
+            value={name}
+            maxLength={200}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Research launch plan"
+          />
+        </label>
+        <label>
+          <span>What belongs here?</span>
+          <textarea
+            value={description}
+            maxLength={10000}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Goals, source material, decisions, and boundaries for this work…"
+            rows={5}
+          />
+          <small>{description.length.toLocaleString()} / 10,000</small>
+        </label>
+        {dialog === 'edit' && (
+          <button
+            type="button"
+            className="project-archive-link"
+            onClick={() => setDialog('archive')}
+          >
+            Archive this project
+          </button>
+        )}
+      </FormDialog>
+
+      <FormDialog
+        open={dialog === 'archive'}
+        eyebrow="Reversible cleanup"
+        title={`Archive ${name || 'this project'}?`}
+        description="The project and its history stay in the encrypted workspace, but disappear from your active library."
+        submitLabel="Archive project"
+        pendingLabel="Archiving…"
+        pending={pending}
+        error={dialogError}
+        onClose={() => setDialog(null)}
+        onSubmit={runDialogAction}
+      >
+        <div className="project-archive-warning">
+          <Icon name="archive" />
+          <span>
+            Chats, artifacts, and memory are retained. This project can be restored through project
+            history in a future release.
+          </span>
+        </div>
+      </FormDialog>
     </main>
   );
 }
@@ -2892,6 +3408,24 @@ function TaskDetail({
   const [note, setNote] = useState('');
   const [updates, setUpdates] = useState<string[]>([]);
   const [showDeveloperTrace, setShowDeveloperTrace] = useState(false);
+  const [followupOpen, setFollowupOpen] = useState(false);
+  const [followupPrompt, setFollowupPrompt] = useState('');
+  const [followupPending, setFollowupPending] = useState(false);
+  const [followupError, setFollowupError] = useState('');
+  const [taskAction, setTaskAction] = useState<null | {
+    tone: 'pending' | 'success' | 'error';
+    text: string;
+  }>(null);
+  const [controlPending, setControlPending] = useState(false);
+  const [steerPending, setSteerPending] = useState(false);
+  const statusLabel =
+    task.status === 'complete'
+      ? 'Complete'
+      : task.status === 'waiting'
+        ? 'Waiting for input or approval'
+        : task.status === 'failed'
+          ? 'Stopped before completion'
+          : 'In progress';
   return (
     <main className="page task-detail">
       <button className="back-button" onClick={onBack}>
@@ -2901,15 +3435,8 @@ function TaskDetail({
       <div className="task-detail__head">
         <div>
           <div className="status-line">
-            <span className="pulse-dot" />
-            {task.status === 'complete'
-              ? 'Complete'
-              : paused
-                ? 'Waiting'
-                : task.status === 'failed'
-                  ? 'Stopped'
-                  : 'Working'}{' '}
-            · durable checkpoint state
+            {task.status === 'working' && <span className="pulse-dot" />}
+            {statusLabel}
           </div>
           <h2>{task.title}</h2>
           <p>{task.detail}</p>
@@ -2926,25 +3453,59 @@ function TaskDetail({
               <Icon name="model" />
               {modelName}
             </span>
-            <span>
-              <Icon name="cloud" />
-              $0.31
-            </span>
           </div>
         </div>
         <div>
           <button
             className="button"
-            onClick={() =>
-              void (paused ? workspace.resumeTask(task.id) : workspace.cancelTask(task.id))
-            }
-            disabled={task.status === 'complete'}
+            onClick={() => {
+              void (async () => {
+                setControlPending(true);
+                setTaskAction({
+                  tone: 'pending',
+                  text: paused ? 'Resuming from the saved checkpoint…' : 'Requesting a safe stop…',
+                });
+                try {
+                  await (paused ? workspace.resumeTask(task.id) : workspace.cancelTask(task.id));
+                  setTaskAction({
+                    tone: 'success',
+                    text: paused ? 'Resume request accepted.' : 'Safe stop requested.',
+                  });
+                } catch (reason) {
+                  setTaskAction({
+                    tone: 'error',
+                    text:
+                      reason instanceof Error ? reason.message : 'The task could not be updated.',
+                  });
+                } finally {
+                  setControlPending(false);
+                }
+              })();
+            }}
+            disabled={task.status === 'complete' || task.status === 'failed' || controlPending}
           >
             <Icon name={paused ? 'play' : 'pause'} />
-            {paused ? 'Resume' : 'Cancel safely'}
+            {controlPending ? 'Updating…' : paused ? 'Resume' : 'Cancel safely'}
           </button>
         </div>
       </div>
+      {taskAction && (
+        <div
+          className={cx(
+            'interaction-notice',
+            taskAction.tone === 'pending' && 'is-pending',
+            taskAction.tone === 'error' && 'is-error',
+          )}
+          role={taskAction.tone === 'error' ? 'alert' : 'status'}
+        >
+          {taskAction.tone === 'pending' ? (
+            <span className="pulse-dot" />
+          ) : (
+            <Icon name={taskAction.tone === 'success' ? 'check' : 'info'} size={15} />
+          )}
+          {taskAction.text}
+        </div>
+      )}
       <div className="task-detail__grid">
         <section className="task-panel">
           <header>
@@ -2968,9 +3529,9 @@ function TaskDetail({
                 </span>
                 <div>
                   <strong>{step.label}</strong>
-                  {step.state === 'active' && <small>Reviewing 3 candidate designs · 2m 08s</small>}
+                  {step.state === 'active' && <small>Current checkpoint</small>}
                 </div>
-                {step.state === 'active' && <span className="live-badge">LIVE</span>}
+                {step.state === 'active' && <span className="live-badge">NOW</span>}
               </div>
             ))}
           </div>
@@ -2996,27 +3557,46 @@ function TaskDetail({
             </div>
           )}
           <div className="activity-stream">
-            <div>
-              <Icon name="check" />
-              <span>
-                <strong>Read repository</strong>
-                <small>34 files · 1m 12s</small>
-              </span>
-            </div>
-            <div>
-              <Icon name="search" />
-              <span>
-                <strong>Compared persistence options</strong>
-                <small>6 sources · 4m 38s</small>
-              </span>
-            </div>
-            <div className="is-active">
-              <span className="pulse-dot" />
-              <span>
-                <strong>Testing branch queries</strong>
-                <small>SQLite fixture · running now</small>
-              </span>
-            </div>
+            {task.steps.map((step) => (
+              <div
+                className={cx(
+                  step.state === 'active' && 'is-active',
+                  step.state === 'failed' && 'is-failed',
+                )}
+                key={step.label}
+              >
+                {step.state === 'complete' ? (
+                  <Icon name="check" />
+                ) : step.state === 'active' ? (
+                  <span className="pulse-dot" />
+                ) : step.state === 'failed' ? (
+                  <Icon name="x" />
+                ) : (
+                  <Icon name="clock" />
+                )}
+                <span>
+                  <strong>{step.label}</strong>
+                  <small>
+                    {step.state === 'complete'
+                      ? 'Checkpoint complete'
+                      : step.state === 'active'
+                        ? 'In progress'
+                        : step.state === 'failed'
+                          ? 'Stopped at this checkpoint'
+                          : 'Queued'}
+                  </small>
+                </span>
+              </div>
+            ))}
+            {task.steps.length === 0 && (
+              <div>
+                <Icon name="info" />
+                <span>
+                  <strong>No checkpoint details available</strong>
+                  <small>The runtime has not reported task steps.</small>
+                </span>
+              </div>
+            )}
             {updates.map((u, i) => (
               <div key={i}>
                 <Icon name="chat" />
@@ -3037,23 +3617,50 @@ function TaskDetail({
                 placeholder="Add guidance without restarting…"
               />
               <button
+                aria-label="Queue task guidance"
+                disabled={!note.trim() || steerPending}
                 onClick={() => {
-                  if (note.trim()) {
-                    setUpdates((u) => [...u, note]);
-                    void workspace.steerTask(task.id, note);
-                    setNote('');
-                  }
+                  void (async () => {
+                    const instruction = note.trim();
+                    if (!instruction) return;
+                    setSteerPending(true);
+                    setTaskAction({ tone: 'pending', text: 'Queueing guidance…' });
+                    try {
+                      await workspace.steerTask(task.id, instruction);
+                      setUpdates((items) => [...items, instruction]);
+                      setNote('');
+                      setTaskAction({
+                        tone: 'success',
+                        text: 'Guidance queued for the next safe checkpoint.',
+                      });
+                    } catch (reason) {
+                      setTaskAction({
+                        tone: 'error',
+                        text:
+                          reason instanceof Error
+                            ? reason.message
+                            : 'Guidance could not be queued.',
+                      });
+                    } finally {
+                      setSteerPending(false);
+                    }
+                  })();
                 }}
               >
                 <Icon name="send" />
               </button>
             </div>
-            <small>Your note is queued at the next safe checkpoint.</small>
+            <small className="steer-task__status">
+              {steerPending
+                ? 'Waiting for the runtime…'
+                : 'Guidance is applied only after the runtime confirms it was queued.'}
+            </small>
             <button
               className="text-button"
               onClick={() => {
-                const prompt = window.prompt('Queue a follow-up after this task')?.trim();
-                if (prompt) void workspace.followupTask(task.id, prompt);
+                setFollowupPrompt('');
+                setFollowupError('');
+                setFollowupOpen(true);
               }}
             >
               Queue follow-up <Icon name="chevron" />
@@ -3061,213 +3668,56 @@ function TaskDetail({
           </div>
         </section>
       </div>
-    </main>
-  );
-}
-
-function FixtureArtifactsView() {
-  const [selected, setSelected] = useState(fixtureArtifacts[0]!);
-  const [tab, setTab] = useState<'preview' | 'edit' | 'revisions'>('preview');
-  const [content, setContent] = useState(
-    `# CupcakeAI 2.0 architecture\n\nThe application owns its conversations, memories, and artifacts. Framework state remains replaceable.\n\n## Runtime boundaries\n\n- React renderer for presentation\n- Tauri Rust host for desktop lifecycle\n- Python runtime for model and workflow orchestration\n- Rust broker for permissions and tool execution\n\n> Project scope is a privacy boundary, not a ranking hint.\n\n## Storage\n\nProduct data lives in encrypted SQLite. Large revisions are immutable, encrypted objects addressed by their content hash.`,
-  );
-  const [saved, setSaved] = useState(true);
-  return (
-    <main className="artifact-workspace">
-      <aside className="artifact-list">
-        <div className="artifact-list__head">
-          <h2>Artifacts</h2>
-          <button className="icon-button" aria-label="Create artifact">
-            <Icon name="plus" />
-          </button>
-        </div>
-        <div className="search-field">
-          <Icon name="search" />
-          <input placeholder="Search artifacts" />
-        </div>
-        <div className="artifact-filter">
-          <button className="is-active">All</button>
-          <button>Documents</button>
-          <button>Code</button>
-          <button>More</button>
-        </div>
-        {fixtureArtifacts.map((a) => (
-          <button
-            className={cx('artifact-list__item', selected.id === a.id && 'is-active')}
-            onClick={() => {
-              setSelected(a);
-              setTab('preview');
-            }}
-            key={a.id}
-          >
-            <span className={`artifact-type artifact-type--${a.type.toLowerCase()}`}>
-              <Icon
-                name={
-                  a.type === 'Table'
-                    ? 'database'
-                    : a.type === 'Diagram'
-                      ? 'branch'
-                      : a.type === 'Webpage'
-                        ? 'code'
-                        : 'artifact'
-                }
-              />
-            </span>
-            <span>
-              <strong>{a.name}</strong>
-              <small>
-                {a.project} · {a.updated}
-              </small>
-            </span>
-            <Icon name="more" />
-          </button>
-        ))}
-      </aside>
-      <section className="artifact-stage">
-        <header>
-          <div>
-            <span className="eyebrow">
-              {selected.type} · {selected.project}
-            </span>
-            <h1>{selected.name}</h1>
-            <small>
-              {saved ? 'All changes saved' : 'Unsaved changes'} · {selected.size}
-            </small>
-          </div>
-          <div>
-            <button className="button">
-              <Icon name="sparkle" />
-              Ask Cupcake
-            </button>
-            <button className="button">
-              <Icon name="download" />
-              Export
-            </button>
-            <button className="icon-button" aria-label="Artifact actions">
-              <Icon name="more" />
-            </button>
-          </div>
-        </header>
-        <div className="artifact-tabs">
-          <button
-            className={tab === 'preview' ? 'is-active' : ''}
-            onClick={() => setTab('preview')}
-          >
-            <Icon name="eye" />
-            Preview
-          </button>
-          <button className={tab === 'edit' ? 'is-active' : ''} onClick={() => setTab('edit')}>
-            <Icon name="edit" />
-            Edit
-          </button>
-          <button
-            className={tab === 'revisions' ? 'is-active' : ''}
-            onClick={() => setTab('revisions')}
-          >
-            <Icon name="history" />
-            Revisions <span>{selected.revisions}</span>
-          </button>
-        </div>
-        {tab === 'preview' && (
-          <article className="document-preview">
-            <div className="document-paper">
-              <p className="eyebrow">Architecture note · revision 4</p>
-              <h1>CupcakeAI 2.0 architecture</h1>
-              <p className="lead">
-                The application owns its conversations, memories, and artifacts. Framework state
-                remains replaceable.
-              </p>
-              <h2>Runtime boundaries</h2>
-              <ul>
-                <li>
-                  <strong>React renderer</strong> for presentation
-                </li>
-                <li>
-                  <strong>Tauri Rust host</strong> for desktop lifecycle
-                </li>
-                <li>
-                  <strong>Python runtime</strong> for model and workflow orchestration
-                </li>
-                <li>
-                  <strong>Rust broker</strong> for permissions and tool execution
-                </li>
-              </ul>
-              <blockquote>Project scope is a privacy boundary, not a ranking hint.</blockquote>
-              <h2>Storage</h2>
-              <p>
-                Product data lives in encrypted SQLite. Large revisions are immutable, encrypted
-                objects addressed by their content hash.
-              </p>
-              <div className="document-note">
-                <Icon name="chat" />
-                <span>
-                  Created in <strong>Architecture review</strong> · linked to message at 10:45
-                </span>
-                <button>Open chat</button>
-              </div>
-            </div>
-          </article>
-        )}
-        {tab === 'edit' && (
-          <div className="artifact-editor">
-            <div className="editor-gutter">
-              {content.split('\n').map((_, i) => (
-                <span key={i}>{i + 1}</span>
-              ))}
-            </div>
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setSaved(false);
-              }}
-              spellCheck="false"
-            />
-            <button className="save-float" onClick={() => setSaved(true)} disabled={saved}>
-              <Icon name="check" />
-              {saved ? 'Saved' : 'Save revision'}
-            </button>
-          </div>
-        )}
-        {tab === 'revisions' && (
-          <div className="revision-view">
-            <div className="revision-timeline">
-              {[4, 3, 2, 1].map((r, i) => (
-                <button className={i === 0 ? 'is-active' : ''} key={r}>
-                  <span>v{r}</span>
-                  <div>
-                    <strong>
-                      {i === 0
-                        ? 'Clarified project boundary'
-                        : i === 1
-                          ? 'Added storage model'
-                          : i === 2
-                            ? 'Runtime split'
-                            : 'Initial draft'}
-                    </strong>
-                    <small>
-                      {i === 0 ? 'Just now' : `${i * 18} min ago`} · {i === 0 ? 'You' : 'Cupcake'}
-                    </small>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="diff-preview">
-              <header>
-                <span className="diff-add">+ 7</span>
-                <span className="diff-remove">− 2</span>
-                <button className="button">Restore this revision</button>
-              </header>
-              <pre>
-                <span> ## Storage</span>
-                <span className="remove">- Keep project filtering in the search query.</span>
-                <span className="add">+ Treat project scope as a hard privacy boundary.</span>
-                <span className="add">+ Apply the filter before retrieval and ranking.</span>
-              </pre>
-            </div>
-          </div>
-        )}
-      </section>
+      <FormDialog
+        open={followupOpen}
+        eyebrow="After this task"
+        title="Queue a follow-up"
+        description="The follow-up starts only after this task reaches a safe completion point."
+        submitLabel="Queue follow-up"
+        pendingLabel="Queueing follow-up…"
+        pending={followupPending}
+        error={followupError}
+        onClose={() => {
+          if (followupPending) return;
+          setFollowupOpen(false);
+          setFollowupError('');
+        }}
+        onSubmit={async () => {
+          const prompt = followupPrompt.trim();
+          if (!prompt) {
+            setFollowupError('Describe what CupcakeAI should do next.');
+            return;
+          }
+          setFollowupPending(true);
+          setFollowupError('');
+          try {
+            await workspace.followupTask(task.id, prompt);
+            setFollowupOpen(false);
+            setTaskAction({
+              tone: 'success',
+              text: 'Follow-up queued after this task.',
+            });
+          } catch (reason) {
+            setFollowupError(
+              reason instanceof Error ? reason.message : 'The follow-up could not be queued.',
+            );
+          } finally {
+            setFollowupPending(false);
+          }
+        }}
+      >
+        <label>
+          Follow-up instructions
+          <textarea
+            autoFocus
+            value={followupPrompt}
+            onChange={(event) => setFollowupPrompt(event.target.value)}
+            placeholder="For example: turn the findings into a short implementation plan"
+            rows={6}
+          />
+          <small>You can review the queued follow-up in this task after it is accepted.</small>
+        </label>
+      </FormDialog>
     </main>
   );
 }
@@ -3344,111 +3794,608 @@ function ArtifactPreview({ artifact, content }: { artifact: ArtifactRecord; cont
 
 function ArtifactsView() {
   const workspace = useWorkspace();
-  const [selectedId, setSelectedId] = useState<string | null>(workspace.artifacts[0]?.id ?? null);
+  const requestedArtifactId = useRef(sessionStorage.getItem('cupcake-open-artifact'));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'preview' | 'edit' | 'revisions'>('preview');
+  const [query, setQuery] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [loadingArtifact, setLoadingArtifact] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveState, setSaveState] = useState<'clean' | 'dirty' | 'saving' | 'saved' | 'error'>(
+    'clean',
+  );
+  const [saveMessage, setSaveMessage] = useState('');
+  const [history, setHistory] = useState<ArtifactRevisionRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
+  const [revisionContent, setRevisionContent] = useState('');
+  const [revisionError, setRevisionError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('Untitled note.md');
+  const [createKind, setCreateKind] = useState('document');
+  const [createPending, setCreatePending] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [exportState, setExportState] = useState<'idle' | 'exporting' | 'success' | 'error'>(
+    'idle',
+  );
+  const [exportMessage, setExportMessage] = useState('');
+  const draftPending = saveState === 'dirty' || saveState === 'saving' || saveState === 'error';
+  const activeProject = workspace.projects.find((item) => item.id === workspace.activeProjectId);
+  const projectArtifacts = useMemo(
+    () =>
+      workspace.artifacts.filter(
+        (item) => !workspace.activeProjectId || item.projectId === workspace.activeProjectId,
+      ),
+    [workspace.activeProjectId, workspace.artifacts],
+  );
   const selected =
-    workspace.artifacts.find((item) => item.id === selectedId) ?? workspace.artifacts[0];
+    projectArtifacts.find((item) => item.id === selectedId) ??
+    (requestedArtifactId.current ? undefined : projectArtifacts[0]);
   const [content, setContent] = useState(selected?.content ?? '');
-  const [saved, setSaved] = useState(true);
-  useEffect(() => {
-    setContent(selected?.content ?? '');
-    setSaved(true);
-  }, [selected?.id, selected?.content]);
-  if (workspace.fixtureMode) return <FixtureArtifactsView />;
-  const create = () => {
-    const name = window.prompt('Artifact name', 'Untitled document.md')?.trim();
-    if (!name) return;
-    void workspace.createArtifact(name, 'document', '# Untitled\n');
+
+  const artifactKinds = [
+    {
+      id: 'document',
+      label: 'Document',
+      icon: 'artifact' as IconName,
+      mime: 'text/markdown',
+      extension: 'md',
+      template: '# Untitled note\n\nStart writing here.\n',
+    },
+    {
+      id: 'report',
+      label: 'Report',
+      icon: 'file' as IconName,
+      mime: 'text/markdown',
+      extension: 'md',
+      template: '# Project report\n\n## Summary\n\n## Findings\n\n## Next steps\n',
+    },
+    {
+      id: 'code',
+      label: 'Code',
+      icon: 'code' as IconName,
+      mime: 'text/plain',
+      extension: 'txt',
+      template: '// Start a project-scoped code artifact here.\n',
+    },
+    {
+      id: 'table',
+      label: 'Table',
+      icon: 'database' as IconName,
+      mime: 'text/csv',
+      extension: 'csv',
+      template: 'Item,Status,Owner\nFirst item,Planned,You\n',
+    },
+    {
+      id: 'diagram',
+      label: 'Diagram',
+      icon: 'branch' as IconName,
+      mime: 'text/plain',
+      extension: 'mmd',
+      template: 'flowchart LR\n  Question --> Evidence\n  Evidence --> Decision\n',
+    },
+    {
+      id: 'webpage',
+      label: 'Web page',
+      icon: 'code' as IconName,
+      mime: 'text/html',
+      extension: 'html',
+      template: '<main>\n  <h1>Untitled page</h1>\n  <p>Start building here.</p>\n</main>\n',
+    },
+  ];
+  const shownArtifacts = projectArtifacts.filter((artifact) => {
+    const matchesKind = kindFilter === 'all' || artifact.kind.toLowerCase() === kindFilter;
+    const matchesQuery = `${artifact.name} ${artifact.kind}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase());
+    return matchesKind && matchesQuery;
+  });
+  const displayBytes = (bytes?: number) => {
+    if (bytes === undefined) return 'Stored locally';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
-  if (!selected) {
+  const kindIcon = (kind: string): IconName => {
+    const value = kind.toLowerCase();
+    if (value.includes('table') || value.includes('spreadsheet')) return 'database';
+    if (value.includes('diagram')) return 'branch';
+    if (value.includes('code') || value.includes('webpage') || value.includes('configuration'))
+      return 'code';
+    return 'artifact';
+  };
+
+  useEffect(() => {
+    setSelectedId(null);
+    setTab('preview');
+    setHistory([]);
+  }, [workspace.activeProjectId]);
+
+  useEffect(() => {
+    const requested = requestedArtifactId.current;
+    const firstArtifact = projectArtifacts[0];
+    if (requested) {
+      if (projectArtifacts.some((item) => item.id === requested)) {
+        requestedArtifactId.current = null;
+        sessionStorage.removeItem('cupcake-open-artifact');
+        setSelectedId(requested);
+      } else if (firstArtifact) {
+        requestedArtifactId.current = null;
+        sessionStorage.removeItem('cupcake-open-artifact');
+        setSelectedId(firstArtifact.id);
+      }
+      return;
+    }
+    if (!selectedId && firstArtifact) setSelectedId(firstArtifact.id);
+  }, [projectArtifacts, selectedId]);
+
+  useEffect(() => {
+    if (!selected) {
+      setContent('');
+      return;
+    }
+    let current = true;
+    setLoadingArtifact(true);
+    setLoadError('');
+    void workspace
+      .getArtifact(selected)
+      .then((snapshot) => {
+        if (!current) return;
+        setContent(snapshot.content ?? '');
+        setSaveState('clean');
+        setSaveMessage('');
+      })
+      .catch((reason) => {
+        if (!current) return;
+        setLoadError(
+          reason instanceof Error ? reason.message : 'The artifact could not be opened.',
+        );
+      })
+      .finally(() => {
+        if (current) setLoadingArtifact(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [selected?.id]);
+
+  useEffect(() => {
+    if (!selected || tab !== 'revisions') return;
+    let current = true;
+    setHistoryLoading(true);
+    setRevisionError('');
+    void workspace
+      .getArtifactHistory(selected)
+      .then((items) => {
+        if (!current) return;
+        setHistory(items);
+        const latest = items.at(-1);
+        setSelectedRevisionId(latest?.id ?? null);
+        setRevisionContent(content);
+      })
+      .catch((reason) => {
+        if (current)
+          setRevisionError(
+            reason instanceof Error ? reason.message : 'Revision history could not be opened.',
+          );
+      })
+      .finally(() => {
+        if (current) setHistoryLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [selected?.id, tab]);
+
+  const beginCreate = () => {
+    if (!activeProject) return;
+    setCreateKind('document');
+    setCreateName('Untitled note.md');
+    setCreateError('');
+    setCreateOpen(true);
+  };
+  const chooseCreateKind = (kind: (typeof artifactKinds)[number]) => {
+    const previous = artifactKinds.find((item) => item.id === createKind);
+    const base = createName.replace(new RegExp(`\\.${previous?.extension ?? 'md'}$`, 'i'), '');
+    setCreateKind(kind.id);
+    setCreateName(`${base || 'Untitled'}.${kind.extension}`);
+  };
+  const createArtifact = async () => {
+    const kind = artifactKinds.find((item) => item.id === createKind)!;
+    if (!createName.trim()) {
+      setCreateError('Give this artifact a name.');
+      return;
+    }
+    setCreatePending(true);
+    setCreateError('');
+    try {
+      const record = await workspace.createArtifact({
+        name: createName.trim(),
+        kind: kind.id,
+        mimeType: kind.mime,
+        content: kind.template,
+      });
+      setSelectedId(record.id);
+      setContent(record.content ?? kind.template);
+      setTab('edit');
+      setCreateOpen(false);
+    } catch (reason) {
+      setCreateError(
+        reason instanceof Error ? reason.message : 'The artifact could not be created.',
+      );
+    } finally {
+      setCreatePending(false);
+    }
+  };
+  const saveRevision = async (nextContent = content, summary = 'Edited in Artifacts') => {
+    if (!selected) return;
+    setSaveState('saving');
+    setSaveMessage('');
+    try {
+      const record = await workspace.reviseArtifact(selected, nextContent, summary);
+      setContent(record.content ?? nextContent);
+      setSaveState('saved');
+      setSaveMessage(`Revision ${record.revisionNumber ?? ''} saved.`.replace('  ', ' '));
+      window.setTimeout(() => setSaveState('clean'), 1800);
+      if (tab === 'revisions') setHistory(await workspace.getArtifactHistory(record));
+    } catch (reason) {
+      setSaveState('error');
+      setSaveMessage(
+        reason instanceof Error
+          ? reason.message
+          : 'The revision could not be saved. Your draft is still here.',
+      );
+    }
+  };
+  const openRevision = async (revision: ArtifactRevisionRecord) => {
+    if (!selected) return;
+    setSelectedRevisionId(revision.id);
+    setRevisionError('');
+    try {
+      const snapshot = await workspace.getArtifact(selected, revision.id);
+      setRevisionContent(snapshot.content ?? '');
+    } catch (reason) {
+      setRevisionError(
+        reason instanceof Error ? reason.message : 'That revision could not be opened.',
+      );
+    }
+  };
+  const exportCurrentRevision = async () => {
+    if (!selected) return;
+    setExportState('exporting');
+    setExportMessage('');
+    try {
+      const receipt = await workspace.exportArtifact(selected);
+      if (!receipt) {
+        setExportState('idle');
+        return;
+      }
+      setExportState('success');
+      setExportMessage(`${receipt.fileName} exported and verified.`);
+      window.setTimeout(() => setExportState('idle'), 2400);
+    } catch (reason) {
+      setExportState('error');
+      setExportMessage(
+        reason instanceof Error ? reason.message : 'The artifact could not be exported.',
+      );
+    }
+  };
+
+  if (!activeProject) {
     return (
-      <main className="artifact-empty-workspace">
-        <section className="artifact-empty-hero">
-          <span className="eyebrow">Project-owned, encrypted revisions</span>
-          <h1>Make the first artifact</h1>
-          <p>
-            Documents, code, tables, diagrams, and generated assets live here without being mixed
-            into another project.
-          </p>
-          <div className="artifact-empty-actions">
-            <button className="button button--primary" onClick={create}>
-              <Icon name="plus" /> Create artifact
-            </button>
+      <main className="artifact-project-gate">
+        <section>
+          <span className="artifact-project-gate__mark">
+            <Icon name="project" size={30} />
+          </span>
+          <p className="eyebrow">Artifacts belong to projects</p>
+          <h1>Choose a project room</h1>
+          <p>Each artifact stays with the chats, tasks, and memory that explain why it exists.</p>
+          <div className="artifact-project-gate__choices">
+            {workspace.projects.map((project) => (
+              <button
+                key={project.id}
+                onClick={() => void workspace.setActiveProject(project.id).catch(() => undefined)}
+              >
+                <span>
+                  {project.name
+                    .split(/\s+/)
+                    .map((part) => part[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </span>
+                <strong>{project.name}</strong>
+                <Icon name="chevron" />
+              </button>
+            ))}
           </div>
-        </section>
-        <section className="artifact-empty-guide" aria-label="Artifact capabilities">
-          <article>
-            <Icon name="artifact" />
-            <div>
-              <strong>Revise safely</strong>
-              <p>Every save creates a new immutable revision instead of overwriting history.</p>
-            </div>
-          </article>
-          <article>
-            <Icon name="shield" />
-            <div>
-              <strong>Keep project boundaries</strong>
-              <p>Only artifacts from the active project appear in this workspace.</p>
-            </div>
-          </article>
-          <article>
-            <Icon name="download" />
-            <div>
-              <strong>Export deliberately</strong>
-              <p>Files leave the encrypted store only when you choose an export location.</p>
-            </div>
-          </article>
+          {!workspace.projects.length && (
+            <small>Create a project from Projects, then come back to begin.</small>
+          )}
         </section>
       </main>
     );
   }
+
+  if (!selected) {
+    return (
+      <main className="artifact-empty-workbench">
+        <section className="artifact-empty-folio">
+          <div className="artifact-empty-folio__binding" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div>
+            <span className="eyebrow">{activeProject.name} · project folio</span>
+            <h1>Turn useful work into something you can keep</h1>
+            <p>
+              Create a document, report, code file, table, diagram, or safe web preview. Every save
+              becomes a new revision.
+            </p>
+            <button className="button button--primary" onClick={beginCreate}>
+              <Icon name="plus" /> Create first artifact
+            </button>
+          </div>
+        </section>
+        <section className="artifact-empty-recipes" aria-label="Artifact starting points">
+          {artifactKinds.slice(0, 4).map((kind) => (
+            <button
+              key={kind.id}
+              onClick={() => {
+                setCreateKind(kind.id);
+                setCreateName(`Untitled.${kind.extension}`);
+                setCreateError('');
+                setCreateOpen(true);
+              }}
+            >
+              <span>
+                <Icon name={kind.icon} />
+              </span>
+              <strong>{kind.label}</strong>
+              <small>
+                {kind.id === 'document'
+                  ? 'Notes and drafts'
+                  : kind.id === 'report'
+                    ? 'Structured findings'
+                    : kind.id === 'code'
+                      ? 'Text-based source'
+                      : 'CSV rows and columns'}
+              </small>
+              <Icon name="chevron" />
+            </button>
+          ))}
+        </section>
+        <FormDialog
+          open={createOpen}
+          eyebrow={`${activeProject.name} · new artifact`}
+          title="Add to this project folio"
+          description="Choose a useful starting shape. You can revise the content immediately after creation."
+          submitLabel="Create artifact"
+          pendingLabel="Creating…"
+          pending={createPending}
+          error={createError}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={createArtifact}
+        >
+          <label>
+            <span>Artifact name</span>
+            <input
+              autoFocus
+              value={createName}
+              maxLength={200}
+              onChange={(event) => setCreateName(event.target.value)}
+            />
+          </label>
+          <fieldset className="artifact-kind-picker">
+            <legend>Starting format</legend>
+            {artifactKinds.map((kind) => (
+              <button
+                type="button"
+                className={createKind === kind.id ? 'is-active' : ''}
+                onClick={() => chooseCreateKind(kind)}
+                key={kind.id}
+              >
+                <Icon name={kind.icon} />
+                <span>{kind.label}</span>
+              </button>
+            ))}
+          </fieldset>
+        </FormDialog>
+      </main>
+    );
+  }
   return (
-    <main className="artifact-workspace">
-      <aside className="artifact-list">
+    <main className="artifact-workspace artifact-workspace--folio">
+      <aside className="artifact-list artifact-list--folio">
+        <div className="artifact-scope">
+          <span className="eyebrow">Active project</span>
+          <strong>{activeProject.name}</strong>
+          <div className="artifact-project-chips" aria-label="Switch artifact project">
+            {workspace.projects.map((project) => (
+              <button
+                className={project.id === activeProject.id ? 'is-active' : ''}
+                onClick={() => void workspace.setActiveProject(project.id).catch(() => undefined)}
+                key={project.id}
+                aria-label={`Show artifacts from ${project.name}`}
+                disabled={draftPending && project.id !== activeProject.id}
+                title={
+                  draftPending && project.id !== activeProject.id
+                    ? 'Save the current draft before switching projects'
+                    : undefined
+                }
+              >
+                {project.name
+                  .split(/\s+/)
+                  .map((part) => part[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="artifact-list__head">
-          <h2>Artifacts</h2>
-          <button className="icon-button" onClick={create} aria-label="Create artifact">
+          <div>
+            <h2>Project folio</h2>
+            <small>
+              {projectArtifacts.length} {projectArtifacts.length === 1 ? 'artifact' : 'artifacts'}
+            </small>
+          </div>
+          <button
+            className="icon-button"
+            onClick={beginCreate}
+            aria-label="Create artifact"
+            disabled={draftPending}
+            title={
+              draftPending ? 'Save the current draft before creating another artifact' : undefined
+            }
+          >
             <Icon name="plus" />
           </button>
         </div>
-        {workspace.artifacts.map((artifact) => (
-          <button
-            className={cx('artifact-list__item', selected.id === artifact.id && 'is-active')}
-            onClick={() => setSelectedId(artifact.id)}
-            key={artifact.id}
-          >
-            <span className={`artifact-type artifact-type--${artifact.kind.toLowerCase()}`}>
-              <Icon name="artifact" />
-            </span>
-            <span>
-              <strong>{artifact.name}</strong>
-              <small>
-                Revision {artifact.revisionNumber ?? 1} ·{' '}
-                {artifact.updatedAt
-                  ? new Date(artifact.updatedAt).toLocaleDateString()
-                  : 'saved locally'}
-              </small>
-            </span>
-          </button>
-        ))}
+        <label className="artifact-search">
+          <Icon name="search" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Find in this project"
+          />
+          <span>{shownArtifacts.length}</span>
+        </label>
+        <div className="artifact-kind-filters" aria-label="Filter artifact types">
+          {['all', ...new Set(projectArtifacts.map((item) => item.kind.toLowerCase()))].map(
+            (kind) => (
+              <button
+                className={kindFilter === kind ? 'is-active' : ''}
+                onClick={() => setKindFilter(kind)}
+                key={kind}
+              >
+                {kind === 'all' ? 'All' : cap(kind)}
+              </button>
+            ),
+          )}
+        </div>
+        <div className="artifact-list__items">
+          {shownArtifacts.map((artifact) => (
+            <button
+              className={cx('artifact-list__item', selected.id === artifact.id && 'is-active')}
+              disabled={draftPending && selected.id !== artifact.id}
+              title={
+                draftPending && selected.id !== artifact.id
+                  ? 'Save the current draft before switching artifacts'
+                  : undefined
+              }
+              onClick={() => {
+                setSelectedId(artifact.id);
+                setTab('preview');
+              }}
+              key={artifact.id}
+            >
+              <span className={`artifact-type artifact-type--${artifact.kind.toLowerCase()}`}>
+                <Icon name={kindIcon(artifact.kind)} />
+              </span>
+              <span>
+                <strong>{artifact.name}</strong>
+                <small>
+                  {artifact.revisionNumber
+                    ? `${artifact.revisionNumber} ${artifact.revisionNumber === 1 ? 'revision' : 'revisions'}`
+                    : cap(artifact.kind)}{' '}
+                  ·{' '}
+                  {artifact.updatedAt
+                    ? new Date(artifact.updatedAt).toLocaleDateString()
+                    : 'saved locally'}
+                </small>
+              </span>
+              <Icon name="chevron" />
+            </button>
+          ))}
+          {!shownArtifacts.length && (
+            <p className="artifact-list__no-results">No artifacts match this filter.</p>
+          )}
+        </div>
+        <div className="artifact-list__boundary">
+          <Icon name="shield" size={14} />
+          <span>Only {activeProject.name} appears here.</span>
+        </div>
       </aside>
-      <section className="artifact-stage">
-        <header>
+      <section className="artifact-stage artifact-stage--folio">
+        <header className="artifact-stage__header">
           <div>
-            <span className="eyebrow">{selected.kind} · active project only</span>
+            <span className="eyebrow">
+              {cap(selected.kind)} · {activeProject.name}
+            </span>
             <h1>{selected.name}</h1>
             <small>
-              {saved ? 'All changes saved' : 'Unsaved changes'} · revision{' '}
-              {selected.revisionNumber ?? 1}
+              {displayBytes(selected.size)}
+              {selected.revisionNumber ? ` · revision ${selected.revisionNumber}` : ''}
             </small>
           </div>
-          <div>
-            <button className="button" onClick={() => void workspace.exportArtifact(selected)}>
-              <Icon name="download" />
-              Export
-            </button>
+          <div className="artifact-header-actions">
+            <div className={cx('artifact-save-state', `is-${saveState}`)} role="status">
+              <span>
+                {saveState === 'dirty' || saveState === 'error' ? (
+                  '●'
+                ) : (
+                  <Icon name="check" size={13} />
+                )}
+              </span>
+              {saveState === 'saving'
+                ? 'Saving revision…'
+                : saveState === 'dirty'
+                  ? 'Draft has changes'
+                  : saveState === 'error'
+                    ? 'Draft preserved'
+                    : saveState === 'saved'
+                      ? 'Revision saved'
+                      : 'Saved locally'}
+            </div>
+            {!workspace.fixtureMode && (
+              <button
+                className="button artifact-export-button"
+                onClick={() => void exportCurrentRevision()}
+                disabled={
+                  exportState === 'exporting' ||
+                  saveState === 'dirty' ||
+                  saveState === 'saving' ||
+                  saveState === 'error'
+                }
+                title={
+                  saveState === 'dirty' || saveState === 'error'
+                    ? 'Save this revision before exporting'
+                    : undefined
+                }
+              >
+                <Icon
+                  name={
+                    exportState === 'success'
+                      ? 'check'
+                      : exportState === 'error'
+                        ? 'retry'
+                        : 'download'
+                  }
+                />
+                {exportState === 'exporting'
+                  ? 'Exporting…'
+                  : exportState === 'success'
+                    ? 'Exported'
+                    : exportState === 'error'
+                      ? 'Try export again'
+                      : 'Export'}
+              </button>
+            )}
           </div>
         </header>
+        {exportMessage && (
+          <div
+            className={cx('artifact-export-status', exportState === 'error' && 'is-error')}
+            role={exportState === 'error' ? 'alert' : 'status'}
+          >
+            {exportMessage}
+          </div>
+        )}
         <div className="artifact-tabs">
           {(['preview', 'edit', 'revisions'] as const).map((item) => (
             <button
@@ -3458,71 +4405,183 @@ function ArtifactsView() {
             >
               <Icon name={item === 'preview' ? 'eye' : item === 'edit' ? 'edit' : 'history'} />
               {cap(item)}
+              {item === 'revisions' && history.length > 0 && <span>{history.length}</span>}
             </button>
           ))}
         </div>
-        {tab === 'preview' && (
+        {loadError && (
+          <div className="artifact-inline-error" role="alert">
+            <Icon name="info" />
+            <span>{loadError}</span>
+            <button onClick={() => setSelectedId(null)}>Close artifact</button>
+          </div>
+        )}
+        {tab === 'preview' && !loadError && (
           <article className="document-preview">
-            <ArtifactPreview artifact={selected} content={content} />
+            {loadingArtifact ? (
+              <div className="artifact-loading">
+                <span />
+                <p>Opening the latest immutable revision…</p>
+              </div>
+            ) : (
+              <ArtifactPreview artifact={selected} content={content} />
+            )}
           </article>
         )}
         {tab === 'edit' && (
-          <div className="artifact-editor">
-            <div className="editor-gutter">
-              {content.split('\n').map((_, index) => (
-                <span key={index}>{index + 1}</span>
-              ))}
+          <div className="artifact-editor artifact-editor--folio">
+            <div className="artifact-editor__bar">
+              <span>
+                <Icon name="edit" size={14} /> Plain text editor
+              </span>
+              <span>
+                {content.split('\n').length} lines · {content.length.toLocaleString()} characters
+              </span>
             </div>
             <textarea
+              aria-label={`Edit ${selected.name}`}
               value={content}
               onChange={(event) => {
                 setContent(event.target.value);
-                setSaved(false);
+                setSaveState('dirty');
+                setSaveMessage('');
               }}
               spellCheck="false"
             />
+            {saveMessage && (
+              <p
+                className={cx('artifact-save-message', saveState === 'error' && 'is-error')}
+                role={saveState === 'error' ? 'alert' : 'status'}
+              >
+                {saveMessage}
+              </p>
+            )}
             <button
               className="save-float"
-              disabled={saved}
-              onClick={() => {
-                void workspace.reviseArtifact(selected, content);
-                setSaved(true);
-              }}
+              disabled={saveState !== 'dirty' && saveState !== 'error'}
+              onClick={() => void saveRevision()}
             >
-              <Icon name="check" />
-              {saved ? 'Saved' : 'Save revision'}
+              <Icon name={saveState === 'error' ? 'retry' : 'check'} />
+              {saveState === 'saving'
+                ? 'Saving…'
+                : saveState === 'dirty' || saveState === 'error'
+                  ? 'Save revision'
+                  : 'Saved'}
             </button>
           </div>
         )}
         {tab === 'revisions' && (
-          <div className="revision-view">
+          <div className="revision-view revision-view--folio">
             <div className="revision-timeline">
-              <button className="is-active">
-                <span>v{selected.revisionNumber ?? 1}</span>
-                <div>
-                  <strong>Current immutable revision</strong>
-                  <small>{selected.revisionId ?? 'Runtime-owned revision'}</small>
-                </div>
-              </button>
+              <header>
+                <span className="eyebrow">Immutable history</span>
+                <strong>
+                  {historyLoading
+                    ? 'Loading…'
+                    : `${history.length} saved ${history.length === 1 ? 'version' : 'versions'}`}
+                </strong>
+              </header>
+              {[...history].reverse().map((revision, index) => (
+                <button
+                  className={selectedRevisionId === revision.id ? 'is-active' : ''}
+                  onClick={() => void openRevision(revision)}
+                  key={revision.id}
+                >
+                  <span>v{revision.revisionNumber}</span>
+                  <div>
+                    <strong>{revision.changeSummary}</strong>
+                    <small>
+                      {index === 0 ? 'Current · ' : ''}
+                      {revision.createdAt
+                        ? new Date(revision.createdAt).toLocaleString()
+                        : 'Saved locally'}{' '}
+                      · {cap(revision.authorKind)}
+                    </small>
+                  </div>
+                </button>
+              ))}
             </div>
-            <div className="diff-preview">
-              <p>
-                Revision content is stored as an immutable encrypted object. Saving creates a new
-                sibling revision.
-              </p>
-              {workspace.error?.toLowerCase().includes('conflict') && (
-                <div className="callout" role="alert">
+            <div className="revision-inspector">
+              {revisionError ? (
+                <div className="artifact-inline-error" role="alert">
                   <Icon name="info" />
-                  <p>
-                    A newer revision exists. Your edit was preserved; reopen the latest revision and
-                    choose whether to create a sibling.
-                  </p>
+                  <span>{revisionError}</span>
+                </div>
+              ) : selectedRevisionId ? (
+                <>
+                  <header>
+                    <div>
+                      <span className="eyebrow">Read-only revision</span>
+                      <h3>
+                        {history.find((item) => item.id === selectedRevisionId)?.changeSummary ??
+                          'Saved revision'}
+                      </h3>
+                    </div>
+                    {selectedRevisionId !== selected.revisionId && (
+                      <button
+                        className="button"
+                        onClick={() =>
+                          void saveRevision(
+                            revisionContent,
+                            `Restored revision ${history.find((item) => item.id === selectedRevisionId)?.revisionNumber ?? ''}`,
+                          )
+                        }
+                        disabled={draftPending}
+                      >
+                        <Icon name="history" /> Restore as new revision
+                      </button>
+                    )}
+                  </header>
+                  <div className="revision-preview">
+                    <ArtifactPreview artifact={selected} content={revisionContent} />
+                  </div>
+                </>
+              ) : (
+                <div className="artifact-loading">
+                  <span />
+                  <p>Choose a saved revision to inspect it.</p>
                 </div>
               )}
             </div>
           </div>
         )}
       </section>
+      <FormDialog
+        open={createOpen}
+        eyebrow={`${activeProject.name} · new artifact`}
+        title="Add to this project folio"
+        description="Choose a useful starting shape. You can revise the content immediately after creation."
+        submitLabel="Create artifact"
+        pendingLabel="Creating…"
+        pending={createPending}
+        error={createError}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={createArtifact}
+      >
+        <label>
+          <span>Artifact name</span>
+          <input
+            autoFocus
+            value={createName}
+            maxLength={200}
+            onChange={(event) => setCreateName(event.target.value)}
+          />
+        </label>
+        <fieldset className="artifact-kind-picker">
+          <legend>Starting format</legend>
+          {artifactKinds.map((kind) => (
+            <button
+              type="button"
+              className={createKind === kind.id ? 'is-active' : ''}
+              onClick={() => chooseCreateKind(kind)}
+              key={kind.id}
+            >
+              <Icon name={kind.icon} />
+              <span>{kind.label}</span>
+            </button>
+          ))}
+        </fieldset>
+      </FormDialog>
     </main>
   );
 }
@@ -3538,9 +4597,18 @@ function MemoryView({
   const [query, setQuery] = useState('');
   const [scopeFilter, setScopeFilter] = useState('all');
   const [selected, setSelected] = useState<MemoryRecord | null>(records[0] ?? null);
-  const [off, setOff] = useState(false);
   const [memoryNotice, setMemoryNotice] = useState('');
+  const [memoryNoticeTone, setMemoryNoticeTone] = useState<'success' | 'error'>('success');
   const [undoForget, setUndoForget] = useState<MemoryRecord | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createKey, setCreateKey] = useState('');
+  const [createBody, setCreateBody] = useState('');
+  const [createKind, setCreateKind] = useState<'preference' | 'fact' | 'instruction' | 'decision'>(
+    'preference',
+  );
+  const [createPending, setCreatePending] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [recordPending, setRecordPending] = useState<string | null>(null);
   const [pendingMemoryAction, setPendingMemoryAction] = useState<null | {
     record: MemoryRecord;
     action: 'save' | 'enable';
@@ -3555,18 +4623,11 @@ function MemoryView({
       `${m.title} ${m.body} ${m.scope}`.toLowerCase().includes(query.toLowerCase()),
   );
   const createMemory = () => {
-    const key = window.prompt('Memory label')?.trim();
-    if (!key) return;
-    const body = window.prompt('What should Cupcake remember?')?.trim();
-    if (!body) return;
-    if (looksLikeCredential(body)) {
-      setMemoryNotice(
-        'Credentials cannot be saved as memory. Store provider keys only through the encrypted provider setup flow.',
-      );
-      return;
-    }
-    void workspace.remember({ key, content: body, kind: 'fact' });
-    setMemoryNotice('Memory saved. You can inspect its scope and provenance here.');
+    setCreateKey('');
+    setCreateBody('');
+    setCreateKind('preference');
+    setCreateError('');
+    setCreateOpen(true);
   };
   const update = (id: string, patch: Partial<MemoryRecord>) => {
     const next = records.map((m) => (m.id === id ? { ...m, ...patch } : m));
@@ -3581,71 +4642,86 @@ function MemoryView({
           <h2>Memory</h2>
           <p>Review what Cupcake carries between conversations. Nothing here is hidden.</p>
         </div>
-        <div className="memory-master">
-          <span>
-            <strong>Use memory</strong>
-            <small>{off ? 'Paused everywhere' : 'On in new chats'}</small>
-          </span>
-          <Toggle
-            checked={!off}
-            onChange={() => {
-              const next = !off;
-              setOff(next);
-              records.forEach((record) => void workspace.setMemoryEnabled(record, !next));
-            }}
-            label="Use memory"
-          />
-        </div>
+        {records.length > 0 && (
+          <div className="memory-master">
+            <span>
+              <strong>{records.filter((record) => record.enabled).length} available</strong>
+              <small>{records.length} saved memories</small>
+            </span>
+          </div>
+        )}
       </div>
-      <div className="toolbar">
-        <div className="search-field">
-          <Icon name="search" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search memory"
-          />
+      {records.length > 0 && (
+        <div className="toolbar">
+          <div className="search-field">
+            <Icon name="search" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search memory"
+              aria-label="Search memory"
+            />
+          </div>
+          <label className="select-control">
+            <Icon name="filter" />
+            <span className="sr-only">Memory scope</span>
+            <select
+              aria-label="Memory scope"
+              value={scopeFilter}
+              onChange={(event) => setScopeFilter(event.target.value)}
+            >
+              <option value="all">All scopes</option>
+              {[...new Set(records.map((record) => record.scope))].map((scope) => (
+                <option value={scope} key={scope}>
+                  {scope}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="button button--primary" onClick={createMemory}>
+            <Icon name="plus" />
+            Add memory
+          </button>
         </div>
-        <label className="select-control">
-          <Icon name="filter" />
-          <span className="sr-only">Memory scope</span>
-          <select
-            aria-label="Memory scope"
-            value={scopeFilter}
-            onChange={(event) => setScopeFilter(event.target.value)}
-          >
-            <option value="all">All scopes</option>
-            {[...new Set(records.map((record) => record.scope))].map((scope) => (
-              <option value={scope} key={scope}>
-                {scope}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="button button--primary" onClick={createMemory}>
-          <Icon name="plus" />
-          Add memory
-        </button>
-      </div>
+      )}
       {memoryNotice && (
-        <div className="callout" role="status">
-          <Icon name="info" />
+        <div
+          className={cx('interaction-notice', memoryNoticeTone === 'error' && 'is-error')}
+          role={memoryNoticeTone === 'error' ? 'alert' : 'status'}
+        >
+          <Icon name={memoryNoticeTone === 'error' ? 'info' : 'check'} size={15} />
           <p>{memoryNotice}</p>
           {undoForget && (
             <button
               className="text-button"
+              disabled={recordPending === 'restore'}
               onClick={() => {
-                void workspace.remember({
-                  key: undoForget.title,
-                  content: undoForget.body,
-                  kind: undoForget.type.toLowerCase(),
-                });
-                setRecords([undoForget, ...records]);
-                setUndoForget(null);
-                setMemoryNotice('Memory restored as a new immutable revision.');
+                void (async () => {
+                  setRecordPending('restore');
+                  try {
+                    await workspace.remember({
+                      key: undoForget.title,
+                      content: undoForget.body,
+                      kind: undoForget.type.toLowerCase(),
+                    });
+                    setRecords([undoForget, ...records]);
+                    setUndoForget(null);
+                    setMemoryNoticeTone('success');
+                    setMemoryNotice('Memory restored as a new immutable revision.');
+                  } catch (reason) {
+                    setMemoryNoticeTone('error');
+                    setMemoryNotice(
+                      reason instanceof Error
+                        ? reason.message
+                        : 'The memory could not be restored.',
+                    );
+                  } finally {
+                    setRecordPending(null);
+                  }
+                })();
               }}
             >
-              Undo forget
+              {recordPending === 'restore' ? 'Restoring…' : 'Undo forget'}
             </button>
           )}
         </div>
@@ -3717,6 +4793,7 @@ function MemoryView({
                     const current = records.find((record) => record.id === selected.id);
                     if (!current) return;
                     if (looksLikeCredential(current.body)) {
+                      setMemoryNoticeTone('error');
                       setMemoryNotice('Credential-shaped text was not saved to memory.');
                       return;
                     }
@@ -3724,8 +4801,22 @@ function MemoryView({
                       setPendingMemoryAction({ record: current, action: 'save' });
                       return;
                     }
-                    void workspace.updateMemory(current);
-                    setMemoryNotice('Memory revision saved.');
+                    setRecordPending(current.id);
+                    void workspace
+                      .updateMemory(current)
+                      .then(() => {
+                        setMemoryNoticeTone('success');
+                        setMemoryNotice('Memory revision saved.');
+                      })
+                      .catch((reason) => {
+                        setMemoryNoticeTone('error');
+                        setMemoryNotice(
+                          reason instanceof Error
+                            ? reason.message
+                            : 'The memory could not be saved.',
+                        );
+                      })
+                      .finally(() => setRecordPending(null));
                   }}
                 />
               </label>
@@ -3751,24 +4842,26 @@ function MemoryView({
               </div>
               <div className="detail-row">
                 <span>
-                  <strong>Enabled</strong>
-                  <small>Include when relevant</small>
+                  <strong>{selected.enabled ? 'Available' : 'Needs review'}</strong>
+                  <small>
+                    {selected.enabled
+                      ? 'CupcakeAI can include this memory when relevant'
+                      : 'This candidate is not used until you approve it'}
+                  </small>
                 </span>
-                <Toggle
-                  checked={selected.enabled}
-                  onChange={() => {
-                    if (
-                      !selected.enabled &&
-                      (selected.source === 'Suggested memory' || selected.type === 'Instruction')
-                    ) {
-                      setPendingMemoryAction({ record: selected, action: 'enable' });
-                      return;
-                    }
-                    update(selected.id, { enabled: !selected.enabled });
-                    void workspace.setMemoryEnabled(selected, !selected.enabled);
-                  }}
-                  label="Enable memory"
-                />
+                {selected.enabled ? (
+                  <span className="memory-availability" aria-label="Memory is available">
+                    <Icon name="check" size={15} /> Ready
+                  </span>
+                ) : (
+                  <button
+                    className="button"
+                    disabled={recordPending === selected.id}
+                    onClick={() => setPendingMemoryAction({ record: selected, action: 'enable' })}
+                  >
+                    Use this memory
+                  </button>
+                )}
               </div>
               <section className="memory-source">
                 <h3>Source and history</h3>
@@ -3776,22 +4869,39 @@ function MemoryView({
                   <Icon name="chat" />
                   <span>
                     <strong>{selected.source}</strong>
-                    <small>Captured Aug 28 · unchanged</small>
+                    <small>Runtime provenance · revision history is preserved</small>
                   </span>
                 </div>
               </section>
               <footer>
                 <button
                   className="button"
+                  disabled={recordPending === selected.id}
                   onClick={() => {
-                    const next = { ...selected, pinned: !selected.pinned };
-                    update(selected.id, { pinned: next.pinned });
-                    void workspace.updateMemory(next);
-                    setMemoryNotice(
-                      next.pinned
-                        ? 'Memory pinned as a new immutable revision.'
-                        : 'Memory unpinned as a new immutable revision.',
-                    );
+                    void (async () => {
+                      const next = { ...selected, pinned: !selected.pinned };
+                      setRecordPending(selected.id);
+                      setMemoryNotice('');
+                      try {
+                        await workspace.updateMemory(next);
+                        update(selected.id, { pinned: next.pinned });
+                        setMemoryNoticeTone('success');
+                        setMemoryNotice(
+                          next.pinned
+                            ? 'Memory pinned as a new immutable revision.'
+                            : 'Memory unpinned as a new immutable revision.',
+                        );
+                      } catch (reason) {
+                        setMemoryNoticeTone('error');
+                        setMemoryNotice(
+                          reason instanceof Error
+                            ? reason.message
+                            : 'The memory could not be updated.',
+                        );
+                      } finally {
+                        setRecordPending(null);
+                      }
+                    })();
                   }}
                 >
                   <Icon name="pin" />
@@ -3799,12 +4909,31 @@ function MemoryView({
                 </button>
                 <button
                   className="button button--danger"
+                  disabled={recordPending === selected.id}
                   onClick={() => {
-                    setRecords(records.filter((m) => m.id !== selected.id));
-                    setUndoForget(selected);
-                    setMemoryNotice('Memory forgotten. A tombstone preserves the audit history.');
-                    void workspace.forgetMemory(selected);
-                    setSelected(null);
+                    void (async () => {
+                      setRecordPending(selected.id);
+                      setMemoryNotice('');
+                      try {
+                        await workspace.forgetMemory(selected);
+                        setRecords(records.filter((m) => m.id !== selected.id));
+                        setUndoForget(selected);
+                        setMemoryNoticeTone('success');
+                        setMemoryNotice(
+                          'Memory forgotten. A tombstone preserves the audit history.',
+                        );
+                        setSelected(null);
+                      } catch (reason) {
+                        setMemoryNoticeTone('error');
+                        setMemoryNotice(
+                          reason instanceof Error
+                            ? reason.message
+                            : 'The memory could not be forgotten.',
+                        );
+                      } finally {
+                        setRecordPending(null);
+                      }
+                    })();
                   }}
                 >
                   <Icon name="trash" />
@@ -3836,6 +4965,7 @@ function MemoryView({
                 className="icon-button"
                 onClick={() => setPendingMemoryAction(null)}
                 aria-label="Cancel"
+                disabled={recordPending === pendingMemoryAction.record.id}
               >
                 <Icon name="x" />
               </button>
@@ -3850,30 +4980,156 @@ function MemoryView({
                 <small>Source: {pendingMemoryAction.record.source}</small>
               </div>
             </div>
+            {memoryNotice && memoryNoticeTone === 'error' && (
+              <p className="form-dialog__error" role="alert">
+                {memoryNotice}
+              </p>
+            )}
             <footer>
-              <button className="button" onClick={() => setPendingMemoryAction(null)}>
+              <button
+                className="button"
+                onClick={() => setPendingMemoryAction(null)}
+                disabled={recordPending === pendingMemoryAction.record.id}
+              >
                 Cancel
               </button>
               <span />
               <button
                 className="button button--primary"
+                disabled={recordPending === pendingMemoryAction.record.id}
                 onClick={() => {
-                  if (pendingMemoryAction.action === 'enable') {
-                    update(pendingMemoryAction.record.id, { enabled: true });
-                    void workspace.setMemoryEnabled(pendingMemoryAction.record, true);
-                  } else {
-                    void workspace.updateMemory(pendingMemoryAction.record);
-                  }
-                  setMemoryNotice('Memory choice saved with provenance.');
-                  setPendingMemoryAction(null);
+                  void (async () => {
+                    const { record, action } = pendingMemoryAction;
+                    setRecordPending(record.id);
+                    setMemoryNotice('');
+                    try {
+                      if (action === 'enable') {
+                        await workspace.setMemoryEnabled(record, true);
+                        update(record.id, { enabled: true });
+                      } else {
+                        await workspace.updateMemory(record);
+                      }
+                      setMemoryNoticeTone('success');
+                      setMemoryNotice('Memory choice saved with provenance.');
+                      setPendingMemoryAction(null);
+                    } catch (reason) {
+                      setMemoryNoticeTone('error');
+                      setMemoryNotice(
+                        reason instanceof Error
+                          ? reason.message
+                          : 'The memory could not be updated.',
+                      );
+                    } finally {
+                      setRecordPending(null);
+                    }
+                  })();
                 }}
               >
-                Confirm
+                {recordPending === pendingMemoryAction.record.id ? 'Saving…' : 'Confirm'}
               </button>
             </footer>
           </section>
         </div>
       )}
+      <FormDialog
+        open={createOpen}
+        eyebrow="Inspectable memory"
+        title="Add a memory"
+        description={
+          workspace.activeProjectId
+            ? 'This memory will stay with the active project. You can edit, pause, or forget it at any time.'
+            : 'This memory will be available across your workspace. You can edit, pause, or forget it at any time.'
+        }
+        submitLabel="Save memory"
+        pendingLabel="Saving memory…"
+        pending={createPending}
+        error={createError}
+        onClose={() => {
+          if (createPending) return;
+          setCreateOpen(false);
+          setCreateError('');
+        }}
+        onSubmit={async () => {
+          const key = createKey.trim();
+          const body = createBody.trim();
+          if (!key) {
+            setCreateError('Give this memory a short label.');
+            return;
+          }
+          if (!body) {
+            setCreateError('Enter what CupcakeAI should remember.');
+            return;
+          }
+          if (looksLikeCredential(`${key}\n${body}`)) {
+            setCreateError(
+              'Credentials cannot be saved as memory. Store provider keys only through the encrypted provider setup flow.',
+            );
+            return;
+          }
+          setCreatePending(true);
+          setCreateError('');
+          try {
+            await workspace.remember({ key, content: body, kind: createKind });
+            if (workspace.fixtureMode) {
+              setRecords([
+                {
+                  id: `preview-memory-${Date.now()}`,
+                  type: cap(createKind) as MemoryRecord['type'],
+                  title: key,
+                  body,
+                  scope: 'About me',
+                  source: 'Preview memory',
+                  confidence: 1,
+                  enabled: true,
+                },
+                ...records,
+              ]);
+            }
+            setCreateOpen(false);
+            setMemoryNoticeTone('success');
+            setMemoryNotice('Memory saved. You can inspect its scope and provenance here.');
+          } catch (reason) {
+            setCreateError(
+              reason instanceof Error ? reason.message : 'The memory could not be saved.',
+            );
+          } finally {
+            setCreatePending(false);
+          }
+        }}
+      >
+        <label>
+          Label
+          <input
+            autoFocus
+            value={createKey}
+            onChange={(event) => setCreateKey(event.target.value)}
+            placeholder="For example: Writing preference"
+            maxLength={256}
+          />
+        </label>
+        <label>
+          Memory type
+          <select
+            value={createKind}
+            onChange={(event) => setCreateKind(event.target.value as typeof createKind)}
+          >
+            <option value="preference">Preference</option>
+            <option value="fact">Fact</option>
+            <option value="instruction">Instruction</option>
+            <option value="decision">Decision</option>
+          </select>
+        </label>
+        <label>
+          What should CupcakeAI remember?
+          <textarea
+            value={createBody}
+            onChange={(event) => setCreateBody(event.target.value)}
+            placeholder="Write the exact detail CupcakeAI should carry forward"
+            rows={6}
+          />
+          <small>Provider keys and other credential-shaped text are blocked here.</small>
+        </label>
+      </FormDialog>
     </main>
   );
 }
@@ -3987,6 +5243,9 @@ function providerDialogId(provider: string) {
     Mistral: 'mistral',
     Cohere: 'cohere',
     'NVIDIA NIM': 'nvidia-nim',
+    Groq: 'groq',
+    OpenRouter: 'openrouter',
+    'Cloudflare Workers AI': 'cloudflare',
   };
   return ids[provider] ?? 'openai-compatible';
 }
@@ -4001,6 +5260,9 @@ function ModelsView({
   openProvider: (provider: string) => void;
 }) {
   const workspace = useWorkspace();
+  const stableModelsRef = useRef(models);
+  if (models.length) stableModelsRef.current = models;
+  const catalogModels = models.length ? models : stableModelsRef.current;
   const [modelQuery, setModelQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<ModelTask[]>([]);
@@ -4012,6 +5274,9 @@ function ModelsView({
   const [communityModels, setCommunityModels] = useState<ModelDescriptor[]>([]);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityError, setCommunityError] = useState<string | null>(null);
+  const [communityCursor, setCommunityCursor] = useState<string | undefined>();
+  const [communityHasMore, setCommunityHasMore] = useState(false);
+  const [catalogVisibleCount, setCatalogVisibleCount] = useState(12);
   const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [pendingRemove, setPendingRemove] = useState<ModelDescriptor | null>(null);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
@@ -4040,6 +5305,8 @@ function ModelsView({
   useEffect(() => {
     if (!includeCommunity || modelQuery.trim().length < 2) {
       setCommunityModels([]);
+      setCommunityCursor(undefined);
+      setCommunityHasMore(false);
       setCommunityLoading(false);
       setCommunityError(null);
       return;
@@ -4049,10 +5316,12 @@ function ModelsView({
     const timer = window.setTimeout(
       () => {
         void workspace
-          .discoverCommunityModels(modelQuery, 48)
-          .then((items) => {
+          .discoverCommunityModels(modelQuery, { limit: 36 })
+          .then((page) => {
             if (!active) return;
-            setCommunityModels(items);
+            setCommunityModels(page.models);
+            setCommunityCursor(page.nextCursor);
+            setCommunityHasMore(page.hasMore);
             setCommunityError(null);
           })
           .catch(() => {
@@ -4073,9 +5342,21 @@ function ModelsView({
     };
   }, [includeCommunity, modelQuery, workspace.discoverCommunityModels]);
 
+  useEffect(() => {
+    setCatalogVisibleCount(12);
+  }, [
+    modelQuery,
+    selectedTasks,
+    selectedSizes,
+    selectedLocations,
+    publisherFilter,
+    availableOnly,
+    includeCommunity,
+  ]);
+
   const rankedModels = useMemo(
     () =>
-      [...models, ...communityModels]
+      [...catalogModels, ...communityModels]
         .filter((model) => model.status === 'community' || modelIsCurated(model))
         .map((model) => {
           const complete = completeModelDescriptor(model);
@@ -4097,7 +5378,7 @@ function ModelsView({
           }
           return a.name.localeCompare(b.name);
         }),
-    [communityModels, models, workspace.hardware],
+    [catalogModels, communityModels, workspace.hardware],
   );
   const publishers = [...new Set(rankedModels.map(publisherForModel))].sort((a, b) =>
     a.localeCompare(b),
@@ -4117,10 +5398,14 @@ function ModelsView({
       searchable.includes(modelQuery.trim().toLowerCase())
     );
   });
-  const shown = filteredModels;
-  const nimModels = models.filter(
+  const shown = filteredModels.slice(0, catalogVisibleCount);
+  const selectedIntent = selectedTasks.length === 1 ? selectedTasks[0] : undefined;
+  const recommendations = recommendModels(rankedModels, selectedIntent, 4);
+  const selectedModel = rankedModels.find((model) => model.selected);
+  const nimModels = catalogModels.filter(
     (model) => model.provider === 'NVIDIA NIM' && model.status !== 'setup' && modelIsCurated(model),
   );
+  const nimConfigured = Boolean(workspace.providers['nvidia-nim']);
   const installedLocal = rankedModels.find(
     (model) =>
       model.route === 'Local' &&
@@ -4145,6 +5430,37 @@ function ModelsView({
     setPublisherFilter('all');
     setAvailableOnly(false);
     setIncludeCommunity(false);
+  };
+  const loadMoreCatalog = async () => {
+    if (catalogVisibleCount < filteredModels.length) {
+      setCatalogVisibleCount((count) => count + 12);
+      return;
+    }
+    if (!includeCommunity || !communityHasMore || !communityCursor || communityLoading) return;
+    setCommunityLoading(true);
+    setCommunityError(null);
+    try {
+      const page = await workspace.discoverCommunityModels(modelQuery, {
+        limit: 36,
+        cursor: communityCursor,
+      });
+      setCommunityModels((current) => {
+        const byId = new Map(current.map((model) => [model.id, model]));
+        page.models.forEach((model) => byId.set(model.id, model));
+        return [...byId.values()];
+      });
+      setCommunityCursor(page.nextCursor);
+      setCommunityHasMore(page.hasMore);
+      setCatalogVisibleCount((count) => count + 12);
+    } catch (reason) {
+      setCommunityError(
+        reason instanceof Error
+          ? reason.message
+          : 'Hugging Face did not return the next page. Try again.',
+      );
+    } finally {
+      setCommunityLoading(false);
+    }
   };
   const toggleListValue = <T extends string>(
     value: T,
@@ -4286,20 +5602,48 @@ function ModelsView({
 
   return (
     <main className="page models-page">
-      <div className="page-intro">
-        <div>
-          <p className="eyebrow">A small, qualified model collection</p>
-          <h2>Models</h2>
+      <section className="model-atlas-hero" aria-labelledby="model-atlas-title">
+        <div className="model-atlas-hero__copy">
+          <p className="eyebrow">Model atlas · your routes, mapped clearly</p>
+          <h2 id="model-atlas-title">Models</h2>
           <p>
-            Choose what you want to do and where it should run. Cupcake shows a short list that fits
-            instead of making you decode a giant catalog.
+            Start with the work. Cupcake compares privacy, provider access, device fit, and cost,
+            while keeping the wider model world close when you want it.
           </p>
+          <div className="model-atlas-legend" aria-label="Model route legend">
+            <span>
+              <i className="model-atlas-legend__local" /> On this computer
+            </span>
+            <span>
+              <i className="model-atlas-legend__cloud" /> Hosted provider
+            </span>
+            <span>
+              <Icon name="check" size={12} /> Ready now
+            </span>
+          </div>
         </div>
-        <div className="page-intro__actions">
+        <div className="model-atlas-current">
+          <span className="eyebrow">Current default</span>
+          {selectedModel ? (
+            <>
+              <div>
+                <PublisherLogo publisher={publisherForModel(selectedModel)} />
+                <span>
+                  <strong>{selectedModel.name}</strong>
+                  <small>{modelRouteDescription(selectedModel)}</small>
+                </span>
+              </div>
+              <p>{modelAvailabilityDetail(selectedModel)}</p>
+            </>
+          ) : (
+            <p>Choose a ready model below. Cupcake will never switch routes silently.</p>
+          )}
+        </div>
+        <div className="model-atlas-hero__actions">
           <button
             className="button"
             disabled={workspace.busy}
-            onClick={() => void workspace.refresh()}
+            onClick={() => void workspace.refresh(true)}
           >
             <Icon name="retry" />
             {workspace.busy ? 'Refreshing…' : 'Refresh catalog'}
@@ -4309,13 +5653,13 @@ function ModelsView({
             Add provider
           </button>
         </div>
-      </div>
+      </section>
 
       <section className="model-finder" aria-labelledby="model-finder-title">
         <header>
           <div>
-            <span className="eyebrow">Start with the job, not a model name</span>
-            <h3 id="model-finder-title">What do you want Cupcake to help with?</h3>
+            <span className="eyebrow">Choose an intent</span>
+            <h3 id="model-finder-title">What are you making today?</h3>
           </div>
           {selectedTasks.length > 0 && (
             <button className="text-button" onClick={() => setSelectedTasks([])}>
@@ -4341,6 +5685,53 @@ function ModelsView({
               <Icon name={selectedTasks.includes(option.id) ? 'check' : 'chevron'} size={14} />
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="model-recommendations" aria-labelledby="model-recommendations-title">
+        <header>
+          <div>
+            <span className="eyebrow">A useful starting set</span>
+            <h3 id="model-recommendations-title">
+              {selectedIntent
+                ? `Recommended for ${MODEL_TASK_OPTIONS.find((item) => item.id === selectedIntent)?.label.toLowerCase()}`
+                : 'Recommended across your routes'}
+            </h3>
+          </div>
+          <p>Up to four choices, ranked by readiness, task fit, and this computer.</p>
+        </header>
+        <div className="model-recommendation-track">
+          {recommendations.map((model) => {
+            const publisher = publisherForModel(model);
+            return (
+              <article
+                className={cx('model-recommendation', model.selected && 'is-selected')}
+                key={model.id}
+              >
+                <header>
+                  <PublisherLogo publisher={publisher} />
+                  <span>
+                    <small>
+                      {publisher}
+                      {publisher !== model.provider ? ` · via ${model.provider}` : ''}
+                    </small>
+                    <strong>{model.name}</strong>
+                  </span>
+                </header>
+                <p>{recommendationReason(model, selectedIntent)}</p>
+                <div>
+                  <span>
+                    <Icon name={model.route === 'Local' ? 'local' : 'cloud'} size={13} />{' '}
+                    {modelRouteDescription(model)}
+                  </span>
+                  <span>
+                    <Icon name="check" size={13} /> {modelAvailabilityDetail(model)}
+                  </span>
+                </div>
+                <footer>{primaryAction(model)}</footer>
+              </article>
+            );
+          })}
         </div>
       </section>
 
@@ -4394,6 +5785,9 @@ function ModelsView({
                     ? `${formatStorage(workspace.hardware.vramBytes)} VRAM`
                     : 'Dedicated VRAM not reported'}
                 </span>
+                {workspace.hardware?.availableVramBytes !== undefined && (
+                  <span>{formatStorage(workspace.hardware.availableVramBytes)} VRAM free now</span>
+                )}
                 <span>
                   {workspace.hardware?.diskAvailableBytes
                     ? `${formatStorage(workspace.hardware.diskAvailableBytes)} disk free`
@@ -4423,17 +5817,22 @@ function ModelsView({
               <span>
                 <strong>
                   {workspace.hardware?.vramBytes
-                    ? formatStorage(workspace.hardware.vramBytes)
+                    ? workspace.hardware.availableVramBytes !== undefined
+                      ? formatStorage(workspace.hardware.availableVramBytes)
+                      : formatStorage(workspace.hardware.vramBytes)
                     : '—'}
                 </strong>{' '}
-                detected VRAM
+                {workspace.hardware?.availableVramBytes !== undefined
+                  ? `free of ${formatStorage(workspace.hardware.vramBytes)}`
+                  : 'detected VRAM'}
               </span>
               <div>
                 <i
                   style={{
                     width:
-                      workspace.hardware?.vramBytes && workspace.hardware?.ramBytes
-                        ? `${Math.min(100, Math.round((workspace.hardware.vramBytes / workspace.hardware.ramBytes) * 100))}%`
+                      workspace.hardware?.vramBytes &&
+                      workspace.hardware?.availableVramBytes !== undefined
+                        ? `${Math.min(100, Math.round((workspace.hardware.availableVramBytes / workspace.hardware.vramBytes) * 100))}%`
                         : '0%',
                   }}
                 />
@@ -4516,7 +5915,7 @@ function ModelsView({
                         disabled={runtime.compatible === false || workspace.busy}
                         onClick={() => setPendingRuntime(runtime)}
                       >
-                        Review pack
+                        Install pack
                       </button>
                     )}
                   </footer>
@@ -4529,7 +5928,7 @@ function ModelsView({
 
       <div className="toolbar model-toolbar">
         <label className="filter-field model-search-field">
-          <span>Find within the shortlist</span>
+          <span>Search the catalog</span>
           <div className="search-field">
             <Icon name="search" />
             <input
@@ -4561,15 +5960,25 @@ function ModelsView({
       </div>
       <div className={cx('model-catalog-summary', communityError && 'is-error')} aria-live="polite">
         <span>
-          <strong>{shown.length}</strong> carefully selected matches
+          <strong>{filteredModels.length}</strong> matching catalog entries
         </span>
-        <span>
-          <strong>{nimModels.length}</strong> curated NVIDIA NIM routes available
-        </span>
+        {nimModels.length > 0 ? (
+          <span>
+            <strong>{nimModels.length}</strong> curated NVIDIA NIM routes available
+          </span>
+        ) : nimConfigured ? (
+          <span>NVIDIA NIM connected · refresh the catalog to check current routes</span>
+        ) : (
+          <span>
+            <strong>0</strong> curated NVIDIA NIM routes available
+          </span>
+        )}
         {includeCommunity && (
           <span>
-            <strong>{communityLoading ? '…' : communityModels.length}</strong> optional community
-            results
+            <strong>
+              {communityLoading && !communityModels.length ? '…' : communityModels.length}
+            </strong>{' '}
+            Hugging Face cards loaded{communityHasMore ? ' · more available' : ''}
           </span>
         )}
         {communityError && <span>{communityError}</span>}
@@ -4579,7 +5988,7 @@ function ModelsView({
           <header>
             <div>
               <span className="eyebrow">Plain-language choices</span>
-              <h3>Refine the shortlist</h3>
+              <h3>Refine the catalog</h3>
             </div>
             <button type="button" className="text-button" onClick={clearAdvancedFilters}>
               Reset all
@@ -4870,6 +6279,25 @@ function ModelsView({
               );
             })}
           </div>
+          {(shown.length < filteredModels.length || communityHasMore) && (
+            <div className="model-catalog-more">
+              <span>
+                Showing {shown.length} of {filteredModels.length} loaded matches
+                {communityHasMore ? ' · Hugging Face has another page' : ''}
+              </span>
+              <button
+                className="button"
+                disabled={communityLoading}
+                onClick={() => void loadMoreCatalog()}
+              >
+                {communityLoading
+                  ? 'Loading more…'
+                  : shown.length < filteredModels.length
+                    ? 'Show more results'
+                    : 'Load more from Hugging Face'}
+              </button>
+            </div>
+          )}
         </>
       ) : (
         <section className="empty-state model-empty">
@@ -4903,7 +6331,7 @@ function ModelsView({
             <header>
               <div>
                 <span className="eyebrow">Signed Cupcake Local catalog</span>
-                <h2 id="model-install-title">Review {pendingDownload.name}</h2>
+                <h2 id="model-install-title">Install {pendingDownload.name}</h2>
               </div>
               <button className="icon-button" onClick={closeInstall} aria-label="Cancel install">
                 <Icon name="x" />
@@ -4976,7 +6404,7 @@ function ModelsView({
                   closeInstall();
                 }}
               >
-                Start verified download
+                Install model
               </button>
             </footer>
           </section>
@@ -5136,9 +6564,17 @@ function ToolsView({
   const [mcpTransport, setMcpTransport] = useState<'stdio' | 'streamable-http'>('streamable-http');
   const [mcpEndpoint, setMcpEndpoint] = useState('');
   const [mcpError, setMcpError] = useState('');
+  const [mcpPending, setMcpPending] = useState(false);
   const [toolQuery, setToolQuery] = useState('');
   const [policyOpen, setPolicyOpen] = useState(false);
   const [freedomPhrase, setFreedomPhrase] = useState('');
+  const [policyPending, setPolicyPending] = useState(false);
+  const [policyError, setPolicyError] = useState('');
+  const [pendingToolAction, setPendingToolAction] = useState<string | null>(null);
+  const [toolNotice, setToolNotice] = useState<{
+    tone: 'pending' | 'success' | 'error';
+    text: string;
+  } | null>(null);
   const shown = tools.filter(
     (tool) =>
       (tab === 'all' || tool.kind === tab) &&
@@ -5146,13 +6582,32 @@ function ToolsView({
         .toLowerCase()
         .includes(toolQuery.trim().toLowerCase()),
   );
-  const toggle = (id: string) => {
+  const toggle = async (id: string) => {
     const tool = tools.find((item) => item.id === id);
     if (!tool) return;
-    setTools(tools.map((item) => (item.id === id ? { ...item, enabled: !item.enabled } : item)));
-    void workspace.setToolEnabled(id, !tool.enabled);
+    const nextEnabled = !tool.enabled;
+    setPendingToolAction(`toggle:${id}`);
+    setToolNotice({
+      tone: 'pending',
+      text: `${nextEnabled ? 'Enabling' : 'Disabling'} ${tool.name}…`,
+    });
+    try {
+      await workspace.setToolEnabled(id, nextEnabled);
+      setTools(tools.map((item) => (item.id === id ? { ...item, enabled: nextEnabled } : item)));
+      setToolNotice({
+        tone: 'success',
+        text: `${tool.name} is ${nextEnabled ? 'enabled' : 'disabled'}.`,
+      });
+    } catch (reason) {
+      setToolNotice({
+        tone: 'error',
+        text: reason instanceof Error ? reason.message : `${tool.name} could not be updated.`,
+      });
+    } finally {
+      setPendingToolAction(null);
+    }
   };
-  const connectMcp = () => {
+  const connectMcp = async () => {
     if (!mcpName.trim() || !mcpEndpoint.trim()) {
       setMcpError('Name and destination are required.');
       return;
@@ -5161,9 +6616,84 @@ function ToolsView({
       setMcpError('Remote MCP requires an HTTPS origin.');
       return;
     }
-    void workspace
-      .connectMcp({ name: mcpName.trim(), transport: mcpTransport, endpoint: mcpEndpoint.trim() })
-      .then(() => setMcpOpen(false));
+    setMcpPending(true);
+    setMcpError('');
+    try {
+      await workspace.connectMcp({
+        name: mcpName.trim(),
+        transport: mcpTransport,
+        endpoint: mcpEndpoint.trim(),
+      });
+      const connectedName = mcpName.trim();
+      setMcpOpen(false);
+      setMcpName('');
+      setMcpEndpoint('');
+      setToolNotice({ tone: 'success', text: `${connectedName} connected.` });
+    } catch (reason) {
+      setMcpError(
+        reason instanceof Error ? reason.message : 'The MCP server could not be connected.',
+      );
+    } finally {
+      setMcpPending(false);
+    }
+  };
+  const inspectTool = async (tool: ToolDescriptor) => {
+    setPendingToolAction(`inspect:${tool.id}`);
+    setToolNotice({ tone: 'pending', text: `Inspecting ${tool.name} access…` });
+    try {
+      await workspace.preflightTool(tool);
+      setToolNotice({
+        tone: 'success',
+        text: `${tool.name} access details were added to broker audit activity.`,
+      });
+    } catch (reason) {
+      setToolNotice({
+        tone: 'error',
+        text:
+          reason instanceof Error ? reason.message : `${tool.name} access could not be inspected.`,
+      });
+    } finally {
+      setPendingToolAction(null);
+    }
+  };
+  const disconnectTool = async (tool: ToolDescriptor) => {
+    setPendingToolAction(`disconnect:${tool.id}`);
+    setToolNotice({ tone: 'pending', text: `Disconnecting ${tool.name}…` });
+    try {
+      await workspace.disconnectMcp(tool.id);
+      setTools(tools.filter((item) => item.id !== tool.id));
+      setToolNotice({ tone: 'success', text: `${tool.name} disconnected.` });
+    } catch (reason) {
+      setToolNotice({
+        tone: 'error',
+        text: reason instanceof Error ? reason.message : `${tool.name} could not be disconnected.`,
+      });
+    } finally {
+      setPendingToolAction(null);
+    }
+  };
+  const changePolicy = async (mode: 'guarded' | 'full-freedom') => {
+    if (mode === 'full-freedom' && freedomPhrase !== 'FULL FREEDOM') {
+      setPolicyError('Type FULL FREEDOM exactly to enable this policy.');
+      return;
+    }
+    setPolicyPending(true);
+    setPolicyError('');
+    try {
+      await workspace.updateSettings({ permissionMode: mode });
+      setFreedomPhrase('');
+      setToolNotice({
+        tone: 'success',
+        text:
+          mode === 'guarded' ? 'Guarded permission policy is active.' : 'Full freedom is active.',
+      });
+    } catch (reason) {
+      setPolicyError(
+        reason instanceof Error ? reason.message : 'The permission policy could not be updated.',
+      );
+    } finally {
+      setPolicyPending(false);
+    }
   };
   return (
     <main className="page">
@@ -5173,7 +6703,13 @@ function ToolsView({
           <h2>Tools</h2>
           <p>Cupcake chooses tools naturally in chat. You decide what each one can reach.</p>
         </div>
-        <button className="button button--primary" onClick={() => setMcpOpen(true)}>
+        <button
+          className="button button--primary"
+          onClick={() => {
+            setMcpError('');
+            setMcpOpen(true);
+          }}
+        >
           <Icon name="plus" />
           Connect MCP server
         </button>
@@ -5197,10 +6733,31 @@ function ToolsView({
               : 'Deletion, external communication, purchases, installation, system changes, and unsandboxed execution require a fresh approval.'}
           </p>
         </div>
-        <button className="text-button" onClick={() => setPolicyOpen(true)}>
+        <button
+          className="text-button"
+          onClick={() => {
+            setPolicyError('');
+            setFreedomPhrase('');
+            setPolicyOpen(true);
+          }}
+        >
           Permission policy <Icon name="chevron" />
         </button>
       </div>
+      {toolNotice && (
+        <div
+          className={cx('interaction-notice', `is-${toolNotice.tone}`)}
+          role={toolNotice.tone === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          {toolNotice.tone === 'pending' ? (
+            <span className="pulse-dot" aria-hidden="true" />
+          ) : (
+            <Icon name={toolNotice.tone === 'error' ? 'info' : 'check'} size={15} />
+          )}
+          <p>{toolNotice.text}</p>
+        </div>
+      )}
       <div className="toolbar">
         <div className="segmented">
           {(['all', 'native', 'mcp', 'custom'] as const).map((t) => (
@@ -5221,7 +6778,11 @@ function ToolsView({
       </div>
       <div className="tool-grid">
         {shown.map((tool) => (
-          <article className={cx('registry-card', !tool.enabled && 'is-disabled')} key={tool.id}>
+          <article
+            className={cx('registry-card', !tool.enabled && 'is-disabled')}
+            key={tool.id}
+            aria-busy={pendingToolAction?.endsWith(`:${tool.id}`)}
+          >
             <header>
               <span className={cx('tool-logo', tool.kind === 'mcp' && 'is-mcp')}>
                 <Icon
@@ -5244,8 +6805,11 @@ function ToolsView({
               </div>
               <Toggle
                 checked={tool.enabled}
-                onChange={() => toggle(tool.id)}
+                onChange={() => {
+                  void toggle(tool.id);
+                }}
                 label={`Enable ${tool.name}`}
+                disabled={pendingToolAction !== null}
               />
             </header>
             <p>{tool.description}</p>
@@ -5263,15 +6827,24 @@ function ToolsView({
             </div>
             <footer>
               <span>Last used {tool.lastUsed}</span>
-              <button onClick={() => void workspace.preflightTool(tool)}>
-                Inspect access <Icon name="chevron" />
+              <button
+                disabled={pendingToolAction !== null}
+                onClick={() => {
+                  void inspectTool(tool);
+                }}
+              >
+                {pendingToolAction === `inspect:${tool.id}` ? 'Inspecting…' : 'Inspect access'}{' '}
+                <Icon name="chevron" />
               </button>
               {tool.kind === 'mcp' && (
                 <button
                   className="text-button"
-                  onClick={() => void workspace.disconnectMcp(tool.id)}
+                  disabled={pendingToolAction !== null}
+                  onClick={() => {
+                    void disconnectTool(tool);
+                  }}
                 >
-                  Disconnect
+                  {pendingToolAction === `disconnect:${tool.id}` ? 'Disconnecting…' : 'Disconnect'}
                 </button>
               )}
             </footer>
@@ -5304,207 +6877,170 @@ function ToolsView({
           ))}
         </section>
       )}
-      {policyOpen && (
-        <div
-          className="popover-layer"
-          onMouseDown={(event) => event.target === event.currentTarget && setPolicyOpen(false)}
-        >
-          <section
-            className="provider-dialog permission-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Permission policy"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Tool authority</span>
-                <h2>Permission policy</h2>
-              </div>
-              <button
-                className="icon-button"
-                onClick={() => setPolicyOpen(false)}
-                aria-label="Close permission policy"
-              >
-                <Icon name="x" />
-              </button>
-            </header>
-            <div className="permission-mode-list">
-              <button
-                className={cx(workspace.settings.permissionMode === 'guarded' && 'is-active')}
-                onClick={() => {
-                  void workspace.updateSettings({ permissionMode: 'guarded' });
-                  setFreedomPhrase('');
-                }}
-              >
-                <Icon name="shield" />
-                <span>
-                  <strong>Guarded</strong>
-                  <small>Ask before high-impact actions. Recommended.</small>
-                </span>
-                {workspace.settings.permissionMode === 'guarded' && <Icon name="check" />}
-              </button>
-              <div
-                className={cx(
-                  'permission-mode-danger',
-                  workspace.settings.permissionMode === 'full-freedom' && 'is-active',
-                )}
-              >
-                <div>
-                  <Icon name="info" />
-                  <span>
-                    <strong>Full freedom</strong>
-                    <small>
-                      No permission prompts, including deletion, external communication, installs,
-                      system changes, and unsandboxed execution.
-                    </small>
-                  </span>
-                </div>
-                {workspace.settings.permissionMode === 'full-freedom' ? (
-                  <button
-                    className="button"
-                    onClick={() => void workspace.updateSettings({ permissionMode: 'guarded' })}
-                  >
-                    Return to guarded
-                  </button>
-                ) : (
-                  <>
-                    <label>
-                      <span>Type FULL FREEDOM to enable</span>
-                      <input
-                        value={freedomPhrase}
-                        onChange={(event) => setFreedomPhrase(event.target.value)}
-                        autoComplete="off"
-                      />
-                    </label>
-                    <button
-                      className="button button--danger"
-                      disabled={freedomPhrase !== 'FULL FREEDOM'}
-                      onClick={() => {
-                        void workspace.updateSettings({ permissionMode: 'full-freedom' });
-                        setFreedomPhrase('');
-                      }}
-                    >
-                      Enable full freedom
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <footer>
-              <span>
-                Changes apply at the local Rust tool broker and are recorded in its security store.
-              </span>
-            </footer>
-          </section>
-        </div>
-      )}
-      {mcpOpen && (
-        <div
-          className="popover-layer"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setMcpOpen(false);
-          }}
-        >
-          <form
-            className="provider-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              connectMcp();
+      <FormDialog
+        open={policyOpen}
+        eyebrow="Tool authority"
+        title="Permission policy"
+        description="Choose how CupcakeAI handles tool actions with external or system effects."
+        submitLabel="Done"
+        pendingLabel="Saving policy…"
+        pending={policyPending}
+        error={policyError}
+        onClose={() => setPolicyOpen(false)}
+        onSubmit={() => setPolicyOpen(false)}
+      >
+        <div className="permission-mode-list">
+          <button
+            type="button"
+            disabled={policyPending}
+            className={cx(workspace.settings.permissionMode === 'guarded' && 'is-active')}
+            onClick={() => {
+              void changePolicy('guarded');
             }}
           >
-            <header>
-              <div>
-                <span className="eyebrow">Isolated MCP session</span>
-                <h2>Connect MCP server</h2>
-              </div>
+            <Icon name="shield" />
+            <span>
+              <strong>Guarded</strong>
+              <small>Ask before high-impact actions. Recommended.</small>
+            </span>
+            {workspace.settings.permissionMode === 'guarded' && <Icon name="check" />}
+          </button>
+          <div
+            className={cx(
+              'permission-mode-danger',
+              workspace.settings.permissionMode === 'full-freedom' && 'is-active',
+            )}
+          >
+            <div>
+              <Icon name="info" />
+              <span>
+                <strong>Full freedom</strong>
+                <small>
+                  No permission prompts, including deletion, external communication, installs,
+                  system changes, and unsandboxed execution.
+                </small>
+              </span>
+            </div>
+            {workspace.settings.permissionMode === 'full-freedom' ? (
               <button
                 type="button"
-                className="icon-button"
-                onClick={() => setMcpOpen(false)}
-                aria-label="Close MCP form"
-              >
-                <Icon name="x" />
-              </button>
-            </header>
-            <label>
-              Connection name
-              <input
-                autoFocus
-                value={mcpName}
-                onChange={(event) => setMcpName(event.target.value)}
-              />
-            </label>
-            <label>
-              Transport
-              <select
-                value={mcpTransport}
-                onChange={(event) => {
-                  setMcpTransport(event.target.value as 'stdio' | 'streamable-http');
-                  setMcpEndpoint('');
+                className="button"
+                disabled={policyPending}
+                onClick={() => {
+                  void changePolicy('guarded');
                 }}
               >
-                <option value="streamable-http">Remote Streamable HTTP</option>
-                <option value="stdio">Registered local stdio manifest</option>
-              </select>
-            </label>
-            {mcpTransport === 'streamable-http' ? (
-              <label>
-                HTTPS origin
-                <input
-                  type="url"
-                  value={mcpEndpoint}
-                  onChange={(event) => setMcpEndpoint(event.target.value)}
-                  placeholder="https://mcp.example.com"
-                />
-              </label>
-            ) : (
-              <label>
-                Registered manifest
-                <select
-                  value={mcpEndpoint}
-                  onChange={(event) => setMcpEndpoint(event.target.value)}
-                >
-                  <option value="">Choose a registered manifest</option>
-                  {tools
-                    .filter((tool) => tool.kind === 'custom')
-                    .map((tool) => (
-                      <option value={tool.id} key={tool.id}>
-                        {tool.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            )}
-            <div className="security-note">
-              <Icon name="shield" />
-              <div>
-                <strong>
-                  {mcpTransport === 'streamable-http'
-                    ? 'Cloud destination · OAuth/PKCE required when advertised'
-                    : 'Local destination · no raw command strings'}
-                </strong>
-                <p>
-                  Origin validation, isolated sessions, allowed-tool filters, and schema fingerprint
-                  approval are enforced by the broker. A changed fingerprint invalidates prior
-                  grants.
-                </p>
-              </div>
-            </div>
-            {mcpError && (
-              <p className="field-error" role="alert">
-                {mcpError}
-              </p>
-            )}
-            <footer>
-              <button type="button" className="button" onClick={() => setMcpOpen(false)}>
-                Cancel
+                {policyPending ? 'Saving…' : 'Return to guarded'}
               </button>
-              <span />
-              <button className="button button--primary">Review and connect</button>
-            </footer>
-          </form>
+            ) : (
+              <>
+                <label>
+                  <span>Type FULL FREEDOM to enable</span>
+                  <input
+                    value={freedomPhrase}
+                    onChange={(event) => setFreedomPhrase(event.target.value)}
+                    autoComplete="off"
+                    disabled={policyPending}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="button button--danger"
+                  disabled={freedomPhrase !== 'FULL FREEDOM' || policyPending}
+                  onClick={() => {
+                    void changePolicy('full-freedom');
+                  }}
+                >
+                  {policyPending ? 'Saving…' : 'Enable full freedom'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      )}
+        <p className="field-hint">
+          Changes apply at the local Rust tool broker and are recorded in its security store.
+        </p>
+      </FormDialog>
+      <FormDialog
+        open={mcpOpen}
+        eyebrow="Isolated MCP session"
+        title="Connect MCP server"
+        description="Review the destination before CupcakeAI asks the broker to create an isolated connection."
+        submitLabel="Review and connect"
+        pendingLabel="Connecting…"
+        pending={mcpPending}
+        error={mcpError}
+        onClose={() => setMcpOpen(false)}
+        onSubmit={connectMcp}
+      >
+        <label>
+          Connection name
+          <input
+            autoFocus
+            value={mcpName}
+            onChange={(event) => setMcpName(event.target.value)}
+            disabled={mcpPending}
+          />
+        </label>
+        <label>
+          Transport
+          <select
+            value={mcpTransport}
+            disabled={mcpPending}
+            onChange={(event) => {
+              setMcpTransport(event.target.value as 'stdio' | 'streamable-http');
+              setMcpEndpoint('');
+            }}
+          >
+            <option value="streamable-http">Remote Streamable HTTP</option>
+            <option value="stdio">Registered local stdio manifest</option>
+          </select>
+        </label>
+        {mcpTransport === 'streamable-http' ? (
+          <label>
+            HTTPS origin
+            <input
+              type="url"
+              value={mcpEndpoint}
+              onChange={(event) => setMcpEndpoint(event.target.value)}
+              placeholder="https://mcp.example.com"
+              disabled={mcpPending}
+            />
+          </label>
+        ) : (
+          <label>
+            Registered manifest
+            <select
+              value={mcpEndpoint}
+              onChange={(event) => setMcpEndpoint(event.target.value)}
+              disabled={mcpPending}
+            >
+              <option value="">Choose a registered manifest</option>
+              {tools
+                .filter((tool) => tool.kind === 'custom')
+                .map((tool) => (
+                  <option value={tool.id} key={tool.id}>
+                    {tool.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        <div className="security-note">
+          <Icon name="shield" />
+          <div>
+            <strong>
+              {mcpTransport === 'streamable-http'
+                ? 'Cloud destination · OAuth/PKCE required when advertised'
+                : 'Local destination · no raw command strings'}
+            </strong>
+            <p>
+              Origin validation, isolated sessions, allowed-tool filters, and schema fingerprint
+              approval are enforced by the broker. A changed fingerprint invalidates prior grants.
+            </p>
+          </div>
+        </div>
+      </FormDialog>
     </main>
   );
 }
@@ -5513,11 +7049,32 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
   const workspace = useWorkspace();
   const [query, setQuery] = useState(workspace.fixtureMode ? 'architecture' : '');
   const [loading, setLoading] = useState(false);
-  const [globalScope, setGlobalScope] = useState(false);
+  const [globalScope, setGlobalScope] = useState(!workspace.activeProjectId);
+  const [searchError, setSearchError] = useState('');
+  const searchSequence = useRef(0);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const doSearch = (v: string) => {
     setQuery(v);
     setLoading(true);
-    void workspace.querySearch(v, globalScope).finally(() => setLoading(false));
+    setSearchError('');
+    const sequence = ++searchSequence.current;
+    void workspace
+      .querySearch(v, globalScope)
+      .catch((reason: unknown) => {
+        if (sequence === searchSequence.current)
+          setSearchError(
+            reason instanceof Error ? reason.message : 'Search could not finish. Try again.',
+          );
+      })
+      .finally(() => {
+        if (sequence === searchSequence.current) setLoading(false);
+      });
   };
   const fixtureGroups = [
     {
@@ -5573,7 +7130,17 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
     },
     {},
   );
-  const groups = workspace.fixtureMode
+  const groups: Array<{
+    title: string;
+    icon: string;
+    items: Array<{
+      id?: string;
+      projectId?: string | null;
+      title: string;
+      text: string;
+      meta: string;
+    }>;
+  }> = workspace.fixtureMode
     ? fixtureGroups
     : Object.entries(liveSearchGroups).map(([title, items]) => ({
         title,
@@ -5585,9 +7152,14 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
               ? 'file'
               : 'chat',
         items: items.map((item) => ({
+          id: item.id,
+          projectId: item.projectId,
           title: item.title,
-          text: item.snippet,
-          meta: item.projectId ? `Project ${item.projectId}` : 'Global result',
+          text: item.snippet.replace(/<\/?mark>/g, ''),
+          meta: item.projectId
+            ? (workspace.projects.find((project) => project.id === item.projectId)?.name ??
+              'Project result')
+            : 'Personal workspace',
         })),
       }));
   return (
@@ -5600,13 +7172,19 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
             autoFocus
             value={query}
             onChange={(e) => doSearch(e.target.value)}
+            aria-label="Search workspace"
             placeholder="Search chats, files, projects, memory, tasks…"
           />
-          <kbd>Esc</kbd>
+          {query && (
+            <button className="icon-button" aria-label="Clear search" onClick={() => doSearch('')}>
+              <Icon name="x" size={15} />
+            </button>
+          )}
         </div>
         <div className="search-scopes">
           <button
             className={!globalScope ? 'is-active' : ''}
+            disabled={!workspace.activeProjectId}
             onClick={() => {
               setGlobalScope(false);
               void workspace.querySearch(query, false);
@@ -5625,6 +7203,11 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
           </button>
         </div>
       </div>
+      {searchError && (
+        <p className="field-error" role="alert">
+          {searchError}
+        </p>
+      )}
       {!query ? (
         <EmptyState
           icon="search"
@@ -5645,7 +7228,7 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
                 groups.reduce((count, group) => count + group.items.length, 0)}{' '}
               results for <strong>“{query}”</strong>
             </span>
-            <span>Lexical results · semantic matches still arriving</span>
+            <span>Matches from your saved workspace</span>
           </div>
           {groups.map((group) => (
             <section className="result-group" key={group.title}>
@@ -5656,15 +7239,38 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
               </header>
               {group.items.map((item) => (
                 <button
-                  onClick={() =>
-                    setView(
-                      group.title === 'Artifacts'
-                        ? 'artifacts'
-                        : group.title === 'Memory'
-                          ? 'memory'
-                          : 'chat',
-                    )
-                  }
+                  onClick={() => {
+                    const kind = group.title.toLowerCase();
+                    const destination: View = kind.includes('artifact')
+                      ? 'artifacts'
+                      : kind.includes('memory')
+                        ? 'memory'
+                        : kind.includes('task')
+                          ? 'tasks'
+                          : kind.includes('project') || kind.includes('file')
+                            ? 'projects'
+                            : 'chat';
+                    void (async () => {
+                      try {
+                        if (item.projectId && item.projectId !== workspace.activeProjectId)
+                          await workspace.setActiveProject(item.projectId);
+                        if (!alive.current) return;
+                        if (destination === 'chat' && item.id)
+                          await workspace.selectConversation(item.id);
+                        if (!alive.current) return;
+                        if (destination === 'artifacts' && item.id)
+                          sessionStorage.setItem('cupcake-open-artifact', item.id);
+                        setView(destination);
+                      } catch (reason) {
+                        if (alive.current)
+                          setSearchError(
+                            reason instanceof Error
+                              ? reason.message
+                              : 'Could not open this result.',
+                          );
+                      }
+                    })();
+                  }}
                   key={item.title}
                 >
                   <span>
@@ -5684,10 +7290,18 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
 }
 
 function ProviderLogo({ id, name, className }: { id: string; name: string; className?: string }) {
-  if (id === 'openai-compatible') {
+  const compatibleMarks: Record<string, string> = {
+    groq: 'GQ',
+    openrouter: 'OR',
+    cloudflare: 'CF',
+  };
+  if (id === 'openai-compatible' || compatibleMarks[id]) {
     return (
-      <span className={cx('provider-logo provider-logo--generic', className)} aria-hidden="true">
-        <Icon name="cloud" size={18} />
+      <span
+        className={cx('provider-logo provider-logo--generic', className)}
+        aria-label={`${name} mark`}
+      >
+        {compatibleMarks[id] ?? <Icon name="cloud" size={18} />}
       </span>
     );
   }
@@ -5770,6 +7384,27 @@ function SettingsView({
   const [clearPhrase, setClearPhrase] = useState('');
   const [clearPlan, setClearPlan] = useState<Record<string, unknown> | null>(null);
   const [clearUndo, setClearUndo] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState('');
+  const [backupError, setBackupError] = useState('');
+  const createBackup = async () => {
+    setBackupBusy(true);
+    setBackupMessage('');
+    setBackupError('');
+    try {
+      const receipt = await workspace.createBackup();
+      if (receipt)
+        setBackupMessage(
+          `Saved ${receipt.fileName} · ${(receipt.byteSize / 1024 / 1024).toFixed(1)} MB · encrypted and verified. Restore on this Windows account on this computer.`,
+        );
+    } catch (reason) {
+      setBackupError(
+        reason instanceof Error ? reason.message : 'The backup could not be completed.',
+      );
+    } finally {
+      setBackupBusy(false);
+    }
+  };
   const [currentWorkspacePassword, setCurrentWorkspacePassword] = useState('');
   const [newWorkspacePassword, setNewWorkspacePassword] = useState('');
   const [confirmWorkspacePassword, setConfirmWorkspacePassword] = useState('');
@@ -5803,6 +7438,9 @@ function SettingsView({
     ['Mistral', 'mistral'],
     ['Cohere', 'cohere'],
     ['NVIDIA NIM', 'nvidia-nim'],
+    ['Groq', 'groq'],
+    ['OpenRouter', 'openrouter'],
+    ['Cloudflare Workers AI', 'cloudflare'],
     ['Remote OpenAI-compatible', 'openai-compatible'],
   ] as const;
   const semanticModels = workspace.models.filter(
@@ -6803,17 +8441,19 @@ function SettingsView({
               <div className="security-note">
                 <Icon name="info" />
                 <div>
-                  <strong>
-                    The password prompt is optional; encrypted storage stays automatic
-                  </strong>
+                  <strong>The password prompt and content encryption are separate choices</strong>
                   <p>
-                    Turning off the prompt returns CupcakeAI to direct opening. Your workspace and
-                    provider credentials remain encrypted in the background without adding a startup
-                    step.
+                    Turning off the prompt returns CupcakeAI to direct opening. Manage stored
+                    content using the encryption controls below. Provider keys stay protected by
+                    Windows.
                   </p>
                 </div>
               </div>
             </section>
+            <ContentProtectionSettings
+              fixtureMode={workspace.fixtureMode}
+              onUpdated={() => workspace.refresh()}
+            />
             <section className="settings-section">
               <header>
                 <h2>Data destinations</h2>
@@ -6949,23 +8589,46 @@ function SettingsView({
           <section className="settings-section">
             <header>
               <h2>Local storage</h2>
-              <p>Encrypted databases and object files stay on this computer.</p>
+              <p>
+                Your workspace stays on this computer. Manage content protection in Privacy
+                settings.
+              </p>
             </header>
-            <div className="storage-chart">
-              <div>
-                <i className="db" style={{ width: '18%' }} />
-                <i className="objects" style={{ width: '54%' }} />
-                <i className="models" style={{ width: '28%' }} />
-              </div>
-              <span>7.8 GB used</span>
-            </div>
             <div className="setting-row">
               <span>
                 <strong>Backups</strong>
-                <small>Last backup: Today at 09:20 · verified</small>
+                <small>
+                  Create an encrypted copy for recovery on this Windows account and computer.
+                </small>
               </span>
-              <button className="button" onClick={() => void workspace.createBackup()}>
-                Back up now
+              <button className="button" disabled={backupBusy} onClick={() => void createBackup()}>
+                {backupBusy ? 'Creating and verifying…' : 'Back up now'}
+              </button>
+            </div>
+            {backupMessage && (
+              <p className="field-message" role="status">
+                {backupMessage}
+              </p>
+            )}
+            {backupError && (
+              <p className="field-error" role="alert">
+                {backupError}
+              </p>
+            )}
+            <BackupRecoverySettings
+              fixtureMode={workspace.fixtureMode}
+              onVerify={() => workspace.verifyBackupForRecovery()}
+            />
+            <div className="setting-row">
+              <span>
+                <strong>Import your original CupcakeAI workspace</strong>
+                <small>
+                  Review conversations, memories and paused tasks before importing. Provider keys
+                  and executable code are excluded.
+                </small>
+              </span>
+              <button className="button" onClick={() => void workspace.chooseLegacySource()}>
+                Import original workspace
               </button>
             </div>
             <div className="setting-row">
@@ -7547,27 +9210,33 @@ function ModelPicker({
 }) {
   const [query, setQuery] = useState('');
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const [intent, setIntent] = useState<ModelTask | undefined>();
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const stableModelsRef = useRef(models);
+  if (models.length) stableModelsRef.current = models;
+  const pickerModels = models.length ? models : stableModelsRef.current;
+  useModalFocusTrap(open, pickerRef, close);
   if (!open) return null;
   const search = query.trim().toLowerCase();
-  const searched = models
-    .filter(modelIsCurated)
-    .map(completeModelDescriptor)
-    .filter((model) => {
+  const searched = recommendModels(pickerModels, intent, Number.MAX_SAFE_INTEGER).filter(
+    (model) => {
       const publisher = publisherForModel(model);
-      return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')}`
+      return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')} ${model.description}`
         .toLowerCase()
         .includes(search);
-    });
+    },
+  );
   const shown = searched.filter((model) => showUnavailable || modelIsAvailableInChat(model));
   const grouped = new Map<string, ModelDescriptor[]>();
   shown.forEach((model) => {
     const publisher = publisherForModel(model);
     grouped.set(publisher, [...(grouped.get(publisher) ?? []), model]);
   });
-  const groups = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const groups = [...grouped.entries()];
   const hiddenUnavailable = searched.length - shown.length;
+  const currentModel = pickerModels.find((model) => model.selected);
   const selectFromPicker = async (model: ModelDescriptor) => {
     if (selectingId) return;
     setSelectionError(null);
@@ -7593,16 +9262,47 @@ function ModelPicker({
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div className="model-picker" role="dialog" aria-modal="true" aria-label="Choose model">
+      <div
+        ref={pickerRef}
+        className="model-picker model-picker--atlas"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose model"
+      >
         <header>
           <div>
-            <span className="eyebrow">Explicit selection</span>
+            <span className="eyebrow">One conversation, one clear route</span>
             <h2>Choose a model</h2>
           </div>
           <button className="icon-button" onClick={close} aria-label="Close model picker">
             <Icon name="x" />
           </button>
         </header>
+        {currentModel && (
+          <div className="model-picker__current">
+            <PublisherLogo publisher={publisherForModel(currentModel)} />
+            <span>
+              <small>Current model</small>
+              <strong>{currentModel.name}</strong>
+              <em>{modelRouteDescription(currentModel)}</em>
+            </span>
+            <Icon name="check" />
+          </div>
+        )}
+        <div className="model-picker__intents" aria-label="Filter by task">
+          <button className={!intent ? 'is-active' : ''} onClick={() => setIntent(undefined)}>
+            Any task
+          </button>
+          {MODEL_TASK_OPTIONS.map((option) => (
+            <button
+              className={intent === option.id ? 'is-active' : ''}
+              onClick={() => setIntent(option.id)}
+              key={option.id}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <div className="model-picker__tools">
           <div className="search-field">
             <Icon name="search" />
@@ -7610,7 +9310,7 @@ function ModelPicker({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search models or companies"
+              placeholder="Search model, publisher, or route"
             />
           </div>
           <label>
@@ -7646,7 +9346,10 @@ function ModelPicker({
                     <span>
                       <strong>{model.name}</strong>
                       <small>
-                        {model.provider} · {model.context} context · {model.cost}
+                        {modelRouteDescription(model)} · {model.context} context
+                      </small>
+                      <small className={available ? 'model-ready-copy' : 'unavailable'}>
+                        {modelAvailabilityDetail(model)} · {model.cost}
                       </small>
                       <span className="model-tags">
                         {model.tags.slice(0, 3).map((tag) => (
@@ -7671,7 +9374,11 @@ function ModelPicker({
             <div className="model-picker__empty">
               <Icon name="search" />
               <strong>No available models match</strong>
-              <small>Connect a provider, load a local model, or show unavailable models.</small>
+              <small>
+                {models.length === 0 && !pickerModels.length
+                  ? 'Catalog is refreshing. Your current model stays selected.'
+                  : 'Try another task, connect a provider, or show unavailable models.'}
+              </small>
             </div>
           )}
         </div>
@@ -7691,7 +9398,9 @@ function ModelPicker({
             Manage models <Icon name="chevron" />
           </button>
           <span>
-            {hiddenUnavailable > 0 ? `${hiddenUnavailable} unavailable hidden` : 'Ctrl M'}
+            {hiddenUnavailable > 0
+              ? `${hiddenUnavailable} unavailable hidden`
+              : `${shown.length} ready ${shown.length === 1 ? 'route' : 'routes'}`}
           </span>
         </footer>
       </div>
@@ -7719,7 +9428,9 @@ interface ProviderDefinition {
   keyHint: string;
   supportsOrganization?: boolean;
   supportsEndpoint?: boolean;
+  supportsAccountId?: boolean;
   supportsModelId?: boolean;
+  defaultModelId?: string;
 }
 
 const providerDefinitions: ProviderDefinition[] = [
@@ -7786,6 +9497,40 @@ const providerDefinitions: ProviderDefinition[] = [
     cost: 'Evaluation access and rate limits vary. It is not presented as unlimited.',
     keyUrl: 'https://build.nvidia.com/settings/api-keys',
     keyHint: 'Usually begins with nvapi-',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    route: 'Groq OpenAI-compatible API',
+    privacy: 'Prompts and generated text go to Groq under your API account.',
+    cost: 'Groq publishes per-model free-plan limits. Cupcake will not switch to a paid fallback.',
+    keyUrl: 'https://console.groq.com/keys',
+    keyHint: 'Usually begins with gsk_',
+    supportsModelId: true,
+    defaultModelId: 'openai/gpt-oss-20b',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    route: 'OpenRouter OpenAI-compatible API',
+    privacy: 'Prompts and generated text go through OpenRouter to the selected model host.',
+    cost: 'The default pins one currently listed free model. Availability and free-tier rate limits can change.',
+    keyUrl: 'https://openrouter.ai/settings/keys',
+    keyHint: 'Usually begins with sk-or-',
+    supportsModelId: true,
+    defaultModelId: 'nvidia/nemotron-3.5-lightning:free',
+  },
+  {
+    id: 'cloudflare',
+    name: 'Cloudflare Workers AI',
+    route: 'Cloudflare account Workers AI API',
+    privacy: 'Prompts and generated text go to Workers AI in the Cloudflare account you enter.',
+    cost: 'The selected default is outside Cloudflare’s paid-only model list. Cupcake will not switch models silently.',
+    keyUrl: 'https://dash.cloudflare.com/profile/api-tokens',
+    keyHint: 'Paste a Workers AI API token',
+    supportsAccountId: true,
+    supportsModelId: true,
+    defaultModelId: '@cf/meta/llama-3.1-8b-instruct-fp8',
   },
   {
     id: 'openai-compatible',
@@ -7867,6 +9612,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [endpoint, setEndpoint] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [organization, setOrganization] = useState('');
   const [modelId, setModelId] = useState('');
   const [connectionName, setConnectionName] = useState('');
@@ -7889,8 +9635,9 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
     setApiKey('');
     setShowKey(false);
     setEndpoint('');
+    setAccountId('');
     setOrganization('');
-    setModelId('');
+    setModelId(providerDefinitions.find((item) => item.id === initial)?.defaultModelId ?? '');
     setConnectionName('');
     setTestResult(null);
     setError(null);
@@ -7901,6 +9648,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
     provider: selected!.id,
     apiKey,
     endpoint: endpoint.trim() || undefined,
+    accountId: accountId.trim() || undefined,
     organization: organization.trim() || undefined,
     modelId: modelId.trim() || undefined,
     connectionName: connectionName.trim() || undefined,
@@ -7909,6 +9657,8 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
     if (!apiKey.trim()) return 'Enter an API key before testing the connection.';
     if (selected?.supportsEndpoint && !/^https:\/\//i.test(endpoint.trim()))
       return 'Enter a complete HTTPS endpoint, such as https://api.example.com/v1.';
+    if (selected?.supportsAccountId && !accountId.trim())
+      return 'Enter the Cloudflare account ID that owns this Workers AI route.';
     if (selected?.supportsModelId && !modelId.trim()) return 'Enter the exact remote model ID.';
     return null;
   };
@@ -7930,6 +9680,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
           provider: setup.provider,
           secret: setup.apiKey,
           baseUrl: setup.endpoint,
+          accountId: setup.accountId,
           organization: setup.organization,
           modelId: setup.modelId,
           displayName: setup.connectionName,
@@ -8003,6 +9754,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
           provider: setup.provider,
           secret: setup.apiKey,
           baseUrl: setup.endpoint,
+          accountId: setup.accountId,
           organization: setup.organization,
           modelId: setup.modelId,
           displayName: setup.connectionName,
@@ -8047,6 +9799,8 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
   };
   const choose = (id: string) => {
     setSelectedId(id);
+    setAccountId('');
+    setModelId(providerDefinitions.find((item) => item.id === id)?.defaultModelId ?? '');
     setStep(workspace.providers[id] ? 'success' : 'credentials');
   };
 
@@ -8165,6 +9919,20 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
                   />
                 </label>
               )}
+              {selected.supportsAccountId && (
+                <label>
+                  Cloudflare account ID
+                  <input
+                    autoFocus
+                    name="account-id"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={accountId}
+                    onChange={(event) => setAccountId(event.target.value)}
+                    placeholder="32-character account ID"
+                  />
+                </label>
+              )}
               {selected.id === 'openai-compatible' && (
                 <label>
                   Connection name
@@ -8178,24 +9946,33 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
                 </label>
               )}
               {selected.supportsModelId && (
-                <label>
-                  Model ID
-                  <input
-                    name="model-id"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={modelId}
-                    onChange={(e) => setModelId(e.target.value)}
-                    placeholder="provider/model-name"
-                  />
-                </label>
+                <>
+                  <label>
+                    Model ID
+                    <input
+                      name="model-id"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={modelId}
+                      onChange={(e) => setModelId(e.target.value)}
+                      placeholder={selected.defaultModelId ?? 'provider/model-name'}
+                    />
+                  </label>
+                  {selected.id === 'openrouter' && (
+                    <p className="provider-vault-note">
+                      <Icon name="info" /> <code>openrouter/free</code> is an optional
+                      variable-model router. Use it only when a different free model on each request
+                      is acceptable.
+                    </p>
+                  )}
+                </>
               )}
               <div className="provider-field">
                 <label htmlFor="provider-api-key">API key</label>
                 <span className="secret-input">
                   <input
                     id="provider-api-key"
-                    autoFocus={!selected.supportsEndpoint}
+                    autoFocus={!selected.supportsEndpoint && !selected.supportsAccountId}
                     name="api-key"
                     type={showKey ? 'text' : 'password'}
                     autoComplete="off"
@@ -8425,7 +10202,20 @@ function CommandPalette({
   setView: (v: View) => void;
   openModel: () => void;
 }) {
+  const workspace = useWorkspace();
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  const closeDialog = useCallback(() => closeRef.current(), []);
+  useModalFocusTrap(open, dialogRef, closeDialog);
+  useEffect(() => {
+    if (open) {
+      setQuery('');
+      setActiveIndex(0);
+    }
+  }, [open]);
   if (!open) return null;
   const commands: {
     label: string;
@@ -8438,7 +10228,7 @@ function CommandPalette({
       label: 'New chat',
       detail: 'Start a clean conversation',
       icon: 'edit',
-      action: () => setView('chat'),
+      action: () => void workspace.createConversation().then(() => setView('chat')),
       key: 'Ctrl N',
     },
     {
@@ -8452,7 +10242,10 @@ function CommandPalette({
       label: 'Attach a file',
       detail: 'Add local context to the current chat',
       icon: 'paperclip',
-      action: () => setView('chat'),
+      action: () => {
+        setView('chat');
+        window.setTimeout(() => window.dispatchEvent(new Event('cupcake:attach')), 0);
+      },
       key: 'Ctrl U',
     },
     {
@@ -8497,22 +10290,47 @@ function CommandPalette({
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div
+        ref={dialogRef}
+        className="command-palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
         <div className="command-input">
           <Icon name="search" />
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActiveIndex(0);
+            }}
+            aria-label="Search commands"
+            aria-controls="command-results"
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActiveIndex((index) =>
+                  shown.length
+                    ? (index + (event.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length
+                    : 0,
+                );
+              } else if (event.key === 'Enter' && shown[activeIndex]) {
+                event.preventDefault();
+                shown[activeIndex].action();
+                close();
+              }
+            }}
             placeholder="What would you like to do?"
           />
           <kbd>Esc</kbd>
         </div>
-        <div className="command-results">
+        <div className="command-results" id="command-results">
           <span>Commands</span>
           {shown.map((c, i) => (
             <button
-              className={i === 0 ? 'is-active' : ''}
+              className={i === activeIndex ? 'is-active' : ''}
               key={c.label}
               onClick={() => {
                 c.action();
@@ -8898,8 +10716,16 @@ function LegacyFixtureApp() {
       <ChatsView
         onOpen={() => navigate('chat')}
         onCreate={() => navigate('chat')}
-        onRename={() => undefined}
-        onArchive={() => undefined}
+        onRename={(id, title) =>
+          setConversationRecords((items) =>
+            items.map((item) => (item.id === id ? { ...item, title } : item)),
+          )
+        }
+        onArchive={(id, archived) =>
+          setConversationRecords((items) =>
+            items.map((item) => (item.id === id ? { ...item, archived } : item)),
+          )
+        }
         conversations={conversationRecords}
       />
     );
@@ -8917,7 +10743,7 @@ function LegacyFixtureApp() {
         }}
       />
     );
-  else if (view === 'projects') content = <ProjectsView openChat={() => navigate('chat')} />;
+  else if (view === 'projects') content = <ProjectsView navigate={navigate} />;
   else if (view === 'tasks')
     content = (
       <TasksView
@@ -9043,6 +10869,17 @@ function LegacyMigrationDialog() {
   const state = workspace.legacyMigration;
   if (!state) return null;
   const report = state.report ?? {};
+  const counts = report.counts ?? {};
+  const conversationCount = Number(
+    report.conversations ?? (Number(counts.conversation_message ?? 0) > 0 ? 1 : 0),
+  );
+  const memoryCount = Number(
+    report.memories ??
+      Number(counts.personality ?? 0) +
+        Number(counts.thought ?? 0) +
+        Number(counts.chroma_text ?? 0),
+  );
+  const taskCount = Number(report.tasks ?? counts.task ?? 0);
   return (
     <div className="popover-layer">
       <section
@@ -9062,23 +10899,24 @@ function LegacyMigrationDialog() {
           <div>
             <strong>Only safe product data is considered.</strong>
             <p>
-              Conversations, memories, task state, and allowlisted documents can be imported. Old
-              API keys, executable scripts, generated state, and bytecode are always excluded.
+              Conversations, paused task records, and reviewable personality and memory candidates
+              can be imported. Old API keys, executable scripts, generated state, and bytecode are
+              always excluded.
             </p>
           </div>
         </div>
         <div className="project-stats">
           <span>
-            <strong>{Number(report.conversations ?? 0)}</strong> conversations
+            <strong>{conversationCount}</strong> conversations
           </span>
           <span>
-            <strong>{Number(report.memories ?? 0)}</strong> memories
+            <strong>{memoryCount}</strong> memories
           </span>
           <span>
-            <strong>{Number(report.tasks ?? 0)}</strong> tasks
+            <strong>{taskCount}</strong> paused tasks
           </span>
           <span>
-            <strong>{Number(report.files ?? 0)}</strong> safe files
+            <strong>{Number(report.messages ?? counts.conversation_message ?? 0)}</strong> messages
           </span>
         </div>
         {Array.isArray(report.warnings) && report.warnings.length > 0 && (
@@ -9184,7 +11022,7 @@ const onboardingSteps = [
   {
     eyebrow: 'Permission policy',
     title: 'You decide how much autonomy to grant',
-    body: 'Guarded mode asks before sensitive effects. Full Freedom removes routine confirmations, while destructive and irreversible boundaries remain clearly surfaced.',
+    body: 'Guarded mode asks before sensitive effects. Full freedom skips consent prompts after you choose it; operating-system boundaries, explicit denies and destination checks still apply.',
     icon: 'shield' as IconName,
     points: [
       'Review tool effects in context',
@@ -9237,51 +11075,325 @@ function OnboardingTour({
   const [step, setStep] = useState(0);
   const [profileName, setProfileName] = useState(workspace.settings.profile.displayName);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const [workspaceSecurity, setWorkspaceSecurity] = useState<WorkspaceLockStatus | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const targetRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+
+  const configuredProviderIds = Object.entries(workspace.providers)
+    .filter(([, configured]) => configured)
+    .map(([provider]) => provider);
+  const activeRuntime = workspace.localRuntimes.find((runtime) => runtime.active);
+  const profileReady = Boolean(
+    workspace.settings.profile.displayName.trim() &&
+    workspace.settings.profile.avatar &&
+    workspace.settings.assistantAvatar,
+  );
+  const profileCustomized =
+    profileReady &&
+    (workspace.settings.profile.displayName !== 'Akshit' ||
+      workspace.settings.profile.avatar !== 'atlas:16' ||
+      workspace.settings.assistantAvatar !== 'atlas:0');
+  const appearanceCustomized =
+    workspace.settings.theme !== 'light' || workspace.settings.wallpaper !== 'none';
+  const hardwareReady = Boolean(workspace.hardware?.ramBytes);
+  const safetyReady =
+    workspace.settings.reserveSystemRamGb > 0 && workspace.settings.reserveVramGb > 0;
+  const toolsReady = workspace.settings.enabledToolIds.length > 0;
+  const memoryStarted = workspace.memories.length > 0;
+  const lockEnabled = workspaceSecurity?.unlockMode === 'password';
+
+  const chapters = useMemo(
+    () => [
+      {
+        key: 'welcome',
+        eyebrow: onboardingSteps[0].eyebrow,
+        title: onboardingSteps[0].title,
+        body: 'This is a guided map of your real workbench. Take the parts you want now, skip any setup, and return from Settings whenever you like.',
+        icon: 'sparkle' as IconName,
+        artFrame: 1,
+        view: 'home' as View,
+        target: null as string | null,
+        state: 'ready' as const,
+        status: 'Optional and replayable',
+      },
+      {
+        key: 'identity',
+        eyebrow: 'You and your assistant',
+        title: 'Give both sides of the conversation a face',
+        body: 'Your local profile controls how CupcakeAI greets you. Your chosen assistant portrait follows replies across chats and projects.',
+        icon: 'user' as IconName,
+        artFrame: 5,
+        view: 'home' as View,
+        target: 'profile',
+        state: !profileReady
+          ? ('attention' as const)
+          : profileCustomized
+            ? ('complete' as const)
+            : ('ready' as const),
+        status: !profileReady
+          ? 'Choose a name and two portraits'
+          : profileCustomized
+            ? 'Personalized and saved'
+            : 'Ready with profile defaults',
+      },
+      {
+        key: 'appearance',
+        eyebrow: 'Appearance',
+        title: 'Choose a room for your work',
+        body: 'Theme and wallpaper travel across the workbench. Every choice keeps the controls readable; more scenes and motion settings live in Appearance.',
+        icon: 'palette' as IconName,
+        artFrame: 5,
+        view: 'settings' as View,
+        target: 'settings',
+        state: appearanceCustomized ? ('complete' as const) : ('ready' as const),
+        status: appearanceCustomized ? 'Personalized' : 'Quiet paper default',
+      },
+      {
+        key: 'providers',
+        eyebrow: 'Cloud providers',
+        title: 'Connect only the routes you plan to use',
+        body: 'CupcakeAI always names the service receiving your message. A provider key stays in the Windows credential vault and can be tested before saving.',
+        icon: 'cloud' as IconName,
+        artFrame: 1,
+        view: 'models' as View,
+        target: 'models',
+        state: configuredProviderIds.length > 0 ? ('complete' as const) : ('attention' as const),
+        status:
+          configuredProviderIds.length > 0
+            ? `${configuredProviderIds.length} connected`
+            : 'Optional · none connected',
+      },
+      {
+        key: 'runtime',
+        eyebrow: 'Local CUDA and safety',
+        title: 'Let the device fit the model before it loads',
+        body: 'Cupcake Local checks usable VRAM and RAM, keeps reserves for Windows, and only starts a model when you explicitly ask. Opening the app never warms the GPU.',
+        icon: 'local' as IconName,
+        artFrame: 3,
+        view: 'models' as View,
+        target: 'models',
+        state:
+          activeRuntime && hardwareReady && safetyReady
+            ? ('complete' as const)
+            : ('ready' as const),
+        status: activeRuntime
+          ? `${activeRuntime.name} active`
+          : hardwareReady
+            ? 'Device measured · runtime on demand'
+            : 'Device check pending',
+      },
+      {
+        key: 'projects',
+        eyebrow: 'Projects and tasks',
+        title: 'Give durable work its own room',
+        body: 'Projects keep chats, tasks, references, and artifacts together. They are also the boundary CupcakeAI uses when retrieving context.',
+        icon: 'project' as IconName,
+        artFrame: 2,
+        view: 'projects' as View,
+        target: 'projects',
+        state: workspace.projects.length > 0 ? ('complete' as const) : ('ready' as const),
+        status:
+          workspace.projects.length > 0
+            ? `${workspace.projects.length} ${workspace.projects.length === 1 ? 'project' : 'projects'}`
+            : 'Ready for your first project',
+      },
+      {
+        key: 'tools-memory',
+        eyebrow: 'Tools and memory',
+        title: 'Choose what CupcakeAI may do and remember',
+        body: 'Tools are explicit capabilities you can turn on or off. Memory is inspectable, editable, scoped to a project when needed, and never a hidden transcript.',
+        icon: 'memory' as IconName,
+        artFrame: 2,
+        view: 'tools' as View,
+        target: 'tools',
+        state: toolsReady && memoryStarted ? ('complete' as const) : ('ready' as const),
+        status: `${workspace.settings.enabledToolIds.length} tools on · ${workspace.memories.length} memories`,
+      },
+      {
+        key: 'security',
+        eyebrow: 'Permissions, backup, and privacy',
+        title: onboardingSteps[onboardingSteps.length - 1]!.title,
+        body: 'Opening stays prompt-free by default. Guarded permission mode asks before sensitive effects; workspace password protection and backups remain choices you can make in Privacy and Storage.',
+        icon: 'shield' as IconName,
+        artFrame: lockEnabled ? 0 : 4,
+        view: 'settings' as View,
+        target: 'permissions',
+        state: lockEnabled ? ('complete' as const) : ('ready' as const),
+        status: lockEnabled ? 'Workspace password on' : 'Direct opening · no password required',
+      },
+    ],
+    [
+      activeRuntime,
+      appearanceCustomized,
+      configuredProviderIds.length,
+      hardwareReady,
+      lockEnabled,
+      memoryStarted,
+      profileCustomized,
+      profileReady,
+      safetyReady,
+      toolsReady,
+      workspace.memories.length,
+      workspace.projects.length,
+      workspace.settings.enabledToolIds.length,
+    ],
+  );
+
   useEffect(() => {
     if (open) {
       setStep(0);
       setProfileName(workspace.settings.profile.displayName);
     }
   }, [open, workspace.settings.profile.displayName]);
-  const item = onboardingSteps[step]!;
-  const last = step === onboardingSteps.length - 1;
+  const item = chapters[step]!;
+  const last = step === chapters.length - 1;
+
+  useEffect(() => {
+    if (!open) return;
+    const securityApi = window.cupcake?.workspace;
+    if (!securityApi) {
+      setWorkspaceSecurity({ state: 'unlocked', failedAttempts: 0, retryAfterMs: 0 });
+      return;
+    }
+    let active = true;
+    void securityApi.status().then((status) => {
+      if (active) setWorkspaceSecurity(status);
+    });
+    const release = securityApi.onStatus((status) => {
+      if (active) setWorkspaceSecurity(status);
+    });
+    return () => {
+      active = false;
+      release();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const inertRegions = Array.from(
+      document.querySelectorAll<HTMLElement>('.app-titlebar, .shelf, .app-content'),
+    ).map((node) => ({ node, inert: node.inert }));
+    inertRegions.forEach(({ node }) => {
+      node.inert = true;
+    });
+    const focusTimer = window.setTimeout(() => titleRef.current?.focus(), 0);
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeRef.current(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0]!;
+      const lastFocusable = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        lastFocusable.focus();
+      } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      inertRegions.forEach(({ node, inert }) => {
+        node.inert = inert;
+      });
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) titleRef.current?.focus();
+  }, [open, step]);
+
   useEffect(() => {
     if (!open) return;
     navigate(item.view);
     setTargetRect(null);
-    let target: HTMLElement | null = null;
-    const advance = () => setStep((value) => Math.min(onboardingSteps.length - 1, value + 1));
-    const timer = window.setTimeout(() => {
-      target = item.target
+    let observer: ResizeObserver | null = null;
+    const locate = () => {
+      const target = item.target
         ? document.querySelector<HTMLElement>(`[data-tour="${item.target}"]`)
         : null;
-      if (!target) return;
-      setTargetRect(target.getBoundingClientRect());
-      target.addEventListener('click', advance, { once: true });
-    }, 180);
+      targetRef.current = target;
+      if (!target) {
+        setTargetRect(null);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const visible =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.right > 0 &&
+        rect.bottom > 0 &&
+        rect.left < window.innerWidth &&
+        rect.top < window.innerHeight;
+      setTargetRect(visible ? rect : null);
+    };
+    const timer = window.setTimeout(() => {
+      locate();
+      if (targetRef.current) {
+        observer = new ResizeObserver(locate);
+        observer.observe(targetRef.current);
+      }
+    }, 120);
+    window.addEventListener('resize', locate);
+    document.addEventListener('scroll', locate, true);
     return () => {
       window.clearTimeout(timer);
-      target?.removeEventListener('click', advance);
+      observer?.disconnect();
+      window.removeEventListener('resize', locate);
+      document.removeEventListener('scroll', locate, true);
+      targetRef.current = null;
     };
   }, [item.target, item.view, navigate, open]);
-  const configuredProviderCount = Object.values(workspace.providers).filter(Boolean).length;
-  const setupChecks = [
-    { label: 'Workspace opens directly', done: true },
-    { label: 'Name and cupcake portrait', done: Boolean(workspace.settings.profile.displayName) },
-    {
-      label: 'At least one model route',
-      done: workspace.models.some((model) => model.status !== 'setup'),
-    },
-    { label: 'Provider connected', done: configuredProviderCount > 0 },
-    { label: 'Hardware profile scanned', done: Boolean(workspace.hardware?.ramBytes) },
-    {
-      label: 'Local acceleration ready',
-      done: workspace.localRuntimes.some((runtime) => runtime.active),
-    },
-  ];
+
+  const saveProfileName = () => {
+    const displayName = profileName.trim();
+    if (!displayName || displayName === workspace.settings.profile.displayName) return;
+    void workspace.updateSettings({
+      profile: { ...workspace.settings.profile, displayName },
+    });
+  };
+  const move = (direction: -1 | 1) => {
+    if (item.key === 'identity') saveProfileName();
+    setStep((value) => Math.max(0, Math.min(chapters.length - 1, value + direction)));
+  };
+  const leaveFor = (view: View, target?: string) => {
+    close(false);
+    navigate(view);
+    if (target)
+      window.setTimeout(() => {
+        document.querySelector<HTMLElement>(`[data-tour="${target}"]`)?.click();
+      }, 80);
+  };
+  const nextAttention = chapters.findIndex(
+    (chapter, index) => index > step && chapter.state === 'attention',
+  );
+  const configuredAreas = chapters
+    .slice(1)
+    .filter((chapter) => chapter.state !== 'attention').length;
+
   if (!open) return null;
   return (
-    <div className={cx('onboarding-layer', targetRect && 'has-target')} role="presentation">
+    <div
+      className={cx('onboarding-layer', targetRect && 'has-target')}
+      data-onboarding-step={item.key}
+    >
       {targetRect && (
         <span
           className="onboarding-spotlight"
@@ -9294,16 +11406,73 @@ function OnboardingTour({
           aria-hidden="true"
         />
       )}
-      <section className="onboarding-card" role="dialog" aria-labelledby="onboarding-title">
-        <aside className="onboarding-art" aria-hidden="true">
-          <OnboardingStoryArt step={step} />
-          <span className="onboarding-step-icon">
-            <Icon name={item.icon} size={22} />
-          </span>
+      <section
+        className="onboarding-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        ref={dialogRef}
+      >
+        <aside className="onboarding-map" aria-label="Tour chapters">
+          <div className="onboarding-map__art" aria-hidden="true">
+            <OnboardingStoryArt step={item.artFrame} />
+            <span className="onboarding-step-icon">
+              <Icon name={item.icon} size={20} />
+            </span>
+          </div>
+          <div className="onboarding-map__summary">
+            <span className="eyebrow">Your workbench map</span>
+            <strong>
+              {configuredAreas} of {chapters.length - 1} areas ready
+            </strong>
+            <span className="onboarding-map__meter" aria-hidden="true">
+              <i style={{ width: `${(configuredAreas / (chapters.length - 1)) * 100}%` }} />
+            </span>
+          </div>
+          <nav aria-label="Onboarding chapters">
+            {chapters.map((chapter, index) => (
+              <button
+                type="button"
+                className={cx(
+                  index === step && 'is-active',
+                  chapter.state === 'complete' && 'is-complete',
+                  chapter.state === 'attention' && 'needs-attention',
+                )}
+                onClick={() => setStep(index)}
+                aria-current={index === step ? 'step' : undefined}
+                key={chapter.key}
+              >
+                <span>
+                  {chapter.state === 'complete' ? <Icon name="check" size={13} /> : index + 1}
+                </span>
+                <span>
+                  <strong>{chapter.eyebrow}</strong>
+                  <small>{chapter.status}</small>
+                </span>
+              </button>
+            ))}
+          </nav>
         </aside>
         <div className="onboarding-copy">
           <header>
-            <span className="eyebrow">{item.eyebrow}</span>
+            <div>
+              <span className="eyebrow">
+                Chapter {step + 1} · {item.eyebrow}
+              </span>
+              <span className={cx('onboarding-state', `is-${item.state}`)} aria-live="polite">
+                <Icon
+                  name={
+                    item.state === 'complete'
+                      ? 'check'
+                      : item.state === 'attention'
+                        ? 'info'
+                        : 'sparkle'
+                  }
+                  size={12}
+                />
+                {item.status}
+              </span>
+            </div>
             <button
               className="icon-button"
               onClick={() => close(false)}
@@ -9312,9 +11481,37 @@ function OnboardingTour({
               <Icon name="x" />
             </button>
           </header>
-          <h1 id="onboarding-title">{item.title}</h1>
-          <p>{item.body}</p>
-          {step === 1 && (
+          <h1 id="onboarding-title" tabIndex={-1} ref={titleRef}>
+            {item.title}
+          </h1>
+          <p className="onboarding-lede">{item.body}</p>
+
+          {item.key === 'welcome' && (
+            <div className="onboarding-welcome-grid">
+              <span>
+                <Icon name="chat" />
+                <strong>Chat</strong>
+                <small>Ask, attach, branch</small>
+              </span>
+              <span>
+                <Icon name="task" />
+                <strong>Work</strong>
+                <small>Projects that persist</small>
+              </span>
+              <span>
+                <Icon name="model" />
+                <strong>Choose</strong>
+                <small>Local or named cloud</small>
+              </span>
+              <span>
+                <Icon name="shield" />
+                <strong>Control</strong>
+                <small>Visible tools and memory</small>
+              </span>
+            </div>
+          )}
+
+          {item.key === 'identity' && (
             <div className="onboarding-profile-editor">
               <label>
                 What should CupcakeAI call you?
@@ -9322,150 +11519,373 @@ function OnboardingTour({
                   value={profileName}
                   maxLength={60}
                   onChange={(event) => setProfileName(event.target.value)}
-                  onBlur={() =>
-                    void workspace.updateSettings({
-                      profile: {
-                        ...workspace.settings.profile,
-                        displayName: profileName.trim() || workspace.settings.profile.displayName,
-                      },
-                    })
-                  }
+                  onBlur={saveProfileName}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      saveProfileName();
+                      event.currentTarget.blur();
+                    }
+                  }}
                 />
               </label>
-              <div className="onboarding-avatar-grid" aria-label="Choose your cupcake portrait">
-                {Array.from({ length: 8 }, (_, index) => `atlas:${index}`).map((avatar) => (
-                  <button
-                    type="button"
-                    className={workspace.settings.profile.avatar === avatar ? 'is-selected' : ''}
-                    aria-label={`Cupcake portrait ${Number(avatar.split(':')[1]) + 1}`}
-                    aria-pressed={workspace.settings.profile.avatar === avatar}
-                    onClick={() =>
-                      void workspace.updateSettings({
-                        profile: { ...workspace.settings.profile, avatar },
-                      })
-                    }
-                    key={avatar}
-                  >
-                    <CupcakePortrait value={avatar} label="" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="onboarding-points">
-            {item.points.map((point) => (
-              <span key={point}>
-                <Icon name="check" size={13} /> {point}
-              </span>
-            ))}
-          </div>
-          {item.eyebrow === 'Models and providers' && (
-            <div className="onboarding-setup-checks" aria-label="Configuration status">
-              {setupChecks.map((check) => (
-                <span className={check.done ? 'is-done' : ''} key={check.label}>
-                  <Icon name={check.done ? 'check' : 'more'} size={13} />
-                  {check.label}
-                  <small>{check.done ? 'Ready' : 'Optional'}</small>
-                </span>
-              ))}
-              <button
-                className="text-button"
-                onClick={() => {
-                  close(false);
-                  navigate('models');
-                }}
-              >
-                Configure models and runtimes <Icon name="chevron" size={13} />
-              </button>
-              <div className="onboarding-provider-guide">
-                <p>
-                  <strong>Connect a provider in three steps</strong>
-                  <small>
-                    Choose one, paste its key, then Test connection and Save &amp; connect.
-                  </small>
-                </p>
-                <div>
-                  {(
-                    [
-                      ['nvidia-nim', 'NVIDIA NIM'],
-                      ['cohere', 'Cohere'],
-                      ['openai', 'OpenAI'],
-                      ['choose', 'More providers'],
-                    ] as const
-                  ).map(([id, label]) => {
-                    const connected = id !== 'choose' && workspace.providers[id] === true;
-                    return (
+              <div className="onboarding-avatar-pair">
+                <fieldset>
+                  <legend>Your portrait</legend>
+                  <div className="onboarding-avatar-grid">
+                    {CUPCAKE_AVATARS.slice(12, 18).map(({ value, label }) => (
                       <button
                         type="button"
-                        className={connected ? 'is-connected' : ''}
-                        onClick={() => {
-                          close(false);
-                          openProvider(id);
-                        }}
-                        key={id}
+                        className={workspace.settings.profile.avatar === value ? 'is-selected' : ''}
+                        aria-label={`Use ${label} for me`}
+                        aria-pressed={workspace.settings.profile.avatar === value}
+                        onClick={() =>
+                          void workspace.updateSettings({
+                            profile: { ...workspace.settings.profile, avatar: value },
+                          })
+                        }
+                        key={value}
                       >
-                        <ProviderLogo
-                          id={id === 'choose' ? 'openai-compatible' : id}
-                          name={label}
-                        />
-                        <span>{label}</span>
-                        <small>{connected ? 'Connected' : 'Set up'}</small>
+                        <CupcakePortrait value={value} label="" />
                       </button>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>CupcakeAI's portrait</legend>
+                  <div className="onboarding-avatar-grid">
+                    {CUPCAKE_AVATARS.slice(0, 6).map(({ value, label }) => (
+                      <button
+                        type="button"
+                        className={
+                          workspace.settings.assistantAvatar === value ? 'is-selected' : ''
+                        }
+                        aria-label={`Use ${label} for CupcakeAI`}
+                        aria-pressed={workspace.settings.assistantAvatar === value}
+                        onClick={() => void workspace.updateSettings({ assistantAvatar: value })}
+                        key={value}
+                      >
+                        <CupcakePortrait value={value} label="" />
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
               </div>
+              <button className="text-button" onClick={() => leaveFor('settings', 'profile')}>
+                Custom image and full profile <Icon name="chevron" size={13} />
+              </button>
             </div>
           )}
+
+          {item.key === 'appearance' && (
+            <div className="onboarding-appearance">
+              <fieldset>
+                <legend>Theme</legend>
+                <div className="onboarding-choice-row">
+                  {(['light', 'dark', 'minimal', 'classic'] as const).map((theme) => (
+                    <button
+                      type="button"
+                      className={workspace.settings.theme === theme ? 'is-selected' : ''}
+                      aria-pressed={workspace.settings.theme === theme}
+                      onClick={() => void workspace.updateSettings({ theme })}
+                      key={theme}
+                    >
+                      <span className={`onboarding-theme-dot is-${theme}`} />
+                      {cap(theme)}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Wallpaper</legend>
+                <div className="onboarding-wallpaper-row">
+                  {WORKSPACE_WALLPAPERS.slice(0, 5).map(([value, label]) => (
+                    <button
+                      type="button"
+                      className={workspace.settings.wallpaper === value ? 'is-selected' : ''}
+                      aria-label={`Use ${label} wallpaper`}
+                      aria-pressed={workspace.settings.wallpaper === value}
+                      onClick={() => void workspace.updateSettings({ wallpaper: value })}
+                      key={value}
+                    >
+                      <span
+                        style={
+                          value === 'none'
+                            ? undefined
+                            : { backgroundImage: `url(/wallpapers/${value}.webp)` }
+                        }
+                      />
+                      <small>{label}</small>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <button className="text-button" onClick={() => leaveFor('settings')}>
+                See every appearance option <Icon name="chevron" size={13} />
+              </button>
+            </div>
+          )}
+
+          {item.key === 'providers' && (
+            <div className="onboarding-provider-guide">
+              <p>
+                <strong>Choose a provider</strong>
+                <small>Connect, test, and save in one focused panel.</small>
+              </p>
+              <div>
+                {(
+                  [
+                    ['openai', 'OpenAI'],
+                    ['anthropic', 'Anthropic'],
+                    ['google', 'Google'],
+                    ['cohere', 'Cohere'],
+                    ['nvidia-nim', 'NVIDIA NIM'],
+                    ['choose', 'More providers'],
+                  ] as const
+                ).map(([id, label]) => {
+                  const connected = id !== 'choose' && workspace.providers[id] === true;
+                  return (
+                    <button
+                      type="button"
+                      className={connected ? 'is-connected' : ''}
+                      onClick={() => {
+                        close(false);
+                        openProvider(id);
+                      }}
+                      key={id}
+                    >
+                      <ProviderLogo id={id === 'choose' ? 'openai-compatible' : id} name={label} />
+                      <span>{label}</span>
+                      <small>{connected ? 'Connected' : 'Set up'}</small>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="onboarding-privacy-note">
+                <Icon name="key" size={14} /> Keys remain outside the renderer and are protected for
+                your Windows account.
+              </span>
+            </div>
+          )}
+
+          {item.key === 'runtime' && (
+            <div className="onboarding-runtime-panel">
+              <div className="onboarding-fact-grid">
+                <span>
+                  <Icon name="database" />
+                  <small>System RAM</small>
+                  <strong>
+                    {workspace.hardware?.ramBytes
+                      ? `${Math.round(workspace.hardware.ramBytes / 1024 ** 3)} GB detected`
+                      : 'Scan pending'}
+                  </strong>
+                </span>
+                <span>
+                  <Icon name="model" />
+                  <small>Local engine</small>
+                  <strong>{activeRuntime?.name ?? 'Starts on demand'}</strong>
+                </span>
+                <span>
+                  <Icon name="shield" />
+                  <small>Windows reserve</small>
+                  <strong>
+                    {workspace.settings.reserveSystemRamGb} GB RAM ·{' '}
+                    {workspace.settings.reserveVramGb} GB VRAM
+                  </strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                className={cx(
+                  'onboarding-safety-toggle',
+                  workspace.settings.allowRamFallback && 'is-selected',
+                )}
+                aria-pressed={workspace.settings.allowRamFallback}
+                onClick={() =>
+                  void workspace.updateSettings({
+                    allowRamFallback: !workspace.settings.allowRamFallback,
+                  })
+                }
+              >
+                <span>
+                  <Icon name={workspace.settings.allowRamFallback ? 'check' : 'database'} />
+                </span>
+                <span>
+                  <strong>Allow measured RAM fallback</strong>
+                  <small>
+                    Use system memory only within the reserve shown above. This can be slower than
+                    full GPU offload.
+                  </small>
+                </span>
+              </button>
+              <button className="text-button" onClick={() => leaveFor('models')}>
+                Browse local models and runtimes <Icon name="chevron" size={13} />
+              </button>
+            </div>
+          )}
+
+          {item.key === 'projects' && (
+            <div className="onboarding-workflow">
+              <ol>
+                <li>
+                  <span>1</span>
+                  <strong>Project</strong>
+                  <small>Sets the context boundary</small>
+                </li>
+                <li>
+                  <span>2</span>
+                  <strong>Task</strong>
+                  <small>Tracks steps and approvals</small>
+                </li>
+                <li>
+                  <span>3</span>
+                  <strong>Artifact</strong>
+                  <small>Keeps each useful revision</small>
+                </li>
+              </ol>
+              <div className="onboarding-current-count">
+                <Icon name="project" />
+                <span>
+                  <strong>{workspace.projects.length || 'No'} saved projects</strong>
+                  <small>A quick chat never needs one.</small>
+                </span>
+              </div>
+              <button className="button" onClick={() => leaveFor('projects')}>
+                Open Projects
+              </button>
+            </div>
+          )}
+
+          {item.key === 'tools-memory' && (
+            <div className="onboarding-capability-grid">
+              <button type="button" onClick={() => leaveFor('tools')}>
+                <span>
+                  <Icon name="tool" />
+                </span>
+                <strong>Tools</strong>
+                <small>
+                  {workspace.settings.enabledToolIds.length} enabled · each effect stays visible
+                </small>
+                <Icon name="chevron" size={14} />
+              </button>
+              <button type="button" onClick={() => leaveFor('memory')}>
+                <span>
+                  <Icon name="memory" />
+                </span>
+                <strong>Memory</strong>
+                <small>{workspace.memories.length} saved · inspect, edit, or remove</small>
+                <Icon name="chevron" size={14} />
+              </button>
+              <p>
+                <Icon name="info" size={14} /> A project memory stays in that project. Global memory
+                is used only where its scope allows it.
+              </p>
+            </div>
+          )}
+
           {last && (
-            <div className="onboarding-destinations">
-              <button
-                onClick={() => {
-                  navigate('chat');
-                  close(true);
-                }}
+            <div className="onboarding-finish-panel">
+              <div
+                className="onboarding-permission-choice"
+                role="group"
+                aria-label="Permission mode"
               >
-                <Icon name="chat" />
+                <button
+                  type="button"
+                  className={workspace.settings.permissionMode === 'guarded' ? 'is-selected' : ''}
+                  aria-pressed={workspace.settings.permissionMode === 'guarded'}
+                  onClick={() => void workspace.updateSettings({ permissionMode: 'guarded' })}
+                >
+                  <Icon name="shield" />
+                  <span>
+                    <strong>Guarded</strong>
+                    <small>Ask before sensitive effects</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    workspace.settings.permissionMode === 'full-freedom' ? 'is-selected' : ''
+                  }
+                  aria-pressed={workspace.settings.permissionMode === 'full-freedom'}
+                  onClick={() => void workspace.updateSettings({ permissionMode: 'full-freedom' })}
+                >
+                  <Icon name="sparkle" />
+                  <span>
+                    <strong>Full freedom</strong>
+                    <small>Fewer routine confirmations</small>
+                  </span>
+                </button>
+              </div>
+              <div className="onboarding-security-status">
                 <span>
-                  <strong>Start chatting</strong>
-                  <small>Ask CupcakeAI anything</small>
+                  <Icon name={lockEnabled ? 'key' : 'window'} />
                 </span>
-              </button>
-              <button
-                onClick={() => {
-                  navigate('settings');
-                  close(true);
-                }}
-              >
-                <Icon name="settings" />
                 <span>
-                  <strong>Personalize first</strong>
-                  <small>Profile, models, and window</small>
+                  <strong>
+                    {lockEnabled ? 'Workspace password is on' : 'The app opens directly'}
+                  </strong>
+                  <small>
+                    {lockEnabled
+                      ? 'Only someone with the password can open this profile.'
+                      : 'Password protection is optional and can be added later.'}
+                  </small>
                 </span>
-              </button>
+                <button className="text-button" onClick={() => leaveFor('settings', 'permissions')}>
+                  Privacy &amp; backups
+                </button>
+              </div>
+              <div className="onboarding-destinations">
+                <button
+                  onClick={() => {
+                    navigate('chat');
+                    close(true);
+                  }}
+                >
+                  <Icon name="chat" />
+                  <span>
+                    <strong>Start chatting</strong>
+                    <small>Ask CupcakeAI anything</small>
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    navigate('settings');
+                    close(true);
+                  }}
+                >
+                  <Icon name="settings" />
+                  <span>
+                    <strong>Personalize first</strong>
+                    <small>Privacy, storage, and window</small>
+                  </span>
+                </button>
+              </div>
             </div>
           )}
           <footer>
-            <div
-              className="onboarding-progress"
-              aria-label={`Step ${step + 1} of ${onboardingSteps.length}`}
-            >
-              {onboardingSteps.map((_, index) => (
-                <i
-                  className={index === step ? 'is-active' : index < step ? 'is-done' : ''}
-                  key={index}
-                />
-              ))}
-            </div>
+            <span className="onboarding-step-count">
+              {step + 1} / {chapters.length}
+            </span>
+            {nextAttention >= 0 && (
+              <button
+                className="text-button onboarding-next-attention"
+                onClick={() => setStep(nextAttention)}
+              >
+                Next unfinished area
+              </button>
+            )}
             <span />
             {step > 0 && (
-              <button className="button" onClick={() => setStep((value) => value - 1)}>
+              <button className="button" onClick={() => move(-1)}>
                 Back
               </button>
             )}
             <button
               className="button button--primary"
-              onClick={() => (last ? close(true) : setStep((value) => value + 1))}
+              onClick={() => {
+                if (last) close(true);
+                else move(1);
+              }}
             >
               {last ? 'Finish tour' : 'Continue'}
             </button>
@@ -9555,12 +11975,27 @@ function LiveApp() {
     setThemeState(next);
     void workspace.updateSettings({ theme: next });
   };
+  const navigationEpoch = useRef(0);
   const navigate = useCallback((next: View) => {
+    navigationEpoch.current += 1;
     setView(next);
+    document.querySelector('.app-content')?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     window.scrollTo(0, 0);
   }, []);
+  useEffect(() => {
+    document.querySelector('.app-content')?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [view]);
+  const openConversation = (id: string) => {
+    const epoch = ++navigationEpoch.current;
+    void workspace.selectConversation(id).then(() => {
+      if (navigationEpoch.current === epoch) navigate('chat');
+    });
+  };
   const startNewChat = () => {
-    void workspace.createConversation().then(() => navigate('chat'));
+    const epoch = ++navigationEpoch.current;
+    void workspace.createConversation().then((created) => {
+      if (created && navigationEpoch.current === epoch) navigate('chat');
+    });
   };
   const sendChat = (input: ComposerSendInput) => workspace.sendMessage(input);
   useEffect(() => {
@@ -9624,7 +12059,7 @@ function LiveApp() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  });
   useEffect(
     () =>
       window.cupcake?.commands.onCommand((command) => {
@@ -9666,7 +12101,7 @@ function LiveApp() {
   else if (view === 'home')
     content = (
       <HomeView
-        openChat={() => navigate('chat')}
+        openChat={(id) => (id ? openConversation(id) : startNewChat())}
         openTask={() => {
           if (workspace.tasks[0]) setActiveTaskId(workspace.tasks[0].id);
           navigate('task');
@@ -9682,9 +12117,9 @@ function LiveApp() {
       <ChatsView
         conversations={workspace.conversations}
         onCreate={startNewChat}
-        onOpen={(id) => void workspace.selectConversation(id).then(() => navigate('chat'))}
-        onRename={(id, title) => void workspace.renameConversation(id, title)}
-        onArchive={(id, archived) => void workspace.archiveConversation(id, archived)}
+        onOpen={openConversation}
+        onRename={(id, title) => workspace.renameConversation(id, title)}
+        onArchive={(id, archived) => workspace.archiveConversation(id, archived)}
       />
     );
   else if (view === 'chat')
@@ -9698,7 +12133,7 @@ function LiveApp() {
         onSend={sendChat}
       />
     );
-  else if (view === 'projects') content = <ProjectsView openChat={() => navigate('chat')} />;
+  else if (view === 'projects') content = <ProjectsView navigate={navigate} />;
   else if (view === 'tasks')
     content = (
       <TasksView
@@ -9792,9 +12227,7 @@ function LiveApp() {
             .length
         }
         onNewChat={startNewChat}
-        onSelectConversation={(id) =>
-          void workspace.selectConversation(id).then(() => navigate('chat'))
-        }
+        onSelectConversation={openConversation}
         profile={workspace.settings.profile}
       />
       <section

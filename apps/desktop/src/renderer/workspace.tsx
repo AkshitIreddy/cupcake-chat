@@ -113,12 +113,63 @@ export interface ArtifactRecord {
   projectId: string;
   name: string;
   kind: string;
+  mimeType?: string;
   content?: string;
   revisionId?: string;
   revisionNumber?: number;
   createdAt?: string;
   updatedAt?: string;
   size?: number;
+}
+
+export interface ArtifactRevisionRecord {
+  id: string;
+  artifactId: string;
+  parentRevisionId: string | null;
+  objectDigest: string;
+  byteSize: number;
+  authorKind: string;
+  changeSummary: string;
+  createdAt?: string;
+  revisionNumber: number;
+}
+
+export interface ArtifactExportReceipt {
+  artifactId: string;
+  revisionId: string;
+  fileName: string;
+  byteSize: number;
+  sha256: string;
+}
+
+export interface BackupReceipt {
+  backupId: string;
+  fileName: string;
+  byteSize: number;
+  sha256: string;
+  verifiedPayloads: number;
+  totalPayloadBytes: number;
+  protection: 'windows-dpapi-current-user';
+  createdAt: string;
+}
+
+export interface BackupRestoreReceipt {
+  backupId: string;
+  productVersion: string;
+  restoreToken: string;
+  verifiedContainerPayloads: number;
+  totalPayloadBytes: number;
+  runtimeVerification: {
+    databaseIntegrity: 'ok';
+    contentMode: 'encrypted' | 'plaintext';
+    reachableObjects: number;
+    verifiedObjectBytes: number;
+    schemaVersion: number;
+  };
+  prepared: true;
+  requiresRestart: true;
+  activeProfileChanged: false;
+  profileKeyActivated: false;
 }
 
 export interface SearchRecord {
@@ -138,16 +189,24 @@ export interface HardwareRecord {
   ramBytes?: number;
   availableRamBytes?: number;
   vramBytes?: number;
+  availableVramBytes?: number;
   gpu?: string;
   diskAvailableBytes?: number;
   windowsVersion?: string;
   acceleration?: string[];
 }
 
+export interface CommunityModelPage {
+  models: ModelDescriptor[];
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
 export interface ProviderSetupInput {
   provider: string;
   apiKey: string;
   endpoint?: string;
+  accountId?: string;
   organization?: string;
   modelId?: string;
   connectionName?: string;
@@ -205,7 +264,9 @@ export interface LegacyMigrationState {
   available: boolean;
   source_fingerprint?: string | null;
   report?: {
+    counts?: Record<string, number>;
     conversations?: number;
+    messages?: number;
     memories?: number;
     tasks?: number;
     files?: number;
@@ -366,18 +427,32 @@ interface RuntimeTool {
 }
 
 interface RuntimeArtifact {
-  artifact_id?: string;
-  id?: string;
+  id: string;
   project_id: string;
-  name: string;
-  kind?: string;
-  artifact_type?: string;
-  content?: string;
-  revision_id?: string;
-  revision_number?: number;
+  title: string;
+  kind: string;
+  mime_type: string;
+  head_revision_id: string;
   created_at?: string;
   updated_at?: string;
-  size?: number;
+}
+
+interface RuntimeArtifactRevision {
+  id: string;
+  artifact_id: string;
+  parent_revision_id?: string | null;
+  object_digest: string;
+  byte_size: number;
+  author_kind?: string;
+  change_summary?: string | null;
+  created_at?: string;
+}
+
+interface RuntimeArtifactSnapshot {
+  artifact: RuntimeArtifact;
+  revision: RuntimeArtifactRevision;
+  content?: string;
+  byteSize?: number;
 }
 
 interface WorkspaceContextValue {
@@ -409,6 +484,8 @@ interface WorkspaceContextValue {
   activeRunId: string | null;
   setActiveProject(projectId: string | null): Promise<void>;
   createProject(name: string, description?: string): Promise<void>;
+  updateProject(projectId: string, name: string, description: string): Promise<void>;
+  archiveProject(projectId: string): Promise<void>;
   createConversation(
     title?: string,
   ): Promise<{ conversationId: string; branchId: string; projectId: string | null } | null>;
@@ -462,15 +539,29 @@ interface WorkspaceContextValue {
   updateMemory(record: MemoryRecord): Promise<void>;
   setMemoryEnabled(record: MemoryRecord, enabled: boolean): Promise<void>;
   forgetMemory(record: MemoryRecord): Promise<void>;
-  createArtifact(name: string, kind: string, content: string): Promise<void>;
-  reviseArtifact(artifact: ArtifactRecord, content: string): Promise<void>;
-  exportArtifact(artifact: ArtifactRecord): Promise<void>;
+  createArtifact(input: {
+    name: string;
+    kind: string;
+    mimeType: string;
+    content: string;
+  }): Promise<ArtifactRecord>;
+  getArtifact(artifact: ArtifactRecord, revisionId?: string): Promise<ArtifactRecord>;
+  getArtifactHistory(artifact: ArtifactRecord): Promise<ArtifactRevisionRecord[]>;
+  reviseArtifact(
+    artifact: ArtifactRecord,
+    content: string,
+    changeSummary?: string,
+  ): Promise<ArtifactRecord>;
+  exportArtifact(artifact: ArtifactRecord): Promise<ArtifactExportReceipt | null>;
   querySearch(query: string, globalScope?: boolean): Promise<void>;
   selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
   installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<void>;
   activateRuntimePack(runtime: LocalRuntimeRecord): Promise<void>;
-  discoverCommunityModels: (query?: string, limit?: number) => Promise<ModelDescriptor[]>;
+  discoverCommunityModels: (
+    query?: string,
+    options?: { limit?: number; cursor?: string },
+  ) => Promise<CommunityModelPage>;
   setToolEnabled(toolId: string, enabled: boolean): Promise<void>;
   connectMcp(input: {
     name: string;
@@ -487,8 +578,9 @@ interface WorkspaceContextValue {
   preflightClearData(scopes: string[]): Promise<Record<string, unknown>>;
   executeClearData(preflight: Record<string, unknown>): Promise<void>;
   undoClearData(): Promise<void>;
-  createBackup(): Promise<void>;
-  refresh(): Promise<void>;
+  createBackup(): Promise<BackupReceipt | null>;
+  verifyBackupForRecovery(): Promise<BackupRestoreReceipt | null>;
+  refresh(includeHostedCatalog?: boolean): Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -726,6 +818,44 @@ function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): 
   };
 }
 
+function mapRuntimeArtifact(
+  artifact: RuntimeArtifact,
+  revision?: RuntimeArtifactRevision,
+  content?: string,
+  revisionNumber?: number,
+): ArtifactRecord {
+  return {
+    id: artifact.id,
+    projectId: artifact.project_id,
+    name: artifact.title,
+    kind: artifact.kind,
+    mimeType: artifact.mime_type,
+    content,
+    revisionId: revision?.id ?? artifact.head_revision_id,
+    revisionNumber,
+    createdAt: artifact.created_at,
+    updatedAt: artifact.updated_at,
+    size: revision?.byte_size,
+  };
+}
+
+function mapRuntimeArtifactRevision(
+  revision: RuntimeArtifactRevision,
+  revisionNumber: number,
+): ArtifactRevisionRecord {
+  return {
+    id: revision.id,
+    artifactId: revision.artifact_id,
+    parentRevisionId: revision.parent_revision_id ?? null,
+    objectDigest: revision.object_digest,
+    byteSize: revision.byte_size,
+    authorKind: revision.author_kind ?? 'unknown',
+    changeSummary: revision.change_summary?.trim() || 'Saved revision',
+    createdAt: revision.created_at,
+    revisionNumber: revisionNumber + 1,
+  };
+}
+
 function safeAttachmentMetadata(value: unknown, index: number): AttachmentRecord | null {
   const item = recordValue(value);
   if (!item) return null;
@@ -957,6 +1087,12 @@ export function normalizeHardware(value: unknown): HardwareRecord | null {
   const vramGb = Number(record.vram_gb);
   if (Number.isFinite(vramBytes) && vramBytes > 0) result.vramBytes = vramBytes;
   else if (Number.isFinite(vramGb) && vramGb > 0) result.vramBytes = vramGb * 1024 ** 3;
+  const availableVramBytes = Number(record.availableVramBytes);
+  const availableVramGb = Number(record.available_vram_gb);
+  if (Number.isFinite(availableVramBytes) && availableVramBytes >= 0)
+    result.availableVramBytes = availableVramBytes;
+  else if (Number.isFinite(availableVramGb) && availableVramGb >= 0)
+    result.availableVramBytes = availableVramGb * 1024 ** 3;
   const gpu = record.gpu ?? record.gpu_name;
   if (typeof gpu === 'string' && gpu) result.gpu = gpu;
   const cpu = record.cpu ?? record.cpu_name;
@@ -1173,6 +1309,9 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
     mistral: 'Mistral',
     cohere: 'Cohere',
     'nvidia-nim': 'NVIDIA NIM',
+    groq: 'Groq',
+    openrouter: 'OpenRouter',
+    cloudflare: 'Cloudflare Workers AI',
     cupcake_local: 'Cupcake Local',
     cupcake_llama_cpp: 'Cupcake Local',
   };
@@ -1184,6 +1323,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
           .map(([name]) => name)
       : [];
   const metadata = item.metadata ?? {};
+  const endpointId = textValue(metadata.endpoint_id);
   const metadataChatCompatibility = metadata.chat_compatibility;
   const chatCompatibility =
     item.chat_compatibility ??
@@ -1226,7 +1366,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
   return {
     id,
     runtimeModelId: kind && item.model ? item.model : id,
-    provider: providerNames[kind ?? provider] ?? cap(provider),
+    provider: providerNames[endpointId] ?? providerNames[kind ?? provider] ?? cap(provider),
     publisher: typeof metadata.publisher_id === 'string' ? metadata.publisher_id : undefined,
     name: item.display_name ?? item.model ?? id.split(':').at(-1) ?? id,
     route: local || item.privacy_route === 'local' ? 'Local' : 'Cloud',
@@ -1596,13 +1736,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>(fixtureMode ? fixtureTasks : []);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>(
     fixtureMode
-      ? fixtureArtifacts.map((item) => ({
+      ? fixtureArtifacts.map((item, index) => ({
           id: item.id,
           projectId: 'fixture-cupcake',
           name: item.name,
-          kind: item.type,
+          kind: item.type.toLowerCase(),
+          mimeType:
+            item.type === 'Table'
+              ? 'text/csv'
+              : item.type === 'Webpage'
+                ? 'text/html'
+                : 'text/markdown',
+          content:
+            item.type === 'Table'
+              ? 'Model,Route,Result\nCupcake Local,CUDA,18.6 tok/s\nOpenAI,Cloud,Complete'
+              : item.type === 'Webpage'
+                ? '<main><h1>Provider readiness</h1><p>A safe, sandboxed artifact preview.</p></main>'
+                : item.type === 'Diagram'
+                  ? 'flowchart LR\n  Sources --> Findings\n  Findings --> Decisions'
+                  : '# CupcakeAI architecture\n\nArtifacts keep useful work connected to its project.\n\n## Boundaries\n\n- Project context stays scoped\n- Every save creates a revision\n- Local work remains on this computer',
+          revisionId: `fixture-${item.id}-revision-${item.revisions}`,
           revisionNumber: Number(item.revisions) || 1,
-          updatedAt: item.updated,
+          updatedAt: `2026-09-0${Math.max(1, 5 - index)}T${String(11 - index).padStart(2, '0')}:20:00.000Z`,
         }))
       : [],
   );
@@ -1630,7 +1785,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return fallbackSettings;
     }
   });
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() =>
+    fixtureMode ? (fixtureProjects()[0]?.id ?? null) : null,
+  );
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -1692,353 +1849,350 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return;
       }
       const result = await request<RuntimeArtifact[]>('artifacts.list', { projectId });
-      setArtifacts(
-        result.map((item) => ({
-          id: item.id ?? item.artifact_id ?? '',
-          projectId: item.project_id,
-          name: item.name,
-          kind: item.kind ?? item.artifact_type ?? 'Document',
-          content: item.content,
-          revisionId: item.revision_id,
-          revisionNumber: item.revision_number,
-          createdAt: item.created_at,
-          updatedAt: item.updated_at,
-          size: item.size,
-        })),
-      );
+      setArtifacts(result.map((item) => mapRuntimeArtifact(item)));
     },
     [fixtureMode, request],
   );
 
-  const refresh = useCallback(async () => {
-    if (fixtureMode) return;
-    await guard(async () => {
-      // Let the first useful read start the frozen runtime. app.bootstrap is
-      // itself idempotent and retried below, so a separate health round-trip
-      // only lengthens the locked-to-interactive path on every launch.
-      type RuntimeBootstrap = {
-        selectedModelId?: string;
-        projects?: RuntimeProject[];
-        conversations?: RuntimeConversation[];
-        models?: RuntimeModel[];
-        tools?: RuntimeTool[];
-        hardware?: HardwareRecord;
-        localRuntimes?: Array<string | LocalRuntimeRecord>;
-        suggestionsEnabled?: boolean;
-      };
-      let bootstrap: RuntimeBootstrap | null = null;
-      let bootstrapFailure: Error | null = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          bootstrap = await request<RuntimeBootstrap>('app.bootstrap', {}, 300_000);
-          bootstrapFailure = null;
-          break;
-        } catch (reason) {
-          bootstrapFailure =
-            reason instanceof Error ? reason : new Error('The local workspace could not open.');
-          if (attempt < 2)
-            await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+  const refresh = useCallback(
+    async (includeHostedCatalog = false) => {
+      if (fixtureMode) return;
+      await guard(async () => {
+        // Let the first useful read start the frozen runtime. app.bootstrap is
+        // itself idempotent and retried below, so a separate health round-trip
+        // only lengthens the locked-to-interactive path on every launch.
+        type RuntimeBootstrap = {
+          selectedModelId?: string;
+          projects?: RuntimeProject[];
+          conversations?: RuntimeConversation[];
+          models?: RuntimeModel[];
+          tools?: RuntimeTool[];
+          hardware?: HardwareRecord;
+          localRuntimes?: Array<string | LocalRuntimeRecord>;
+          suggestionsEnabled?: boolean;
+        };
+        let bootstrap: RuntimeBootstrap | null = null;
+        let bootstrapFailure: Error | null = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            bootstrap = await request<RuntimeBootstrap>('app.bootstrap', {}, 300_000);
+            bootstrapFailure = null;
+            break;
+          } catch (reason) {
+            bootstrapFailure =
+              reason instanceof Error ? reason : new Error('The local workspace could not open.');
+            if (attempt < 2)
+              await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+          }
         }
-      }
-      if (!bootstrap) throw bootstrapFailure ?? new Error('The local workspace could not open.');
-      selectedModelIdRef.current = bootstrap.selectedModelId ?? selectedModelIdRef.current;
-      const projectRecords = (bootstrap.projects ?? []).map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description ?? '',
-        archived: item.status === 'archived',
-        createdAt: item.created_at,
-        updatedAt: item.updated_at,
-      }));
-      setProjects(projectRecords);
-      setConversations(
-        (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
-      );
-      setTools((bootstrap.tools ?? []).map(mapTool));
-      const selectedProject =
-        activeProjectId && projectRecords.some((item) => item.id === activeProjectId)
-          ? activeProjectId
-          : (projectRecords[0]?.id ?? null);
-      setActiveProjectId(selectedProject);
-      // The encrypted navigation shell and conversation list are now useful.
-      // Optional models, hardware, tasks, memory, providers, migration and
-      // developer diagnostics hydrate below without holding the first
-      // interactive frame hostage.
-      setReady(true);
-      const auxiliaryFailures: string[] = [];
-      const recover = async <T,>(label: string, operation: Promise<T>, fallback: T): Promise<T> => {
-        const result = await recoverWorkspaceSupportRequest(label, operation, fallback);
-        if (result.failure) auxiliaryFailures.push(result.failure);
-        return result.value;
-      };
-      const memoryRequest = request<RuntimeMemory[]>('memory.list', {
-        states: ['active', 'candidate', 'superseded', 'expired'],
-      }).catch(() => request<RuntimeMemory[]>('memory.list'));
-      const [
-        taskResult,
-        memoryResult,
-        providerResult,
-        runtimeSettings,
-        permissionPolicy,
-        migration,
-        cupcakeStatus,
-      ] = await Promise.all([
-        recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
-        recover('Memory', memoryRequest, []),
-        recover(
-          'Providers',
-          request<{
-            providers: Array<{
-              provider: string;
-              configured: boolean;
-              catalog?: { models?: Array<Record<string, unknown>> };
-            }>;
-          }>('providers.status'),
-          { providers: [] },
-        ),
-        recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
-        recover('Permission policy', request<{ mode?: string }>('broker.permission_mode.get'), {
-          mode: 'guarded',
-        }),
-        recover('Migration', request<LegacyMigrationState>('migration.detect'), {
-          available: false,
-          state: 'unavailable',
-        }),
-        recover<CupcakeLocalStatus>(
-          'Cupcake Local status',
-          request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
-          {},
-        ),
-      ]);
-      const localStatus = cupcakeStatus ?? {};
-      setTasks(taskResult.map(mapTask));
-      setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
-      setProviders(
-        Object.fromEntries(
+        if (!bootstrap) throw bootstrapFailure ?? new Error('The local workspace could not open.');
+        selectedModelIdRef.current = bootstrap.selectedModelId ?? selectedModelIdRef.current;
+        const projectRecords = (bootstrap.projects ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description ?? '',
+          archived: item.status === 'archived',
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
+        }));
+        setProjects(projectRecords);
+        setConversations(
+          (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
+        );
+        setTools((bootstrap.tools ?? []).map(mapTool));
+        const selectedProject =
+          activeProjectId && projectRecords.some((item) => item.id === activeProjectId)
+            ? activeProjectId
+            : (projectRecords[0]?.id ?? null);
+        setActiveProjectId(selectedProject);
+        // The encrypted navigation shell and conversation list are now useful.
+        // Optional models, hardware, tasks, memory, providers, migration and
+        // developer diagnostics hydrate below without holding the first
+        // interactive frame hostage.
+        setReady(true);
+        const auxiliaryFailures: string[] = [];
+        const recover = async <T,>(
+          label: string,
+          operation: Promise<T>,
+          fallback: T,
+        ): Promise<T> => {
+          const result = await recoverWorkspaceSupportRequest(label, operation, fallback);
+          if (result.failure) auxiliaryFailures.push(result.failure);
+          return result.value;
+        };
+        const memoryRequest = request<RuntimeMemory[]>('memory.list', {
+          states: ['active', 'candidate', 'superseded', 'expired'],
+        }).catch(() => request<RuntimeMemory[]>('memory.list'));
+        const [
+          taskResult,
+          memoryResult,
+          providerResult,
+          runtimeSettings,
+          permissionPolicy,
+          migration,
+          cupcakeStatus,
+        ] = await Promise.all([
+          recover('Tasks', request<RuntimeTask[]>('tasks.list'), []),
+          recover('Memory', memoryRequest, []),
+          recover(
+            'Providers',
+            request<{
+              providers: Array<{
+                provider: string;
+                configured: boolean;
+                catalog?: { models?: Array<Record<string, unknown>> };
+              }>;
+            }>('providers.status'),
+            { providers: [] },
+          ),
+          recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
+          recover('Permission policy', request<{ mode?: string }>('broker.permission_mode.get'), {
+            mode: 'guarded',
+          }),
+          recover('Migration', request<LegacyMigrationState>('migration.detect'), {
+            available: false,
+            state: 'unavailable',
+          }),
+          recover<CupcakeLocalStatus>(
+            'Cupcake Local status',
+            request<CupcakeLocalStatus>('local_models.cupcake.status', {}, 120_000),
+            {},
+          ),
+        ]);
+        const localStatus = cupcakeStatus ?? {};
+        setTasks(taskResult.map(mapTask));
+        setMemories(memoryResult.map((item) => mapMemory(item, projectRecords)));
+        setProviders(
+          Object.fromEntries(
+            providerResult.providers.map((item) => [item.provider, item.configured]),
+          ),
+        );
+        const configuredProviders = Object.fromEntries(
           providerResult.providers.map((item) => [item.provider, item.configured]),
-        ),
-      );
-      const configuredProviders = Object.fromEntries(
-        providerResult.providers.map((item) => [item.provider, item.configured]),
-      );
-      const discoveredModels = providerResult.providers.flatMap(
-        (item) => item.catalog?.models ?? [],
-      );
-      const allRuntimeModels: RuntimeModel[] = [...(bootstrap.models ?? []), ...discoveredModels]
-        .map((item) => item as unknown as RuntimeModel)
-        .filter((item) => item.provider !== 'mock' && item.privacy_route !== 'local');
-      const uniqueRuntimeModels = [
-        ...new Map(
-          allRuntimeModels.map((item) => [
-            item.id ?? item.model_id ?? `${item.provider}:${item.model ?? 'model'}`,
-            item,
-          ]),
-        ).values(),
-      ];
-      setModels((current) => {
-        const mappedRuntimeModels = uniqueRuntimeModels.map((item) => {
-          const mapped = mapModel(item, bootstrap.selectedModelId);
-          const provider = textValue(item.provider ?? item.metadata?.provider);
-          return {
-            ...mapped,
-            status:
-              mapped.route === 'Local'
-                ? mapped.status
-                : provider && configuredProviders[provider]
-                  ? ('ready' as const)
-                  : ('setup' as const),
-          };
+        );
+        const discoveredModels = providerResult.providers.flatMap(
+          (item) => item.catalog?.models ?? [],
+        );
+        const allRuntimeModels: RuntimeModel[] = [...(bootstrap.models ?? []), ...discoveredModels]
+          .map((item) => item as unknown as RuntimeModel)
+          .filter((item) => item.provider !== 'mock' && item.privacy_route !== 'local');
+        const uniqueRuntimeModels = [
+          ...new Map(
+            allRuntimeModels.map((item) => [
+              item.id ?? item.model_id ?? `${item.provider}:${item.model ?? 'model'}`,
+              item,
+            ]),
+          ).values(),
+        ];
+        setModels((current) => {
+          const mappedRuntimeModels = uniqueRuntimeModels.map((item) => {
+            const mapped = mapModel(item, bootstrap.selectedModelId);
+            const provider = textValue(item.provider ?? item.metadata?.provider);
+            const endpointId = textValue(item.metadata?.endpoint_id);
+            const configuredProvider =
+              provider === 'openai-compatible' && endpointId ? endpointId : provider;
+            return {
+              ...mapped,
+              status:
+                mapped.route === 'Local'
+                  ? mapped.status
+                  : configuredProvider && configuredProviders[configuredProvider]
+                    ? ('ready' as const)
+                    : ('setup' as const),
+            };
+          });
+          const cupcakeCatalog = mapCupcakeLocalModels(
+            localStatus,
+            selectedModelIdRef.current ?? undefined,
+          );
+          return mergeModelDescriptors(
+            current.filter(
+              (item) => item.provider !== 'Cupcake Local' && item.provider !== 'Mock Cupcake',
+            ),
+            [...mappedRuntimeModels, ...cupcakeCatalog],
+            selectedModelIdRef.current,
+          );
         });
-        const cupcakeCatalog = mapCupcakeLocalModels(
-          localStatus,
-          selectedModelIdRef.current ?? undefined,
-        );
-        return mergeModelDescriptors(
-          current.filter(
-            (item) => item.provider !== 'Cupcake Local' && item.provider !== 'Mock Cupcake',
-          ),
-          [...mappedRuntimeModels, ...cupcakeCatalog],
-          selectedModelIdRef.current,
-        );
-      });
-      setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
-      setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
-      if (configuredProviders['nvidia-nim']) {
-        if (!nvidiaCatalogRefresh.current) {
-          const refreshCatalog = request<Record<string, unknown>>(
-            'providers.catalog.refresh',
-            { provider: 'nvidia-nim' },
-            120_000,
-          )
-            .then((result) => {
-              const catalog = recordValue(result.catalog);
-              const catalogModels = Array.isArray(result.models)
-                ? (result.models as Array<Record<string, unknown>>)
-                : Array.isArray(catalog?.models)
-                  ? (catalog.models as Array<Record<string, unknown>>)
-                  : [];
-              if (!catalogModels.length) return;
-              setModels((current) => {
-                const incoming = catalogModels.map((item) => ({
-                  ...mapModel(
-                    {
-                      ...item,
-                      provider: textValue(item.provider, 'nvidia-nim'),
-                    },
-                    selectedModelIdRef.current ?? undefined,
-                  ),
-                  status: 'ready' as const,
-                }));
-                return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
+        setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
+        setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
+        if (includeHostedCatalog === true && configuredProviders['nvidia-nim']) {
+          if (!nvidiaCatalogRefresh.current) {
+            const refreshCatalog = request<Record<string, unknown>>(
+              'providers.catalog.refresh',
+              { provider: 'nvidia-nim' },
+              120_000,
+            )
+              .then((result) => {
+                const catalog = recordValue(result.catalog);
+                const catalogModels = Array.isArray(result.models)
+                  ? (result.models as Array<Record<string, unknown>>)
+                  : Array.isArray(catalog?.models)
+                    ? (catalog.models as Array<Record<string, unknown>>)
+                    : [];
+                if (!catalogModels.length) return;
+                setModels((current) => {
+                  const incoming = catalogModels.map((item) => ({
+                    ...mapModel(
+                      {
+                        ...item,
+                        provider: textValue(item.provider, 'nvidia-nim'),
+                      },
+                      selectedModelIdRef.current ?? undefined,
+                    ),
+                    status: 'ready' as const,
+                  }));
+                  return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
+                });
+              })
+              .catch((reason) => {
+                setError(
+                  reason instanceof Error
+                    ? `NVIDIA NIM catalog is unavailable: ${reason.message}`
+                    : 'NVIDIA NIM catalog is unavailable. Reopen Models to retry.',
+                );
+              })
+              .finally(() => {
+                nvidiaCatalogRefresh.current = null;
               });
-            })
-            .catch((reason) => {
-              setError(
-                reason instanceof Error
-                  ? `NVIDIA NIM catalog is unavailable: ${reason.message}`
-                  : 'NVIDIA NIM catalog is unavailable. Reopen Models to retry.',
-              );
-            })
-            .finally(() => {
-              nvidiaCatalogRefresh.current = null;
-            });
-          nvidiaCatalogRefresh.current = refreshCatalog;
-          void refreshCatalog;
+            nvidiaCatalogRefresh.current = refreshCatalog;
+            void refreshCatalog;
+          }
         }
-      }
-      if (auxiliaryFailures.length) {
-        setError(
-          `The workspace opened, but some supporting data could not refresh. ${auxiliaryFailures.join(
-            ' · ',
-          )}. Use Retry on the Models page after the runtime is ready.`,
+        if (auxiliaryFailures.length) {
+          setError(
+            `The workspace opened, but some supporting data could not refresh. ${auxiliaryFailures.join(
+              ' · ',
+            )}. Use Retry on the Models page after the runtime is ready.`,
+          );
+        }
+        setLegacyMigration(
+          migration.available && !['declined', 'imported', 'no_data'].includes(migration.state)
+            ? migration
+            : null,
         );
-      }
-      setLegacyMigration(
-        migration.available && !['declined', 'completed'].includes(migration.state)
-          ? migration
-          : null,
-      );
-      setSettings((current) => ({
-        ...current,
-        theme:
-          runtimeSettings['appearance.theme'] === 'cupcake-dark'
-            ? 'dark'
-            : runtimeSettings['appearance.theme'] === 'minimal'
-              ? 'minimal'
-              : runtimeSettings['appearance.theme'] === 'classic'
-                ? 'classic'
-                : 'light',
-        wallpaper:
-          runtimeSettings['appearance.wallpaper'] === 'moonlit-archive' ||
-          runtimeSettings['appearance.wallpaper'] === 'pistachio-atelier' ||
-          runtimeSettings['appearance.wallpaper'] === 'blueberry-observatory' ||
-          runtimeSettings['appearance.wallpaper'] === 'copper-workshop' ||
-          runtimeSettings['appearance.wallpaper'] === 'aquamarine-tidepool-library' ||
-          runtimeSettings['appearance.wallpaper'] === 'ink-snow-garden' ||
-          runtimeSettings['appearance.wallpaper'] === 'raspberry-circuit-conservatory' ||
-          runtimeSettings['appearance.wallpaper'] === 'saffron-paper-city'
-            ? runtimeSettings['appearance.wallpaper']
-            : 'none',
-        offline: runtimeSettings['privacy.default_mode'] === 'offline',
-        proactiveEnabled:
-          typeof runtimeSettings['proactive.enabled'] === 'boolean'
-            ? runtimeSettings['proactive.enabled']
-            : (bootstrap.suggestionsEnabled ?? false),
-        developerMode: runtimeSettings['developer.enabled'] === true,
-        reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
-        scrollbarMode:
-          runtimeSettings['appearance.scrollbars'] === 'minimal' ||
-          runtimeSettings['appearance.scrollbars'] === 'hidden'
-            ? runtimeSettings['appearance.scrollbars']
-            : 'slim',
-        onboardingCompleted: runtimeSettings['onboarding.completed_v1'] === true,
-        profile: {
-          displayName: textValue(
-            runtimeSettings['profile.display_name'],
-            current.profile.displayName,
+        setSettings((current) => ({
+          ...current,
+          theme:
+            runtimeSettings['appearance.theme'] === 'cupcake-dark'
+              ? 'dark'
+              : runtimeSettings['appearance.theme'] === 'minimal'
+                ? 'minimal'
+                : runtimeSettings['appearance.theme'] === 'classic'
+                  ? 'classic'
+                  : 'light',
+          wallpaper:
+            runtimeSettings['appearance.wallpaper'] === 'moonlit-archive' ||
+            runtimeSettings['appearance.wallpaper'] === 'pistachio-atelier' ||
+            runtimeSettings['appearance.wallpaper'] === 'blueberry-observatory' ||
+            runtimeSettings['appearance.wallpaper'] === 'copper-workshop' ||
+            runtimeSettings['appearance.wallpaper'] === 'aquamarine-tidepool-library' ||
+            runtimeSettings['appearance.wallpaper'] === 'ink-snow-garden' ||
+            runtimeSettings['appearance.wallpaper'] === 'raspberry-circuit-conservatory' ||
+            runtimeSettings['appearance.wallpaper'] === 'saffron-paper-city'
+              ? runtimeSettings['appearance.wallpaper']
+              : 'none',
+          offline: runtimeSettings['privacy.default_mode'] === 'offline',
+          proactiveEnabled:
+            typeof runtimeSettings['proactive.enabled'] === 'boolean'
+              ? runtimeSettings['proactive.enabled']
+              : (bootstrap.suggestionsEnabled ?? false),
+          developerMode: runtimeSettings['developer.enabled'] === true,
+          reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
+          scrollbarMode:
+            runtimeSettings['appearance.scrollbars'] === 'minimal' ||
+            runtimeSettings['appearance.scrollbars'] === 'hidden'
+              ? runtimeSettings['appearance.scrollbars']
+              : 'slim',
+          onboardingCompleted: runtimeSettings['onboarding.completed_v1'] === true,
+          profile: {
+            displayName: textValue(
+              runtimeSettings['profile.display_name'],
+              current.profile.displayName,
+            ),
+            role: textValue(runtimeSettings['profile.role'], current.profile.role),
+            bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
+            avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
+          },
+          assistantAvatar: textValue(runtimeSettings['assistant.avatar'], current.assistantAvatar),
+          personalityPreset:
+            (runtimeSettings['personality.preset'] as WorkspaceSettings['personalityPreset']) ??
+            current.personalityPreset,
+          personality: {
+            warmth: Number(runtimeSettings['personality.warmth'] ?? current.personality.warmth),
+            brevity: Number(runtimeSettings['personality.brevity'] ?? current.personality.brevity),
+            initiative: Number(
+              runtimeSettings['personality.initiative'] ?? current.personality.initiative,
+            ),
+          },
+          personalityInstructions: textValue(
+            runtimeSettings['personality.custom_instructions'],
+            current.personalityInstructions,
           ),
-          role: textValue(runtimeSettings['profile.role'], current.profile.role),
-          bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
-          avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
-        },
-        assistantAvatar: textValue(runtimeSettings['assistant.avatar'], current.assistantAvatar),
-        personalityPreset:
-          (runtimeSettings['personality.preset'] as WorkspaceSettings['personalityPreset']) ??
-          current.personalityPreset,
-        personality: {
-          warmth: Number(runtimeSettings['personality.warmth'] ?? current.personality.warmth),
-          brevity: Number(runtimeSettings['personality.brevity'] ?? current.personality.brevity),
-          initiative: Number(
-            runtimeSettings['personality.initiative'] ?? current.personality.initiative,
+          semanticEnrichment: {
+            enabled: runtimeSettings['retrieval.semantic.enabled'] === true,
+            provider:
+              typeof runtimeSettings['retrieval.semantic.provider'] === 'string'
+                ? runtimeSettings['retrieval.semantic.provider']
+                : null,
+            modelId:
+              typeof runtimeSettings['retrieval.semantic.model_id'] === 'string'
+                ? runtimeSettings['retrieval.semantic.model_id']
+                : null,
+          },
+          enabledToolIds: Array.isArray(runtimeSettings['tools.enabled'])
+            ? (runtimeSettings['tools.enabled'] as string[])
+            : current.enabledToolIds,
+          permissionMode: permissionPolicy?.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
+          allowRamFallback: runtimeSettings['models.local.allow_ram_fallback'] !== false,
+          ramLimitMode:
+            runtimeSettings['models.local.ram_limit_mode'] === 'manual' ? 'manual' : 'auto',
+          maxRamGb: Math.max(
+            4,
+            Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
           ),
-        },
-        personalityInstructions: textValue(
-          runtimeSettings['personality.custom_instructions'],
-          current.personalityInstructions,
-        ),
-        semanticEnrichment: {
-          enabled: runtimeSettings['retrieval.semantic.enabled'] === true,
-          provider:
-            typeof runtimeSettings['retrieval.semantic.provider'] === 'string'
-              ? runtimeSettings['retrieval.semantic.provider']
-              : null,
-          modelId:
-            typeof runtimeSettings['retrieval.semantic.model_id'] === 'string'
-              ? runtimeSettings['retrieval.semantic.model_id']
-              : null,
-        },
-        enabledToolIds: Array.isArray(runtimeSettings['tools.enabled'])
-          ? (runtimeSettings['tools.enabled'] as string[])
-          : current.enabledToolIds,
-        permissionMode: permissionPolicy?.mode === 'full-freedom' ? 'full-freedom' : 'guarded',
-        allowRamFallback: runtimeSettings['models.local.allow_ram_fallback'] !== false,
-        ramLimitMode:
-          runtimeSettings['models.local.ram_limit_mode'] === 'manual' ? 'manual' : 'auto',
-        maxRamGb: Math.max(
-          4,
-          Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
-        ),
-        autoEvictLocalModels: runtimeSettings['models.local.auto_evict'] !== false,
-        localModelIdleMinutes: Math.max(
-          1,
-          Math.min(
-            240,
-            Number(runtimeSettings['models.local.idle_minutes'] ?? current.localModelIdleMinutes),
-          ),
-        ),
-        reserveSystemRamGb: Math.max(
-          2,
-          Math.min(
-            64,
-            Number(
-              runtimeSettings['models.local.reserve_system_ram_gb'] ?? current.reserveSystemRamGb,
+          autoEvictLocalModels: runtimeSettings['models.local.auto_evict'] !== false,
+          localModelIdleMinutes: Math.max(
+            1,
+            Math.min(
+              240,
+              Number(runtimeSettings['models.local.idle_minutes'] ?? current.localModelIdleMinutes),
             ),
           ),
-        ),
-        reserveVramGb: Math.max(
-          0.5,
-          Math.min(
-            16,
-            Number(runtimeSettings['models.local.reserve_vram_gb'] ?? current.reserveVramGb),
+          reserveSystemRamGb: Math.max(
+            2,
+            Math.min(
+              64,
+              Number(
+                runtimeSettings['models.local.reserve_system_ram_gb'] ?? current.reserveSystemRamGb,
+              ),
+            ),
           ),
-        ),
-      }));
-      setConfigurationReady(true);
-      void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
-        .then((items) =>
-          setRuntimeEvents(
-            items.map((item, index) => ({
-              sequence: Number(item.sequence ?? index + 1),
-              type: textValue(item.type ?? item.event_type, 'runtime.event'),
-              payload: item.payload ?? item.detail ?? {},
-              timestamp: textValue(item.timestamp ?? item.created_at, new Date().toISOString()),
-            })),
+          reserveVramGb: Math.max(
+            0.5,
+            Math.min(
+              16,
+              Number(runtimeSettings['models.local.reserve_vram_gb'] ?? current.reserveVramGb),
+            ),
           ),
-        )
-        .catch(() => undefined);
-      await loadArtifacts(selectedProject);
-    });
-  }, [activeProjectId, fixtureMode, guard, loadArtifacts, request]);
+        }));
+        setConfigurationReady(true);
+        void request<Array<Record<string, unknown>>>('developer.events', { limit: 500 })
+          .then((items) =>
+            setRuntimeEvents(
+              items.map((item, index) => ({
+                sequence: Number(item.sequence ?? index + 1),
+                type: textValue(item.type ?? item.event_type, 'runtime.event'),
+                payload: item.payload ?? item.detail ?? {},
+                timestamp: textValue(item.timestamp ?? item.created_at, new Date().toISOString()),
+              })),
+            ),
+          )
+          .catch(() => undefined);
+        await loadArtifacts(selectedProject);
+      });
+    },
+    [activeProjectId, fixtureMode, guard, loadArtifacts, request],
+  );
 
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -2156,8 +2310,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('cupcake-workspace-settings', JSON.stringify(settings));
   }, [settings]);
 
+  const conversationSelectionGeneration = useRef(0);
+  const projectSelectionGeneration = useRef(0);
   const setActiveProject = useCallback(
     async (projectId: string | null) => {
+      const generation = ++projectSelectionGeneration.current;
+      ++conversationSelectionGeneration.current;
       setActiveProjectId(projectId);
       setActiveConversationId(null);
       setActiveBranchId(null);
@@ -2175,6 +2333,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               states: ['active', 'candidate', 'superseded', 'expired'],
             }),
           ]);
+          if (generation !== projectSelectionGeneration.current) return;
           setConversations(conversationItems.map((item) => mapConversation(item, projects)));
           setMemories(memoryItems.map((item) => mapMemory(item, projects)));
           await loadArtifacts(projectId);
@@ -2186,29 +2345,111 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const createProject = useCallback(
     async (name: string, description = '') => {
       if (fixtureMode) {
-        setProjects((items) => [
-          ...items,
-          { id: `fixture-${Date.now()}`, name, description, archived: false },
-        ]);
+        const record = { id: `fixture-${Date.now()}`, name, description, archived: false };
+        setProjects((items) => [record, ...items]);
+        await setActiveProject(record.id);
         return;
       }
-      await guard(async () => {
+      setBusy(true);
+      setError(null);
+      try {
         const item = await request<RuntimeProject>('projects.create', { name, description });
         const record = {
           id: item.id,
           name: item.name,
           description: item.description ?? '',
           archived: false,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
         };
-        setProjects((items) => [...items, record]);
+        setProjects((items) => [record, ...items]);
         await setActiveProject(record.id);
-      });
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : 'The project could not be created.';
+        setError(message);
+        throw reason;
+      } finally {
+        setBusy(false);
+      }
     },
-    [fixtureMode, guard, request, setActiveProject],
+    [fixtureMode, request, setActiveProject],
+  );
+
+  const updateProject = useCallback(
+    async (projectId: string, name: string, description: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (fixtureMode) {
+          setProjects((items) =>
+            items.map((item) =>
+              item.id === projectId
+                ? { ...item, name, description, updatedAt: new Date().toISOString() }
+                : item,
+            ),
+          );
+          return;
+        }
+        const item = await request<RuntimeProject>('projects.update', {
+          projectId,
+          name,
+          description,
+        });
+        setProjects((items) =>
+          items.map((current) =>
+            current.id === projectId
+              ? {
+                  id: item.id,
+                  name: item.name,
+                  description: item.description ?? '',
+                  archived: item.status === 'archived',
+                  createdAt: item.created_at,
+                  updatedAt: item.updated_at,
+                }
+              : current,
+          ),
+        );
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : 'The project could not be updated.';
+        setError(message);
+        throw reason;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fixtureMode, request],
+  );
+
+  const archiveProject = useCallback(
+    async (projectId: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (!fixtureMode) {
+          await request<RuntimeProject>('projects.archive', { projectId, archived: true });
+        }
+        const remaining = projectsRef.current.filter((item) => item.id !== projectId);
+        setProjects(remaining);
+        if (activeProjectIdRef.current === projectId) {
+          await setActiveProject(remaining[0]?.id ?? null);
+        }
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : 'The project could not be archived.';
+        setError(message);
+        throw reason;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fixtureMode, request, setActiveProject],
   );
 
   const createConversation = useCallback(
     async (title = 'New conversation') => {
+      const generation = ++conversationSelectionGeneration.current;
       if (fixtureMode) {
         const id = `fixture-conversation-${Date.now()}`;
         const branchId = `fixture-branch-${Date.now()}`;
@@ -2231,6 +2472,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             projectId: activeProjectId,
           },
         );
+        if (generation !== conversationSelectionGeneration.current) return;
         setConversations((items) => [mapConversation(result.conversation, projects), ...items]);
         setBranches([
           {
@@ -2257,7 +2499,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const selectConversation = useCallback(
     async (conversationId: string) => {
+      const generation = ++conversationSelectionGeneration.current;
       setActiveConversationId(conversationId);
+      setMessages([]);
       if (fixtureMode) return;
       await guard(async () => {
         const result = await request<{ branches: RuntimeBranch[]; activeBranchId?: string }>(
@@ -2271,11 +2515,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           headMessageId: item.head_message_id,
           parentMessageId: item.parent_message_id,
         }));
+        if (generation !== conversationSelectionGeneration.current) return;
         const branchId = result.activeBranchId ?? branchRecords[0]?.id ?? null;
         setBranches(branchRecords);
         setActiveBranchId(branchId);
         if (branchId) {
           const history = await request<RuntimeMessage[]>('chat.history', { branchId });
+          if (generation !== conversationSelectionGeneration.current) return;
           setMessages(history.map(mapRuntimeMessage));
         } else setMessages([]);
       });
@@ -2287,11 +2533,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (branchId: string) => {
       const branch = branches.find((item) => item.id === branchId);
       if (!branch) return;
+      const generation = ++conversationSelectionGeneration.current;
       setActiveConversationId(branch.conversationId);
       setActiveBranchId(branchId);
       if (fixtureMode) return;
       await guard(async () => {
         const history = await request<RuntimeMessage[]>('chat.history', { branchId });
+        if (generation !== conversationSelectionGeneration.current) return;
         setMessages(history.map(mapRuntimeMessage));
       });
     },
@@ -2677,50 +2925,184 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const createArtifact = useCallback(
-    async (name: string, kind: string, content: string) => {
-      if (!activeProjectId || fixtureMode) return;
-      await request('artifacts.create', { projectId: activeProjectId, name, kind, content });
-      await loadArtifacts(activeProjectId);
+    async (input: { name: string; kind: string; mimeType: string; content: string }) => {
+      if (!activeProjectId) throw new Error('Choose a project before creating an artifact.');
+      setBusy(true);
+      setError(null);
+      try {
+        let record: ArtifactRecord;
+        if (fixtureMode) {
+          record = {
+            id: `fixture-artifact-${Date.now()}`,
+            projectId: activeProjectId,
+            name: input.name,
+            kind: input.kind,
+            mimeType: input.mimeType,
+            content: input.content,
+            revisionId: `fixture-revision-${Date.now()}`,
+            revisionNumber: 1,
+            size: new TextEncoder().encode(input.content).byteLength,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          const snapshot = await request<RuntimeArtifactSnapshot>('artifacts.create', {
+            projectId: activeProjectId,
+            title: input.name,
+            kind: input.kind,
+            mimeType: input.mimeType,
+            content: input.content,
+          });
+          record = mapRuntimeArtifact(
+            snapshot.artifact,
+            snapshot.revision,
+            snapshot.content ?? input.content,
+            1,
+          );
+        }
+        setArtifacts((items) => [record, ...items.filter((item) => item.id !== record.id)]);
+        return record;
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : 'The artifact could not be created.';
+        setError(message);
+        throw reason;
+      } finally {
+        setBusy(false);
+      }
     },
-    [activeProjectId, fixtureMode, loadArtifacts, request],
+    [activeProjectId, fixtureMode, request],
   );
-  const reviseArtifact = useCallback(
-    async (artifact: ArtifactRecord, content: string) => {
-      if (!fixtureMode)
-        await request('artifacts.revise', {
+
+  const getArtifact = useCallback(
+    async (artifact: ArtifactRecord, revisionId?: string) => {
+      if (fixtureMode) return { ...artifact, revisionId: revisionId ?? artifact.revisionId };
+      const snapshot = await request<RuntimeArtifactSnapshot>('artifacts.get', {
+        artifactId: artifact.id,
+        projectId: artifact.projectId,
+        revisionId,
+      });
+      const record = mapRuntimeArtifact(
+        snapshot.artifact,
+        snapshot.revision,
+        snapshot.content,
+        artifact.revisionNumber,
+      );
+      if (!revisionId || revisionId === snapshot.artifact.head_revision_id) {
+        setArtifacts((items) =>
+          items.map((item) => (item.id === record.id ? { ...item, ...record } : item)),
+        );
+      }
+      return record;
+    },
+    [fixtureMode, request],
+  );
+
+  const getArtifactHistory = useCallback(
+    async (artifact: ArtifactRecord) => {
+      if (fixtureMode) {
+        return Array.from({ length: artifact.revisionNumber ?? 1 }, (_, index) => ({
+          id:
+            index === (artifact.revisionNumber ?? 1) - 1
+              ? (artifact.revisionId ?? `fixture-${artifact.id}-${index + 1}`)
+              : `fixture-${artifact.id}-${index + 1}`,
           artifactId: artifact.id,
-          projectId: artifact.projectId,
-          content,
-          expectedRevisionId: artifact.revisionId,
-        });
+          parentRevisionId: index ? `fixture-${artifact.id}-${index}` : null,
+          objectDigest: `fixture-digest-${index + 1}`,
+          byteSize: artifact.size ?? new TextEncoder().encode(artifact.content ?? '').byteLength,
+          authorKind: index % 2 ? 'assistant' : 'user',
+          changeSummary: index ? 'Refined the working draft' : 'Initial revision',
+          createdAt: new Date(
+            Date.now() - ((artifact.revisionNumber ?? 1) - index) * 900_000,
+          ).toISOString(),
+          revisionNumber: index + 1,
+        }));
+      }
+      const result = await request<RuntimeArtifactRevision[]>('artifacts.history', {
+        artifactId: artifact.id,
+        projectId: artifact.projectId,
+      });
+      const history = result.map(mapRuntimeArtifactRevision);
       setArtifacts((items) =>
         items.map((item) =>
-          item.id === artifact.id
-            ? { ...item, content, revisionNumber: (item.revisionNumber ?? 0) + 1 }
-            : item,
+          item.id === artifact.id ? { ...item, revisionNumber: history.length } : item,
         ),
       );
+      return history;
+    },
+    [fixtureMode, request],
+  );
+
+  const reviseArtifact = useCallback(
+    async (artifact: ArtifactRecord, content: string, changeSummary?: string) => {
+      if (!artifact.revisionId) throw new Error('Reopen the artifact before saving a revision.');
+      setBusy(true);
+      setError(null);
+      try {
+        let record: ArtifactRecord;
+        if (fixtureMode) {
+          record = {
+            ...artifact,
+            content,
+            revisionId: `fixture-revision-${Date.now()}`,
+            revisionNumber: (artifact.revisionNumber ?? 0) + 1,
+            size: new TextEncoder().encode(content).byteLength,
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          const snapshot = await request<RuntimeArtifactSnapshot>('artifacts.revise', {
+            artifactId: artifact.id,
+            projectId: artifact.projectId,
+            content,
+            expectedRevisionId: artifact.revisionId,
+            changeSummary: changeSummary?.trim() || 'Edited in Artifacts',
+          });
+          record = mapRuntimeArtifact(
+            snapshot.artifact,
+            snapshot.revision,
+            snapshot.content ?? content,
+            (artifact.revisionNumber ?? 0) + 1,
+          );
+        }
+        setArtifacts((items) =>
+          items.map((item) => (item.id === artifact.id ? { ...item, ...record } : item)),
+        );
+        return record;
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : 'The revision could not be saved.';
+        setError(message);
+        throw reason;
+      } finally {
+        setBusy(false);
+      }
     },
     [fixtureMode, request],
   );
   const exportArtifact = useCallback(
     async (artifact: ArtifactRecord) => {
-      const target = await window.cupcake?.dialog.chooseSaveTarget(artifact.name);
-      if (!target) return;
+      if (fixtureMode || !window.cupcake) return null;
+      const target = await window.cupcake.dialog.chooseSaveTarget(artifact.name);
+      if (!target) return null;
       try {
-        await request('artifacts.export.intent', {
+        return await request<ArtifactExportReceipt>('artifacts.export.intent', {
           artifactId: artifact.id,
-          targetHandleId: target.id,
+          projectId: artifact.projectId,
+          revisionId: artifact.revisionId,
+          destinationHandle: target.id,
+          overwrite: false,
         });
       } finally {
-        await window.cupcake?.dialog.releaseHandle(target.id);
+        await window.cupcake.dialog.releaseHandle(target.id);
       }
     },
-    [request],
+    [fixtureMode, request],
   );
 
+  const searchGeneration = useRef(0);
   const querySearch = useCallback(
     async (query: string, globalScope = false) => {
+      const generation = ++searchGeneration.current;
       if (!query.trim()) {
         setSearchResults([]);
         return;
@@ -2745,6 +3127,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         projectId: globalScope ? undefined : activeProjectId,
         global: globalScope,
       });
+      if (generation !== searchGeneration.current) return;
       setSearchResults(
         items.map((item) => ({
           id: textValue(item.id ?? item.entity_id),
@@ -3051,7 +3434,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [request]);
   const executeLegacyMigration = useCallback(async () => {
     const state = await request<LegacyMigrationState>('migration.execute');
-    setLegacyMigration(state.state === 'completed' ? null : state);
+    setLegacyMigration(['imported', 'no_data'].includes(state.state) ? null : state);
     await refresh();
   }, [refresh, request]);
   const declineLegacyMigration = useCallback(async () => {
@@ -3078,28 +3461,72 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [refresh, request]);
   const createBackup = useCallback(async () => {
     const target = await window.cupcake?.dialog.chooseSaveTarget('cupcake-backup.cupcakebak');
-    if (!target) return;
+    if (!target) return null;
     try {
-      await request('backup.create.intent', { destinationHandle: target.id });
+      return await request<BackupReceipt>('backup.create.intent', {
+        destinationHandle: target.id,
+      });
     } finally {
       await window.cupcake?.dialog.releaseHandle(target.id);
     }
   }, [request]);
+  const verifyBackupForRecovery = useCallback(async () => {
+    const sources = await window.cupcake?.dialog.openFiles({
+      title: 'Choose a CupcakeAI backup to verify',
+      multiple: false,
+      filters: [{ name: 'CupcakeAI backup', extensions: ['cupcakebak'] }],
+    });
+    const source = sources?.[0];
+    if (!source) return null;
+    try {
+      return await request<BackupRestoreReceipt>(
+        'backup.restore.intent',
+        { sourceHandle: source.id },
+        300_000,
+      );
+    } finally {
+      await window.cupcake?.dialog.releaseHandle(source.id);
+    }
+  }, [request]);
   const discoverCommunityModels = useCallback(
-    async (query = '', limit = 120): Promise<ModelDescriptor[]> => {
+    async (
+      query = '',
+      options: { limit?: number; cursor?: string } = {},
+    ): Promise<CommunityModelPage> => {
       const cleanQuery = query.trim().toLowerCase();
-      if (fixtureMode)
-        return fixtureCommunityModels.filter((model) =>
+      const pageSize = Math.max(1, Math.min(100, Math.floor(options.limit ?? 36)));
+      if (fixtureMode) {
+        const matches = fixtureCommunityModels.filter((model) =>
           `${model.name} ${model.tags.join(' ')}`.toLowerCase().includes(cleanQuery),
         );
-      const result = await request<{ models?: Array<Record<string, unknown>> }>(
+        const offset = Math.max(0, Number.parseInt(options.cursor ?? '0', 10) || 0);
+        const models = matches.slice(offset, offset + pageSize);
+        const nextOffset = offset + models.length;
+        return {
+          models,
+          hasMore: nextOffset < matches.length,
+          nextCursor: nextOffset < matches.length ? String(nextOffset) : undefined,
+        };
+      }
+      const result = await request<{
+        models?: Array<Record<string, unknown>>;
+        hasMore?: boolean;
+        nextCursor?: string | null;
+      }>(
         'local_models.discovery.search',
-        { query: query.trim(), limit },
+        { query: query.trim(), limit: pageSize, cursor: options.cursor },
         20_000,
       );
-      return (result.models ?? [])
-        .map(mapCommunityModel)
-        .filter((model): model is ModelDescriptor => Boolean(model));
+      return {
+        models: (result.models ?? [])
+          .map(mapCommunityModel)
+          .filter((model): model is ModelDescriptor => Boolean(model)),
+        hasMore: Boolean(result.hasMore && result.nextCursor),
+        nextCursor:
+          typeof result.nextCursor === 'string' && result.nextCursor
+            ? result.nextCursor
+            : undefined,
+      };
     },
     [fixtureMode, request],
   );
@@ -3134,6 +3561,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeRunId,
       setActiveProject,
       createProject,
+      updateProject,
+      archiveProject,
       createConversation,
       selectConversation,
       selectBranch,
@@ -3153,6 +3582,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setMemoryEnabled,
       forgetMemory,
       createArtifact,
+      getArtifact,
+      getArtifactHistory,
       reviseArtifact,
       exportArtifact,
       querySearch,
@@ -3174,6 +3605,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       executeClearData,
       undoClearData,
       createBackup,
+      verifyBackupForRecovery,
       refresh,
     }),
     [
@@ -3205,6 +3637,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeRunId,
       setActiveProject,
       createProject,
+      updateProject,
+      archiveProject,
       createConversation,
       selectConversation,
       selectBranch,
@@ -3224,6 +3658,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setMemoryEnabled,
       forgetMemory,
       createArtifact,
+      getArtifact,
+      getArtifactHistory,
       reviseArtifact,
       exportArtifact,
       querySearch,
@@ -3245,6 +3681,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       executeClearData,
       undoClearData,
       createBackup,
+      verifyBackupForRecovery,
       refresh,
     ],
   );

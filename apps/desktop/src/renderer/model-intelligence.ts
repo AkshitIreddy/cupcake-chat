@@ -68,11 +68,11 @@ const PUBLISHERS: Record<string, string> = {
 };
 
 const CURATED: Record<string, CuratedModelProfile> = {
-  'openai:gpt-5.6-sol': profile(
+  'openai:gpt-6-astra': profile(
     'OpenAI',
     ['chat', 'coding', 'reasoning', 'documents', 'vision', 'tools'],
     'frontier',
-    'Top-tier general agent for difficult coding, research, and long-running work.',
+    'Flagship multimodal agent for difficult coding, research, and long-running work.',
     100,
     undefined,
     '1.05m',
@@ -86,7 +86,7 @@ const CURATED: Record<string, CuratedModelProfile> = {
     undefined,
     '1m',
   ),
-  'google:gemini-3.5-flash': profile(
+  'google:gemini-3.8-flash': profile(
     'Google',
     ['chat', 'documents', 'vision', 'tools'],
     'balanced',
@@ -95,14 +95,14 @@ const CURATED: Record<string, CuratedModelProfile> = {
     undefined,
     '1m',
   ),
-  'xai:grok-4.3': profile(
+  'xai:grok-4.6': profile(
     'xAI',
     ['chat', 'reasoning', 'tools'],
     'frontier',
     'High-capacity reasoning and tool-driven current-information work.',
     84,
     undefined,
-    '1m',
+    '500k',
   ),
   'mistral:mistral-medium-3-5': profile(
     'Mistral AI',
@@ -111,13 +111,13 @@ const CURATED: Record<string, CuratedModelProfile> = {
     'Efficient multilingual chat, code, and tool use.',
     82,
     undefined,
-    '128k',
+    '256k',
   ),
-  'cohere:command-a-03-2025': profile(
+  'cohere:command-a-plus-05-2026': profile(
     'Cohere',
-    ['chat', 'documents', 'tools'],
+    ['chat', 'tools'],
     'balanced',
-    'Retrieval-focused enterprise work and grounded document answers.',
+    'Enterprise chat and tool workflows through Cohere’s packaged text route.',
     80,
     undefined,
     '128k',
@@ -452,6 +452,92 @@ export function modelSize(model: ModelDescriptor): ModelSize {
 
 export function modelPriority(model: ModelDescriptor): number {
   return curatedProfileForModel(model)?.priority ?? 0;
+}
+
+const FIT_PRIORITY: Record<NonNullable<ModelDescriptor['fit']>, number> = {
+  recommended: 80,
+  hybrid: 55,
+  'reduced-context': 45,
+  pending: 20,
+  'cpu-slow': 10,
+  incompatible: -300,
+};
+
+/**
+ * Produces a short, useful shelf rather than treating a catalog sort as a recommendation.
+ * Ready routes lead, local device fit is respected, and publishers are diversified before
+ * a second model from the same company is included.
+ */
+export function recommendModels(
+  models: ModelDescriptor[],
+  task?: ModelTask,
+  limit = 4,
+): ModelDescriptor[] {
+  const candidates = models
+    .filter(modelIsCurated)
+    .map(completeModelDescriptor)
+    .filter((model) => !task || modelTasks(model).includes(task))
+    .sort((a, b) => recommendationScore(b) - recommendationScore(a));
+  const chosen: ModelDescriptor[] = [];
+  const publishers = new Set<string>();
+  const take = (model: ModelDescriptor) => {
+    if (chosen.some((item) => item.id === model.id) || chosen.length >= limit) return;
+    chosen.push(model);
+    publishers.add(publisherForModel(model));
+  };
+  const available = candidates.filter(modelIsAvailableInChat);
+  const unavailable = candidates.filter((model) => !modelIsAvailableInChat(model));
+  for (const pool of [available, unavailable]) {
+    pool.forEach((model) => {
+      if (!publishers.has(publisherForModel(model))) take(model);
+    });
+    pool.forEach(take);
+  }
+  return chosen;
+}
+
+function recommendationScore(model: ModelDescriptor): number {
+  return (
+    (modelIsAvailableInChat(model) ? 500 : 0) +
+    (model.selected ? 250 : 0) +
+    (model.route === 'Local' ? FIT_PRIORITY[model.fit ?? 'pending'] : 0) +
+    modelPriority(model)
+  );
+}
+
+export function recommendationReason(model: ModelDescriptor, task?: ModelTask): string {
+  if (model.selected) return 'Your current default';
+  if (model.route === 'Local') {
+    if (model.fit === 'recommended') return 'Fits this device well';
+    if (model.fit === 'hybrid') return 'Runs with GPU + RAM';
+    if (model.fit === 'reduced-context') return 'Fits with a smaller context';
+  }
+  const taskName = task ? MODEL_TASK_OPTIONS.find((item) => item.id === task)?.label : undefined;
+  return taskName ? `Strong fit for ${taskName.toLowerCase()}` : 'Versatile everyday choice';
+}
+
+export function modelRouteDescription(model: ModelDescriptor): string {
+  return model.route === 'Local'
+    ? 'Private · runs on this computer'
+    : `Hosted · sent to ${model.provider}`;
+}
+
+export function modelAvailabilityDetail(model: ModelDescriptor): string {
+  if (modelIsAvailableInChat(model)) {
+    if (model.route === 'Local')
+      return model.status === 'ready' || model.status === 'benchmarked'
+        ? 'Loaded and ready'
+        : 'Installed · loads when needed';
+    return 'Connected and ready';
+  }
+  if (model.status === 'setup') return `Connect ${model.provider} to use this route`;
+  if (model.status === 'catalog' || model.status === 'incompatible')
+    return 'Install before chatting';
+  if (model.status === 'download' || model.status === 'paused' || model.status === 'verifying')
+    return 'Installation is still in progress';
+  if (model.status === 'error' || model.status === 'checksum-failed')
+    return 'Needs attention in Models';
+  return 'Open Models to make this route ready';
 }
 
 export function modelIsAvailableInChat(model: ModelDescriptor): boolean {

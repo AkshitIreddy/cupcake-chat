@@ -235,13 +235,39 @@ test('first-run tour is complete, replayable, centered, and keeps search in the 
 test('model discovery starts curated and only searches the Hub on request', async ({ page }) => {
   await page.goto('/?view=models');
   const state = page.locator('.model-catalog-summary');
-  await expect(state).toContainText(/carefully selected matches/i);
-  await expect(state).not.toContainText(/community results/i);
+  await expect(state).toContainText(/matching catalog entries/i);
+  await expect(state).not.toContainText(/Hugging Face cards loaded/i);
   await page.getByRole('button', { name: /Refine results/i }).click();
   await page.getByLabel(/Search Hugging Face too/i).check();
   await page.getByLabel('Find a model').fill('qwen');
-  await expect(state).toContainText(/optional community results/i);
+  await expect(state).toContainText(/Hugging Face cards loaded/i);
   await expect(page.getByRole('button', { name: /Show more community models/i })).toHaveCount(0);
+});
+
+test('model atlas keeps recommendations small and pages broad Hub results progressively', async ({
+  page,
+}) => {
+  await page.goto('/?view=models');
+  await expect(page.locator('.model-recommendation')).toHaveCount(4);
+  const firstRecommendation = await page.locator('.model-recommendation').first().boundingBox();
+  expect(firstRecommendation?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(
+    page.viewportSize()?.height ?? 900,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth === document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole('button', { name: /Refine results/i }).click();
+  await page.getByLabel(/Search Hugging Face too/i).check();
+  await page.getByLabel('Find a model').fill('gg');
+  await expect(page.locator('.model-catalog-summary')).toContainText('more available');
+  await expect(page.locator('.model-card')).toHaveCount(12);
+  await page.getByRole('button', { name: 'Show more results' }).click();
+  await expect(page.locator('.model-card')).toHaveCount(24);
+  await page.getByRole('button', { name: 'Show more results' }).click();
+  await page.getByRole('button', { name: 'Load more from Hugging Face' }).click();
+  await expect(page.locator('.model-card')).toHaveCount(48);
 });
 
 test('model and provider pickers use loaded company marks', async ({ page }) => {
@@ -555,10 +581,62 @@ test('keyboard navigation exposes regions, outline, and shortcut reference', asy
 
 test('memory refuses NVIDIA and generic credential-shaped text', async ({ page }) => {
   await page.goto('/?view=memory');
-  const answers = ['Provider key', 'nvapi-SYNTHETIC_TEST_VALUE_123456'];
-  page.on('dialog', (dialog) => dialog.accept(answers.shift() ?? ''));
   await page.getByRole('button', { name: 'Add memory' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a memory' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Label').fill('Provider key');
+  await dialog
+    .getByLabel('What should CupcakeAI remember?')
+    .fill('nvapi-SYNTHETIC_TEST_VALUE_123456');
+  await dialog.getByRole('button', { name: 'Save memory' }).click();
   await expect(page.getByText(/Credentials cannot be saved as memory/)).toBeVisible();
+  await expect(dialog).toBeVisible();
+});
+
+test('conversation rename uses an accessible in-app editor and reports completion', async ({
+  page,
+}) => {
+  await page.goto('/?view=chats');
+  const firstConversation = page.locator('.chat-list__row').first();
+  await firstConversation.getByRole('button', { name: /^Rename / }).click();
+  const dialog = page.getByRole('dialog', { name: 'Rename conversation' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Title')).toBeFocused();
+  await dialog.getByLabel('Title').fill('A clearer project conversation');
+  await dialog.getByRole('button', { name: 'Save title' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByText('Renamed conversation to “A clearer project conversation”.'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.chat-list__row').getByText('A clearer project conversation', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Archive A clearer project conversation' }).click();
+  await expect(
+    page.getByText('Archived “A clearer project conversation”. You can find it in Archived.'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.chat-list__row').getByText('A clearer project conversation', { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Archived', exact: true }).click();
+  await expect(
+    page.locator('.chat-list__row').getByText('A clearer project conversation', { exact: true }),
+  ).toBeVisible();
+});
+
+test('task follow-up validates in-app and reports only confirmed queueing', async ({ page }) => {
+  await page.goto('/?view=task');
+  await page.getByRole('button', { name: 'Queue follow-up' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Queue a follow-up' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Queue follow-up' }).click();
+  await expect(dialog.getByText('Describe what CupcakeAI should do next.')).toBeVisible();
+  await dialog
+    .getByLabel('Follow-up instructions')
+    .fill('Turn the confirmed findings into a concise implementation plan.');
+  await dialog.getByRole('button', { name: 'Queue follow-up' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Follow-up queued after this task.')).toBeVisible();
 });
 
 test('themes, reduced-motion contract and narrow layout avoid horizontal overflow', async ({
@@ -792,12 +870,15 @@ test('live workspace windows long history and switches immutable branches', asyn
 
   await page.getByRole('button', { name: 'Main' }).click();
   await expect(page.getByText('Persisted turn 498', { exact: true })).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept('Edited sibling text'));
   await page
     .locator('article.turn--user')
     .filter({ has: page.getByText('Persisted turn 498', { exact: true }) })
     .getByTitle('Edit')
     .click();
+  const editDialog = page.getByRole('dialog', { name: 'Edit your message' });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel('Revised message').fill('Edited sibling text');
+  await editDialog.getByRole('button', { name: 'Create edited branch' }).click();
   await expect(page.getByText('Sibling branch B is intact.')).toBeVisible();
   expect(
     await page.evaluate(() => (window as unknown as { __runtimeCalls: string[] }).__runtimeCalls),
@@ -925,6 +1006,10 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
   if (await openNavigation.isVisible()) await openNavigation.click();
   await page.getByRole('button', { name: 'Models', exact: true }).click();
   await expect(page.locator('.model-catalog-summary')).toContainText(
+    'NVIDIA NIM connected · refresh the catalog to check current routes',
+  );
+  await page.getByRole('button', { name: 'Refresh catalog' }).click();
+  await expect(page.locator('.model-catalog-summary')).toContainText(
     '1 curated NVIDIA NIM routes available',
   );
   await page.keyboard.press('Control+M');
@@ -939,6 +1024,10 @@ test('configured NIM catalog enables an explicitly confirmed model', async ({ pa
       (window as unknown as { __nimRuntimeCalls: Array<{ method: string; params?: unknown }> })
         .__nimRuntimeCalls,
   );
+  expect(calls).toContainEqual({
+    method: 'providers.catalog.refresh',
+    params: { provider: 'nvidia-nim' },
+  });
   expect(calls).toContainEqual({
     method: 'models.select',
     params: {
@@ -981,7 +1070,7 @@ test('custom titlebar reserves normal flow and exposes semantic window controls'
       controlsWidth: controls.getBoundingClientRect().width,
     };
   });
-  expect(geometry.titleHeight).toBe(32);
+  expect(geometry.titleHeight).toBe(28);
   expect(geometry.shelfTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
   expect(geometry.directDrag).toBe(true);
   expect(geometry.dragChildren).toBe(0);
@@ -1021,6 +1110,33 @@ test('provider setup stays in-app, traps focus, supports Escape, and reviews a m
   await expect(setup.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(setup).toBeHidden();
+});
+
+test('named compatible providers expose fixed routes and explicit free model defaults', async ({
+  page,
+}) => {
+  await page.goto('/?view=models');
+  await page.getByRole('button', { name: 'Add provider' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Choose a provider' });
+
+  await dialog.getByRole('button', { name: /Groq/ }).click();
+  await expect(page.getByRole('heading', { name: 'Connect Groq' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Model ID' })).toHaveValue('openai/gpt-oss-20b');
+  await page.getByRole('button', { name: 'Choose another provider' }).click();
+
+  await page.getByRole('button', { name: /OpenRouter/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Model ID' })).toHaveValue(
+    'nvidia/nemotron-3.5-lightning:free',
+  );
+  await expect(page.getByText(/openrouter\/free.*optional variable-model router/i)).toBeVisible();
+  await page.getByRole('button', { name: 'Choose another provider' }).click();
+
+  await page.getByRole('button', { name: /Cloudflare Workers AI/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Cloudflare account ID' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Model ID' })).toHaveValue(
+    '@cf/meta/llama-3.1-8b-instruct-fp8',
+  );
+  await expect(page.getByRole('textbox', { name: 'HTTPS endpoint' })).toHaveCount(0);
 });
 
 test('all themes style root and nested WebView scrollbars from explicit tokens', async ({
@@ -1067,7 +1183,7 @@ test('managed local catalog stays Cupcake-owned and explains pending hardware de
   await expect(page.getByRole('button', { name: 'Install a model to benchmark' })).toBeDisabled();
   const install = localCards.first().getByRole('button', { name: 'Install', exact: true });
   await install.click();
-  await expect(page.getByRole('dialog', { name: /Review/ })).toContainText('SHA-256');
+  await expect(page.getByRole('dialog', { name: /Install/ })).toContainText('SHA-256');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: /Review/ })).toBeHidden();
 });

@@ -11,6 +11,11 @@ import './styles-workspace.css';
 import './styles-panels.css';
 import './styles-wallpaper.css';
 import './styles-responsive.css';
+import './styles-artifacts.css';
+import './styles-interactions.css';
+import './styles-model-catalog.css';
+import './styles-onboarding.css';
+import './styles-studio.css';
 
 installTauriDesktopApi();
 

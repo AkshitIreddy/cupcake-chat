@@ -1,0 +1,1312 @@
+/* Project rooms and artifact folios --------------------------------------- */
+.projects-workbench {
+  --project-ink: color-mix(in srgb, var(--cocoa) 91%, #25161c);
+  --project-berry: color-mix(in srgb, var(--berry) 82%, #6f183e);
+  padding-top: 34px;
+}
+
+.projects-intro {
+  margin-bottom: 20px;
+}
+
+.project-focus {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(250px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 26px;
+  overflow: hidden;
+  padding: 27px 30px 29px;
+  border: 1px solid color-mix(in srgb, var(--berry) 25%, var(--line));
+  border-radius: 22px;
+  background:
+    radial-gradient(
+      circle at 8% 5%,
+      color-mix(in srgb, var(--berry) 12%, transparent),
+      transparent 34%
+    ),
+    linear-gradient(
+      112deg,
+      color-mix(in srgb, var(--paper-raised) 96%, transparent),
+      color-mix(in srgb, var(--crumb) 92%, transparent)
+    );
+  box-shadow: 0 22px 62px color-mix(in srgb, var(--cocoa) 12%, transparent);
+}
+
+.project-focus::after {
+  content: '';
+  position: absolute;
+  inset: auto -44px -78px auto;
+  width: 230px;
+  height: 230px;
+  border: 1px solid color-mix(in srgb, var(--berry) 12%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 26px color-mix(in srgb, var(--berry) 3%, transparent),
+    0 0 0 52px color-mix(in srgb, var(--berry) 2%, transparent);
+  pointer-events: none;
+}
+
+.project-focus__identity {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.project-focus__sigil {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--berry) 30%, transparent);
+  border-radius: 17px 17px 17px 6px;
+  background: color-mix(in srgb, var(--berry-soft) 82%, var(--paper));
+  color: var(--project-berry);
+  font: 600 15px 'IBM Plex Mono';
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 1px color-mix(in srgb, white 55%, transparent);
+}
+
+.project-focus__state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pistachio);
+  font: 500 10px 'IBM Plex Mono';
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.project-focus__identity h3 {
+  margin: 8px 0 7px;
+  color: var(--project-ink);
+  font:
+    660 clamp(25px, 2.3vw, 34px)/1.05 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+  letter-spacing: -0.025em;
+}
+
+.project-focus__identity p {
+  max-width: 540px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.project-focus__paths {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.project-focus__paths > button,
+.project-focus__task-state {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 8px;
+  min-height: 104px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--paper) 83%, transparent);
+  color: var(--cocoa);
+  text-align: left;
+}
+
+.project-focus__paths > button {
+  transition:
+    border-color 160ms var(--ease),
+    background 160ms var(--ease),
+    transform 160ms var(--ease);
+}
+
+.project-focus__paths > button:hover {
+  border-color: color-mix(in srgb, var(--berry) 42%, var(--line));
+  background: var(--paper-raised);
+  transform: translateY(-2px);
+}
+
+.project-focus__paths > :is(button, div) > span {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+
+.project-focus__paths strong {
+  align-self: end;
+  font-size: 12px;
+}
+
+.project-focus__paths small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-focus__paths > button > svg {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  color: var(--berry);
+}
+
+.project-focus__task-state {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.project-focus__edit {
+  position: absolute;
+  left: 30px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--berry);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-library {
+  margin-top: 28px;
+}
+
+.project-library > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+
+.project-library > header h3 {
+  margin: 2px 0 0;
+  font:
+    640 20px 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+
+.project-library > header > span {
+  color: var(--muted);
+  font: 500 10px 'IBM Plex Mono';
+}
+
+.project-grid--workbench {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-card--workbench,
+.project-new-card--compact {
+  min-height: 206px;
+  border-radius: 15px;
+}
+
+.project-card--workbench {
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+}
+
+.project-card--workbench.is-active {
+  border-color: color-mix(in srgb, var(--berry) 45%, var(--line));
+  box-shadow: inset 0 3px var(--berry);
+}
+
+.project-card--workbench header em {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--pistachio);
+  font: normal 500 9px 'IBM Plex Mono';
+  letter-spacing: 0.03em;
+}
+
+.project-card--workbench header em span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 11%, transparent);
+}
+
+.project-card__select {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  margin: 12px 0 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cocoa);
+  text-align: left;
+}
+
+.project-card__select strong {
+  font:
+    640 16px/1.2 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+
+.project-card__select > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.project-card__counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: auto;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.project-card__counts span {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 5px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.project-card__counts span svg {
+  grid-row: 1 / 3;
+  color: var(--berry);
+}
+
+.project-card__counts strong {
+  align-self: end;
+  color: var(--cocoa);
+  font-size: 11px;
+}
+
+.project-card--workbench footer {
+  margin-top: 9px;
+}
+
+.project-card--workbench footer button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.project-card--workbench footer button:hover {
+  background: var(--soft);
+  color: var(--berry);
+}
+
+.project-new-card--compact {
+  min-height: 206px;
+}
+
+.project-boundary-note,
+.project-first-step {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 18px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--crumb) 82%, transparent);
+}
+
+.project-boundary-note > svg {
+  color: var(--pistachio);
+}
+
+.project-boundary-note p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.project-first-step {
+  align-items: flex-start;
+  margin-top: 0;
+  padding: 32px;
+  background: var(--paper);
+}
+
+.project-first-step > span {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 62px;
+  border-radius: 18px 18px 18px 6px;
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+
+.project-first-step > div {
+  flex: 1;
+}
+
+.project-first-step h3 {
+  margin: 5px 0;
+  font:
+    650 24px 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+
+.project-first-step p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+}
+
+.project-archive-link {
+  justify-self: start;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-archive-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--danger) 6%, var(--paper));
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.project-archive-warning svg {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+
+/* Artifact gate and empty folio ------------------------------------------ */
+.artifact-project-gate,
+.artifact-empty-workbench {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 34px;
+}
+
+.artifact-project-gate > section {
+  width: min(650px, 100%);
+  padding: 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+  text-align: center;
+}
+
+.artifact-project-gate__mark {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 66px;
+  margin: 0 auto 17px;
+  border-radius: 19px 19px 19px 6px;
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+
+.artifact-project-gate h1 {
+  margin: 7px 0 9px;
+  font:
+    660 34px/1.05 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+
+.artifact-project-gate > section > p:not(.eyebrow) {
+  margin: 0 auto;
+  max-width: 480px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.artifact-project-gate__choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.artifact-project-gate__choices button {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--crumb);
+  color: var(--cocoa);
+  text-align: left;
+}
+
+.artifact-project-gate__choices button > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 35px;
+  border-radius: 9px 9px 9px 3px;
+  background: var(--berry-soft);
+  color: var(--berry);
+  font: 500 9px 'IBM Plex Mono';
+}
+
+.artifact-empty-workbench {
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+  align-content: center;
+  gap: 16px;
+  width: min(1080px, calc(100% - 50px));
+  margin: 0 auto;
+  padding-inline: 0;
+}
+
+.artifact-empty-folio {
+  position: relative;
+  display: grid;
+  align-items: center;
+  min-height: 390px;
+  overflow: hidden;
+  padding: 48px 50px 48px 72px;
+  border: 1px solid color-mix(in srgb, var(--berry) 25%, var(--line));
+  border-radius: 9px 24px 24px 9px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--berry) 7%, transparent) 0 1px, transparent 1px)
+      42px 0 / 1px 100%,
+    radial-gradient(
+      circle at 92% 9%,
+      color-mix(in srgb, var(--berry) 12%, transparent),
+      transparent 36%
+    ),
+    var(--paper-raised);
+  box-shadow: 0 24px 65px color-mix(in srgb, var(--cocoa) 12%, transparent);
+}
+
+.artifact-empty-folio::after {
+  content: 'A';
+  position: absolute;
+  right: 35px;
+  bottom: -38px;
+  color: color-mix(in srgb, var(--berry) 6%, transparent);
+  font:
+    700 260px/1 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+  pointer-events: none;
+}
+
+.artifact-empty-folio__binding {
+  position: absolute;
+  inset: 0 auto 0 20px;
+  display: grid;
+  align-content: space-evenly;
+}
+
+.artifact-empty-folio__binding span {
+  width: 34px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--cocoa) 35%, var(--line));
+  border-right: 0;
+  border-radius: 9px 0 0 9px;
+}
+
+.artifact-empty-folio > div:last-child {
+  position: relative;
+  z-index: 1;
+  max-width: 570px;
+}
+
+.artifact-empty-folio h1 {
+  margin: 9px 0 12px;
+  font:
+    670 clamp(34px, 4vw, 52px)/0.98 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+  letter-spacing: -0.035em;
+}
+
+.artifact-empty-folio p:not(.eyebrow) {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.artifact-empty-recipes {
+  display: grid;
+  gap: 7px;
+}
+
+.artifact-empty-recipes button {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 10px;
+  min-height: 78px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--paper);
+  color: var(--cocoa);
+  text-align: left;
+  transition:
+    transform 150ms var(--ease),
+    border-color 150ms var(--ease);
+}
+
+.artifact-empty-recipes button:hover {
+  border-color: color-mix(in srgb, var(--berry) 42%, var(--line));
+  transform: translateX(-3px);
+}
+
+.artifact-empty-recipes button > span {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 43px;
+  border-radius: 10px 10px 10px 4px;
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+
+.artifact-empty-recipes button strong {
+  align-self: end;
+  font-size: 12px;
+}
+.artifact-empty-recipes button small {
+  align-self: start;
+  color: var(--muted);
+  font-size: 9px;
+}
+.artifact-empty-recipes button > svg {
+  grid-row: 1 / 3;
+  color: var(--berry);
+}
+
+/* Artifact folio workspace ------------------------------------------------ */
+.artifact-workspace--folio {
+  grid-template-columns: 308px minmax(0, 1fr);
+  background: color-mix(in srgb, var(--crumb) 65%, transparent);
+}
+
+.artifact-list--folio {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+}
+
+.artifact-scope {
+  position: relative;
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(
+      circle at 100% 0,
+      color-mix(in srgb, var(--berry) 13%, transparent),
+      transparent 50%
+    ),
+    var(--crumb);
+}
+
+.artifact-scope > strong {
+  display: block;
+  overflow: hidden;
+  margin: 5px 0 11px;
+  font:
+    650 17px 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artifact-project-chips {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 1px 0 3px;
+}
+
+.artifact-project-chips button {
+  flex: 0 0 29px;
+  width: 29px;
+  height: 31px;
+  border: 1px solid var(--line);
+  border-radius: 9px 9px 9px 3px;
+  background: var(--paper);
+  color: var(--muted);
+  font: 500 8px 'IBM Plex Mono';
+}
+
+.artifact-project-chips button.is-active {
+  border-color: color-mix(in srgb, var(--berry) 45%, var(--line));
+  background: var(--berry-soft);
+  color: var(--berry);
+}
+
+.artifact-list--folio .artifact-list__head {
+  padding: 15px 16px 9px;
+}
+
+.artifact-list--folio .artifact-list__head > div {
+  display: grid;
+  gap: 1px;
+}
+.artifact-list--folio .artifact-list__head h2 {
+  font-size: 18px;
+}
+.artifact-list--folio .artifact-list__head small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.artifact-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin: 0 13px 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--crumb);
+  color: var(--muted);
+}
+
+.artifact-search:focus-within {
+  border-color: var(--berry);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--berry) 12%, transparent);
+}
+
+.artifact-search input {
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--cocoa);
+  font-size: 10px;
+}
+
+.artifact-search > span {
+  font: 500 8px 'IBM Plex Mono';
+}
+
+.artifact-kind-filters {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 0 13px 9px;
+}
+
+.artifact-kind-filters button {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.artifact-kind-filters button.is-active {
+  border-color: var(--line);
+  background: var(--paper-raised);
+  color: var(--berry);
+  font-weight: 700;
+}
+
+.artifact-list__items {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 10px;
+}
+
+.artifact-list--folio .artifact-list__item {
+  grid-template-columns: 38px minmax(0, 1fr) 16px;
+  gap: 9px;
+  padding: 9px;
+  border-radius: 11px;
+}
+
+.artifact-list--folio .artifact-list__item.is-active {
+  background:
+    linear-gradient(90deg, var(--berry) 0 3px, transparent 3px),
+    color-mix(in srgb, var(--berry-soft) 75%, var(--paper));
+}
+
+.artifact-list--folio .artifact-list__item > svg {
+  color: var(--muted);
+}
+.artifact-list--folio .artifact-list__item strong {
+  font-size: 11px;
+}
+.artifact-list--folio .artifact-list__item small {
+  font-size: 8px;
+}
+
+.artifact-list__no-results {
+  margin: 20px 12px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.artifact-list__boundary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.artifact-list__boundary svg {
+  color: var(--pistachio);
+}
+
+.artifact-stage--folio {
+  position: relative;
+  background: color-mix(in srgb, var(--paper) 48%, transparent);
+}
+
+.artifact-stage--folio .artifact-stage__header {
+  min-height: 78px;
+  padding: 12px 22px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.artifact-stage--folio .artifact-stage__header h1 {
+  max-width: min(58vw, 680px);
+  overflow: hidden;
+  font-size: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artifact-save-state {
+  display: flex !important;
+  align-items: center;
+  gap: 7px !important;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--crumb);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.artifact-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.artifact-export-button {
+  min-width: 92px;
+  justify-content: center;
+}
+
+.artifact-export-status {
+  position: absolute;
+  z-index: 5;
+  top: 86px;
+  right: 18px;
+  max-width: 360px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--pistachio) 28%, var(--line));
+  border-radius: 10px;
+  background: var(--paper-raised);
+  color: var(--pistachio);
+  box-shadow: var(--shadow-soft);
+  font-size: 9px;
+}
+
+.artifact-export-status.is-error {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  color: var(--danger);
+}
+
+.artifact-save-state > span {
+  display: grid;
+  place-items: center;
+  color: var(--pistachio);
+}
+.artifact-save-state.is-dirty > span,
+.artifact-save-state.is-error > span {
+  color: var(--berry);
+  font-size: 8px;
+}
+.artifact-save-state.is-saving > span {
+  animation: artifact-pulse 850ms ease-in-out infinite alternate;
+}
+
+.artifact-stage--folio .artifact-tabs {
+  padding-inline: 18px;
+  background: color-mix(in srgb, var(--paper) 77%, transparent);
+}
+
+.artifact-stage--folio .document-preview {
+  padding: clamp(18px, 3.2vw, 38px);
+  background:
+    radial-gradient(
+      circle at 92% 4%,
+      color-mix(in srgb, var(--berry) 5%, transparent),
+      transparent 32%
+    ),
+    color-mix(in srgb, var(--crumb) 82%, transparent);
+}
+
+.artifact-stage--folio .document-paper {
+  border-radius: 3px 14px 14px 3px;
+  box-shadow:
+    -7px 0 0 color-mix(in srgb, var(--berry) 8%, var(--paper)),
+    -8px 0 0 var(--line),
+    0 24px 70px color-mix(in srgb, var(--cocoa) 14%, transparent);
+}
+
+.artifact-loading {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 260px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.artifact-loading span {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--line);
+  border-top-color: var(--berry);
+  border-radius: 50%;
+  animation: artifact-spin 700ms linear infinite;
+}
+
+.artifact-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--danger) 6%, var(--paper));
+  color: var(--danger);
+  font-size: 10px;
+}
+
+.artifact-inline-error > span {
+  flex: 1;
+}
+.artifact-inline-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+}
+
+.artifact-editor--folio {
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at 85% 0, rgba(169, 62, 103, 0.09), transparent 42%), #211e20;
+}
+
+.artifact-editor__bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 9px 15px;
+  border-bottom: 1px solid #3b3538;
+  background: #1b191a;
+  color: #9f969a;
+  font: 500 9px 'IBM Plex Mono';
+}
+
+.artifact-editor__bar span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.artifact-editor__bar span:first-child {
+  color: #d6cdd1;
+}
+
+.artifact-editor--folio textarea {
+  flex: 1;
+  min-height: 0;
+  padding: 28px clamp(24px, 5vw, 70px) 84px;
+  caret-color: #f3a8c3;
+  font-size: 13px;
+  line-height: 1.75;
+  tab-size: 2;
+}
+
+.artifact-editor--folio textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(243, 168, 195, 0.45);
+}
+
+.artifact-editor--folio .save-float {
+  min-width: 124px;
+  justify-content: center;
+  border-color: #68515a;
+  background: #3c2c32;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  font-weight: 700;
+}
+
+.artifact-editor--folio .save-float:not(:disabled):hover {
+  background: #4b333c;
+}
+.artifact-editor--folio .save-float:disabled {
+  opacity: 0.6;
+}
+
+.artifact-save-message {
+  position: absolute;
+  right: 18px;
+  bottom: 62px;
+  max-width: min(430px, calc(100% - 36px));
+  margin: 0;
+  color: #b9d1bc;
+  font-size: 9px;
+}
+
+.artifact-save-message.is-error {
+  color: #ffadbd;
+}
+
+.revision-view--folio {
+  grid-template-columns: 300px minmax(0, 1fr);
+  background: color-mix(in srgb, var(--crumb) 70%, transparent);
+}
+
+.revision-view--folio .revision-timeline {
+  padding: 13px 10px;
+  background: color-mix(in srgb, var(--paper) 83%, transparent);
+}
+
+.revision-timeline > header {
+  display: grid;
+  gap: 3px;
+  padding: 7px 9px 12px;
+}
+
+.revision-timeline > header strong {
+  font-size: 11px;
+}
+
+.revision-view--folio .revision-timeline button {
+  grid-template-columns: 34px minmax(0, 1fr);
+  padding: 10px 9px;
+  border: 1px solid transparent;
+}
+
+.revision-view--folio .revision-timeline button.is-active {
+  border-color: color-mix(in srgb, var(--berry) 20%, var(--line));
+  background: var(--berry-soft);
+}
+
+.revision-view--folio .revision-timeline button > span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px 9px 9px 3px;
+  background: var(--paper);
+}
+
+.revision-inspector {
+  min-width: 0;
+  overflow: auto;
+  padding: 21px;
+}
+
+.revision-inspector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: 820px;
+  margin: 0 auto 13px;
+}
+
+.revision-inspector h3 {
+  margin: 3px 0 0;
+  font:
+    640 18px 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+}
+
+.revision-preview {
+  max-width: 820px;
+  min-height: 560px;
+  margin: 0 auto;
+  padding: 35px 44px;
+  border: 1px solid var(--line);
+  border-radius: 3px 13px 13px 3px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.revision-preview .document-paper {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.artifact-kind-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.artifact-kind-picker legend {
+  grid-column: 1 / -1;
+  margin-bottom: 6px;
+  color: var(--cocoa);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-kind-picker button {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-height: 68px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--crumb);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.artifact-kind-picker button.is-active {
+  border-color: color-mix(in srgb, var(--berry) 50%, var(--line));
+  background: var(--berry-soft);
+  color: var(--berry);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--berry) 12%, transparent);
+}
+
+@keyframes artifact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes artifact-pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 1100px) {
+  .project-focus {
+    grid-template-columns: 1fr;
+    padding-bottom: 25px;
+  }
+  .project-focus__edit {
+    position: static;
+    grid-column: 1;
+    justify-self: start;
+  }
+  .project-grid--workbench {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .artifact-empty-workbench {
+    grid-template-columns: 1fr;
+    padding-block: 24px;
+  }
+  .artifact-empty-recipes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .artifact-workspace--folio {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+  .revision-view--folio {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .projects-workbench {
+    width: calc(100% - 28px);
+  }
+  .project-focus {
+    padding: 20px;
+  }
+  .project-focus__paths {
+    grid-template-columns: 1fr;
+  }
+  .project-focus__paths > button,
+  .project-focus__task-state {
+    min-height: 72px;
+  }
+  .project-grid--workbench {
+    grid-template-columns: 1fr;
+  }
+  .project-boundary-note {
+    align-items: flex-start;
+  }
+  .project-first-step {
+    flex-wrap: wrap;
+    padding: 22px;
+  }
+  .artifact-empty-workbench {
+    width: calc(100% - 24px);
+  }
+  .artifact-empty-folio {
+    min-height: 340px;
+    padding: 40px 25px 40px 54px;
+  }
+  .artifact-empty-recipes {
+    grid-template-columns: 1fr;
+  }
+  .artifact-workspace--folio {
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: hidden;
+  }
+  .artifact-list--folio {
+    max-height: 245px;
+    border-bottom: 1px solid var(--line);
+  }
+  .artifact-scope {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    padding: 10px 13px;
+  }
+  .artifact-scope > strong {
+    margin-bottom: 0;
+  }
+  .artifact-project-chips {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+    max-width: 120px;
+  }
+  .artifact-list--folio .artifact-list__head {
+    padding-top: 9px;
+  }
+  .artifact-kind-filters,
+  .artifact-list__boundary {
+    display: none;
+  }
+  .artifact-list__items {
+    display: flex;
+    flex: 0 0 auto;
+    min-height: 62px;
+    overflow-x: auto;
+    padding: 0 8px 8px;
+  }
+  .artifact-list--folio .artifact-list__item {
+    flex: 0 0 220px;
+  }
+  .artifact-stage--folio {
+    height: auto;
+    min-height: 0;
+  }
+  .artifact-stage--folio .artifact-stage__header {
+    min-height: 62px;
+  }
+  .artifact-stage--folio .artifact-stage__header h1 {
+    max-width: 52vw;
+  }
+  .artifact-save-state {
+    width: 28px;
+    overflow: hidden;
+    padding-inline: 7px;
+    color: transparent;
+    white-space: nowrap;
+  }
+  .artifact-save-state > span {
+    color: var(--pistachio);
+  }
+  .revision-view--folio {
+    grid-template-columns: 1fr;
+  }
+  .revision-view--folio .revision-timeline {
+    display: flex;
+    max-height: 132px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .revision-timeline > header {
+    flex: 0 0 150px;
+    align-content: center;
+  }
+  .revision-view--folio .revision-timeline button {
+    flex: 0 0 220px;
+  }
+  .revision-inspector {
+    padding: 14px;
+  }
+  .revision-inspector > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .revision-preview {
+    min-height: 380px;
+    padding: 24px;
+  }
+  .artifact-kind-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-loading span,
+  .artifact-save-state.is-saving > span {
+    animation: none;
+  }
+  .project-focus__paths > button,
+  .artifact-empty-recipes button {
+    transition: none;
+  }
+}

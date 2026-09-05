@@ -88,6 +88,7 @@ export interface ProviderSetupInput {
   provider: string;
   secret: string;
   baseUrl?: string;
+  accountId?: string;
   organization?: string;
   modelId?: string;
   displayName?: string;

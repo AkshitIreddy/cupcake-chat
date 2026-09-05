@@ -1,0 +1,473 @@
+.model-atlas-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.48fr) auto;
+  gap: 18px;
+  align-items: stretch;
+  overflow: hidden;
+  margin-bottom: 14px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--berry), var(--line) 58%);
+  border-radius: 20px;
+  background:
+    radial-gradient(
+      circle at 7% 12%,
+      color-mix(in srgb, var(--berry), transparent 77%) 0 2px,
+      transparent 3px
+    ),
+    radial-gradient(
+      circle at 18% 72%,
+      color-mix(in srgb, var(--blueberry), transparent 80%) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 71% 24%,
+      color-mix(in srgb, var(--gold), transparent 78%) 0 2px,
+      transparent 3px
+    ),
+    linear-gradient(
+      132deg,
+      color-mix(in srgb, var(--paper), var(--berry-soft) 27%),
+      var(--paper) 58%,
+      color-mix(in srgb, var(--paper), var(--blueberry-soft) 22%)
+    );
+  box-shadow: var(--shadow-soft);
+}
+
+.model-atlas-hero::after {
+  position: absolute;
+  right: 15%;
+  bottom: -82px;
+  width: 230px;
+  height: 150px;
+  border: 1px solid color-mix(in srgb, var(--berry), transparent 80%);
+  border-radius: 50%;
+  content: '';
+  transform: rotate(-14deg);
+  pointer-events: none;
+}
+
+.model-atlas-hero__copy,
+.model-atlas-current,
+.model-atlas-hero__actions {
+  position: relative;
+  z-index: 1;
+}
+
+.model-atlas-hero__copy h2 {
+  margin: 2px 0 5px;
+  font:
+    680 clamp(28px, 4vw, 43px) 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque';
+  letter-spacing: -0.045em;
+}
+
+.model-atlas-hero__copy > p:last-of-type {
+  max-width: 650px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.model-atlas-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 15px;
+  color: var(--muted);
+  font: 580 8px 'IBM Plex Mono';
+}
+
+.model-atlas-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.model-atlas-legend i {
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.model-atlas-legend__local {
+  color: var(--pistachio);
+}
+.model-atlas-legend__cloud {
+  color: var(--blueberry);
+}
+.model-atlas-legend svg {
+  color: var(--berry);
+}
+
+.model-atlas-current {
+  align-self: center;
+  padding: 13px;
+  border-left: 2px solid var(--berry);
+  background: color-mix(in srgb, var(--paper-raised), transparent 24%);
+}
+
+.model-atlas-current > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 7px;
+}
+
+.model-atlas-current > div > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.model-atlas-current strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-atlas-current small,
+.model-atlas-current > p {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+.model-atlas-current > p {
+  margin: 8px 0 0;
+}
+
+.model-atlas-hero__actions {
+  display: flex;
+  align-self: start;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.model-recommendations {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.model-recommendations > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.model-recommendations h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+.model-recommendations > header > p {
+  max-width: 320px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.model-recommendation-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-recommendation-track::before {
+  position: absolute;
+  z-index: 0;
+  top: 20px;
+  right: 4%;
+  left: 4%;
+  height: 1px;
+  background: linear-gradient(90deg, var(--pistachio), var(--berry), var(--blueberry));
+  content: '';
+  opacity: 0.42;
+}
+
+.model-recommendation {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 176px;
+  flex-direction: column;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--paper), transparent 5%);
+}
+
+.model-recommendation.is-selected {
+  border-color: var(--berry);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--berry), transparent 65%);
+}
+
+.model-recommendation > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.model-recommendation > header > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.model-recommendation > header small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-recommendation > header strong {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-recommendation > p {
+  margin: 12px 0 7px;
+  color: var(--berry-dark);
+  font-size: 9px;
+  font-weight: 700;
+}
+.model-recommendation > div {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+}
+.model-recommendation > div span {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+.model-recommendation > div svg {
+  flex: 0 0 auto;
+  color: var(--blueberry);
+}
+.model-recommendation > footer {
+  margin-top: auto;
+  padding-top: 10px;
+}
+.model-recommendation > footer .button {
+  width: 100%;
+  min-height: 30px;
+}
+
+.models-page .model-finder {
+  margin-top: 0;
+  background: color-mix(in srgb, var(--paper), transparent 8%);
+  box-shadow: none;
+}
+
+.models-page .model-card {
+  min-height: 338px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--paper), var(--crumb) 20%),
+    var(--paper) 28%
+  );
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--cocoa), transparent 96%);
+}
+
+.model-catalog-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 4px 4px;
+  color: var(--muted);
+  font: 500 8px 'IBM Plex Mono';
+}
+
+.model-picker--atlas {
+  width: min(690px, 100%);
+}
+
+.model-picker__current {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 0 16px 9px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--berry), var(--line) 64%);
+  border-radius: 11px;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--berry-soft), var(--paper) 55%),
+    var(--paper)
+  );
+}
+
+.model-picker__current > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.model-picker__current small {
+  color: var(--berry-dark);
+  font: 700 7px 'IBM Plex Mono';
+  text-transform: uppercase;
+}
+.model-picker__current strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-picker__current em {
+  color: var(--muted);
+  font-size: 8px;
+  font-style: normal;
+}
+.model-picker__current > svg {
+  color: var(--berry);
+}
+
+.model-picker__intents {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  margin: 0 16px 9px;
+  padding: 1px 0 4px;
+  scrollbar-width: thin;
+}
+
+.model-picker__intents button {
+  flex: 0 0 auto;
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.model-picker__intents button:hover,
+.model-picker__intents button.is-active {
+  border-color: var(--berry);
+  background: var(--berry-soft);
+  color: var(--berry-dark);
+}
+
+.model-picker--atlas .model-picker__list {
+  max-height: 390px;
+}
+.model-picker--atlas .model-picker__group > button {
+  min-height: 72px;
+}
+.model-picker--atlas .model-picker__group > button.is-active {
+  box-shadow: inset 3px 0 0 var(--berry);
+}
+.model-picker--atlas .model-picker__group > button .model-ready-copy {
+  color: var(--pistachio-ink);
+}
+
+@media (max-width: 980px) {
+  .model-atlas-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(210px, 0.6fr);
+  }
+  .model-atlas-hero__actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+  .model-recommendation-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .model-atlas-hero {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 15px 17px;
+  }
+  .model-atlas-hero__copy h2 {
+    font-size: 30px;
+  }
+  .model-atlas-current {
+    border-top: 2px solid var(--berry);
+    border-left: 0;
+  }
+  .model-atlas-hero__actions .button {
+    flex: 1;
+  }
+  .model-recommendations > header {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .model-recommendations > header > p {
+    text-align: left;
+  }
+  .models-page .model-finder {
+    gap: 9px;
+    padding: 13px;
+  }
+  .models-page .model-finder > header {
+    align-items: start;
+  }
+  .models-page .model-goal-grid {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding-bottom: 3px;
+    scroll-snap-type: x mandatory;
+  }
+  .models-page .model-goal-grid > label {
+    flex: 0 0 168px;
+    min-height: 54px;
+    scroll-snap-align: start;
+  }
+  .model-recommendation-track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .model-recommendation {
+    min-width: min(82vw, 270px);
+    scroll-snap-align: start;
+  }
+  .model-recommendation-track::before {
+    display: none;
+  }
+  .model-catalog-more {
+    align-items: stretch;
+    flex-direction: column;
+    text-align: center;
+  }
+  .model-picker--atlas .model-picker__group > button {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-picker--atlas {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .model-atlas-hero,
+  .model-atlas-current,
+  .model-recommendation,
+  .model-picker__current,
+  .model-picker__intents button {
+    border: 1px solid ButtonText;
+    background: Canvas;
+    color: CanvasText;
+  }
+  .model-recommendation.is-selected,
+  .model-picker__intents button.is-active {
+    outline: 2px solid Highlight;
+  }
+}

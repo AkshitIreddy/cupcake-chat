@@ -45,6 +45,24 @@ describe('workspace local model integration', () => {
     );
   });
 
+  it('keeps named compatible hosts visible as the serving provider', () => {
+    expect(
+      mapModel({
+        id: 'openai-compatible:groq/openai/gpt-oss-20b',
+        provider: 'openai-compatible',
+        model: 'openai/gpt-oss-20b',
+        display_name: 'GPT-OSS 20B via Groq',
+        privacy_route: 'self_hosted',
+        metadata: { endpoint_id: 'groq' },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        provider: 'Groq',
+        route: 'Cloud',
+      }),
+    );
+  });
+
   it('routes load and unload through the app-managed Cupcake Local lifecycle', () => {
     expect(localModelActionRequest('load', cupcakeLocal)).toEqual({
       method: 'local_models.cupcake.load',
@@ -135,6 +153,7 @@ describe('workspace local model integration', () => {
       normalizeHardware({
         system_ram_gb: 31.75,
         vram_gb: 11.99,
+        available_vram_gb: 8.25,
         gpu_name: 'NVIDIA GeForce RTX 4070',
         cpu_threads: 16,
         cpu_architecture: 'x86_64',
@@ -145,6 +164,7 @@ describe('workspace local model integration', () => {
     ).toEqual({
       ramBytes: 31.75 * 1024 ** 3,
       vramBytes: 11.99 * 1024 ** 3,
+      availableVramBytes: 8.25 * 1024 ** 3,
       gpu: 'NVIDIA GeForce RTX 4070',
       cpu: '16 threads',
       cpuArchitecture: 'x86_64',
