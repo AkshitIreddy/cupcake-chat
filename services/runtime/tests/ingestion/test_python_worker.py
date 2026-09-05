@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import stat
 import struct
 import subprocess
@@ -14,7 +15,8 @@ from typing import Any, cast
 
 import pytest
 
-from cupcake_runtime.ingestion.python_worker import REQUEST_FILE, RESPONSE_FILE, main as worker_main
+from cupcake_runtime.ingestion.python_worker import REQUEST_FILE, RESPONSE_FILE
+from cupcake_runtime.ingestion.python_worker import main as worker_main
 
 
 def _frame(payload: dict[str, object]) -> bytes:
@@ -146,7 +148,21 @@ def test_broker_private_stage_does_not_canonicalize_its_denied_parent(
 
     monkeypatch.setattr(Path, "resolve", denied_resolve)
 
-    assert worker_main(("--stage-root", ".")) == 0
+    socket_apis = (
+        socket.socket,
+        socket.create_connection,
+        socket.create_server,
+        socket.getaddrinfo,
+    )
+    try:
+        assert worker_main(("--stage-root", ".")) == 0
+    finally:
+        (
+            socket.socket,
+            socket.create_connection,
+            socket.create_server,
+            socket.getaddrinfo,
+        ) = socket_apis
     response = _decode((tmp_path / RESPONSE_FILE).read_bytes())
     assert response["result"]["value"] == 11
 
