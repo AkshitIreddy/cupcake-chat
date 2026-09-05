@@ -99,6 +99,12 @@ class RuntimePackStore:
         *,
         companion_archives: dict[str, Path] | None = None,
     ) -> InstalledRuntimePack:
+        companions = companion_archives or {}
+        expected_companions = {companion.id for companion in artifact.companions}
+        if set(companions) != expected_companions:
+            raise RuntimePackIntegrityError(
+                "runtime companion archive set does not match signed catalog"
+            )
         destination = self._directory(artifact.version, artifact.backend)
         if destination.exists():
             installed = self._read_install(destination)
@@ -112,12 +118,6 @@ class RuntimePackStore:
             )
 
         self._verify_archive(artifact, archive)
-        companions = companion_archives or {}
-        expected_companions = {companion.id for companion in artifact.companions}
-        if set(companions) != expected_companions:
-            raise RuntimePackIntegrityError(
-                "runtime companion archive set does not match signed catalog"
-            )
         for companion in artifact.companions:
             self._verify_archive(companion, companions[companion.id])
 
