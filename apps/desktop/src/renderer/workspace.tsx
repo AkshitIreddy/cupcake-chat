@@ -616,6 +616,50 @@ export async function recoverWorkspaceSupportRequest<T>(
   }
 }
 
+export function applyRuntimeStartupSettings(
+  current: WorkspaceSettings,
+  runtimeSettings: Record<string, unknown>,
+): WorkspaceSettings {
+  const wallpaper = runtimeSettings['appearance.wallpaper'];
+  return {
+    ...current,
+    offline: runtimeSettings['privacy.default_mode'] === 'offline',
+    theme:
+      runtimeSettings['appearance.theme'] === 'cupcake-dark'
+        ? 'dark'
+        : runtimeSettings['appearance.theme'] === 'minimal'
+          ? 'minimal'
+          : runtimeSettings['appearance.theme'] === 'classic'
+            ? 'classic'
+            : 'light',
+    wallpaper:
+      wallpaper === 'moonlit-archive' ||
+      wallpaper === 'pistachio-atelier' ||
+      wallpaper === 'blueberry-observatory' ||
+      wallpaper === 'copper-workshop' ||
+      wallpaper === 'aquamarine-tidepool-library' ||
+      wallpaper === 'ink-snow-garden' ||
+      wallpaper === 'raspberry-circuit-conservatory' ||
+      wallpaper === 'saffron-paper-city'
+        ? wallpaper
+        : 'none',
+    reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
+    scrollbarMode:
+      runtimeSettings['appearance.scrollbars'] === 'minimal' ||
+      runtimeSettings['appearance.scrollbars'] === 'hidden'
+        ? runtimeSettings['appearance.scrollbars']
+        : 'slim',
+    onboardingCompleted: runtimeSettings['onboarding.completed_v1'] === true,
+    profile: {
+      displayName: textValue(runtimeSettings['profile.display_name'], current.profile.displayName),
+      role: textValue(runtimeSettings['profile.role'], current.profile.role),
+      bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
+      avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
+    },
+    assistantAvatar: textValue(runtimeSettings['assistant.avatar'], current.assistantAvatar),
+  };
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1905,11 +1949,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ? activeProjectId
             : (projectRecords[0]?.id ?? null);
         setActiveProjectId(selectedProject);
-        // The encrypted navigation shell and conversation list are now useful.
-        // Optional models, hardware, tasks, memory, providers, migration and
-        // developer diagnostics hydrate below without holding the first
-        // interactive frame hostage.
-        setReady(true);
         const auxiliaryFailures: string[] = [];
         const recover = async <T,>(
           label: string,
@@ -1920,6 +1959,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           if (result.failure) auxiliaryFailures.push(result.failure);
           return result.value;
         };
+        // Appearance, identity and the saved privacy boundary are part of the
+        // first useful frame. This bounded local read runs before `ready` so
+        // Home never paints a stale scene or briefly enables cloud submission.
+        const runtimeSettings = await recover(
+          'Settings',
+          request<Record<string, unknown>>('settings.list'),
+          {},
+        );
+        setSettings((current) => applyRuntimeStartupSettings(current, runtimeSettings));
+        // The encrypted navigation shell and conversation list are now useful.
+        // Optional models, hardware, tasks, memory, providers, migration and
+        // developer diagnostics hydrate below without holding the first
+        // interactive frame hostage.
+        setReady(true);
         const memoryRequest = request<RuntimeMemory[]>('memory.list', {
           states: ['active', 'candidate', 'superseded', 'expired'],
         }).catch(() => request<RuntimeMemory[]>('memory.list'));
@@ -1927,7 +1980,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           taskResult,
           memoryResult,
           providerResult,
-          runtimeSettings,
           permissionPolicy,
           migration,
           cupcakeStatus,
@@ -1945,7 +1997,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }>('providers.status'),
             { providers: [] },
           ),
-          recover('Settings', request<Record<string, unknown>>('settings.list'), {}),
           recover('Permission policy', request<{ mode?: string }>('broker.permission_mode.get'), {
             mode: 'guarded',
           }),
@@ -2072,48 +2123,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
         setSettings((current) => ({
           ...current,
-          theme:
-            runtimeSettings['appearance.theme'] === 'cupcake-dark'
-              ? 'dark'
-              : runtimeSettings['appearance.theme'] === 'minimal'
-                ? 'minimal'
-                : runtimeSettings['appearance.theme'] === 'classic'
-                  ? 'classic'
-                  : 'light',
-          wallpaper:
-            runtimeSettings['appearance.wallpaper'] === 'moonlit-archive' ||
-            runtimeSettings['appearance.wallpaper'] === 'pistachio-atelier' ||
-            runtimeSettings['appearance.wallpaper'] === 'blueberry-observatory' ||
-            runtimeSettings['appearance.wallpaper'] === 'copper-workshop' ||
-            runtimeSettings['appearance.wallpaper'] === 'aquamarine-tidepool-library' ||
-            runtimeSettings['appearance.wallpaper'] === 'ink-snow-garden' ||
-            runtimeSettings['appearance.wallpaper'] === 'raspberry-circuit-conservatory' ||
-            runtimeSettings['appearance.wallpaper'] === 'saffron-paper-city'
-              ? runtimeSettings['appearance.wallpaper']
-              : 'none',
-          offline: runtimeSettings['privacy.default_mode'] === 'offline',
           proactiveEnabled:
             typeof runtimeSettings['proactive.enabled'] === 'boolean'
               ? runtimeSettings['proactive.enabled']
               : (bootstrap.suggestionsEnabled ?? false),
           developerMode: runtimeSettings['developer.enabled'] === true,
-          reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
-          scrollbarMode:
-            runtimeSettings['appearance.scrollbars'] === 'minimal' ||
-            runtimeSettings['appearance.scrollbars'] === 'hidden'
-              ? runtimeSettings['appearance.scrollbars']
-              : 'slim',
-          onboardingCompleted: runtimeSettings['onboarding.completed_v1'] === true,
-          profile: {
-            displayName: textValue(
-              runtimeSettings['profile.display_name'],
-              current.profile.displayName,
-            ),
-            role: textValue(runtimeSettings['profile.role'], current.profile.role),
-            bio: textValue(runtimeSettings['profile.bio'], current.profile.bio),
-            avatar: textValue(runtimeSettings['profile.avatar'], current.profile.avatar),
-          },
-          assistantAvatar: textValue(runtimeSettings['assistant.avatar'], current.assistantAvatar),
           personalityPreset:
             (runtimeSettings['personality.preset'] as WorkspaceSettings['personalityPreset']) ??
             current.personalityPreset,
