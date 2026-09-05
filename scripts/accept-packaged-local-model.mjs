@@ -180,7 +180,9 @@ try {
   }
   const activateRuntime = recommendedCuda.getByRole('button', { name: 'Activate', exact: true });
   if (await activateRuntime.isVisible()) await activateRuntime.click();
-  await recommendedCuda.getByText('Active runtime', { exact: true }).waitFor({ timeout: 1_800_000 });
+  await recommendedCuda
+    .getByText('Active runtime', { exact: true })
+    .waitFor({ timeout: 1_800_000 });
   await page.screenshot({ path: join(output, '01-cuda-runtime-installed.png') });
 
   await page.getByRole('textbox', { name: 'Find a model' }).fill('Qwen3 8B');

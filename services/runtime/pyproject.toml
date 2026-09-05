@@ -54,6 +54,10 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.format]
+# The canonical contract generator owns formatting; check:schemas verifies exact output.
+exclude = ["src/cupcake_runtime/generated/contracts_v1.py"]
+
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"

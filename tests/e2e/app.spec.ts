@@ -699,8 +699,7 @@ test('live workspace windows long history and switches immutable branches', asyn
             branch_id: branchId,
             role: index % 2 ? 'assistant' : 'user',
             content: `Persisted turn ${index}`,
-            model_id:
-              index === 499 ? 'nvidia/nemotron-3-super-120b-a12b' : undefined,
+            model_id: index === 499 ? 'nvidia/nemotron-3-super-120b-a12b' : undefined,
             provider_id: index === 499 ? 'nvidia-nim' : undefined,
             canonical_metadata: index === 499 ? { finishReason: 'length' } : undefined,
           }));
@@ -908,7 +907,10 @@ test('live workspace windows long history and switches immutable branches', asyn
   if (process.env.CUPCAKE_RESPONSE_LIMIT_SCREENSHOT) {
     await page.screenshot({ path: process.env.CUPCAKE_RESPONSE_LIMIT_SCREENSHOT, fullPage: true });
   }
-  await page.locator('.response-limit-notice').getByRole('button', { name: 'Continue response' }).click();
+  await page
+    .locator('.response-limit-notice')
+    .getByRole('button', { name: 'Continue response' })
+    .click();
   await expect(page.getByRole('dialog', { name: 'Confirm message action' })).toContainText(
     'Continue with nvidia-nim?',
   );

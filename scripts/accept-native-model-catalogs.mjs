@@ -12,10 +12,17 @@ const option = (name, fallback) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 const executable = resolve(
-  option('--executable', join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe')),
+  option(
+    '--executable',
+    join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
+  ),
 );
-const profile = resolve(option('--profile', join(process.env.APPDATA ?? '', 'com.cupcakeagi.desktop')));
-const output = resolve(option('--output', join('artifacts', 'screenshots', 'native-model-catalogs')));
+const profile = resolve(
+  option('--profile', join(process.env.APPDATA ?? '', 'com.cupcakeagi.desktop')),
+);
+const output = resolve(
+  option('--output', join('artifacts', 'screenshots', 'native-model-catalogs')),
+);
 const webviewData = resolve(option('--webview-data', 'E:/temp/CupcakeAI/qa/native-model-catalogs'));
 const port = Number(option('--port', '10058'));
 const catalogTimeout = Number(option('--catalog-timeout', '120000'));
@@ -121,7 +128,12 @@ try {
   const diagnostics = page
     ? {
         url: page.url(),
-        body: sanitize(await page.locator('body').innerText().catch(() => '')),
+        body: sanitize(
+          await page
+            .locator('body')
+            .innerText()
+            .catch(() => ''),
+        ),
         providers: await page
           .evaluate(() =>
             globalThis.window.cupcake?.runtime.request({ method: 'providers.status', params: {} }),
@@ -130,7 +142,9 @@ try {
         errors: errors.map(sanitize),
       }
     : { errors: errors.map(sanitize) };
-  await page?.screenshot({ path: join(output, 'native-models-failure.png') }).catch(() => undefined);
+  await page
+    ?.screenshot({ path: join(output, 'native-models-failure.png') })
+    .catch(() => undefined);
   throw new Error(`${error}; diagnostics=${JSON.stringify(diagnostics)}`, { cause: error });
 } finally {
   password.fill(0);
@@ -145,7 +159,8 @@ try {
 async function waitForDevtools(debugPort, processHandle, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (processHandle.exitCode !== null) throw new Error('CupcakeAI exited before WebView2 was ready');
+    if (processHandle.exitCode !== null)
+      throw new Error('CupcakeAI exited before WebView2 was ready');
     try {
       const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
       if (response.ok) return;

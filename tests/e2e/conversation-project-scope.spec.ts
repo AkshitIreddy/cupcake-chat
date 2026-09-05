@@ -58,13 +58,7 @@ test('opening a chat binds its project through context refresh, preflight, and s
           cancel: () => Promise.resolve(true),
           onEvent: () => () => undefined,
           onStatus: () => () => undefined,
-          request: ({
-            method,
-            params,
-          }: {
-            method: string;
-            params?: Record<string, unknown>;
-          }) => {
+          request: ({ method, params }: { method: string; params?: Record<string, unknown> }) => {
             requests.push({ method, params });
             const results: Record<string, unknown> = {
               'app.bootstrap': {
@@ -107,9 +101,7 @@ test('opening a chat binds its project through context refresh, preflight, and s
               },
               'developer.events': [],
               'conversations.get': {
-                branches: [
-                  { id: 'branch-b', conversation_id: 'conversation-b', name: 'Main' },
-                ],
+                branches: [{ id: 'branch-b', conversation_id: 'conversation-b', name: 'Main' }],
                 activeBranchId: 'branch-b',
               },
               'conversations.list': conversations,
@@ -229,11 +221,16 @@ test('opening a chat binds its project through context refresh, preflight, and s
       window as unknown as {
         __runtimeRequests: Array<{ method: string; params?: Record<string, unknown> }>;
       }
-    ).__runtimeRequests.filter(({ method }) => method === 'memory.list' || method === 'artifacts.list'),
+    ).__runtimeRequests.filter(
+      ({ method }) => method === 'memory.list' || method === 'artifacts.list',
+    ),
   );
   expect(scopedRefreshes).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ method: 'memory.list', params: expect.objectContaining({ projectId: 'project-b' }) }),
+      expect.objectContaining({
+        method: 'memory.list',
+        params: expect.objectContaining({ projectId: 'project-b' }),
+      }),
       expect.objectContaining({ method: 'artifacts.list', params: { projectId: 'project-b' } }),
     ]),
   );

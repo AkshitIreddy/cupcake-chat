@@ -15,6 +15,7 @@ __pycache__/
 artifacts/screenshots/
 artifacts/videos/
 packages/contracts/schema/
+apps/desktop/src-tauri/gen/schemas/
 packaging/catalogs/cupcake-local-runtime-v1.json
 services/runtime/tests/providers/fixtures/recorded_streams.json
 pnpm-lock.yaml

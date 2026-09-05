@@ -35,9 +35,7 @@ export function resolvePersistedMessageModel(
       model.id.startsWith(`openai-compatible:${providerId}/`)
     );
   };
-  const exact = models.filter(
-    (model) => model.id === nativeModelId && matchesProviderRoute(model),
-  );
+  const exact = models.filter((model) => model.id === nativeModelId && matchesProviderRoute(model));
   if (exact.length === 1) return exact[0] ?? null;
 
   const canonicalCandidates = new Set<string>();
