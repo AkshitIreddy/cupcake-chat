@@ -75,6 +75,10 @@ def test_imports_all_allowlisted_state_and_is_idempotent(tmp_path: Path) -> None
         "chroma_text",
     }
     assert report.counts["chroma_text"] == 2
+    assert report.to_dict()["conversations"] == 1
+    assert report.to_dict()["messages"] == 3
+    assert report.to_dict()["memories"] == 6
+    assert report.to_dict()["tasks"] == 1
     assert ".env" in report.ignored_secret_files
     serialized = json.dumps([record.payload for record in records])
     assert "must-never-appear" not in serialized

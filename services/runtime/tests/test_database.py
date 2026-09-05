@@ -1,9 +1,10 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from cupcake_runtime.storage.database import Database, DatabaseConfig
-from cupcake_runtime.storage.migrations import LATEST_SCHEMA_VERSION
+from cupcake_runtime.storage.migrations import LATEST_SCHEMA_VERSION, MIGRATIONS
 
 
 def test_database_migrates_enables_wal_and_passes_integrity(database: Database) -> None:
@@ -45,3 +46,44 @@ def test_database_backup_is_consistent(database: Database, tmp_path: Path) -> No
         )
     finally:
         restored.close()
+
+
+def test_v2_pending_legacy_tasks_upgrade_to_paused(tmp_path: Path) -> None:
+    path = tmp_path / "v2.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE schema_migrations ("
+        "version INTEGER PRIMARY KEY, description TEXT NOT NULL, applied_at TEXT NOT NULL"
+        ") STRICT"
+    )
+    for migration in MIGRATIONS[:2]:
+        connection.executescript(migration.sql)
+        connection.execute(
+            "INSERT INTO schema_migrations VALUES (?, ?, '2026-09-05T00:00:00Z')",
+            (migration.version, migration.description),
+        )
+    connection.execute(
+        "INSERT INTO legacy_migrations VALUES (?, 1, ?, 'imported', '{}', ?)",
+        ("migration", "a" * 64, "2026-09-05T00:00:00Z"),
+    )
+    connection.execute(
+        "INSERT INTO legacy_tasks VALUES (?, ?, ?, 'pending', NULL, '{}', ?, ?)",
+        (
+            "task",
+            "migration",
+            "Recovered task",
+            "2026-09-05T00:00:00Z",
+            "2026-09-05T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    upgraded = Database(DatabaseConfig(path=path, require_sqlcipher=False))
+    try:
+        assert upgraded.schema_version == LATEST_SCHEMA_VERSION
+        assert (
+            upgraded.connection.execute("SELECT status FROM legacy_tasks").fetchone()[0] == "paused"
+        )
+    finally:
+        upgraded.close()

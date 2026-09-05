@@ -32,4 +32,12 @@ class MigrationReport:
         value = asdict(self)
         value["imported_at"] = self.imported_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
         value["total_records"] = self.total_records
+        message_count = int(self.counts.get("conversation_message", 0))
+        value["conversations"] = int(message_count > 0)
+        value["messages"] = message_count
+        value["tasks"] = int(self.counts.get("task", 0))
+        value["memories"] = sum(
+            int(self.counts.get(kind, 0)) for kind in ("personality", "thought", "chroma_text")
+        )
+        value["files"] = 0
         return value

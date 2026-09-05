@@ -184,7 +184,7 @@ class LegacyImporter:
                     f"task:{key}",
                     {
                         "title": item["task"],
-                        "status": "pending",
+                        "status": "paused",
                         "legacy_id": item.get("id"),
                         "legacy_created_at": item.get("task_created_time"),
                     },

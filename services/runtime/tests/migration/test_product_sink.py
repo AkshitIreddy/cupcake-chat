@@ -63,16 +63,24 @@ def test_product_sink_commits_authoritative_entities_and_survives_restart(
     assert database.connection.execute("SELECT count(*) FROM conversations").fetchone()[0] == 1
     assert database.connection.execute("SELECT count(*) FROM messages").fetchone()[0] == 3
     assert database.connection.execute("SELECT count(*) FROM legacy_tasks").fetchone()[0] == 1
-    assert database.connection.execute("SELECT count(*) FROM memories").fetchone()[0] == 4
+    assert database.connection.execute("SELECT count(*) FROM memories").fetchone()[0] == 2
     assert (
         database.connection.execute(
-            "SELECT count(*) FROM memories WHERE kind='task_state' AND state='active'"
+            "SELECT count(*) FROM memories WHERE kind='task_state'"
         ).fetchone()[0]
-        == 1
+        == 0
     )
     assert (
         database.connection.execute(
-            "SELECT count(*) FROM memories WHERE kind='instruction' AND state='active'"
+            "SELECT count(*) FROM memories WHERE kind='instruction' AND state='candidate'"
+        ).fetchone()[0]
+        == 1
+    )
+    assert sink.list_recovered_tasks()[0]["status"] == "paused"
+    assert (
+        database.connection.execute(
+            "SELECT count(*) FROM legacy_migration_records "
+            "WHERE kind IN ('emotion', 'sense') AND entity_id IS NULL"
         ).fetchone()[0]
         == 1
     )
@@ -104,7 +112,7 @@ def test_product_sink_commits_authoritative_entities_and_survives_restart(
         restarted_database.connection.execute("SELECT count(*) FROM legacy_tasks").fetchone()[0]
         == 1
     )
-    assert restarted_database.connection.execute("SELECT count(*) FROM memories").fetchone()[0] == 4
+    assert restarted_database.connection.execute("SELECT count(*) FROM memories").fetchone()[0] == 2
     restarted_sink.close()
     restarted_database.close()
 
@@ -180,7 +188,7 @@ def test_product_sink_uses_encrypted_profile_database(tmp_path: Path) -> None:
     sink = ProductMigrationSink(database)
     assert LegacyMigrationService(legacy, sink).execute().state == "imported"
     assert database.integrity_check() == ("ok",)
-    assert sink.list_recovered_tasks()[0]["status"] == "pending"
+    assert sink.list_recovered_tasks()[0]["status"] == "paused"
     sink.close()
     database.close()
 

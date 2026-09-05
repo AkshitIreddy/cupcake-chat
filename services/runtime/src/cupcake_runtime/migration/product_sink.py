@@ -52,8 +52,9 @@ class ProductMigrationSink:
     """Atomically project a safe v1 import into the product database.
 
     Conversations become an immutable conversation DAG, recovered task items
-    become durable product records and typed task-state memories, and legacy
-    personality/state data becomes scoped memory with provenance.  The import
+    become paused historical product records, and reviewable personality,
+    thought, and Chroma data becomes candidate memory with provenance. Legacy
+    emotion and sense scalars remain report-only ledger records. The import
     ledger is committed in the same transaction, so a crash cannot leave a
     partially applied migration that later appears complete.
 
@@ -179,9 +180,14 @@ class ProductMigrationSink:
                         connection, report, record, imported_at
                     )
                     continue
-                entity_ids[record.record_id] = self._insert_memory(
-                    connection, report, record, imported_at
-                )
+                if record.kind in {"emotion", "sense"}:
+                    # These synthetic v1 scalars are preserved in the report and
+                    # ledger for audit only. They must never steer 2.0 context.
+                    entity_ids[record.record_id] = None
+                else:
+                    entity_ids[record.record_id] = self._insert_memory(
+                        connection, report, record, imported_at
+                    )
 
             for record in records:
                 connection.execute(
@@ -353,7 +359,7 @@ class ProductMigrationSink:
             """INSERT INTO legacy_tasks(
                    id, migration_id, title, status, legacy_created_at,
                    canonical_metadata, created_at, updated_at
-               ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, 'paused', ?, ?, ?, ?)""",
             (
                 task_id,
                 report.migration_id,
@@ -370,21 +376,8 @@ class ProductMigrationSink:
             None,
             "task",
             title,
-            "Recovered pending task from Cupcake 1.0.",
+            "Recovered paused task from Cupcake 1.0.",
             imported_at,
-        )
-        self._insert_memory_row(
-            connection,
-            report,
-            record,
-            imported_at,
-            key=f"Recovered task: {title[:160]} [{record.record_id[:8]}]",
-            content=title,
-            kind="task_state",
-            state="active",
-            confidence=1.0,
-            explicit=True,
-            metadata=metadata | {"task_id": task_id},
         )
         return task_id
 
@@ -526,9 +519,9 @@ def _memory_projection(
             f"Imported Cupcake 1.0 personality [{suffix}]",
             str(record.payload.get("content", "")),
             "instruction",
-            "active",
-            1.0,
-            True,
+            "candidate",
+            0.5,
+            False,
         )
     if record.kind == "thought":
         return (
@@ -539,26 +532,8 @@ def _memory_projection(
             0.5,
             False,
         )
-    if record.kind == "emotion":
-        name = str(record.payload.get("name", "emotion"))
-        return (
-            f"Legacy emotion: {name} [{suffix}]",
-            str(record.payload.get("value", "")),
-            "temporary_context",
-            "candidate",
-            0.5,
-            False,
-        )
-    if record.kind == "sense":
-        name = str(record.payload.get("name", "sense"))
-        return (
-            f"Legacy sense: {name} [{suffix}]",
-            str(record.payload.get("value", "")),
-            "temporary_context",
-            "candidate",
-            0.5,
-            False,
-        )
+    if record.kind in {"emotion", "sense"}:
+        raise ValueError(f"report-only legacy {record.kind} cannot become memory")
     if record.kind == "chroma_text":
         return (
             f"Recovered legacy memory [{suffix}]",

@@ -211,6 +211,40 @@ MIGRATIONS: tuple[Migration, ...] = (
             ON legacy_tasks(status, updated_at DESC, id DESC);
         """,
     ),
+    Migration(
+        3,
+        "pause legacy tasks",
+        """
+        DROP INDEX legacy_tasks_status_updated;
+        ALTER TABLE legacy_tasks RENAME TO legacy_tasks_v2;
+
+        CREATE TABLE legacy_tasks (
+            id TEXT PRIMARY KEY,
+            migration_id TEXT NOT NULL REFERENCES legacy_migrations(migration_id)
+                ON DELETE RESTRICT,
+            title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 1000),
+            status TEXT NOT NULL CHECK(status IN ('paused', 'completed', 'cancelled')),
+            legacy_created_at TEXT,
+            canonical_metadata TEXT NOT NULL CHECK(json_valid(canonical_metadata)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(migration_id, id)
+        ) STRICT;
+
+        INSERT INTO legacy_tasks(
+            id, migration_id, title, status, legacy_created_at,
+            canonical_metadata, created_at, updated_at
+        )
+        SELECT id, migration_id, title,
+               CASE WHEN status = 'pending' THEN 'paused' ELSE status END,
+               legacy_created_at, canonical_metadata, created_at, updated_at
+          FROM legacy_tasks_v2;
+
+        DROP TABLE legacy_tasks_v2;
+        CREATE INDEX legacy_tasks_status_updated
+            ON legacy_tasks(status, updated_at DESC, id DESC);
+        """,
+    ),
 )
 
 
