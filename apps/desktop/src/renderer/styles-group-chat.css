@@ -597,6 +597,81 @@
   color: var(--danger);
 }
 
+.persona-form-section input:not([type='range']):not([type='checkbox']),
+.persona-form-section textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--cocoa);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.persona-form-section textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.persona-form-section input::placeholder,
+.persona-form-section textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.persona-form-section input:focus-visible,
+.persona-form-section textarea:focus-visible {
+  outline: 2px solid var(--berry);
+  outline-offset: 2px;
+}
+
+.persona-sliders input[type='range'] {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  accent-color: var(--berry);
+}
+
+.persona-sliders input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+}
+
+.persona-sliders input[type='range']::-webkit-slider-thumb {
+  width: 15px;
+  height: 15px;
+  margin-top: -5.5px;
+  appearance: none;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--berry);
+  box-shadow: 0 0 0 1px var(--berry);
+}
+
+.persona-sliders input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+}
+
+.persona-sliders input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--berry);
+  box-shadow: 0 0 0 1px var(--berry);
+}
+
 .handle-input {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -617,7 +692,7 @@
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.handle-input input {
+.persona-form-section .handle-input input:not([type='range']):not([type='checkbox']) {
   border: 0;
   background: transparent;
   box-shadow: none;
