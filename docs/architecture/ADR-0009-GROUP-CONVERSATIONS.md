@@ -49,6 +49,12 @@ system-message authority. Group calls disable provider-native continuity so two 
 model cannot inherit each other's opaque state. Every persisted reply includes the speaker snapshot
 and actual model route.
 
+Each responder's system instruction binds one named Cupcake and one role. Requests addressed to
+other members are routing context for separate invocations; a responder must not simulate their
+answers inside its own message. This is prompt guidance, not a guarantee of model compliance, so
+live output review remains part of qualification. Paused members retain their configuration but are
+excluded from new turns and mention choices until resumed.
+
 The initial group feature is conversational. It does not execute tools or inherit solo generation
 actions that could bypass its recipient plan. Ordinary solo workbench tools remain separate.
 
@@ -65,6 +71,12 @@ durable data. Late events are scoped to their conversation and cannot appear in 
 Smart mode adds explicit selection latency and usage: by default at most two selection calls and two
 responses. Direct mentions incur no selection calls. Semantic selection is a model judgment, not a
 correctness guarantee; users retain direct addressing and a whole-turn Stop control.
+
+The confirmed plan also binds each selection call's output allowance. Non-reasoning selectors use
+256 tokens; selectors that require reasoning use up to 1,024, further clamped to the model's known
+limit. Groq GPT-OSS uses low effort and excludes private reasoning from returned events. This change
+follows a real 256-token exhaustion, documented in the
+[Groq selector investigation](../research/2026-09-05-groq-gpt-oss-selector-budget.md).
 
 Qualification requires contract, runtime, and interaction tests for exact routing, silence, reply
 bounds, Unicode mentions, authorization drift, cancellation, and restart. A real packaged owner demo
