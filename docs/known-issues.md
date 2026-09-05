@@ -14,11 +14,13 @@ candidate and no new artifact should be distributed.
   short trial was incomplete. Failed trials remain archived and are not successful demos.
 - App-managed Qwen3 8B CUDA load, chat, streaming, interruption, follow-up recovery, graceful fit
   refusal, benchmark, and unload passed on provisional package `BF706D1F`. Final package restart
-  persistence and the corrected stopped-message UI remain open. A short benchmark measured
-  64.76 generated tokens/second; it is not a general throughput guarantee.
-- The actual frozen AppContainer worker succeeds after `294437e`. Full packaged saved-artifact
-  execution, test failures, exact cancellation, and source-privacy evidence remain open. Model
-  generated Python drafts have known test defects; no passing execution is claimed for those drafts.
+  persistence and the corrected stopped-message UI remain open. A short benchmark measured 64.76
+  generated tokens/second; it is not a general throughput guarantee.
+- The actual frozen AppContainer worker succeeds after `294437e`. The owner profile's Guarded
+  saved-artifact flow passes with runtime `4ad18e1`: the original Groq draft ran eight tests with
+  one error, and a clearly user-authored review revision passed ten tests. Cancellation and source
+  privacy passed on a disposable provisional package. Final combined-package retakes and corrected
+  task/result presentation remain open; the original model drafts are not claimed to pass.
 - Configurable Cupcake group conversations and bounded semantic speaker selection are newly
   authorized work in progress. They are not available in the provisional package.
 - The full titlebar, scrollbar, theme, width, DPI, zoom, high-contrast, keyboard, screen-reader, and

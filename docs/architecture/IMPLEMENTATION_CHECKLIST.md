@@ -36,12 +36,28 @@ exist. Historical results do not check an item.
 
 ## Core and security
 
-- [x] Contracts, JS, Python, broker, and Tauri-host format/lint/type/test/build gates pass.
+- [ ] Contracts, JS, Python, broker, and Tauri-host format/lint/type/test/build gates pass for the
+      final aggregate source, including group conversations.
 - [x] Encryption, migration, backup/restore, object integrity, project isolation, DAG, FTS, and
       indexing pass.
 - [x] Forgery/replay, approvals, traversal/junction, prompt injection, secret scans, sandbox limits,
       and process trees pass.
 - [ ] Kill/restart matrix and canonical end-to-end scenario pass without duplicate effects/events.
+
+## Cupcake group conversations
+
+- [ ] Reusable Cupcakes have editable identity, role, personality, exact model, and contribution
+      guidance, with accessible roster and structured `@mention` controls.
+- [ ] Smart mode selects only useful contributions, can leave the entire turn quiet, and obeys
+      per-turn limits without autonomous loops or arbitrary fallback.
+- [ ] Direct mentions invoke only the addressed members; a local mention never invokes a cloud
+      selector, and offline/privacy changes are enforced before any provider I/O.
+- [ ] Durable speaker identity, whole-turn cancellation, partial failures, interrupted restart,
+      concurrent-turn exclusion, and bounded attachment memory pass independent checks.
+- [ ] Wide and narrow rendered group flows pass keyboard, focus, overflow, failure, and recovery
+      checks; the screenshots have been opened and inspected.
+- [ ] The rebuilt owner app contains a real multi-provider council, a direct-mention follow-up, and
+      a verified quiet closing turn, with measured route and usage evidence.
 
 ## Package and owner handoff
 
