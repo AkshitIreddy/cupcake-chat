@@ -6,7 +6,12 @@
 //! bounded container. Provider credentials and plaintext profile keys are
 //! never container payloads.
 
+use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::prelude::*;
 use chrono::{DateTime, Utc};
+use hmac::{Hmac, Mac};
+use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -15,23 +20,31 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::backup_envelope::{
     BackupEntryRole, BackupIdentity, PortableBackupEntry, PortableBackupManifest,
     ProfileKeyEnvelope,
 };
 use crate::security_db::{SecurityBackupManifest, SecurityDatabase};
+use crate::vault::SecretBytes;
 use crate::{BrokerError, Result};
 
 pub const BACKUP_CONTAINER_FORMAT: &str = "cupcake-backup-container";
-pub const BACKUP_CONTAINER_FORMAT_VERSION: u16 = 1;
+pub const BACKUP_CONTAINER_FORMAT_VERSION: u16 = 2;
 pub const RUNTIME_PAYLOAD_PATH: &str = "payload/runtime.cupcake-runtime.zip";
 pub const SECURITY_PAYLOAD_PATH: &str = "payload/security.sqlite";
 
-const MAGIC: &[u8; 16] = b"CUPCAKEBAK\0\x01\0\0\0\0";
+const LEGACY_BACKUP_CONTAINER_FORMAT_VERSION: u16 = 1;
+const MAGIC_V1: &[u8; 16] = b"CUPCAKEBAK\0\x01\0\0\0\0";
+const MAGIC_V2: &[u8; 16] = b"CUPCAKEBAK\0\x02\0\0\0\0";
 const MAX_MANIFEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
+const AES_GCM_TAG_BYTES: u64 = 16;
+const NONCE_PREFIX_BYTES: usize = 8;
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackupProtectionInput {
@@ -84,12 +97,26 @@ pub struct BackupContainerManifest {
     pub security_snapshot: SecurityBackupManifest,
     pub contains_provider_credentials: bool,
     pub contains_plaintext_profile_key: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_protection: Option<PayloadProtection>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PayloadProtection {
+    pub algorithm: String,
+    pub chunk_bytes: u32,
+    pub runtime_nonce_prefix_base64: String,
+    pub security_nonce_prefix_base64: String,
 }
 
 impl BackupContainerManifest {
     pub fn validate(&self) -> Result<()> {
         if self.format != BACKUP_CONTAINER_FORMAT
-            || self.format_version != BACKUP_CONTAINER_FORMAT_VERSION
+            || !matches!(
+                self.format_version,
+                LEGACY_BACKUP_CONTAINER_FORMAT_VERSION | BACKUP_CONTAINER_FORMAT_VERSION
+            )
             || self.contains_provider_credentials
             || self.contains_plaintext_profile_key
         {
@@ -104,6 +131,15 @@ impl BackupContainerManifest {
         )?;
         self.security_payload
             .validate(SECURITY_PAYLOAD_PATH, "application/vnd.sqlite3")?;
+        match (self.format_version, &self.payload_protection) {
+            (LEGACY_BACKUP_CONTAINER_FORMAT_VERSION, None) => {}
+            (BACKUP_CONTAINER_FORMAT_VERSION, Some(protection)) => protection.validate()?,
+            _ => {
+                return Err(BrokerError::Integrity(
+                    "backup payload protection does not match its container version".into(),
+                ))
+            }
+        }
         validate_security_metadata(&self.security_snapshot, &self.security_payload)?;
 
         let security_entries: Vec<_> = self
@@ -134,6 +170,50 @@ impl BackupContainerManifest {
             .map_err(|_| BrokerError::Integrity("backup container manifest is invalid".into()))?;
         manifest.validate()?;
         Ok(manifest)
+    }
+}
+
+impl PayloadProtection {
+    fn new() -> Self {
+        let mut runtime = [0_u8; NONCE_PREFIX_BYTES];
+        let mut security = [0_u8; NONCE_PREFIX_BYTES];
+        OsRng.fill_bytes(&mut runtime);
+        loop {
+            OsRng.fill_bytes(&mut security);
+            if security != runtime {
+                break;
+            }
+        }
+        Self {
+            algorithm: "aes-256-gcm-chunked-v1".into(),
+            chunk_bytes: COPY_BUFFER_BYTES as u32,
+            runtime_nonce_prefix_base64: BASE64_URL_SAFE_NO_PAD.encode(runtime),
+            security_nonce_prefix_base64: BASE64_URL_SAFE_NO_PAD.encode(security),
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        let runtime = decode_nonce_prefix(&self.runtime_nonce_prefix_base64)?;
+        let security = decode_nonce_prefix(&self.security_nonce_prefix_base64)?;
+        if self.algorithm != "aes-256-gcm-chunked-v1"
+            || self.chunk_bytes != COPY_BUFFER_BYTES as u32
+            || runtime == security
+        {
+            return Err(BrokerError::Integrity(
+                "backup payload encryption descriptor is invalid".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn nonce_prefix(&self, path: &str) -> Result<[u8; NONCE_PREFIX_BYTES]> {
+        match path {
+            RUNTIME_PAYLOAD_PATH => decode_nonce_prefix(&self.runtime_nonce_prefix_base64),
+            SECURITY_PAYLOAD_PATH => decode_nonce_prefix(&self.security_nonce_prefix_base64),
+            _ => Err(BrokerError::Integrity(
+                "backup payload path has no encryption nonce".into(),
+            )),
+        }
     }
 }
 
@@ -184,6 +264,7 @@ pub fn create_coordinated_backup(
     staging_root: &Path,
     identity: BackupIdentity,
     created_at: DateTime<Utc>,
+    profile_key: &SecretBytes,
     protection: BackupProtectionInput,
     key_envelope: Option<ProfileKeyEnvelope>,
 ) -> Result<BackupContainerInspection> {
@@ -221,7 +302,12 @@ pub fn create_coordinated_backup(
                         "same-user DPAPI backup cannot contain a portable key envelope".into(),
                     ));
                 }
-                PortableBackupManifest::new_same_user_dpapi(identity, created_at, entries)?
+                PortableBackupManifest::new_same_user_dpapi(
+                    identity,
+                    created_at,
+                    profile_key,
+                    entries,
+                )?
             }
         };
         write_backup_container(
@@ -230,6 +316,7 @@ pub fn create_coordinated_backup(
             &security_path,
             portable,
             security_metadata,
+            profile_key,
         )
     })();
     let _ = std::fs::remove_file(&security_path);
@@ -242,6 +329,7 @@ pub fn write_backup_container(
     security_snapshot: &Path,
     portable_manifest: PortableBackupManifest,
     security_metadata: SecurityBackupManifest,
+    profile_key: &SecretBytes,
 ) -> Result<BackupContainerInspection> {
     if destination.exists() {
         return Err(BrokerError::InvalidConfig(
@@ -277,6 +365,7 @@ pub fn write_backup_container(
         security_snapshot: security_metadata,
         contains_provider_credentials: false,
         contains_plaintext_profile_key: false,
+        payload_protection: Some(PayloadProtection::new()),
     };
     manifest.validate()?;
     let manifest_bytes = serde_json::to_vec(&manifest)?;
@@ -297,18 +386,23 @@ pub fn write_backup_container(
             .write(true)
             .open(&temporary)?;
         let mut output = BufWriter::new(output);
-        output.write_all(MAGIC)?;
+        output.write_all(MAGIC_V2)?;
         output.write_all(&(manifest_bytes.len() as u32).to_be_bytes())?;
         output.write_all(&manifest_bytes)?;
-        append_payload(
+        let cipher = payload_cipher(profile_key, manifest.backup.backup_id)?;
+        append_encrypted_payload(
             &mut output,
             runtime_archive,
-            manifest.runtime_payload.byte_size,
+            &manifest.runtime_payload,
+            &manifest,
+            &cipher,
         )?;
-        append_payload(
+        append_encrypted_payload(
             &mut output,
             security_snapshot,
-            manifest.security_payload.byte_size,
+            &manifest.security_payload,
+            &manifest,
+            &cipher,
         )?;
         output.flush()?;
         output.get_ref().sync_all()?;
@@ -320,7 +414,7 @@ pub fn write_backup_container(
         let _ = std::fs::remove_file(&temporary);
     }
     write_result?;
-    match inspect_backup_container(destination) {
+    match inspect_backup_container_with_key(destination, profile_key) {
         Ok(inspection) => Ok(inspection),
         Err(error) => {
             let _ = std::fs::remove_file(destination);
@@ -330,13 +424,58 @@ pub fn write_backup_container(
 }
 
 pub fn inspect_backup_container(source: &Path) -> Result<BackupContainerInspection> {
+    inspect_backup_container_inner(source, None)
+}
+
+/// Read and validate only the bounded container header and manifest.
+///
+/// This deliberately does not authenticate, decrypt, hash, or extract either
+/// payload. Restore uses it only to discover the protection descriptor needed
+/// to obtain the profile key; the keyed inspection/extraction pass remains the
+/// authority for payload integrity.
+pub fn read_backup_container_manifest(source: &Path) -> Result<BackupContainerManifest> {
+    validate_regular_file(source, "backup container")?;
+    let file = File::open(source)?;
+    let file_size = file.metadata()?.len();
+    let mut reader = BufReader::new(file);
+    read_header(&mut reader, file_size)
+}
+
+pub fn inspect_backup_container_with_key(
+    source: &Path,
+    profile_key: &SecretBytes,
+) -> Result<BackupContainerInspection> {
+    inspect_backup_container_inner(source, Some(profile_key))
+}
+
+fn inspect_backup_container_inner(
+    source: &Path,
+    profile_key: Option<&SecretBytes>,
+) -> Result<BackupContainerInspection> {
     validate_regular_file(source, "backup container")?;
     let file = File::open(source)?;
     let file_size = file.metadata()?.len();
     let mut reader = BufReader::new(file);
     let manifest = read_header(&mut reader, file_size)?;
-    let runtime_bytes = verify_payload(&mut reader, &manifest.runtime_payload)?;
-    let security_bytes = verify_payload(&mut reader, &manifest.security_payload)?;
+    let (runtime_bytes, security_bytes) = if manifest.format_version
+        == LEGACY_BACKUP_CONTAINER_FORMAT_VERSION
+    {
+        (
+            verify_payload(&mut reader, &manifest.runtime_payload)?,
+            verify_payload(&mut reader, &manifest.security_payload)?,
+        )
+    } else {
+        let key = profile_key.ok_or_else(|| {
+            BrokerError::PermissionDenied(
+                "encrypted backup inspection requires the protected profile key".into(),
+            )
+        })?;
+        let cipher = payload_cipher(key, manifest.backup.backup_id)?;
+        (
+            verify_encrypted_payload(&mut reader, &manifest.runtime_payload, &manifest, &cipher)?,
+            verify_encrypted_payload(&mut reader, &manifest.security_payload, &manifest, &cipher)?,
+        )
+    };
     let mut trailing = [0_u8; 1];
     if reader.read(&mut trailing)? != 0 {
         return Err(BrokerError::Integrity(
@@ -358,6 +497,22 @@ pub fn extract_backup_container(
     source: &Path,
     staging_directory: &Path,
 ) -> Result<ExtractedBackupContainer> {
+    extract_backup_container_inner(source, staging_directory, None)
+}
+
+pub fn extract_backup_container_with_key(
+    source: &Path,
+    staging_directory: &Path,
+    profile_key: &SecretBytes,
+) -> Result<ExtractedBackupContainer> {
+    extract_backup_container_inner(source, staging_directory, Some(profile_key))
+}
+
+fn extract_backup_container_inner(
+    source: &Path,
+    staging_directory: &Path,
+    profile_key: Option<&SecretBytes>,
+) -> Result<ExtractedBackupContainer> {
     validate_regular_file(source, "backup container")?;
     if staging_directory.exists() {
         return Err(BrokerError::InvalidConfig(
@@ -368,14 +523,45 @@ pub fn extract_backup_container(
     let file_size = file.metadata()?.len();
     let mut reader = BufReader::new(file);
     let manifest = read_header(&mut reader, file_size)?;
+    if manifest.format_version == BACKUP_CONTAINER_FORMAT_VERSION && profile_key.is_none() {
+        return Err(BrokerError::PermissionDenied(
+            "encrypted backup restore requires the protected profile key".into(),
+        ));
+    }
     std::fs::create_dir_all(staging_directory)?;
     let runtime_archive = staging_directory.join("runtime.cupcake-runtime.zip");
     let security_snapshot = staging_directory.join("security.sqlite");
     let extract_result = (|| {
-        let runtime_bytes =
-            extract_payload(&mut reader, &manifest.runtime_payload, &runtime_archive)?;
-        let security_bytes =
-            extract_payload(&mut reader, &manifest.security_payload, &security_snapshot)?;
+        let (runtime_bytes, security_bytes) =
+            if manifest.format_version == LEGACY_BACKUP_CONTAINER_FORMAT_VERSION {
+                (
+                    extract_payload(&mut reader, &manifest.runtime_payload, &runtime_archive)?,
+                    extract_payload(&mut reader, &manifest.security_payload, &security_snapshot)?,
+                )
+            } else {
+                let key = profile_key.ok_or_else(|| {
+                    BrokerError::PermissionDenied(
+                        "encrypted backup restore requires the protected profile key".into(),
+                    )
+                })?;
+                let cipher = payload_cipher(key, manifest.backup.backup_id)?;
+                (
+                    extract_encrypted_payload(
+                        &mut reader,
+                        &manifest.runtime_payload,
+                        &runtime_archive,
+                        &manifest,
+                        &cipher,
+                    )?,
+                    extract_encrypted_payload(
+                        &mut reader,
+                        &manifest.security_payload,
+                        &security_snapshot,
+                        &manifest,
+                        &cipher,
+                    )?,
+                )
+            };
         let mut trailing = [0_u8; 1];
         if reader.read(&mut trailing)? != 0 {
             return Err(BrokerError::Integrity(
@@ -459,18 +645,22 @@ pub fn portable_entries_from_runtime_manifest(
 }
 
 fn read_header(reader: &mut impl Read, file_size: u64) -> Result<BackupContainerManifest> {
-    if file_size < (MAGIC.len() + 4 + 8 + 8) as u64 {
+    if file_size < (MAGIC_V1.len() + 4 + 8 + 8) as u64 {
         return Err(BrokerError::Integrity(
             "backup container is truncated".into(),
         ));
     }
-    let mut magic = [0_u8; MAGIC.len()];
+    let mut magic = [0_u8; MAGIC_V1.len()];
     reader.read_exact(&mut magic)?;
-    if magic.ct_eq(MAGIC).unwrap_u8() != 1 {
+    let wire_version = if magic.ct_eq(MAGIC_V1).unwrap_u8() == 1 {
+        LEGACY_BACKUP_CONTAINER_FORMAT_VERSION
+    } else if magic.ct_eq(MAGIC_V2).unwrap_u8() == 1 {
+        BACKUP_CONTAINER_FORMAT_VERSION
+    } else {
         return Err(BrokerError::Integrity(
             "backup container signature is invalid".into(),
         ));
-    }
+    };
     let mut manifest_length = [0_u8; 4];
     reader.read_exact(&mut manifest_length)?;
     let manifest_length = u32::from_be_bytes(manifest_length) as usize;
@@ -481,9 +671,223 @@ fn read_header(reader: &mut impl Read, file_size: u64) -> Result<BackupContainer
     }
     let mut bytes = vec![0_u8; manifest_length];
     reader.read_exact(&mut bytes)?;
-    BackupContainerManifest::from_json(&bytes)
+    let manifest = BackupContainerManifest::from_json(&bytes)?;
+    if manifest.format_version != wire_version {
+        return Err(BrokerError::Integrity(
+            "backup container signature and manifest versions differ".into(),
+        ));
+    }
+    Ok(manifest)
 }
 
+fn payload_cipher(profile_key: &SecretBytes, backup_id: Uuid) -> Result<Aes256Gcm> {
+    if profile_key.expose().len() != 32 {
+        return Err(BrokerError::InvalidConfig(
+            "profile key has an invalid length for backup encryption".into(),
+        ));
+    }
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(profile_key.expose())
+        .map_err(|_| BrokerError::Integrity("backup payload key derivation failed".into()))?;
+    mac.update(b"CUPCAKEAGI\0backup-payload-key\0v2\0");
+    mac.update(backup_id.as_bytes());
+    let derived = mac.finalize().into_bytes();
+    let mut key = Zeroizing::new([0_u8; 32]);
+    key.copy_from_slice(&derived);
+    Aes256Gcm::new_from_slice(key.as_ref())
+        .map_err(|_| BrokerError::Integrity("backup payload cipher initialization failed".into()))
+}
+
+fn decode_nonce_prefix(value: &str) -> Result<[u8; NONCE_PREFIX_BYTES]> {
+    let decoded = BASE64_URL_SAFE_NO_PAD
+        .decode(value)
+        .map_err(|_| BrokerError::Integrity("backup nonce prefix is invalid".into()))?;
+    decoded
+        .try_into()
+        .map_err(|_| BrokerError::Integrity("backup nonce prefix has an invalid length".into()))
+}
+
+fn chunk_nonce(prefix: [u8; NONCE_PREFIX_BYTES], index: u32) -> [u8; 12] {
+    let mut nonce = [0_u8; 12];
+    nonce[..NONCE_PREFIX_BYTES].copy_from_slice(&prefix);
+    nonce[NONCE_PREFIX_BYTES..].copy_from_slice(&index.to_be_bytes());
+    nonce
+}
+
+fn chunk_aad(
+    manifest: &BackupContainerManifest,
+    descriptor: &ContainerPayload,
+    index: u32,
+) -> Result<Vec<u8>> {
+    let mut aad = b"CUPCAKEAGI\0backup-payload-chunk\0v2\0".to_vec();
+    let encoded_manifest = serde_json::to_vec(manifest)
+        .map_err(|_| BrokerError::Integrity("backup manifest authentication failed".into()))?;
+    aad.extend_from_slice(&Sha256::digest(encoded_manifest));
+    aad.extend_from_slice(descriptor.path.as_bytes());
+    aad.push(0);
+    aad.extend_from_slice(descriptor.sha256.as_bytes());
+    aad.extend_from_slice(&descriptor.byte_size.to_be_bytes());
+    aad.extend_from_slice(&index.to_be_bytes());
+    Ok(aad)
+}
+
+fn append_encrypted_payload(
+    writer: &mut impl Write,
+    source: &Path,
+    descriptor: &ContainerPayload,
+    manifest: &BackupContainerManifest,
+    cipher: &Aes256Gcm,
+) -> Result<()> {
+    writer.write_all(&descriptor.byte_size.to_be_bytes())?;
+    let protection = manifest.payload_protection.as_ref().ok_or_else(|| {
+        BrokerError::Integrity("backup payload encryption descriptor is missing".into())
+    })?;
+    let prefix = protection.nonce_prefix(&descriptor.path)?;
+    let mut input = File::open(source)?;
+    let mut digest = Sha256::new();
+    let mut remaining = descriptor.byte_size;
+    let chunks = remaining.div_ceil(COPY_BUFFER_BYTES as u64).max(1);
+    if chunks > u32::MAX as u64 {
+        return Err(BrokerError::InvalidConfig(
+            "backup payload requires too many encrypted chunks".into(),
+        ));
+    }
+    for index in 0..chunks as u32 {
+        let amount = remaining.min(COPY_BUFFER_BYTES as u64) as usize;
+        let mut plaintext = vec![0_u8; amount];
+        input.read_exact(&mut plaintext)?;
+        digest.update(&plaintext);
+        let nonce = chunk_nonce(prefix, index);
+        let aad = chunk_aad(manifest, descriptor, index)?;
+        let encrypted = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &plaintext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| BrokerError::Integrity("backup payload encryption failed".into()))?;
+        writer.write_all(&encrypted)?;
+        plaintext.zeroize();
+        remaining -= amount as u64;
+    }
+    let mut extra = [0_u8; 1];
+    if input.read(&mut extra)? != 0 {
+        return Err(BrokerError::Integrity(
+            "backup payload changed while the container was written".into(),
+        ));
+    }
+    let measured = hex::encode(digest.finalize());
+    if !constant_time_text_equal(&measured, &descriptor.sha256) {
+        return Err(BrokerError::Integrity(
+            "backup payload changed while the container was written".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn verify_encrypted_payload(
+    reader: &mut impl Read,
+    descriptor: &ContainerPayload,
+    manifest: &BackupContainerManifest,
+    cipher: &Aes256Gcm,
+) -> Result<u64> {
+    decrypt_encrypted_payload(reader, descriptor, manifest, cipher, None)
+}
+
+fn extract_encrypted_payload(
+    reader: &mut impl Read,
+    descriptor: &ContainerPayload,
+    destination: &Path,
+    manifest: &BackupContainerManifest,
+    cipher: &Aes256Gcm,
+) -> Result<u64> {
+    let output = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(destination)?;
+    let mut output = BufWriter::new(output);
+    let copied =
+        decrypt_encrypted_payload(reader, descriptor, manifest, cipher, Some(&mut output))?;
+    output.flush()?;
+    output.get_ref().sync_all()?;
+    Ok(copied)
+}
+
+fn decrypt_encrypted_payload(
+    reader: &mut impl Read,
+    descriptor: &ContainerPayload,
+    manifest: &BackupContainerManifest,
+    cipher: &Aes256Gcm,
+    mut output: Option<&mut dyn Write>,
+) -> Result<u64> {
+    let length = read_payload_length(reader, descriptor)?;
+    let protection = manifest.payload_protection.as_ref().ok_or_else(|| {
+        BrokerError::Integrity("backup payload encryption descriptor is missing".into())
+    })?;
+    let prefix = protection.nonce_prefix(&descriptor.path)?;
+    let chunks = length.div_ceil(COPY_BUFFER_BYTES as u64).max(1);
+    if chunks > u32::MAX as u64 {
+        return Err(BrokerError::Integrity(
+            "backup payload has too many encrypted chunks".into(),
+        ));
+    }
+    let mut remaining = length;
+    let mut digest = Sha256::new();
+    for index in 0..chunks as u32 {
+        let plaintext_bytes = remaining.min(COPY_BUFFER_BYTES as u64) as usize;
+        let encrypted_bytes = plaintext_bytes
+            .checked_add(AES_GCM_TAG_BYTES as usize)
+            .ok_or_else(|| BrokerError::Integrity("backup chunk size overflow".into()))?;
+        let mut encrypted = vec![0_u8; encrypted_bytes];
+        reader.read_exact(&mut encrypted)?;
+        let nonce = chunk_nonce(prefix, index);
+        let aad = chunk_aad(manifest, descriptor, index)?;
+        let mut plaintext = cipher
+            .decrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &encrypted,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| BrokerError::Integrity("backup payload authentication failed".into()))?;
+        encrypted.zeroize();
+        if plaintext.len() != plaintext_bytes {
+            plaintext.zeroize();
+            return Err(BrokerError::Integrity(
+                "backup payload decrypted to an invalid length".into(),
+            ));
+        }
+        digest.update(&plaintext);
+        if let Some(destination) = output.as_deref_mut() {
+            destination.write_all(&plaintext)?;
+        }
+        plaintext.zeroize();
+        remaining -= plaintext_bytes as u64;
+    }
+    let measured = hex::encode(digest.finalize());
+    if !constant_time_text_equal(&measured, &descriptor.sha256) {
+        return Err(BrokerError::Integrity(
+            "backup payload digest differs from its manifest".into(),
+        ));
+    }
+    Ok(length)
+}
+
+fn read_payload_length(reader: &mut impl Read, descriptor: &ContainerPayload) -> Result<u64> {
+    let mut length = [0_u8; 8];
+    reader.read_exact(&mut length)?;
+    let length = u64::from_be_bytes(length);
+    if length != descriptor.byte_size || length > MAX_PAYLOAD_BYTES {
+        return Err(BrokerError::Integrity(
+            "backup payload length differs from its manifest".into(),
+        ));
+    }
+    Ok(length)
+}
+
+#[cfg(test)]
 fn append_payload(writer: &mut impl Write, source: &Path, expected_size: u64) -> Result<()> {
     writer.write_all(&expected_size.to_be_bytes())?;
     let mut input = File::open(source)?;
@@ -720,6 +1124,10 @@ mod tests {
         }
     }
 
+    fn profile_key() -> SecretBytes {
+        SecretBytes::new(vec![9_u8; 32]).unwrap()
+    }
+
     fn runtime_manifest(object_id: &str) -> Value {
         json!({
             "format_version": 1,
@@ -753,7 +1161,9 @@ mod tests {
     fn container_streams_round_trip_and_security_snapshot_verifies() {
         let directory = tempdir().unwrap();
         let runtime = directory.path().join("runtime.zip");
-        std::fs::write(&runtime, b"verified runtime archive").unwrap();
+        let mut runtime_bytes = b"verified runtime archive".to_vec();
+        runtime_bytes.extend(std::iter::repeat_n(0x5a, COPY_BUFFER_BYTES + 137));
+        std::fs::write(&runtime, &runtime_bytes).unwrap();
         let security_db = SecurityDatabase::open(directory.path().join("security.db")).unwrap();
         let security = directory.path().join("security-snapshot.sqlite");
         let security_metadata = security_db.snapshot_to(&security, 100).unwrap();
@@ -764,25 +1174,113 @@ mod tests {
         )
         .unwrap();
         let destination = directory.path().join("backup.cupcakebak");
+        let key = profile_key();
         let created = write_backup_container(
             &destination,
             &runtime,
             &security,
             portable_manifest(&security_payload),
             security_metadata,
+            &key,
         )
         .unwrap();
         assert_eq!(created.verified_payloads, 2);
         assert!(!created.manifest.contains_provider_credentials);
         assert!(!created.manifest.contains_plaintext_profile_key);
+        let container_bytes = std::fs::read(&destination).unwrap();
+        assert!(!container_bytes
+            .windows(b"verified runtime archive".len())
+            .any(|window| window == b"verified runtime archive"));
+        assert!(!container_bytes
+            .windows(b"SQLite format 3\0".len())
+            .any(|window| window == b"SQLite format 3\0"));
+        assert!(inspect_backup_container(&destination).is_err());
+        let header = read_backup_container_manifest(&destination).unwrap();
+        assert_eq!(header.backup.backup_id, identity().backup_id);
+        assert_eq!(header.format_version, BACKUP_CONTAINER_FORMAT_VERSION);
 
-        let extracted =
-            extract_backup_container(&destination, &directory.path().join("restore")).unwrap();
+        let wrong_key = SecretBytes::new(vec![8_u8; 32]).unwrap();
+        let wrong_staging = directory.path().join("wrong-key");
+        assert!(
+            extract_backup_container_with_key(&destination, &wrong_staging, &wrong_key).is_err()
+        );
+        assert!(!wrong_staging.exists());
+
+        let extracted = extract_backup_container_with_key(
+            &destination,
+            &directory.path().join("restore"),
+            &key,
+        )
+        .unwrap();
         assert_eq!(
             std::fs::read(extracted.runtime_archive).unwrap(),
-            b"verified runtime archive"
+            runtime_bytes
         );
         assert!(SecurityDatabase::verify_snapshot(extracted.security_snapshot).is_ok());
+    }
+
+    #[test]
+    fn version_one_plain_payload_container_remains_readable() {
+        let directory = tempdir().unwrap();
+        let runtime = directory.path().join("runtime.zip");
+        std::fs::write(&runtime, b"legacy runtime archive").unwrap();
+        let security_db = SecurityDatabase::open(directory.path().join("security.db")).unwrap();
+        let security = directory.path().join("security.sqlite");
+        let security_metadata = security_db.snapshot_to(&security, 100).unwrap();
+        let security_payload = ContainerPayload::from_file(
+            SECURITY_PAYLOAD_PATH,
+            "application/vnd.sqlite3",
+            &security,
+        )
+        .unwrap();
+        let manifest = BackupContainerManifest {
+            format: BACKUP_CONTAINER_FORMAT.into(),
+            format_version: LEGACY_BACKUP_CONTAINER_FORMAT_VERSION,
+            backup: portable_manifest(&security_payload),
+            runtime_payload: ContainerPayload::from_file(
+                RUNTIME_PAYLOAD_PATH,
+                "application/vnd.cupcakeagi.runtime-backup+zip",
+                &runtime,
+            )
+            .unwrap(),
+            security_payload,
+            security_snapshot: security_metadata,
+            contains_provider_credentials: false,
+            contains_plaintext_profile_key: false,
+            payload_protection: None,
+        };
+        manifest.validate().unwrap();
+        let destination = directory.path().join("legacy.cupcakebak");
+        let output = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&destination)
+            .unwrap();
+        let mut output = BufWriter::new(output);
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        output.write_all(MAGIC_V1).unwrap();
+        output
+            .write_all(&(manifest_bytes.len() as u32).to_be_bytes())
+            .unwrap();
+        output.write_all(&manifest_bytes).unwrap();
+        append_payload(&mut output, &runtime, manifest.runtime_payload.byte_size).unwrap();
+        append_payload(&mut output, &security, manifest.security_payload.byte_size).unwrap();
+        output.flush().unwrap();
+        drop(output);
+
+        assert_eq!(
+            inspect_backup_container(&destination)
+                .unwrap()
+                .verified_payloads,
+            2
+        );
+        let extracted =
+            extract_backup_container(&destination, &directory.path().join("legacy-restore"))
+                .unwrap();
+        assert_eq!(
+            std::fs::read(extracted.runtime_archive).unwrap(),
+            b"legacy runtime archive"
+        );
     }
 
     #[test]
@@ -793,6 +1291,7 @@ mod tests {
         let security_db = SecurityDatabase::open(directory.path().join("security.db")).unwrap();
         let staging = directory.path().join("staging");
         let destination = directory.path().join("backup.cupcakebak");
+        let key = profile_key();
         let inspection = create_coordinated_backup(
             &destination,
             &runtime,
@@ -801,6 +1300,7 @@ mod tests {
             &staging,
             identity(),
             Utc.with_ymd_and_hms(2026, 8, 28, 12, 0, 0).unwrap(),
+            &key,
             BackupProtectionInput::Portable,
             Some(envelope()),
         )
@@ -837,12 +1337,14 @@ mod tests {
         )
         .unwrap();
         let original = directory.path().join("original.cupcakebak");
+        let key = profile_key();
         write_backup_container(
             &original,
             &runtime,
             &security,
             portable_manifest(&payload),
             metadata,
+            &key,
         )
         .unwrap();
         let bytes = std::fs::read(&original).unwrap();
@@ -852,17 +1354,54 @@ mod tests {
         let index = changed.len() - 1;
         changed[index] ^= 0x80;
         std::fs::write(&tampered, changed).unwrap();
-        assert!(inspect_backup_container(&tampered).is_err());
+        assert!(inspect_backup_container_with_key(&tampered, &key).is_err());
 
         let truncated = directory.path().join("truncated.cupcakebak");
         std::fs::write(&truncated, &bytes[..bytes.len() - 1]).unwrap();
-        assert!(inspect_backup_container(&truncated).is_err());
+        assert!(inspect_backup_container_with_key(&truncated, &key).is_err());
 
         let trailing = directory.path().join("trailing.cupcakebak");
         let mut extra = bytes;
         extra.push(0);
         std::fs::write(&trailing, extra).unwrap();
-        assert!(inspect_backup_container(&trailing).is_err());
+        assert!(inspect_backup_container_with_key(&trailing, &key).is_err());
+    }
+
+    #[test]
+    fn header_only_read_is_bounded_but_does_not_claim_payload_verification() {
+        let directory = tempdir().unwrap();
+        let runtime = directory.path().join("runtime.zip");
+        std::fs::write(&runtime, b"runtime archive bytes").unwrap();
+        let security_db = SecurityDatabase::open(directory.path().join("security.db")).unwrap();
+        let security = directory.path().join("security.sqlite");
+        let metadata = security_db.snapshot_to(&security, 100).unwrap();
+        let payload = ContainerPayload::from_file(
+            SECURITY_PAYLOAD_PATH,
+            "application/vnd.sqlite3",
+            &security,
+        )
+        .unwrap();
+        let container = directory.path().join("header-only.cupcakebak");
+        let key = profile_key();
+        write_backup_container(
+            &container,
+            &runtime,
+            &security,
+            portable_manifest(&payload),
+            metadata,
+            &key,
+        )
+        .unwrap();
+
+        let mut tampered = std::fs::read(&container).unwrap();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0x40;
+        std::fs::write(&container, tampered).unwrap();
+
+        // The header is still structurally valid. Only the keyed full pass is
+        // allowed to reject the modified payload.
+        assert!(read_backup_container_manifest(&container).is_ok());
+        assert!(inspect_backup_container_with_key(&container, &key).is_err());
     }
 
     #[test]

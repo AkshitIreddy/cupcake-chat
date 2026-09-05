@@ -163,6 +163,33 @@ fn validate_account(account: &str) -> Result<()> {
     Ok(())
 }
 
+/// Protect a self-contained recovery secret for the current Windows user.
+/// Unlike a vault entry, the returned DPAPI blob can be stored inside a backup
+/// and recovered even when CupcakeAI's credential directory was lost.
+#[cfg(windows)]
+pub(crate) fn protect_for_current_windows_user(bytes: &[u8]) -> Result<Vec<u8>> {
+    windows::DpapiVault::protect(bytes)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn protect_for_current_windows_user(_bytes: &[u8]) -> Result<Vec<u8>> {
+    Err(BrokerError::VaultUnavailable(
+        "backup recovery key protection requires Windows DPAPI".into(),
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn unprotect_for_current_windows_user(bytes: &[u8]) -> Result<Vec<u8>> {
+    windows::DpapiVault::unprotect(bytes)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn unprotect_for_current_windows_user(_bytes: &[u8]) -> Result<Vec<u8>> {
+    Err(BrokerError::VaultUnavailable(
+        "backup recovery key protection requires Windows DPAPI".into(),
+    ))
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 mod linux {
     use super::*;
@@ -324,7 +351,7 @@ mod windows {
                 .join(hex::encode(Sha256::digest(account.as_bytes())))
         }
 
-        fn protect(bytes: &[u8]) -> Result<Vec<u8>> {
+        pub(super) fn protect(bytes: &[u8]) -> Result<Vec<u8>> {
             let input = CRYPT_INTEGER_BLOB {
                 cbData: bytes.len() as u32,
                 pbData: bytes.as_ptr() as *mut u8,
@@ -356,7 +383,7 @@ mod windows {
             Ok(protected)
         }
 
-        fn unprotect(bytes: &[u8]) -> Result<Vec<u8>> {
+        pub(super) fn unprotect(bytes: &[u8]) -> Result<Vec<u8>> {
             let input = CRYPT_INTEGER_BLOB {
                 cbData: bytes.len() as u32,
                 pbData: bytes.as_ptr() as *mut u8,

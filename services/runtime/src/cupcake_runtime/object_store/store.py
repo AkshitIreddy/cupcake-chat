@@ -20,14 +20,23 @@ class ObjectCorruptionError(RuntimeError):
 
 
 class EncryptedObjectStore:
-    """Immutable AES-GCM object store addressed by plaintext SHA-256."""
+    """Immutable object store with optional AES-GCM protection at rest.
 
-    def __init__(self, root: Path, encryption_key: bytes) -> None:
-        if len(encryption_key) != 32:
+    The historical class name remains part of the internal API. Passing ``None``
+    selects the owner's explicit plaintext-content mode; object identifiers and
+    integrity checks remain identical in both modes.
+    """
+
+    def __init__(self, root: Path, encryption_key: bytes | None) -> None:
+        if encryption_key is not None and len(encryption_key) != 32:
             raise ValueError("object encryption key must be exactly 32 bytes")
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
-        self._cipher = AESGCM(encryption_key)
+        self._cipher = AESGCM(encryption_key) if encryption_key is not None else None
+
+    @property
+    def encrypted(self) -> bool:
+        return self._cipher is not None
 
     def put(self, content: bytes) -> str:
         object_id = hashlib.sha256(content).hexdigest()
@@ -39,9 +48,12 @@ class EncryptedObjectStore:
                 raise ObjectCorruptionError(f"existing object is corrupt: {object_id}")
             return object_id
         destination.parent.mkdir(parents=True, exist_ok=True)
-        nonce = os.urandom(NONCE_SIZE)
-        encrypted = self._cipher.encrypt(nonce, content, object_id.encode("ascii"))
-        payload = MAGIC + nonce + encrypted
+        if self._cipher is None:
+            payload = content
+        else:
+            nonce = os.urandom(NONCE_SIZE)
+            encrypted = self._cipher.encrypt(nonce, content, object_id.encode("ascii"))
+            payload = MAGIC + nonce + encrypted
         descriptor, temporary_name = tempfile.mkstemp(prefix=".cup-object-", dir=destination.parent)
         temporary = Path(temporary_name)
         try:
@@ -65,16 +77,19 @@ class EncryptedObjectStore:
             payload = path.read_bytes()
         except FileNotFoundError:
             raise FileNotFoundError(f"object does not exist: {object_id}") from None
-        minimum = len(MAGIC) + NONCE_SIZE + TAG_SIZE
-        if len(payload) < minimum or not payload.startswith(MAGIC):
-            raise ObjectCorruptionError(f"invalid encrypted object header: {object_id}")
-        nonce_offset = len(MAGIC)
-        nonce = payload[nonce_offset : nonce_offset + NONCE_SIZE]
-        encrypted = payload[nonce_offset + NONCE_SIZE :]
-        try:
-            plaintext = self._cipher.decrypt(nonce, encrypted, object_id.encode("ascii"))
-        except InvalidTag as exc:
-            raise ObjectCorruptionError(f"object authentication failed: {object_id}") from exc
+        if self._cipher is None:
+            plaintext = payload
+        else:
+            minimum = len(MAGIC) + NONCE_SIZE + TAG_SIZE
+            if len(payload) < minimum or not payload.startswith(MAGIC):
+                raise ObjectCorruptionError(f"invalid encrypted object header: {object_id}")
+            nonce_offset = len(MAGIC)
+            nonce = payload[nonce_offset : nonce_offset + NONCE_SIZE]
+            encrypted = payload[nonce_offset + NONCE_SIZE :]
+            try:
+                plaintext = self._cipher.decrypt(nonce, encrypted, object_id.encode("ascii"))
+            except InvalidTag as exc:
+                raise ObjectCorruptionError(f"object authentication failed: {object_id}") from exc
         if hashlib.sha256(plaintext).hexdigest() != object_id:
             raise ObjectCorruptionError(f"object content hash failed: {object_id}")
         return plaintext

@@ -1,6 +1,6 @@
-# ADR-0002: Encrypted storage, immutable objects, and retrieval
+# ADR-0002: Optional content encryption, immutable objects, and retrieval
 
-**Status:** Accepted **Date:** 2026-08-28
+**Status:** Accepted, amended 2026-09-05 **Date:** 2026-08-28
 
 ## Context
 
@@ -10,29 +10,29 @@ without making an embedding service authoritative.
 
 ## Decision
 
-Use three independent encrypted stores plus an encrypted object directory:
+Use separate stores with an explicit, optional protection boundary:
 
-1. `product.sqlite`: authoritative CupcakeAI product data in SQLCipher SQLite.
-2. `workflow.sqlite`: DBOS workflow/step state; operational, version-bound, and never a product
-   export format.
+1. The active product database is authoritative CupcakeAI product data. It uses SQLCipher when
+   content encryption is on and ordinary SQLite when the owner explicitly turns it off.
+2. `cupcake-runtime.db` and `cupcake-dbos-system.db` contain operational, version-bound workflow
+   state in ordinary SQLite and are never a product export format.
 3. `security.sqlite`: broker-owned grants, approval state, idempotency/effect records, audit
-   metadata, and MCP schema digests.
-4. `objects/`: immutable encrypted content for imported files and artifact revisions.
+   metadata, and MCP schema digests in ordinary SQLite. The native audit hash chain is plaintext
+   JSONL. Neither store contains provider credentials.
+4. The active `objects/` generation holds immutable content for imported files and artifact
+   revisions. It uses AES-256-GCM when content encryption is on and raw bytes when it is off.
 
 The broker obtains a per-user master key protected by Windows DPAPI (user scope, never machine
-scope) and derives independent database, object-encryption, and object-address keys with HKDF and
-explicit domain labels. It gives scoped database keys to Python over the authenticated channel,
-never to main or renderer. SQLCipher uses WAL, `synchronous=FULL` for authoritative stores, foreign
-keys, bounded busy timeouts, application-managed checkpoints, secure-delete policy, and
-memory-backed temporary storage.
+scope) and derives independent database and object-encryption keys with explicit domain labels. It
+gives the profile key only to the private Python runtime over the authenticated channel, never to
+main or renderer. SQLCipher uses WAL, `synchronous=FULL`, foreign keys, bounded busy timeouts,
+application-managed checkpoints, and memory-backed temporary storage.
 
-Each object is addressed by `HMAC-SHA-256(object-address-key, plaintext)` so equal local content
-deduplicates without exposing a plain SHA-256 filename. The plaintext is encrypted with a random
-data key and AES-256-GCM; the data key is wrapped by the object-encryption key. Header/version,
-opaque address, length, MIME, nonce, and associated metadata are authenticated. An object becomes
-visible only after ciphertext fsync, integrity verification, and transactional metadata insertion.
-Garbage collection deletes only objects unreachable from a committed record and older than a
-quarantine interval.
+Each object is currently addressed by ordinary `SHA-256(plaintext)`, so equal content deduplicates
+but object names reveal equality and are not keyed. Encrypted mode uses a random AES-GCM nonce and
+binds the object ID as authenticated data. An object becomes visible only after file sync, atomic
+publication, and read-back verification. Garbage collection deletes only objects unreachable from
+an authoritative record.
 
 ## Product data model
 
@@ -67,19 +67,22 @@ ineligible for citation. Search remains useful while semantic indexing is unavai
 ## Backup and restore
 
 - Pause new writes, checkpoint WAL, use SQLite's online backup/snapshot mechanism for each database,
-  then copy exactly the encrypted objects reachable from the snapshots.
-- A signed manifest records format version, app version, store hashes, object addresses/sizes, and
-  creation time. Backups are encrypted with a user-supplied passphrase-derived wrapping key or an
-  explicitly selected recovery key; they do not depend solely on the current machine vault.
+  then copy exactly the objects reachable from the snapshots.
+- An authenticated manifest records format version, app version, store hashes, object addresses/sizes, and
+  creation time. Version-2 containers encrypt the complete runtime and broker-security payloads
+  with chunked AES-256-GCM under a key derived from the profile key. A portable passphrase wraps
+  that profile key; same-user mode retains its DPAPI dependency. Version-1 readers remain for old
+  plaintext outer containers.
 - Restore validates manifest, authentication tags, schema compatibility, object reachability, and
   free disk space into a new directory, then atomically swaps only after full verification. Never
   restore over the sole readable copy.
 
 ## Consequences
 
-- SQLCipher protects content at rest, while Windows per-user DPAPI binding protects keys. Neither
-  protects data visible to a running, unlocked process; least privilege and redaction remain
-  required.
+- SQLCipher and object encryption protect the selected main content generation at rest. Windows
+  per-user DPAPI protects credentials and the profile key. Workflow, policy/audit, and diagnostic
+  stores remain plaintext. None of these controls protects data visible to a running, unlocked
+  process; least privilege and redaction remain required.
 - WAL improves local read/write concurrency but all database users must remain on one host. This
   matches the single-device product boundary.
 - DBOS state is intentionally separate because workflow upgrades and retention differ from user

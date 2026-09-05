@@ -17,6 +17,11 @@ from cupcake_runtime.backup.clear_data import (
     RecoveryResult,
     VerifiedBackupMetadata,
 )
+from cupcake_runtime.backup.restore import (
+    PreparedRestore,
+    prepare_disposable_profile,
+    verify_opened_disposable_profile,
+)
 from cupcake_runtime.backup.service import BackupInspection, BackupService
 
 __all__ = [
@@ -32,6 +37,7 @@ __all__ = [
     "InventoryItem",
     "LocalDataClearService",
     "LocalDataInventory",
+    "PreparedRestore",
     "ProfileDataLayout",
     "ProfileLifecycle",
     "PurgeAuthorization",
@@ -39,4 +45,6 @@ __all__ = [
     "RecoveryConflictError",
     "RecoveryResult",
     "VerifiedBackupMetadata",
+    "prepare_disposable_profile",
+    "verify_opened_disposable_profile",
 ]

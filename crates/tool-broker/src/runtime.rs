@@ -55,9 +55,21 @@ impl RuntimeChild {
     }
 
     pub fn launch(executable: &Path, data_dir: &Path) -> Result<Self> {
+        let (profile_key, persistent) = profile_key()?;
+        Self::launch_with_profile_key(executable, data_dir, &profile_key, persistent)
+    }
+
+    /// Launch an isolated runtime against a caller-owned disposable profile.
+    /// The supplied key is inherited only by that child and is never persisted
+    /// or activated in the platform vault by this operation.
+    pub fn launch_with_profile_key(
+        executable: &Path,
+        data_dir: &Path,
+        profile_key: &SecretBytes,
+        content_encrypted: bool,
+    ) -> Result<Self> {
         let mut secret = vec![0_u8; 32];
         OsRng.fill_bytes(&mut secret);
-        let (profile_key, persistent) = profile_key()?;
 
         let mut command = Command::new(executable);
         command
@@ -75,7 +87,15 @@ impl RuntimeChild {
             .env("CUPCAKE_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
             .env(
                 "CUPCAKE_REQUIRE_SQLCIPHER",
-                if persistent { "1" } else { "0" },
+                if content_encrypted { "1" } else { "0" },
+            )
+            .env(
+                "CUPCAKE_CONTENT_PROTECTION_DEFAULT",
+                if content_encrypted {
+                    "encrypted"
+                } else {
+                    "plaintext"
+                },
             )
             .env("PYTHONUTF8", "1")
             .stdin(Stdio::piped())

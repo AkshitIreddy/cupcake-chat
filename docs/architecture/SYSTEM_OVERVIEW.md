@@ -49,10 +49,12 @@ duplicates visible effects.
 
 ## Storage and durability
 
-SQLCipher product state, workflow checkpoints, and broker security/audit state remain separate.
-Encrypted immutable content-addressed objects back files and artifact revisions. Conversation and
-artifact edits branch DAG heads. Project scope filters retrieval, memory, files, grants, tools, and
-outbound context before use.
+The main product database and managed immutable objects support optional at-rest encryption,
+enabled by default for a persistent Windows profile. Workflow checkpoints, broker security/audit
+state, and developer traces remain separate plaintext stores; credentials and the profile key stay
+protected by Windows DPAPI in either content mode. Conversation and artifact edits branch DAG
+heads. Project scope filters retrieval, memory, files, grants, tools, and outbound context before
+use.
 
 ## Failure behavior
 

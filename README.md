@@ -46,9 +46,11 @@ Tauri 2 Rust host
 ```
 
 The Python runtime and ToolBroker remain private child processes, never public localhost services.
-The renderer receives opaque handles and canonical events. Product storage, workflow checkpoints,
-and broker audit state remain separate encrypted stores. Conversations and artifacts are immutable
-revision graphs, and project scope is a privacy boundary.
+The renderer receives opaque handles and canonical events. The main product database and managed
+objects support optional at-rest encryption, enabled by default for a persistent Windows profile;
+workflow checkpoints and broker policy/audit state are separate plaintext stores. Credentials and
+the profile master key remain protected by Windows DPAPI in either content mode. Conversations and
+artifacts are immutable revision graphs, and project scope is a privacy boundary.
 
 ## Run from source
 

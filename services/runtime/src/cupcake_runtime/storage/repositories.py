@@ -700,9 +700,16 @@ class ProductRepository:
 
     def reachable_object_ids(self) -> tuple[str, ...]:
         rows = self.database.connection.execute(
-            """SELECT DISTINCT r.object_id FROM artifact_revisions r
-               JOIN artifacts a ON a.id = r.artifact_id
-               ORDER BY r.object_id"""
+            """SELECT object_id FROM (
+                   SELECT DISTINCT r.object_id AS object_id
+                   FROM artifact_revisions r
+                   JOIN artifacts a ON a.id = r.artifact_id
+                   UNION
+                   SELECT DISTINCT f.content_hash AS object_id
+                   FROM project_files f
+                   JOIN object_metadata o ON o.object_id = f.content_hash
+                   WHERE f.content_hash IS NOT NULL
+               ) ORDER BY object_id"""
         ).fetchall()
         return tuple(str(row[0]) for row in rows)
 

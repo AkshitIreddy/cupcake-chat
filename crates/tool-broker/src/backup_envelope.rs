@@ -22,7 +22,10 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::vault::{select_platform_vault, CredentialVault, SecretBytes};
+use crate::vault::{
+    protect_for_current_windows_user, select_platform_vault, unprotect_for_current_windows_user,
+    CredentialVault, SecretBytes,
+};
 use crate::{BrokerError, Result};
 
 pub const PORTABLE_BACKUP_FORMAT: &str = "cupcake-portable-backup";
@@ -327,6 +330,8 @@ pub struct SameUserDpapiProtection {
     pub mode: String,
     pub cross_user: bool,
     pub notice: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_profile_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -444,8 +449,12 @@ impl PortableBackupManifest {
     pub fn new_same_user_dpapi(
         identity: BackupIdentity,
         created_at: DateTime<Utc>,
+        profile_key: &SecretBytes,
         entries: Vec<PortableBackupEntry>,
     ) -> Result<Self> {
+        validate_profile_key(profile_key)?;
+        let protected_profile_key = protect_for_current_windows_user(profile_key.expose())
+            .map(|protected| BASE64_STANDARD.encode(protected))?;
         let manifest = Self {
             format: PORTABLE_BACKUP_FORMAT.into(),
             format_version: PORTABLE_BACKUP_FORMAT_VERSION,
@@ -456,6 +465,7 @@ impl PortableBackupManifest {
                 mode: "windows-dpapi-current-user".into(),
                 cross_user: false,
                 notice: NONPORTABLE_DPAPI_NOTICE.into(),
+                protected_profile_key: Some(protected_profile_key),
             }),
             entries,
         };
@@ -500,6 +510,9 @@ impl PortableBackupManifest {
                 if value.mode != "windows-dpapi-current-user"
                     || value.cross_user
                     || value.notice != NONPORTABLE_DPAPI_NOTICE
+                    || value.protected_profile_key.as_ref().is_some_and(|blob| {
+                        blob.len() > 32 * 1024 || BASE64_STANDARD.decode(blob).is_err()
+                    })
                 {
                     return Err(BrokerError::Integrity(
                         "DPAPI backup must be explicitly marked nonportable".into(),
@@ -541,6 +554,26 @@ impl PortableBackupManifest {
         }
         Ok(())
     }
+}
+
+/// Recover the self-contained key from a new DPAPI backup. Backups produced by
+/// the earlier unshipped format omitted the blob and retain the narrow legacy
+/// behavior of using the active vault key.
+pub fn unwrap_same_user_profile_key(protection: &SameUserDpapiProtection) -> Result<SecretBytes> {
+    let Some(encoded) = protection.protected_profile_key.as_deref() else {
+        return load_profile_master_key_for_backup();
+    };
+    if encoded.len() > 32 * 1024 {
+        return Err(BrokerError::Integrity(
+            "DPAPI recovery-key envelope is too large".into(),
+        ));
+    }
+    let protected = BASE64_STANDARD
+        .decode(encoded)
+        .map_err(|_| BrokerError::Integrity("DPAPI recovery-key envelope is invalid".into()))?;
+    let key = SecretBytes::new(unprotect_for_current_windows_user(&protected)?)?;
+    validate_profile_key(&key)?;
+    Ok(key)
 }
 
 /// Wrap the profile key using fresh OS randomness and bounded Argon2id work
@@ -990,24 +1023,45 @@ mod tests {
 
     #[test]
     fn dpapi_manifest_is_explicitly_nonportable() {
-        let manifest =
-            PortableBackupManifest::new_same_user_dpapi(identity(), Utc::now(), entries()).unwrap();
+        let manifest = PortableBackupManifest::new_same_user_dpapi(
+            identity(),
+            Utc::now(),
+            &secret(&[41_u8; 32]),
+            entries(),
+        )
+        .unwrap();
         let BackupProtection::SameUserDpapi(protection) = manifest.protection else {
             panic!("expected DPAPI protection")
         };
         assert!(!protection.cross_user);
         assert_eq!(protection.notice, NONPORTABLE_DPAPI_NOTICE);
+        assert!(protection.protected_profile_key.is_some());
+        assert_eq!(
+            unwrap_same_user_profile_key(&protection).unwrap().expose(),
+            &[41_u8; 32]
+        );
     }
 
     #[test]
     fn manifest_rejects_unknown_fields_and_unsafe_paths() {
-        let mut manifest =
-            PortableBackupManifest::new_same_user_dpapi(identity(), Utc::now(), entries()).unwrap();
+        let mut manifest = PortableBackupManifest::new_same_user_dpapi(
+            identity(),
+            Utc::now(),
+            &secret(&[42_u8; 32]),
+            entries(),
+        )
+        .unwrap();
         manifest.entries[0].path = "../product.sqlite".into();
         assert!(manifest.validate().is_err());
 
         let mut value = serde_json::to_value(
-            PortableBackupManifest::new_same_user_dpapi(identity(), Utc::now(), entries()).unwrap(),
+            PortableBackupManifest::new_same_user_dpapi(
+                identity(),
+                Utc::now(),
+                &secret(&[43_u8; 32]),
+                entries(),
+            )
+            .unwrap(),
         )
         .unwrap();
         value
