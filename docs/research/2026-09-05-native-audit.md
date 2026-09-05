@@ -287,6 +287,50 @@ Conditional screens absent from this owner state were recorded rather than fabri
 
 ## Acceptance gates for the rebuilt candidate
 
+### Final packaged candidate
+
+The final local candidate combines the production runtime and broker frozen at `5cb86fd` with the
+defensive renderer boundary fix at `739f524`. The latter changed only `workspace.tsx`, so the
+previously built runtime and broker remain exact for the aggregate production source.
+
+| Artifact                               |      Bytes | SHA-256                                                            |
+| -------------------------------------- | ---------: | ------------------------------------------------------------------ |
+| `CupcakeAI.exe`                        | 12,777,472 | `E6EA405033BE5AE0746D6A603E919F3E02C99BFB6AC53495A410CD9AFC613CDA` |
+| `CupcakeAI 2_2.0.0-rc.1_x64-setup.exe` | 82,447,264 | `C2372C9C6243F4618E6E21DDD86F3725EC72D458CEEA3043712760EF3569108A` |
+| `cupcake-runtime.exe`                  | 28,666,511 | `71BB0C6000D5161FAB071F7298E1EAB902101744A9C247B8F91C97D93E88D407` |
+| `cupcake-tool-broker.exe`              | 10,746,880 | `083E78A27AA6D73AC505290D79BFB017B5CA064C2809BE2587C9BDF0F430C25D` |
+| `sidecars.manifest.json`               |    161,448 | `461FCE6A38804E91B2C58FEE22344000B8056854159AF46C3CC61316BD20193B` |
+
+The exact source archive for `739f5243988fde4a643b788b1dc365cf03c3c829` is
+`E:\temp\cupcake-overhaul-20260905\immutable-final-739f524-20260905-150325\cupcakeagi-739f524.tar`
+(12,113,920 bytes, SHA-256 `9F7112065AF53336A1C4268B6222523A020F9E29575A190D1506393ECB0620F4`). The
+runtime manifest lists 820 support files totaling 87,338,636 bytes. Package-time construction checks
+passed for OpenAI, Anthropic, Google, xAI, Mistral, and Cohere without network access. The runtime
+help probe, pinned Cupcake Local b10679 verification, manifest verification, bundle smoke, and
+release-candidate audit all passed. The installer is intentionally unsigned and no publishing action
+occurred.
+
+A pristine packaged profile exposed CDP in 573 ms, reached the ready Home surface in 6,323 ms, and
+closed through the app's own Close control in 86 ms. The audit recorded zero renderer errors and no
+horizontal document or body overflow at 390 by 844. Direct WebView captures cover Home, Chats,
+Projects, Tasks, Artifacts, Memory, Models, Tools, Search, Settings, the OpenAI provider and local
+model-install dialogs, all eight onboarding chapters, About, the model picker, and narrow
+onboarding/navigation. They are stored under
+`E:\temp\cupcake-overhaul-20260905\final-packaged-major-views-739f524-r2`.
+
+Visual inspection found a populated four-card model recommendation set at wide size, three ready
+hosted routes in the narrow picker, explicit failed-or-cancelled task summary language, readable
+empty states, and narrow onboarding contained within seven-pixel side gutters. The narrow Models
+page capture occurred during its bounded refresh and therefore does not independently close the
+post-refresh first-card viewport gate; that state remains covered by the source browser matrix and
+should be recaptured from the packaged app after the owner showcase releases the singleton.
+
+The NSIS registry inspection still returned no registered CupcakeAI entry and
+`%LOCALAPPDATA%\CupcakeAI 2` did not exist. The installer lifecycle was not run after the user added
+an exact Windows deletion procedure: an automated NSIS uninstall would remove files outside the
+required PowerShell/.NET deletion path. The built installer and clean pre-install state are retained
+without mutating the ordinary installation or user data.
+
 The baseline is evidence for comparison, not acceptance of the changed product. The fresh package
 must still prove:
 
