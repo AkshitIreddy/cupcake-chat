@@ -25,7 +25,6 @@ from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
-from importlib import metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -4812,9 +4811,14 @@ def _module_available(name: str) -> bool:
 
 
 def _package_version(name: str) -> str | None:
+    # Importlib scans installed distribution metadata on first import. Startup
+    # does not need it; package versions are requested only by diagnostic/self-
+    # test commands after the authenticated runtime handshake.
+    from importlib import metadata as package_metadata
+
     try:
-        return metadata.version(name)
-    except metadata.PackageNotFoundError:
+        return package_metadata.version(name)
+    except package_metadata.PackageNotFoundError:
         return None
 
 
