@@ -161,6 +161,38 @@ The source fix now performs the small local settings read immediately after boot
 appearance, identity, accessibility, onboarding, and offline privacy state before `ready`, and keeps
 later auxiliary completion from overwriting user changes made after Home appears.
 
+### Provisional native-execution qualification
+
+The sandbox and durable-task acceptance below used an exact Python runtime snapshot at commit
+`4ad18e1`, the already-qualified broker from commit `294437e`, and the pre-final Tauri renderer. It
+is retained as behavioral evidence rather than final-package qualification because later renderer,
+runtime, contract, and group-conversation work requires a complete rebuild.
+
+| Component                 | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| Frozen one-folder runtime | `B1091C05044FD466E885E584419D475528B3B5A157D15B65D51A0DFDB7C454CD` |
+| Native tool broker        | `A6E7D7B172E03491EFC7B3FD57F0E9D2EDA55BF6CB5FD649C1855792C428894F` |
+| Exact sidecar manifest    | `4B70147ECDD34BB9879104FC3FE1AB9BDDC8CACF3CFB810E68A6B92FB0CF608D` |
+
+The runtime's package-time provider probe constructed the OpenAI, Anthropic, Google, xAI, Mistral,
+and Cohere clients and their request models without making network calls. A direct packaged
+AppContainer run completed an authenticated Python worker request, printed
+`CUPCAKE_PACKAGED_SANDBOX_OK`, returned the value `42`, and left no process or AppContainer-profile
+residue. A live infinite worker accepted cancellation and reached `Cancelled` with the same clean
+teardown.
+
+The full desktop-host retake in Guarded mode exercised exact approval identity, two successful test
+runs, one deliberate failure, and one accepted cancellation. A restart restored all three durable
+task rows. Source-sentinel scans, private continuation files, sandbox stages, AppContainer profiles,
+browser errors, and remaining CupcakeAI/runtime/broker/llama processes were all zero. The retained
+receipts are under
+`E:\temp\cupcake-security-native-20260905-provisional-green\final-task-4ad18e1-guarded-r1\evidence`.
+
+Visual inspection of `02-restarted-real-task-outcomes.png` found an additional pre-final renderer
+defect: the failed and cancelled rows both appeared as neutral 0% / 0-of-1-step cards with no
+visible state label, while the summary exposed only working, waiting, completed, and total counts.
+The final renderer must distinguish those outcomes and be recaptured after the aggregate rebuild.
+
 ### Request-queue finding
 
 The desktop host already tracks renderer requests by correlation ID, but the broker's main loop

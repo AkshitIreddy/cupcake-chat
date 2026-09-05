@@ -43,10 +43,11 @@ outbound work; drift or replay fails before another recipient is contacted.
 
 The selector receives bounded visible transcript material and member role descriptions. It receives
 no private persona instructions, attachment bodies, retrieved document bodies, or memory contents.
-Explicitly selected context is resolved for each actual speaker within the existing project boundary.
-Other assistants' output stays attributed generated evidence and never gains system-message authority.
-Group calls disable provider-native continuity so two personas sharing a model cannot inherit each
-other's opaque state. Every persisted reply includes the speaker snapshot and actual model route.
+Explicitly selected context is resolved for each actual speaker within the existing project
+boundary. Other assistants' output stays attributed generated evidence and never gains
+system-message authority. Group calls disable provider-native continuity so two personas sharing a
+model cannot inherit each other's opaque state. Every persisted reply includes the speaker snapshot
+and actual model route.
 
 The initial group feature is conversational. It does not execute tools or inherit solo generation
 actions that could bypass its recipient plan. Ordinary solo workbench tools remain separate.
@@ -61,15 +62,16 @@ durable data. Late events are scoped to their conversation and cannot appear in 
 
 ## Consequences and qualification
 
-Smart mode adds explicit selection latency and usage: by default at most two selection calls and
-two responses. Direct mentions incur no selection calls. Semantic selection is a model judgment,
-not a correctness guarantee; users retain direct addressing and a whole-turn Stop control.
+Smart mode adds explicit selection latency and usage: by default at most two selection calls and two
+responses. Direct mentions incur no selection calls. Semantic selection is a model judgment, not a
+correctness guarantee; users retain direct addressing and a whole-turn Stop control.
 
 Qualification requires contract, runtime, and interaction tests for exact routing, silence, reply
 bounds, Unicode mentions, authorization drift, cancellation, and restart. A real packaged owner demo
 must additionally show two attributed providers, a direct mention, and a quiet closing turn. Fresh
 ordinary profiles receive no fabricated personas or conversations.
 
-The dated [research brief](../research/2026-09-05-group-conversations.md) compares the primary-source
-AutoGen, Pydantic AI, LangChain, and other orchestration patterns that informed this decision. Product
-acceptance remains separate from that research and from deterministic test fixtures.
+The dated [research brief](../research/2026-09-05-group-conversations.md) compares the
+primary-source AutoGen, Pydantic AI, LangChain, and other orchestration patterns that informed this
+decision. Product acceptance remains separate from that research and from deterministic test
+fixtures.
