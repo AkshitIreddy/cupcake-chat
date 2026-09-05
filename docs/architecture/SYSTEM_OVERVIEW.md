@@ -46,11 +46,11 @@ The in-app form sends a key once to a trusted onboarding command. The trusted bo
 connection, discovers models, stores the secret with per-user DPAPI only after success, and returns
 masked non-secret metadata. Chat uses a short-lived memory credential lease behind the boundary.
 
-Persisted output-limit responses remain partial even when their transport has finished. The
-renderer preserves their text and offers an explicit continuation on the original provider/model
-route. A missing or ambiguous original route fails visibly; the current model selection never
-silently replaces it. Known output limits are distinguished from conservative defaults for
-providers whose discovery API omits that metadata.
+Persisted output-limit responses remain partial even when their transport has finished. The renderer
+preserves their text and offers an explicit continuation on the original provider/model route. A
+missing or ambiguous original route fails visibly; the current model selection never silently
+replaces it. Known output limits are distinguished from conservative defaults for providers whose
+discovery API omits that metadata.
 
 ## Cupcake Local lifecycle
 
@@ -63,12 +63,30 @@ duplicates visible effects.
 
 ## Storage and durability
 
-The main product database and managed immutable objects support optional at-rest encryption,
-enabled by default for a persistent Windows profile. Workflow checkpoints, broker security/audit
-state, and developer traces remain separate plaintext stores; credentials and the profile key stay
-protected by Windows DPAPI in either content mode. Conversation and artifact edits branch DAG
-heads. Project scope filters retrieval, memory, files, grants, tools, and outbound context before
-use.
+The main product database and managed immutable objects support optional at-rest encryption, enabled
+by default for a persistent Windows profile. Workflow checkpoints, broker security/audit state, and
+developer traces remain separate plaintext stores; credentials and the profile key stay protected by
+Windows DPAPI in either content mode. Conversation and artifact edits branch DAG heads. Project
+scope filters retrieval, memory, files, grants, tools, and outbound context before use.
+
+## Saved-code task execution
+
+The artifact workspace can run embedded tests from a saved Python revision. The task binds the
+project, artifact, immutable revision, and object digest before requesting an exact broker intent.
+In Guarded mode the user approves that revision once; an explicitly selected Full freedom policy can
+permit the same validated operation without a new prompt. Creating a task does not execute it.
+
+The Windows broker stages the verified runtime support files and source in an AppContainer with
+network access denied. Its bounded worker runs the module's actual unittest suite and reports
+stdout, stderr, exit status, counts, and provenance. Task checkpoints record references and results,
+not a plaintext copy of the source. Cancellation targets the live invocation and contained process
+tree. Unsupported background delegate kinds fail explicitly rather than returning synthetic success.
+
+## Backup recovery boundary
+
+Backups protect their key with the current Windows user's DPAPI context. They can be verified on
+that account and computer. Verification reconstructs an isolated encrypted recovery profile and
+checks its database and objects; the current UI does not switch the running workspace into it.
 
 ## Failure behavior
 
