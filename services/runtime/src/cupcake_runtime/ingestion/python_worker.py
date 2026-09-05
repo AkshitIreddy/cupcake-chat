@@ -95,7 +95,7 @@ class _BoundedOutput:
         self.parts.append(rendered)
         self.length += len(rendered)
 
-    def write(self, value: str) -> int:
+    def write(self, value: object) -> int:
         if not isinstance(value, str):
             raise PythonWorkerError("captured output must be text")
         if self.length + len(value) > self.max_characters:

@@ -3757,16 +3757,22 @@ class RuntimeService:
             return response
 
         step = run.spec.steps[0]
-        artifact_values = step.arguments.get("artifactInputs")
-        if not isinstance(artifact_values, (list, tuple)) or len(artifact_values) != 1:
+        artifact_values_raw: object = step.arguments.get("artifactInputs")
+        if not isinstance(artifact_values_raw, (list, tuple)):
             raise RuntimeCommandError(
                 "INVALID_CODE_TASK", "The persisted code task artifact binding is invalid"
             )
-        artifact = artifact_values[0]
-        if not isinstance(artifact, Mapping):
+        artifact_values = cast(list[object] | tuple[object, ...], artifact_values_raw)
+        if len(artifact_values) != 1:
             raise RuntimeCommandError(
                 "INVALID_CODE_TASK", "The persisted code task artifact binding is invalid"
             )
+        artifact_raw: object = artifact_values[0]
+        if not isinstance(artifact_raw, Mapping):
+            raise RuntimeCommandError(
+                "INVALID_CODE_TASK", "The persisted code task artifact binding is invalid"
+            )
+        artifact = cast(Mapping[str, Any], artifact_raw)
         artifact_id = str(artifact.get("artifactId") or "")
         revision_id = str(artifact.get("revisionId") or "")
         snapshot = self.artifacts.get(
@@ -3838,12 +3844,16 @@ class RuntimeService:
             raise RuntimeCommandError(
                 "TASK_BINDING_MISMATCH", "Broker result invocation binding failed"
             )
-        artifact_values = step.arguments.get("artifactInputs")
+        artifact_values_raw: object = step.arguments.get("artifactInputs")
+        artifact_values = (
+            cast(list[object] | tuple[object, ...], artifact_values_raw)
+            if isinstance(artifact_values_raw, (list, tuple))
+            else ()
+        )
+        artifact_raw: object | None = artifact_values[0] if len(artifact_values) == 1 else None
         artifact = (
-            artifact_values[0]
-            if isinstance(artifact_values, (list, tuple))
-            and len(artifact_values) == 1
-            and isinstance(artifact_values[0], Mapping)
+            cast(Mapping[str, Any], artifact_raw)
+            if isinstance(artifact_raw, Mapping)
             else None
         )
         if artifact is None or any(
@@ -3863,20 +3873,28 @@ class RuntimeService:
                 "TASK_BINDING_MISMATCH", "Broker result identity does not match the task"
             )
         status = str(broker_result.get("status") or "failed")
-        output_value = broker_result.get("output")
-        output = output_value if isinstance(output_value, Mapping) else {}
-        native_value = (
+        output_value: object = broker_result.get("output")
+        output: Mapping[str, Any] = (
+            cast(Mapping[str, Any], output_value) if isinstance(output_value, Mapping) else {}
+        )
+        native_value: object = (
             output.get("native")
             or output.get("nativeResult")
             or output.get("native_result")
             or output
         )
-        native = native_value if isinstance(native_value, Mapping) else {}
-        worker_value = native.get("output")
-        worker = worker_value if isinstance(worker_value, Mapping) else {}
-        result_value = worker.get("result")
-        worker_result = result_value if isinstance(result_value, Mapping) else {}
-        evidence = {
+        native: Mapping[str, Any] = (
+            cast(Mapping[str, Any], native_value) if isinstance(native_value, Mapping) else {}
+        )
+        worker_value: object = native.get("output")
+        worker: Mapping[str, Any] = (
+            cast(Mapping[str, Any], worker_value) if isinstance(worker_value, Mapping) else {}
+        )
+        result_value: object = worker.get("result")
+        worker_result: Mapping[str, Any] = (
+            cast(Mapping[str, Any], result_value) if isinstance(result_value, Mapping) else {}
+        )
+        evidence: dict[str, Any] = {
             "tool": "python.run",
             "nativeTool": "native.sandbox.python",
             "invocationId": invocation_id,
