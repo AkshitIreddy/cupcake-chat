@@ -36,6 +36,7 @@ class ScriptedGroupEngine:
         self.selector = selector
         self.selector_requests: list[Any] = []
         self.member_requests: list[Any] = []
+        self.member_personality_instructions: list[tuple[str, ...]] = []
 
     async def stream(self, request: Any, **_kwargs: Any):
         run_id = str(request.metadata["run_id"])
@@ -46,6 +47,9 @@ class ScriptedGroupEngine:
             text = self.selector(payload, len(self.selector_requests))
         else:
             self.member_requests.append(request)
+            self.member_personality_instructions.append(
+                tuple(_kwargs.get("personality_instructions", ()))
+            )
             text = f"member-{len(self.member_requests)} answered"
         yield NormalizedStreamEvent(StreamEventType.TEXT_DELTA, 2, run_id, text=text)
         yield NormalizedStreamEvent(
@@ -230,6 +234,16 @@ def test_mentions_bypass_selector_and_persist_attributed_sequential_messages(
         message.role == "assistant" and "transcript evidence" in message.content
         for message in second_history
     )
+    first_coordination = engine.member_requests[0].messages[-1].content
+    assert "selected Mira (@mira) for exactly one contribution" in first_coordination
+    assert "runtime will invoke other requested participants separately" in first_coordination
+    first_identity = engine.member_personality_instructions[0][-1]
+    second_identity = engine.member_personality_instructions[1][-1]
+    assert 'name="Mira", handle="mira", and role="Research lead"' in first_identity
+    assert 'name="Sol", handle="sol", and role="Critical reviewer"' in second_identity
+    assert "Never invent, simulate, introduce, label, quote, or complete" in first_identity
+    assert "even when the user asks multiple roles to contribute" in first_identity
+    assert "End after this participant's contribution" in first_identity
     assert all(event["payload"].get("runId") == preflight["turnId"] for event in events)
     runtime.close()
 
