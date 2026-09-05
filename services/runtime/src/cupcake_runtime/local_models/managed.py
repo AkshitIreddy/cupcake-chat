@@ -206,7 +206,15 @@ class CupcakeLocalManager:
         return await self.download_model(self._model_catalog.get(model_id))
 
     def status(self, *, verify_integrity: bool = False) -> dict[str, Any]:
-        installed_runtimes = self.runtimes.list(verify_integrity=verify_integrity)
+        installed_runtimes = self.runtimes.list(verify_integrity=False)
+        if verify_integrity:
+            installed_runtimes = tuple(
+                replace(
+                    item,
+                    integrity_verified=self._verify_installed_against_catalog(item),
+                )
+                for item in installed_runtimes
+            )
         active_runtime = next((item for item in installed_runtimes if item.active), None)
         supervisor = self._supervisor
         if supervisor is not None:
@@ -255,6 +263,13 @@ class CupcakeLocalManager:
             "activeModelId": self._active_model_id(),
             "modelWeightsBundled": False,
         }
+
+    def _verify_installed_against_catalog(self, installed: InstalledRuntimePack) -> bool:
+        try:
+            artifact = self.runtime_artifact(installed.id)
+        except (KeyError, RuntimeError):
+            return False
+        return self.runtimes.verify_against_artifact(installed, artifact)
 
     async def download_runtime(
         self,

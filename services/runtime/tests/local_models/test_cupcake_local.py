@@ -676,6 +676,69 @@ class _FakeSupervisor:
         self.active_model = None
 
 
+def test_signed_runtime_gate_rejects_tampering_before_any_runtime_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = {"llama-server.exe": b"server", "ggml.dll": b"dll"}
+    archive = tmp_path / "runtime.zip"
+    _zip(archive, files)
+    artifact = _runtime_artifact(archive, files)
+    model_data = b"verified model"
+    model_artifact = _model_artifact(model_data)
+    calls = {"version": 0, "devices": 0, "start": 0}
+
+    class _ProcessSpy(_FakeSupervisor):
+        def version(self) -> str:
+            calls["version"] += 1
+            return super().version()
+
+        def list_devices(self) -> tuple[str, ...]:
+            calls["devices"] += 1
+            return super().list_devices()
+
+        def start(self, model: Path, **kwargs: Any) -> int:
+            calls["start"] += 1
+            return super().start(model, **kwargs)
+
+    monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _ProcessSpy)
+    manager = CupcakeLocalManager(tmp_path / "profile")
+    manager.configure_catalogs(
+        models=SignedModelCatalog(1, "2026-09-05T00:00:00Z", (model_artifact,), "test"),
+        runtimes=SignedRuntimeCatalog(1, "2026-09-05T00:00:00Z", (artifact,), "test"),
+    )
+    installed = manager.install_runtime(artifact, archive)
+    model_path = model_artifact.target(manager.models.root)
+    model_path.parent.mkdir(parents=True)
+    model_path.write_bytes(model_data)
+    manager.register_model(model_artifact, model_path)
+
+    def assert_all_entry_points_refuse_before_process() -> None:
+        calls.update(version=0, devices=0, start=0)
+        operations = (
+            lambda: manager.verify_runtime_for_execution(installed),
+            lambda: manager.activate_runtime(artifact.version, artifact.backend),
+            manager.version,
+            manager.devices,
+            lambda: asyncio.run(manager.load(model_artifact.id)),
+        )
+        for operation in operations:
+            with pytest.raises(RuntimePackIntegrityError, match="corrupt runtime pack"):
+                operation()
+        assert calls == {"version": 0, "devices": 0, "start": 0}
+
+    executable = Path(installed.executable)
+    executable.write_bytes(b"tampered")
+    assert_all_entry_points_refuse_before_process()
+
+    metadata_path = Path(installed.directory, manager.runtimes.METADATA_NAME)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["files"]["llama-server.exe"] = _digest(b"tampered")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    assert manager.runtimes.verify(installed) is True
+    assert manager.status(verify_integrity=True)["runtimes"][0]["integrity_verified"] is False
+    assert_all_entry_points_refuse_before_process()
+
+
 def test_accelerated_runtime_activation_requires_matching_live_device_probe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -771,6 +834,43 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
     archive = archive_directory / "llama-b10672-bin-win-cpu-x64.zip"
     _zip(archive, files)
     artifact = _runtime_artifact(archive, files)
+    accelerated_artifacts = (
+        replace(
+            artifact,
+            id="llama-b10672-cuda-12",
+            backend=RuntimeBackend.CUDA_12,
+            filename="llama-b10672-bin-win-cuda-12.4-x64.zip",
+            hardware_compatibility={"api": "cuda", "minimum_windows_driver": "551.61"},
+            prerequisites=("NVIDIA driver 551.61 or newer",),
+        ),
+        replace(
+            artifact,
+            id="llama-b10672-cuda-13",
+            backend=RuntimeBackend.CUDA_13,
+            filename="llama-b10672-bin-win-cuda-13.3-x64.zip",
+            hardware_compatibility={"api": "cuda", "minimum_windows_driver": "580.00"},
+            prerequisites=("NVIDIA driver 580.00 or newer",),
+        ),
+    )
+
+    def catalog_entry(runtime: RuntimePackArtifact) -> dict[str, Any]:
+        return {
+            "id": runtime.id,
+            "version": runtime.version,
+            "backend": runtime.backend.value,
+            "platform": runtime.platform,
+            "architecture": runtime.architecture,
+            "size_bytes": runtime.size_bytes,
+            "sha256": runtime.sha256,
+            "urls": list(runtime.urls),
+            "filename": runtime.filename,
+            "executable": runtime.executable,
+            "files": dict(runtime.files),
+            "source_revision": runtime.source_revision,
+            "hardware_compatibility": dict(runtime.hardware_compatibility),
+            "prerequisites": list(runtime.prerequisites),
+        }
+
     payload = {
         "version": 1,
         "generated_at": "2026-08-28T00:00:00Z",
@@ -778,22 +878,7 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
             "environment": "local-release-candidate",
             "production_signing": False,
         },
-        "runtimes": [
-            {
-                "id": artifact.id,
-                "version": artifact.version,
-                "backend": artifact.backend.value,
-                "platform": artifact.platform,
-                "architecture": artifact.architecture,
-                "size_bytes": artifact.size_bytes,
-                "sha256": artifact.sha256,
-                "urls": list(artifact.urls),
-                "filename": artifact.filename,
-                "executable": artifact.executable,
-                "files": dict(artifact.files),
-                "source_revision": artifact.source_revision,
-            }
-        ],
+        "runtimes": [catalog_entry(item) for item in (artifact, *accelerated_artifacts)],
     }
     private = Ed25519PrivateKey.generate()
     public = private.public_key().public_bytes_raw()
@@ -822,6 +907,13 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
     configured = manager.configure_packaged_baseline(baseline)
     assert configured is not None
     assert configured.id == artifact.id
+    configured_catalog = manager._runtime_catalog  # pyright: ignore[reportPrivateUsage]
+    assert configured_catalog is not None
+    assert [item.id for item in configured_catalog.runtimes] == [
+        artifact.id,
+        accelerated_artifacts[0].id,
+        accelerated_artifacts[1].id,
+    ]
     assert manager.runtimes.list() == ()
     status = manager.status()
     assert status["availableRuntimes"][0]["id"] == artifact.id
@@ -840,21 +932,8 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
         manager.verify_runtime_for_execution(installed)
     Path(installed.executable).write_bytes(files["llama-server.exe"])
 
-    gpu_artifact = replace(
-        artifact,
-        id="llama-b10672-cuda-13",
-        backend=RuntimeBackend.CUDA_13,
-        filename="llama-b10672-bin-win-cuda-13.3-x64.zip",
-    )
+    gpu_artifact = accelerated_artifacts[1]
     manager.runtimes.install(gpu_artifact, archive)
-    manager.configure_catalogs(
-        runtimes=SignedRuntimeCatalog(
-            1,
-            "2026-09-05T00:00:00Z",
-            (artifact, gpu_artifact),
-            "local-test",
-        )
-    )
     manager.activate_runtime(gpu_artifact.version, gpu_artifact.backend)
     installed_again = manager.seed_packaged_baseline(baseline)
     assert installed_again is not None

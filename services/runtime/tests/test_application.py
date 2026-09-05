@@ -150,6 +150,10 @@ def test_packaged_local_runtime_install_is_deferred_until_local_use(
     assert configured == [baseline]
     assert seeded == []
     assert runtime.packaged_local_runtime is None
+    runtime.handle("app.bootstrap")
+    runtime.handle("models.list")
+    runtime.handle("local_models.cupcake.status")
+    assert seeded == []
     assert runtime._ensure_packaged_local_runtime() is installed  # pyright: ignore[reportPrivateUsage]
     assert seeded == [baseline]
     runtime.close()
@@ -257,7 +261,7 @@ def test_local_vram_only_load_uses_current_free_vram_and_full_estimate(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
@@ -304,7 +308,7 @@ def test_local_vram_only_load_rejects_cpu_runtime(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda: SimpleNamespace(backend=RuntimeBackend.CPU, version="b10679"),
+        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CPU, version="b10679"),
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
@@ -336,7 +340,7 @@ def test_local_load_rejects_reserve_policy_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runtime = service(tmp_path)
-    monkeypatch.setattr(runtime.cupcake_local.runtimes, "active", lambda: None)
+    monkeypatch.setattr(runtime.cupcake_local.runtimes, "active", lambda **_kwargs: None)
 
     with pytest.raises(RuntimeCommandError) as refused:
         runtime._cupcake_local_load(  # pyright: ignore[reportPrivateUsage]
@@ -359,7 +363,7 @@ def test_local_hybrid_load_passes_vram_reserve_to_llama_fit(
     monkeypatch.setattr(
         runtime.cupcake_local.runtimes,
         "active",
-        lambda: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
+        lambda **_kwargs: SimpleNamespace(backend=RuntimeBackend.CUDA_13, version="b10679"),
     )
 
     def model_artifact(_model_id: str) -> ModelArtifact:
