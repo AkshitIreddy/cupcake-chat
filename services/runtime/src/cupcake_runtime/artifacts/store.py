@@ -176,6 +176,15 @@ class ArtifactStore:
         ).fetchall()
         return [self._artifact(self._repository.get_artifact(row["id"])) for row in rows]
 
+    def counts_by_project(self) -> dict[str, int]:
+        """Return authoritative artifact totals without loading artifact content."""
+        rows = self._repository.database.connection.execute(
+            """SELECT project_id, COUNT(*) AS artifact_count
+               FROM artifacts
+               GROUP BY project_id"""
+        ).fetchall()
+        return {str(row["project_id"]): int(row["artifact_count"]) for row in rows}
+
     def export(
         self,
         artifact_id: str,

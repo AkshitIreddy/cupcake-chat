@@ -40,6 +40,7 @@ import {
   publisherMonogram,
   recommendModels,
   recommendationReason,
+  selectedModelForChat,
   type ModelSize,
   type ModelTask,
 } from './model-intelligence';
@@ -925,9 +926,8 @@ function HomeView({
                   <strong>{project.name}</strong>
                   <small>
                     {workspace.conversations.filter((item) => item.project === project.name).length}{' '}
-                    chats ·{' '}
-                    {workspace.artifacts.filter((item) => item.projectId === project.id).length}{' '}
-                    artifacts
+                    chats · {workspace.artifactCounts[project.id] ?? 0}{' '}
+                    {(workspace.artifactCounts[project.id] ?? 0) === 1 ? 'artifact' : 'artifacts'}
                   </small>
                 </span>
               </button>
@@ -967,11 +967,12 @@ function Composer({
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
   compact?: boolean;
   onModel: () => void;
-  selectedModel: ModelDescriptor;
+  selectedModel: ModelDescriptor | null;
   offline: boolean;
 }) {
   const workspace = useWorkspace();
-  const supportedReasoning = selectedModel.reasoningPresets?.length
+  const modelReady = selectedModel ? modelIsAvailableInChat(selectedModel) : false;
+  const supportedReasoning = selectedModel?.reasoningPresets?.length
     ? selectedModel.reasoningPresets
     : workspace.fixtureMode
       ? (['none', 'low', 'medium', 'high'] as ReasoningEffort[])
@@ -1014,7 +1015,7 @@ function Composer({
     return () => window.removeEventListener('cupcake:draft', draft);
   }, []);
   const routeAtSend: AttachmentRecord['destination'] =
-    selectedModel.route === 'Cloud' && !offline ? 'cloud' : 'local';
+    selectedModel?.route === 'Cloud' && !offline ? 'cloud' : 'local';
   const clearSuccessfulDraft = async (sentAttachments: StagedAttachmentRecord[]) => {
     setValue('');
     setAttachments([]);
@@ -1046,7 +1047,18 @@ function Composer({
     if (sending) return;
     const clean = value.trim();
     if (!clean && attachments.length === 0) return;
-    if (offline && selectedModel.route === 'Cloud') return;
+    if (!selectedModel) {
+      setDisclosureError('Choose a ready model before sending. Your draft is still here.');
+      return;
+    }
+    if (!modelReady) {
+      setDisclosureError(`${modelAvailabilityDetail(selectedModel)}. Your draft is still here.`);
+      return;
+    }
+    if (offline && selectedModel.route === 'Cloud') {
+      setDisclosureError('Offline mode blocks cloud sends. Choose a local model to continue.');
+      return;
+    }
     setSending(true);
     const activeConversation = workspace.conversations.find(
       (conversation) => conversation.id === workspace.activeConversationId,
@@ -1305,18 +1317,26 @@ function Composer({
         </div>
         <div className="composer__send">
           <button className="model-chip" onClick={onModel}>
-            <PublisherLogo
-              publisher={publisherForModel(selectedModel)}
-              className="composer-model-logo"
-            />
+            {selectedModel ? (
+              <PublisherLogo
+                publisher={publisherForModel(selectedModel)}
+                className="composer-model-logo"
+              />
+            ) : (
+              <Icon name="model" size={15} />
+            )}
             <span>
-              {offline && selectedModel.route !== 'Local'
-                ? 'Choose a local model'
-                : selectedModel.name}
+              {!selectedModel
+                ? 'Choose a model'
+                : !modelReady
+                  ? `${selectedModel.name} unavailable`
+                  : offline && selectedModel.route !== 'Local'
+                    ? 'Choose a local model'
+                    : selectedModel.name}
             </span>
             <Icon name="chevron" size={13} />
           </button>
-          {supportedReasoning.length > 1 && (
+          {selectedModel && modelReady && supportedReasoning.length > 1 && (
             <button
               className="reason-chip"
               onClick={() => {
@@ -1345,10 +1365,11 @@ function Composer({
             onClick={() => void send()}
             disabled={
               (!value.trim() && attachments.length === 0) ||
-              (offline && selectedModel.route === 'Cloud') ||
+              !modelReady ||
+              (offline && selectedModel?.route === 'Cloud') ||
               sending
             }
-            aria-label="Send message"
+            aria-label={modelReady ? 'Send message' : 'Choose a ready model before sending'}
           >
             <Icon name="send" size={18} />
           </button>
@@ -1356,20 +1377,24 @@ function Composer({
       </div>
       {!compact && (
         <div className="composer__hint">
-          <RouteBadge route={selectedModel.route} />
+          {selectedModel && <RouteBadge route={selectedModel.route} />}
           <span>
-            {selectedModel.route === 'Local'
-              ? 'Runs privately on this computer. Nothing is sent to a model provider.'
-              : offline
-                ? `Sending to ${selectedModel.provider} is paused in offline mode.`
-                : `Sent to ${selectedModel.provider} only when you press Send.`}
+            {!selectedModel
+              ? 'Choose a ready model before sending.'
+              : !modelReady
+                ? modelAvailabilityDetail(selectedModel)
+                : selectedModel.route === 'Local'
+                  ? 'Runs privately on this computer. Nothing is sent to a model provider.'
+                  : offline
+                    ? `Sending to ${selectedModel.provider} is paused in offline mode.`
+                    : `Sent to ${selectedModel.provider} only when you press Send.`}
           </span>
           <span className="composer__keys">
             <kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> newline
           </span>
         </div>
       )}
-      {offline && selectedModel.route === 'Cloud' && (
+      {offline && selectedModel?.route === 'Cloud' && (
         <p className="field-error" role="alert">
           Offline mode blocks cloud sends. Choose a local model to continue.
         </p>
@@ -1399,7 +1424,9 @@ function Composer({
                 <strong>
                   {pendingDisclosure.modelName} ·{' '}
                   {pendingDisclosure.disclosure.privacyRoute ?? 'Cloud privacy route'} ·{' '}
-                  {pendingDisclosure.disclosure.costClass ?? selectedModel.cost}
+                  {pendingDisclosure.disclosure.costClass ??
+                    selectedModel?.cost ??
+                    'Cost unavailable'}
                 </strong>
                 <p>
                   This one-use confirmation is bound to the exact provider, model, files,
@@ -1896,7 +1923,7 @@ function RuntimeToolActivityCard({ activity }: { activity: ToolActivity }) {
   );
 }
 
-function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor }) {
+function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | null }) {
   const workspace = useWorkspace();
   const [windowEnd, setWindowEnd] = useState(workspace.messages.length);
   const [streamAnnouncement, setStreamAnnouncement] = useState('');
@@ -1950,7 +1977,13 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
     } as const;
     setActionError('');
     setActionNotice({ tone: 'pending', text: labels[mode][0] });
-    const actionModelId = resolvedModelId ?? canonicalModelId(selectedModel);
+    const actionModelId = resolvedModelId ?? confirmation?.outboundIntent.modelId;
+    if (!actionModelId) {
+      const text = 'Choose a ready model before using message actions.';
+      setActionError(text);
+      setActionNotice({ tone: 'error', text });
+      return false;
+    }
     const sent = await workspace.sendMessage({
       content,
       modelId: confirmation?.outboundIntent.modelId ?? actionModelId,
@@ -1991,7 +2024,15 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
         : selectedModel;
     if (!actionModel) {
       const text =
-        'The original provider route is unavailable, so this response was not continued.';
+        mode === 'continue' && hasPersistedRoute
+          ? 'The original provider route is unavailable, so this response was not continued.'
+          : 'Choose a ready model before using message actions.';
+      setActionError(text);
+      setActionNotice({ tone: 'error', text });
+      return false;
+    }
+    if (!modelIsAvailableInChat(actionModel)) {
+      const text = `${modelAvailabilityDetail(actionModel)}. Choose another model to continue.`;
       setActionError(text);
       setActionNotice({ tone: 'error', text });
       return false;
@@ -2135,7 +2176,9 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
                 {message.role === 'user' ? 'You' : message.role === 'status' ? 'Task' : 'Cupcake'}
               </strong>
               {message.role === 'assistant' && (
-                <span className="model-label">{message.modelId ?? selectedModel.name}</span>
+                <span className="model-label">
+                  {message.modelId ?? selectedModel?.name ?? 'No model selected'}
+                </span>
               )}
               <time>
                 {message.createdAt
@@ -2471,7 +2514,7 @@ function ChatView({
 }: {
   openArtifacts: () => void;
   openTask: () => void;
-  selectedModel: ModelDescriptor;
+  selectedModel: ModelDescriptor | null;
   setModelOpen: () => void;
   offline: boolean;
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
@@ -2625,7 +2668,9 @@ function ChatView({
                 <div className="message">
                   <div className="message-meta">
                     <strong>Cupcake</strong>
-                    <span className="model-label">{selectedModel.name} · High reasoning</span>
+                    <span className="model-label">
+                      {selectedModel?.name ?? 'No model selected'} · High reasoning
+                    </span>
                     <time>10:33</time>
                   </div>
                   <p>
@@ -2655,7 +2700,9 @@ function ChatView({
                 <div className="message">
                   <div className="message-meta">
                     <strong>Cupcake</strong>
-                    <span className="model-label">{selectedModel.name}</span>
+                    <span className="model-label">
+                      {selectedModel?.name ?? 'No model selected'}
+                    </span>
                     <time>10:45</time>
                   </div>
                   <div className="rich-response">
@@ -2802,7 +2849,9 @@ function ChatView({
                     <div className="message">
                       <div className="message-meta">
                         <strong>{message.role === 'status' ? 'Task' : 'Cupcake'}</strong>
-                        <span className="model-label">{selectedModel.name}</span>
+                        <span className="model-label">
+                          {selectedModel?.name ?? 'No model selected'}
+                        </span>
                         <time>now</time>
                       </div>
                       <p className={cx(message.streaming && 'streaming-message')}>
@@ -2894,7 +2943,7 @@ function ContextInspector({
 }: {
   open: boolean;
   close: () => void;
-  selectedModel: ModelDescriptor;
+  selectedModel: ModelDescriptor | null;
   offline: boolean;
 }) {
   const workspace = useWorkspace();
@@ -2933,7 +2982,8 @@ function ContextInspector({
         <div>
           <span>Context budget</span>
           <strong>
-            {totalTokens.toLocaleString()} <small>/ {selectedModel.context}</small>
+            {totalTokens.toLocaleString()}{' '}
+            <small>/ {selectedModel?.context ?? 'choose a model'}</small>
           </strong>
         </div>
         <div className="budget-bar">
@@ -3013,14 +3063,28 @@ function ContextInspector({
       </ContextSection>
       <ContextSection icon="model" title="Destination" count="">
         <div className="destination-card">
-          <RouteBadge route={offline ? 'Local' : selectedModel.route} />
+          {selectedModel ? <RouteBadge route={selectedModel.route} /> : <Icon name="model" />}
           <strong>
-            {offline ? 'This message stays local' : `Sent to ${selectedModel.provider}`}
+            {!selectedModel
+              ? 'No model destination selected'
+              : !modelIsAvailableInChat(selectedModel)
+                ? `${selectedModel.name} is unavailable`
+                : offline && selectedModel.route === 'Cloud'
+                  ? 'Cloud sending is blocked in offline mode'
+                  : selectedModel.route === 'Local'
+                    ? 'This message stays local'
+                    : `Sent to ${selectedModel.provider}`}
           </strong>
           <p>
-            {offline
-              ? 'No content leaves this computer.'
-              : 'Messages and selected excerpts may leave this computer.'}
+            {!selectedModel
+              ? 'Choose a ready route before sending.'
+              : !modelIsAvailableInChat(selectedModel)
+                ? modelAvailabilityDetail(selectedModel)
+                : selectedModel.route === 'Local'
+                  ? 'No content leaves this computer.'
+                  : offline
+                    ? 'No content leaves this computer while offline mode is on.'
+                    : 'Messages and selected excerpts may leave this computer.'}
           </p>
         </div>
       </ContextSection>
@@ -3067,7 +3131,7 @@ function ProjectsView({ navigate }: { navigate: (view: 'chat' | 'artifacts') => 
 
   const projectCounts = (projectId: string, projectName: string) => ({
     chats: workspace.conversations.filter((item) => item.project === projectName).length,
-    artifacts: workspace.artifacts.filter((item) => item.projectId === projectId).length,
+    artifacts: workspace.artifactCounts[projectId] ?? 0,
     tasks: workspace.tasks.filter(
       (item) =>
         (item.project === projectId || item.project === projectName) && item.status === 'working',
@@ -9551,15 +9615,37 @@ function ModelPicker({
             <Icon name="x" />
           </button>
         </header>
-        {currentModel && (
-          <div className="model-picker__current">
+        {currentModel ? (
+          <div
+            className={cx(
+              'model-picker__current',
+              !modelIsAvailableInChat(currentModel) && 'is-unavailable',
+            )}
+          >
             <PublisherLogo publisher={publisherForModel(currentModel)} />
             <span>
-              <small>Current model</small>
+              <small>
+                {modelIsAvailableInChat(currentModel)
+                  ? 'Current model'
+                  : 'Current model unavailable'}
+              </small>
               <strong>{currentModel.name}</strong>
-              <em>{modelRouteDescription(currentModel)}</em>
+              <em>
+                {modelIsAvailableInChat(currentModel)
+                  ? modelRouteDescription(currentModel)
+                  : modelAvailabilityDetail(currentModel)}
+              </em>
             </span>
-            <Icon name="check" />
+            <Icon name={modelIsAvailableInChat(currentModel) ? 'check' : 'info'} />
+          </div>
+        ) : (
+          <div className="model-picker__current is-unavailable" role="status">
+            <Icon name="model" />
+            <span>
+              <small>No current model</small>
+              <strong>Choose a ready route</strong>
+              <em>Cupcake will not select a provider or model for you.</em>
+            </span>
           </div>
         )}
         <div className="model-picker__intents" aria-label="Filter by task">
@@ -9649,7 +9735,7 @@ function ModelPicker({
               <strong>No available models match</strong>
               <small>
                 {models.length === 0 && !pickerModels.length
-                  ? 'Catalog is refreshing. Your current model stays selected.'
+                  ? 'No model routes are loaded yet. Open Models to connect or install one.'
                   : 'Try another task, connect a provider, or show unavailable models.'}
               </small>
             </div>
@@ -12196,8 +12282,7 @@ function LiveApp() {
   const stopRunRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const pendingProfileApplied = useRef(false);
   stopRunRef.current = () => workspace.stopRun();
-  const selectedModel =
-    workspace.models.find((model) => model.selected) ?? workspace.models[0] ?? initialModels[0]!;
+  const selectedModel = selectedModelForChat(workspace.models);
   const activeTask = workspace.tasks.find((task) => task.id === activeTaskId) ?? workspace.tasks[0];
   useEffect(() => setMemoryRecords(workspace.memories), [workspace.memories]);
   useEffect(() => setToolRecords(workspace.tools), [workspace.tools]);
@@ -12429,7 +12514,7 @@ function LiveApp() {
     content = (
       <TaskDetail
         task={activeTask}
-        modelName={selectedModel.name}
+        modelName={selectedModel?.name ?? 'No model selected'}
         onBack={() => navigate('tasks')}
       />
     );
@@ -12474,7 +12559,7 @@ function LiveApp() {
       />
     );
   else if (view === 'developer' && workspace.settings.developerMode)
-    content = <DeveloperView modelName={selectedModel.name} />;
+    content = <DeveloperView modelName={selectedModel?.name ?? 'No model selected'} />;
   else content = <AboutView />;
   const topbarNeeded = ![
     'home',

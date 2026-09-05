@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyRuntimeStartupSettings,
+  normalizeArtifactCounts,
   recoverWorkspaceSupportRequest,
   type WorkspaceSettings,
 } from './workspace';
@@ -64,5 +65,17 @@ describe('workspace bootstrap isolation', () => {
       },
       assistantAvatar: 'atlas:9',
     });
+  });
+
+  it('keeps authoritative counts for every project and rejects malformed totals', () => {
+    expect(
+      normalizeArtifactCounts({
+        northstar: 2,
+        atlas: 1,
+        negative: -1,
+        partial: 1.5,
+        unknown: 'many',
+      }),
+    ).toEqual({ northstar: 2, atlas: 1 });
   });
 });

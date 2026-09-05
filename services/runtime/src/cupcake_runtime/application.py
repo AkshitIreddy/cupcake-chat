@@ -516,6 +516,7 @@ class RuntimeService:
             "tasks.tool.complete.private": self._tasks_tool_complete_private,
             "tasks.events": self._tasks_events,
             "artifacts.list": self._artifacts_list,
+            "artifacts.counts": self._artifacts_counts,
             "artifacts.create": self._artifacts_create,
             "artifacts.get": self._artifacts_get,
             "artifacts.content.read": self._artifacts_content_read,
@@ -711,6 +712,7 @@ class RuntimeService:
             "models": _jsonable(self.providers.catalog.list()),
             "localRuntimes": ["cupcake-local"],
             "projects": _jsonable(projects),
+            "artifactCounts": self.artifacts.counts_by_project(),
             "conversations": _jsonable(conversations),
             "tools": _jsonable(self.tools.list()),
             "suggestionsEnabled": self.memory.suggestions_enabled(),
@@ -3790,8 +3792,7 @@ class RuntimeService:
             snapshot.revision.object_digest != artifact.get("objectDigest")
             or len(snapshot.content) != artifact.get("byteSize")
             or hashlib.sha256(snapshot.content).hexdigest() != artifact.get("contentSha256")
-            or hashlib.sha256(snapshot.content).hexdigest()
-            != step.arguments.get("sourceSha256")
+            or hashlib.sha256(snapshot.content).hexdigest() != step.arguments.get("sourceSha256")
         ):
             raise RuntimeCommandError(
                 "INVALID_CODE_TASK", "The persisted code artifact content digest changed"
@@ -3852,9 +3853,7 @@ class RuntimeService:
         )
         artifact_raw: object | None = artifact_values[0] if len(artifact_values) == 1 else None
         artifact = (
-            cast(Mapping[str, Any], artifact_raw)
-            if isinstance(artifact_raw, Mapping)
-            else None
+            cast(Mapping[str, Any], artifact_raw) if isinstance(artifact_raw, Mapping) else None
         )
         if artifact is None or any(
             params.get(parameter) != artifact.get(field)
@@ -3988,6 +3987,9 @@ class RuntimeService:
         return _jsonable(
             self.artifacts.list_project(project_id, limit=int(params.get("limit") or 100))
         )
+
+    def _artifacts_counts(self, _params: Mapping[str, Any]) -> dict[str, int]:
+        return self.artifacts.counts_by_project()
 
     def _artifact_snapshot_response(
         self, snapshot: Any, *, inline_limit: int | None = None

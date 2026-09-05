@@ -121,6 +121,34 @@ def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
     runtime.close()
 
 
+def test_bootstrap_and_counts_report_artifacts_for_every_project(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    alpha, _ = runtime.handle("projects.create", {"name": "Alpha"})
+    beta, _ = runtime.handle("projects.create", {"name": "Beta"})
+    for project_id, title in (
+        (alpha["id"], "Alpha one"),
+        (alpha["id"], "Alpha two"),
+        (beta["id"], "Beta one"),
+    ):
+        runtime.handle(
+            "artifacts.create",
+            {
+                "projectId": project_id,
+                "title": title,
+                "kind": "document",
+                "mimeType": "text/plain",
+                "content": title,
+            },
+        )
+
+    expected = {alpha["id"]: 2, beta["id"]: 1}
+    bootstrap, _ = runtime.handle("app.bootstrap")
+    counts, _ = runtime.handle("artifacts.counts")
+    assert bootstrap["artifactCounts"] == expected
+    assert counts == expected
+    runtime.close()
+
+
 def _local_model_artifact(*, size_bytes: int = 5_000_000_000) -> ModelArtifact:
     return ModelArtifact(
         "qwen3-8b-q4-k-m",

@@ -332,6 +332,16 @@
   color: var(--berry);
 }
 
+.model-picker__current.is-unavailable {
+  border-color: color-mix(in srgb, var(--warning, #b06d22), var(--line) 68%);
+  background: color-mix(in srgb, var(--warning-soft, #fff2df), var(--paper) 58%);
+}
+
+.model-picker__current.is-unavailable small,
+.model-picker__current.is-unavailable > svg {
+  color: var(--warning, #9b5b1c);
+}
+
 .model-picker__intents {
   display: flex;
   gap: 5px;

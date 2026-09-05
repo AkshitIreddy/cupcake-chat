@@ -12,6 +12,7 @@ import {
   publisherLogoAsset,
   recommendModels,
   recommendationReason,
+  selectedModelForChat,
 } from './model-intelligence';
 import type { ModelDescriptor } from './types';
 
@@ -137,5 +138,16 @@ describe('model intelligence', () => {
       'Connect NVIDIA NIM to use this route',
     );
     expect(modelAvailabilityDetail(model({ status: 'ready' }))).toBe('Connected and ready');
+  });
+
+  it('does not invent a model when the persisted selection is missing', () => {
+    expect(selectedModelForChat([model({ selected: false })])).toBeNull();
+    expect(selectedModelForChat([])).toBeNull();
+  });
+
+  it('preserves an explicitly selected unavailable route for an honest recovery prompt', () => {
+    const disconnected = model({ selected: true, status: 'setup' });
+    expect(selectedModelForChat([model({ selected: false }), disconnected])).toBe(disconnected);
+    expect(modelIsAvailableInChat(selectedModelForChat([disconnected])!)).toBe(false);
   });
 });

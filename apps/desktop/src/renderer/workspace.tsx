@@ -490,6 +490,7 @@ interface WorkspaceContextValue {
   messages: MessageRecord[];
   tasks: Task[];
   artifacts: ArtifactRecord[];
+  artifactCounts: Record<string, number>;
   memories: MemoryRecord[];
   models: ModelDescriptor[];
   tools: ToolDescriptor[];
@@ -691,6 +692,17 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+export function normalizeArtifactCounts(value: unknown): Record<string, number> {
+  const record = recordValue(value);
+  if (!record) return {};
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([projectId, count]) => {
+      const total = Number(count);
+      return projectId && Number.isInteger(total) && total >= 0 ? [[projectId, total]] : [];
+    }),
+  );
+}
+
 function stringValues(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return (value as unknown[]).filter((item): item is string => typeof item === 'string');
@@ -876,7 +888,10 @@ export function applyRuntimeMessageEvent(
   return messages;
 }
 
-export function mapConversation(item: RuntimeConversation, projects: ProjectRecord[]): Conversation {
+export function mapConversation(
+  item: RuntimeConversation,
+  projects: ProjectRecord[],
+): Conversation {
   return {
     id: item.id,
     title: item.title,
@@ -1879,6 +1894,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]
       : [],
   );
+  const [artifactCounts, setArtifactCounts] = useState<Record<string, number>>(
+    fixtureMode ? { 'fixture-cupcake': fixtureArtifacts.length + 1 } : {},
+  );
   const [memories, setMemories] = useState<MemoryRecord[]>(fixtureMode ? fixtureMemories : []);
   const [models, setModels] = useState<ModelDescriptor[]>(fixtureMode ? fixtureModels : []);
   const [tools, setTools] = useState<ToolDescriptor[]>(fixtureMode ? fixtureTools : []);
@@ -1985,6 +2003,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // only lengthens the locked-to-interactive path on every launch.
         type RuntimeBootstrap = {
           selectedModelId?: string;
+          artifactCounts?: Record<string, unknown>;
           projects?: RuntimeProject[];
           conversations?: RuntimeConversation[];
           models?: RuntimeModel[];
@@ -2008,7 +2027,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }
         }
         if (!bootstrap) throw bootstrapFailure ?? new Error('The local workspace could not open.');
-        selectedModelIdRef.current = bootstrap.selectedModelId ?? selectedModelIdRef.current;
+        selectedModelIdRef.current = bootstrap.selectedModelId ?? null;
         const projectRecords = (bootstrap.projects ?? []).map((item) => ({
           id: item.id,
           name: item.name,
@@ -2018,6 +2037,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           updatedAt: item.updated_at,
         }));
         setProjects(projectRecords);
+        setArtifactCounts(normalizeArtifactCounts(bootstrap.artifactCounts));
         setConversations(
           (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
         );
@@ -2107,10 +2127,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const configuredProviders = Object.fromEntries(
           providerResult.providers.map((item) => [item.provider, item.configured]),
         );
+        // Provider status rehydrates endpoint-scoped descriptors from the broker.
+        // Read the catalog afterwards so persisted Groq/OpenRouter/Cloudflare routes
+        // appear even when they were not present in the earlier bootstrap snapshot.
+        const listedModels = await recover(
+          'Models',
+          request<RuntimeModel[]>('models.list'),
+          bootstrap.models ?? [],
+        );
+        const currentCatalog = Array.isArray(listedModels)
+          ? listedModels
+          : (bootstrap.models ?? []);
         const discoveredModels = providerResult.providers.flatMap(
           (item) => item.catalog?.models ?? [],
         );
-        const allRuntimeModels: RuntimeModel[] = [...(bootstrap.models ?? []), ...discoveredModels]
+        const allRuntimeModels: RuntimeModel[] = [...currentCatalog, ...discoveredModels]
           .map((item) => item as unknown as RuntimeModel)
           .filter((item) => item.provider !== 'mock' && item.privacy_route !== 'local');
         const uniqueRuntimeModels = [
@@ -2319,6 +2350,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       if (event.type.startsWith('artifact.')) {
         void loadArtifacts(activeProjectIdRef.current).catch(() => undefined);
+        void request<Record<string, unknown>>('artifacts.counts')
+          .then((counts) => setArtifactCounts(normalizeArtifactCounts(counts)))
+          .catch(() => undefined);
       } else if (event.type.startsWith('memory.')) {
         void request<RuntimeMemory[]>('memory.list', {
           states: ['active', 'candidate', 'superseded', 'expired'],
@@ -2448,6 +2482,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (fixtureMode) {
         const record = { id: `fixture-${Date.now()}`, name, description, archived: false };
         setProjects((items) => [record, ...items]);
+        setArtifactCounts((counts) => ({ ...counts, [record.id]: 0 }));
         await setActiveProject(record.id);
         return;
       }
@@ -2464,6 +2499,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           updatedAt: item.updated_at,
         };
         setProjects((items) => [record, ...items]);
+        setArtifactCounts((counts) => ({ ...counts, [record.id]: 0 }));
         await setActiveProject(record.id);
       } catch (reason) {
         const message =
@@ -2533,6 +2569,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         const remaining = projectsRef.current.filter((item) => item.id !== projectId);
         setProjects(remaining);
+        setArtifactCounts((counts) => {
+          const next = { ...counts };
+          delete next[projectId];
+          return next;
+        });
         if (activeProjectIdRef.current === projectId) {
           await setActiveProject(remaining[0]?.id ?? null);
         }
@@ -3251,6 +3292,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
         }
         setArtifacts((items) => [record, ...items.filter((item) => item.id !== record.id)]);
+        setArtifactCounts((counts) => ({
+          ...counts,
+          [record.projectId]: (counts[record.projectId] ?? 0) + 1,
+        }));
         return record;
       } catch (reason) {
         const message =
@@ -3835,6 +3880,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       messages,
       tasks,
       artifacts,
+      artifactCounts,
       memories,
       models,
       tools,
@@ -3914,6 +3960,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       messages,
       tasks,
       artifacts,
+      artifactCounts,
       memories,
       models,
       tools,

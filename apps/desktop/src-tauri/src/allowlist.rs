@@ -74,6 +74,7 @@ const ALLOWED_RUNTIME_METHODS: &[&str] = &[
     "agents.roles",
     "app.bootstrap",
     "artifacts.content.read",
+    "artifacts.counts",
     "artifacts.create",
     "artifacts.export.intent",
     "artifacts.get",
@@ -187,6 +188,11 @@ mod tests {
         assert!(ALLOWED_RUNTIME_METHODS
             .windows(2)
             .all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn project_artifact_counts_are_available_through_the_read_only_bridge() {
+        assert!(ensure_runtime_method_allowed("artifacts.counts").is_ok());
     }
 
     #[test]

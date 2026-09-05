@@ -545,6 +545,11 @@ export function modelIsAvailableInChat(model: ModelDescriptor): boolean {
   return ['ready', 'benchmarked', 'installed', 'offline'].includes(model.status);
 }
 
+/** Preserve the user's explicit selection, including an unavailable route, without inventing one. */
+export function selectedModelForChat(models: readonly ModelDescriptor[]): ModelDescriptor | null {
+  return models.find((model) => model.selected) ?? null;
+}
+
 export function publisherLogoAsset(publisher: string): string | undefined {
   const assets: Record<string, string> = {
     Anthropic: '/providers/anthropic.svg',

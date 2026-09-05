@@ -91,6 +91,26 @@ class ArtifactStoreTests(unittest.TestCase):
         )
         self.assertEqual(Path(result.destination).read_bytes(), b"a,b\n1,2\n")
 
+    def test_counts_by_project_returns_all_project_totals(self) -> None:
+        beta = self.repository.create_project("Beta")
+        for project_id, title in (
+            (self.project_id, "Alpha one"),
+            (self.project_id, "Alpha two"),
+            (beta.id, "Beta one"),
+        ):
+            self.store.create(
+                project_id=project_id,
+                title=title,
+                kind=ArtifactKind.DOCUMENT,
+                mime_type="text/plain",
+                content=title,
+            )
+
+        self.assertEqual(
+            self.store.counts_by_project(),
+            {self.project_id: 2, beta.id: 1},
+        )
+
     def test_cross_project_source_message_is_rejected(self) -> None:
         beta = self.repository.create_project("Beta")
         _, branch = self.repository.create_conversation("Beta chat", project_id=beta.id)
