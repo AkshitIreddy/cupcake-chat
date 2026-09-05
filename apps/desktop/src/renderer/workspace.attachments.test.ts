@@ -39,6 +39,12 @@ describe('workspace attachment and reference contracts', () => {
       role: 'user',
       content: 'Review this.',
       canonical_metadata: {
+        finishReason: 'length',
+        _providerContinuity: {
+          provider: 'openai-compatible',
+          model_family: 'openai-compatible:openrouter:vendor/model',
+          opaque_state: { response_id: 'private-provider-state' },
+        },
         attachments: [
           {
             id: 'attachment-1',
@@ -80,6 +86,9 @@ describe('workspace attachment and reference contracts', () => {
         projectId: 'project-1',
       }),
     ]);
+    expect(message.finishReason).toBe('length');
+    expect(message.modelFamily).toBe('openai-compatible:openrouter:vendor/model');
+    expect(message).not.toHaveProperty('providerContinuity');
   });
 
   it('keeps reference choices inside the active privacy scope', () => {

@@ -682,7 +682,8 @@ test('every shipped theme keeps the chat surface AA-clean', async ({ page }) => 
 test('live workspace windows long history and switches immutable branches', async ({ page }) => {
   await page.addInitScript(() => {
     const calls: string[] = [];
-    Object.assign(window, { __runtimeCalls: calls });
+    const requests: Array<{ method: string; params?: unknown }> = [];
+    Object.assign(window, { __runtimeCalls: calls, __runtimeRequests: requests });
     const history = (branchId: string) =>
       branchId === 'branch-b'
         ? [
@@ -698,6 +699,10 @@ test('live workspace windows long history and switches immutable branches', asyn
             branch_id: branchId,
             role: index % 2 ? 'assistant' : 'user',
             content: `Persisted turn ${index}`,
+            model_id:
+              index === 499 ? 'nvidia/nemotron-3-super-120b-a12b' : undefined,
+            provider_id: index === 499 ? 'nvidia-nim' : undefined,
+            canonical_metadata: index === 499 ? { finishReason: 'length' } : undefined,
           }));
     Object.defineProperty(window, 'cupcake', {
       value: {
@@ -761,6 +766,7 @@ test('live workspace windows long history and switches immutable branches', asyn
           request: async ({ method, params }: { method: string; params?: unknown }) => {
             await Promise.resolve();
             calls.push(method);
+            requests.push({ method, params });
             const results: Record<string, unknown> = {
               'app.bootstrap': {
                 selectedModelId: 'openai-compatible:cupcake-local/qwen3-4b-q4-k-m',
@@ -780,7 +786,18 @@ test('live workspace windows long history and switches immutable branches', asyn
                     status: 'active',
                   },
                 ],
-                models: [],
+                models: [
+                  {
+                    id: 'nvidia-nim:nvidia/nemotron-3-super-120b-a12b',
+                    provider: 'nvidia-nim',
+                    model: 'nvidia/nemotron-3-super-120b-a12b',
+                    display_name: 'Nemotron 3 Super 120B',
+                    privacy_route: 'cloud',
+                    context_window: 262144,
+                    capabilities: ['chat', 'reasoning'],
+                    metadata: { runtime_kind: 'nvidia-nim' },
+                  },
+                ],
                 tools: [],
                 hardware: {},
                 localRuntimes: [],
@@ -788,7 +805,9 @@ test('live workspace windows long history and switches immutable branches', asyn
               },
               'tasks.list': [],
               'memory.list': [],
-              'providers.status': { providers: [] },
+              'providers.status': {
+                providers: [{ provider: 'nvidia-nim', configured: true, catalog: { models: [] } }],
+              },
               'settings.list': {},
               'migration.detect': { state: 'not_found', available: false },
               'local_models.cupcake.status': {
@@ -836,6 +855,32 @@ test('live workspace windows long history and switches immutable branches', asyn
                 branchId: 'branch-b',
                 runId: 'retry-run',
               },
+              'chat.continue': {
+                conversationId: 'conversation-1',
+                branchId: 'branch-a',
+                runId: 'continue-run',
+              },
+              'chat.preflight': {
+                confirmationToken: 'nim-continue-confirmation',
+                disclosure: { privacyRoute: 'cloud', costClass: 'metered' },
+                outboundIntent: {
+                  provider: 'nvidia-nim',
+                  modelId: 'nvidia-nim:nvidia/nemotron-3-super-120b-a12b',
+                  privacyRoute: 'cloud',
+                  costClass: 'metered',
+                  projectId: 'project-1',
+                  conversationId: 'conversation-1',
+                  branchId: 'branch-a',
+                  messageId: 'message-499',
+                  contentSha256: 'test-content',
+                  attachmentHandleIds: [],
+                  attachmentBindings: [],
+                  referenceIds: [],
+                  referenceBindings: [],
+                  memoryIds: [],
+                  toolIds: [],
+                },
+              },
             };
             if (method === 'chat.history')
               return {
@@ -854,6 +899,44 @@ test('live workspace windows long history and switches immutable branches', asyn
   await page.locator('.chat-list__main').filter({ hasText: 'Long history' }).click();
   await expect(page.locator('.live-conversation')).toHaveAttribute('data-rendered-messages', '80');
   await expect(page.getByText('500 turns')).toBeVisible();
+  await expect(page.getByText('Response limit reached')).toBeVisible();
+  await expect(page.getByText('Persisted turn 499', { exact: true })).toBeVisible();
+
+  await page.reload();
+  await page.locator('.chat-list__main').filter({ hasText: 'Long history' }).click();
+  await expect(page.getByText('Response limit reached')).toBeVisible();
+  if (process.env.CUPCAKE_RESPONSE_LIMIT_SCREENSHOT) {
+    await page.screenshot({ path: process.env.CUPCAKE_RESPONSE_LIMIT_SCREENSHOT, fullPage: true });
+  }
+  await page.locator('.response-limit-notice').getByRole('button', { name: 'Continue response' }).click();
+  await expect(page.getByRole('dialog', { name: 'Confirm message action' })).toContainText(
+    'Continue with nvidia-nim?',
+  );
+  await page.getByRole('button', { name: 'Confirm continue' }).click();
+  await expect(page.getByText('Continuation started.')).toBeVisible();
+  await expect(page.getByText('Persisted turn 499', { exact: true })).toBeVisible();
+  const continueRequest = await page.evaluate(() =>
+    (
+      window as unknown as {
+        __runtimeRequests: Array<{ method: string; params?: Record<string, unknown> }>;
+      }
+    ).__runtimeRequests.find(({ method }) => method === 'chat.continue'),
+  );
+  expect(continueRequest?.params).toMatchObject({
+    messageId: 'message-499',
+    modelId: 'nvidia-nim:nvidia/nemotron-3-super-120b-a12b',
+  });
+  const preflightRequest = await page.evaluate(() =>
+    (
+      window as unknown as {
+        __runtimeRequests: Array<{ method: string; params?: Record<string, unknown> }>;
+      }
+    ).__runtimeRequests.find(({ method }) => method === 'chat.preflight'),
+  );
+  expect(preflightRequest?.params).toMatchObject({
+    messageId: 'message-499',
+    modelId: 'nvidia-nim:nvidia/nemotron-3-super-120b-a12b',
+  });
 
   const assistantTurn = page.locator('article.turn--assistant').filter({
     has: page.getByText('Persisted turn 499', { exact: true }),

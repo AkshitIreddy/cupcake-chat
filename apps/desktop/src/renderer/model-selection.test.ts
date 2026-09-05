@@ -5,6 +5,7 @@ import {
   createKeyedRequestCoalescer,
   mergeModelDescriptors,
   modelSelectionParams,
+  resolvePersistedMessageModel,
 } from './model-selection';
 
 function model(id: string, overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
@@ -65,6 +66,50 @@ describe('model selection hardening', () => {
       modelSelectionParams(model('nim-chat', { provider: 'NVIDIA NIM', chatCompatibility: 'chat' }))
         .compatibilityConfirmed,
     ).toBe(false);
+  });
+
+  it('resolves provider-native history ids to one exact catalog route', () => {
+    const nim = model('nvidia-nim:nvidia/nemotron-3-super-120b-a12b', {
+      provider: 'NVIDIA NIM',
+      runtimeModelId: 'nvidia/nemotron-3-super-120b-a12b',
+    });
+    const local = model('openai-compatible:cupcake-local/nemotron', {
+      provider: 'Cupcake Local',
+      runtimeModelId: 'nemotron',
+      route: 'Local',
+    });
+
+    expect(
+      resolvePersistedMessageModel([local, nim], {
+        modelId: 'nvidia/nemotron-3-super-120b-a12b',
+        providerId: 'nvidia-nim',
+      }),
+    ).toBe(nim);
+  });
+
+  it('uses compatible endpoint identity and rejects ambiguous compatible routes', () => {
+    const openRouter = model('openai-compatible:openrouter/vendor/shared-model', {
+      provider: 'OpenRouter',
+      runtimeModelId: 'vendor/shared-model',
+    });
+    const custom = model('openai-compatible:private/vendor/shared-model', {
+      provider: 'Private endpoint',
+      runtimeModelId: 'vendor/shared-model',
+    });
+
+    expect(
+      resolvePersistedMessageModel([openRouter, custom], {
+        modelId: 'vendor/shared-model',
+        providerId: 'openai-compatible',
+        modelFamily: 'openai-compatible:openrouter:vendor/shared-model',
+      }),
+    ).toBe(openRouter);
+    expect(
+      resolvePersistedMessageModel([openRouter, custom], {
+        modelId: 'vendor/shared-model',
+        providerId: 'openai-compatible',
+      }),
+    ).toBeNull();
   });
 
   it('coalesces duplicate selection requests and permits retry after failure', async () => {

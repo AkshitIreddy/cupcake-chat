@@ -43,7 +43,11 @@ import {
   type ModelSize,
   type ModelTask,
 } from './model-intelligence';
-import { canonicalModelId, modelSelectionParams } from './model-selection';
+import {
+  canonicalModelId,
+  modelSelectionParams,
+  resolvePersistedMessageModel,
+} from './model-selection';
 import type {
   Conversation,
   LiveChatMessage,
@@ -1906,6 +1910,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
   const [editPending, setEditPending] = useState(false);
   const [editError, setEditError] = useState('');
   const [confirmingAction, setConfirmingAction] = useState(false);
+  const [continuingMessageId, setContinuingMessageId] = useState<string | null>(null);
   const windowSize = 80;
   useEffect(() => setWindowEnd(workspace.messages.length), [workspace.messages.length]);
   useEffect(() => {
@@ -1928,6 +1933,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
     mode: 'retry' | 'edit' | 'regenerate' | 'continue',
     content: string,
     confirmation?: { confirmationToken: string; outboundIntent: OutboundIntent },
+    resolvedModelId?: string,
   ) => {
     const labels = {
       retry: ['Retrying response…', 'Response retry started.'],
@@ -1937,9 +1943,10 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
     } as const;
     setActionError('');
     setActionNotice({ tone: 'pending', text: labels[mode][0] });
+    const actionModelId = resolvedModelId ?? canonicalModelId(selectedModel);
     const sent = await workspace.sendMessage({
       content,
-      modelId: confirmation?.outboundIntent.modelId ?? canonicalModelId(selectedModel),
+      modelId: confirmation?.outboundIntent.modelId ?? actionModelId,
       attachments: [],
       references: [],
       reasoningEffort: workspace.settings.reasoningEffort,
@@ -1970,15 +1977,27 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
           ? (editedContent?.trim() ?? '')
           : message.content;
     if (!content) return false;
-    if (selectedModel.route !== 'Cloud' || workspace.fixtureMode) {
-      return executeAction(message, mode, content);
+    const hasPersistedRoute = Boolean(message.modelId || message.providerId);
+    const actionModel =
+      mode === 'continue' && hasPersistedRoute
+        ? resolvePersistedMessageModel(workspace.models, message)
+        : selectedModel;
+    if (!actionModel) {
+      const text = 'The original provider route is unavailable, so this response was not continued.';
+      setActionError(text);
+      setActionNotice({ tone: 'error', text });
+      return false;
+    }
+    const actionModelId = canonicalModelId(actionModel);
+    if (actionModel.route !== 'Cloud' || workspace.fixtureMode) {
+      return executeAction(message, mode, content, undefined, actionModelId);
     }
     try {
       setActionError('');
       setActionNotice({ tone: 'pending', text: 'Checking what will be sent…' });
       const result = await workspace.preflightCloudDisclosure({
         content,
-        modelId: canonicalModelId(selectedModel),
+        modelId: actionModelId,
         attachments: [],
         references: [],
         enabledToolIds: workspace.settings.enabledToolIds,
@@ -2174,6 +2193,41 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor })
                 <RichMarkdown streaming={message.streaming}>
                   {message.content || 'Starting response…'}
                 </RichMarkdown>
+                {message.finishReason === 'length' && !message.streaming && (
+                  <div className="response-limit-notice" role="note">
+                    <Icon name="info" size={17} />
+                    <div>
+                      <strong>Response limit reached</strong>
+                      <p>
+                        The provider stopped at its output limit. The partial response above is
+                        preserved.
+                      </p>
+                    </div>
+                    <button
+                      className="button button--primary"
+                      disabled={continuingMessageId !== null}
+                      onClick={() => {
+                        void (async () => {
+                          setContinuingMessageId(message.id);
+                          try {
+                            await runAction(message, 'continue');
+                          } catch (reason) {
+                            const text =
+                              reason instanceof Error
+                                ? reason.message
+                                : 'The response could not be continued.';
+                            setActionError(text);
+                            setActionNotice({ tone: 'error', text });
+                          } finally {
+                            setContinuingMessageId(null);
+                          }
+                        })();
+                      }}
+                    >
+                      {continuingMessageId === message.id ? 'Continuing…' : 'Continue response'}
+                    </button>
+                  </div>
+                )}
                 {message.citations && message.citations.length > 0 && (
                   <div className="citations">
                     {message.citations.map((citation) => (

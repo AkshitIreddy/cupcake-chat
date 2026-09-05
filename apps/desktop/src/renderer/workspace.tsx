@@ -51,11 +51,13 @@ export interface MessageRecord extends LiveChatMessage {
   createdAt?: string;
   modelId?: string | null;
   providerId?: string | null;
+  modelFamily?: string;
   attachments?: AttachmentRecord[];
   references?: ReferenceRecord[];
   usage?: { inputTokens?: number; outputTokens?: number; estimatedCost?: string };
   citations?: Array<{ id: string; title: string; url?: string }>;
   reasoningSummary?: string;
+  finishReason?: string;
 }
 
 export interface AttachmentRecord {
@@ -967,6 +969,19 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
     const reference = safeReferenceMetadata(value);
     return reference ? [reference] : [];
   });
+  const finishReason =
+    typeof metadata.finishReason === 'string'
+      ? metadata.finishReason
+      : typeof metadata.finish_reason === 'string'
+        ? metadata.finish_reason
+        : undefined;
+  const continuity = recordValue(metadata._providerContinuity);
+  const modelFamily =
+    continuity && typeof continuity.model_family === 'string'
+      ? continuity.model_family
+      : continuity && typeof continuity.modelFamily === 'string'
+        ? continuity.modelFamily
+        : undefined;
   return {
     id: item.id,
     role,
@@ -975,8 +990,10 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
     createdAt: item.created_at,
     modelId: item.model_id,
     providerId: item.provider_id,
+    modelFamily,
     attachments: attachments.length ? attachments : undefined,
     references: references.length ? references : undefined,
+    finishReason,
   };
 }
 

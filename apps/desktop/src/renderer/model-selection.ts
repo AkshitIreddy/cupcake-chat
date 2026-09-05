@@ -12,6 +12,57 @@ export function canonicalModelId(model: ModelDescriptor): string {
   return model.id;
 }
 
+export function resolvePersistedMessageModel(
+  models: readonly ModelDescriptor[],
+  message: { modelId?: string | null; providerId?: string | null; modelFamily?: string | null },
+): ModelDescriptor | null {
+  const nativeModelId = message.modelId?.trim();
+  const providerId = message.providerId?.trim().toLowerCase();
+  if (!nativeModelId || !providerId) return null;
+
+  const compatibleFamily = message.modelFamily?.trim().toLowerCase();
+  const compatibleEndpoint = compatibleFamily?.startsWith('openai-compatible:')
+    ? compatibleFamily.slice('openai-compatible:'.length).split(':', 1)[0]
+    : undefined;
+  const matchesProviderRoute = (model: ModelDescriptor) => {
+    if (providerId === 'openai-compatible') {
+      return compatibleEndpoint
+        ? model.id.startsWith(`openai-compatible:${compatibleEndpoint}/`)
+        : model.id.startsWith('openai-compatible:');
+    }
+    return (
+      model.id.startsWith(`${providerId}:`) ||
+      model.id.startsWith(`openai-compatible:${providerId}/`)
+    );
+  };
+  const exact = models.filter(
+    (model) => model.id === nativeModelId && matchesProviderRoute(model),
+  );
+  if (exact.length === 1) return exact[0] ?? null;
+
+  const canonicalCandidates = new Set<string>();
+  if (providerId === 'openai-compatible') {
+    if (compatibleEndpoint) {
+      canonicalCandidates.add(`openai-compatible:${compatibleEndpoint}/${nativeModelId}`);
+    }
+  } else {
+    canonicalCandidates.add(`${providerId}:${nativeModelId}`);
+    canonicalCandidates.add(`openai-compatible:${providerId}/${nativeModelId}`);
+  }
+  const canonicalMatches = models.filter((model) => canonicalCandidates.has(model.id));
+  if (canonicalMatches.length === 1) return canonicalMatches[0] ?? null;
+
+  const routeMatches = models.filter((model) => {
+    const nativeMatches =
+      model.runtimeModelId === nativeModelId ||
+      model.id.endsWith(`:${nativeModelId}`) ||
+      model.id.endsWith(`/${nativeModelId}`);
+    if (!nativeMatches) return false;
+    return matchesProviderRoute(model);
+  });
+  return routeMatches.length === 1 ? (routeMatches[0] ?? null) : null;
+}
+
 export function modelSelectionParams(model: ModelDescriptor): {
   modelId: string;
   compatibilityConfirmed: boolean;
