@@ -1191,9 +1191,37 @@ fn copy_tree_entry(
         {
             return Err(BrokerError::PathEscape);
         }
+        if files_equal(source, destination)? {
+            return Ok(());
+        }
+        if destination_metadata.permissions().readonly() {
+            return Err(BrokerError::Integrity(
+                "sandbox changed a read-only staged input".into(),
+            ));
+        }
     }
     fs::copy(source, destination)?;
     Ok(())
+}
+
+fn files_equal(left: &Path, right: &Path) -> Result<bool> {
+    if fs::metadata(left)?.len() != fs::metadata(right)?.len() {
+        return Ok(false);
+    }
+    let mut left = fs::File::open(left)?;
+    let mut right = fs::File::open(right)?;
+    let mut left_buffer = [0_u8; 64 * 1024];
+    let mut right_buffer = [0_u8; 64 * 1024];
+    loop {
+        let left_read = std::io::Read::read(&mut left, &mut left_buffer)?;
+        let right_read = std::io::Read::read(&mut right, &mut right_buffer)?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
 }
 
 fn poisoned<T>(_error: std::sync::PoisonError<T>) -> BrokerError {
@@ -1400,6 +1428,59 @@ mod tests {
         assert!(matches!(
             stage_verified_executable_bundle(&executable, destination.path()),
             Err(BrokerError::PathEscape)
+        ));
+    }
+
+    #[test]
+    fn copy_back_preserves_read_only_inputs_and_returns_changed_outputs() {
+        let internal = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::write(
+            internal.path().join("request.frame"),
+            b"authenticated request",
+        )
+        .unwrap();
+        fs::write(
+            external.path().join("request.frame"),
+            b"authenticated request",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(external.path().join("request.frame"))
+            .unwrap()
+            .permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(external.path().join("request.frame"), permissions).unwrap();
+        fs::write(
+            internal.path().join("response.frame"),
+            b"completed response",
+        )
+        .unwrap();
+        fs::write(external.path().join("response.frame"), b"").unwrap();
+
+        copy_tree_bounded(internal.path(), external.path()).unwrap();
+
+        assert_eq!(
+            fs::read(external.path().join("request.frame")).unwrap(),
+            b"authenticated request"
+        );
+        assert!(fs::metadata(external.path().join("request.frame"))
+            .unwrap()
+            .permissions()
+            .readonly());
+        assert_eq!(
+            fs::read(external.path().join("response.frame")).unwrap(),
+            b"completed response"
+        );
+
+        fs::write(
+            internal.path().join("request.frame"),
+            b"tampered request___",
+        )
+        .unwrap();
+        assert!(matches!(
+            copy_tree_bounded(internal.path(), external.path()),
+            Err(BrokerError::Integrity(message))
+                if message == "sandbox changed a read-only staged input"
         ));
     }
 
