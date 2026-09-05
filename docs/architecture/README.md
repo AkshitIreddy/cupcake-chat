@@ -14,6 +14,7 @@ architecture.
 6. [Durable tasks, subagents, and recovery](ADR-0006-DURABLE-TASKS.md)
 7. [One-time legacy migration](ADR-0007-MIGRATION.md)
 8. [Packaging and local-only release posture](ADR-0008-RELEASE.md)
+9. [Attributed Cupcakes and bounded group conversations](ADR-0009-GROUP-CONVERSATIONS.md)
 
 Start with [System overview](SYSTEM_OVERVIEW.md) and the live
 [implementation checklist](IMPLEMENTATION_CHECKLIST.md). The [repository audit](REPOSITORY_AUDIT.md)
