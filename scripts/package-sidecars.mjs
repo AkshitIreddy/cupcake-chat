@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Buffer } from 'node:buffer';
 import { copyFile, cp, mkdir, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promoteDirectory } from './lib/atomic-directory.mjs';
@@ -13,6 +14,7 @@ import {
   repoRoot,
   run,
   sha256File,
+  walkFiles,
 } from './lib/process.mjs';
 
 const args = process.argv.slice(2);
@@ -65,6 +67,37 @@ const descriptor = await readJson(descriptorPath);
 const tauriRoot = join(repoRoot, 'apps', 'desktop', 'src-tauri');
 const tauriBinaryDir = join(tauriRoot, 'binaries');
 const tauriResourceDir = join(tauriRoot, 'resources', 'sidecars');
+const runtimeSupportDirectory = '_internal';
+const maxRuntimeSupportFiles = 4096;
+const maxRuntimeSupportBytes = 2 * 1024 * 1024 * 1024;
+const maxManifestBytes = 512 * 1024;
+
+function manifestPathFor(path) {
+  return path.split('\\').join('/');
+}
+
+async function runtimeSupportRecords(directory = outputDir) {
+  const root = join(directory, runtimeSupportDirectory);
+  const files = (await walkFiles(root)).sort((left, right) => left.localeCompare(right));
+  if (files.length === 0 || files.length > maxRuntimeSupportFiles) {
+    throw new Error('Runtime support directory is empty or exceeds the packaged file limit');
+  }
+  const records = [];
+  let totalBytes = 0;
+  for (const file of files) {
+    const bytes = await fileSize(file);
+    totalBytes += bytes;
+    if (!Number.isSafeInteger(totalBytes) || totalBytes > maxRuntimeSupportBytes) {
+      throw new Error('Runtime support directory exceeds the packaged byte limit');
+    }
+    records.push({
+      file: manifestPathFor(relative(directory, file)),
+      bytes,
+      sha256: await sha256File(file),
+    });
+  }
+  return records;
+}
 
 async function cleanStaleStagingDirectories() {
   const parent = dirname(finalOutputDir);
@@ -160,7 +193,9 @@ async function buildRuntime() {
       'PyInstaller',
       '--noconfirm',
       '--clean',
-      '--onefile',
+      '--onedir',
+      '--contents-directory',
+      runtimeSupportDirectory,
       '--name',
       'cupcake-runtime',
       '--paths',
@@ -195,26 +230,42 @@ async function buildRuntime() {
       },
     },
   );
-  const built = join(distRoot, outputName('runtime'));
+  const builtDirectory = join(distRoot, 'cupcake-runtime');
+  const built = join(builtDirectory, outputName('runtime'));
   if (!(await exists(built))) throw new Error(`PyInstaller did not create ${built}`);
   run(built, ['--help']);
   await copyFile(built, join(outputDir, outputName('runtime')));
+  await cp(
+    join(builtDirectory, runtimeSupportDirectory),
+    join(outputDir, runtimeSupportDirectory),
+    {
+      recursive: true,
+    },
+  );
 }
 
 async function reuseFrozenRuntime() {
-  const built = join(
+  const builtDirectory = join(
     repoRoot,
     'out',
     'pyinstaller',
     `${targetPlatform}-${targetArch}`,
     'dist',
-    outputName('runtime'),
+    'cupcake-runtime',
   );
+  const built = join(builtDirectory, outputName('runtime'));
   if (!(await exists(built))) {
     throw new Error(`Reusable frozen runtime is missing: ${built}`);
   }
   run(built, ['--help']);
   await copyFile(built, join(outputDir, outputName('runtime')));
+  await cp(
+    join(builtDirectory, runtimeSupportDirectory),
+    join(outputDir, runtimeSupportDirectory),
+    {
+      recursive: true,
+    },
+  );
 }
 
 async function stageCupcakeLocal({ verify = false } = {}) {
@@ -263,6 +314,7 @@ async function createManifest() {
       bytes: await fileSize(file),
       sha256: await sha256File(file),
       transport: sidecar.transport,
+      supportFiles: sidecar.id === 'runtime' ? await runtimeSupportRecords() : [],
     });
   }
   const manifest = {
@@ -285,7 +337,11 @@ async function createManifest() {
           },
         ],
   };
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
+  if (Buffer.byteLength(serialized, 'utf8') > maxManifestBytes) {
+    throw new Error('Sidecar manifest exceeds the host byte limit');
+  }
+  await writeFile(manifestPath, serialized, 'utf8');
   return manifest;
 }
 
@@ -329,6 +385,18 @@ async function verifyManifest() {
       throw new Error(`Size mismatch for ${binary.file}`);
     if ((await sha256File(file)) !== binary.sha256)
       throw new Error(`SHA-256 mismatch for ${binary.file}`);
+    if (!Array.isArray(binary.supportFiles)) {
+      throw new Error(`Support file list is missing for ${binary.id}`);
+    }
+    if (binary.id === 'runtime') {
+      const expectedSupport = await runtimeSupportRecords();
+      if (expectedSupport.length === 0) throw new Error('Runtime support directory is empty');
+      if (JSON.stringify(binary.supportFiles) !== JSON.stringify(expectedSupport)) {
+        throw new Error('Runtime support file manifest does not match the packaged directory');
+      }
+    } else if (binary.supportFiles.length !== 0) {
+      throw new Error(`${binary.id} must not declare runtime support files`);
+    }
   }
   const expectedResources = skipCupcakeLocal ? 0 : 1;
   if (!Array.isArray(manifest.resources) || manifest.resources.length !== expectedResources) {
@@ -386,6 +454,13 @@ async function stageTauriBundleInputs() {
     // externalBin source names carry the target triple, while the packaged
     // executable names and verified manifest deliberately do not.
     await copyFile(source, join(resourceStaging, outputName(sidecar.id)));
+  }
+  if (!skipRuntime) {
+    await cp(
+      join(finalOutputDir, runtimeSupportDirectory),
+      join(resourceStaging, runtimeSupportDirectory),
+      { recursive: true },
+    );
   }
   await copyFile(
     join(finalOutputDir, 'sidecars.manifest.json'),

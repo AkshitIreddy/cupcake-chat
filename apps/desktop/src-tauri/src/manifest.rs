@@ -11,6 +11,9 @@ const EXPECTED_PROTOCOL_VERSION: u16 = 1;
 const EXPECTED_SCHEMA_VERSION: u16 = 1;
 const MAX_MANIFEST_BYTES: u64 = 512 * 1024;
 const MAX_HASHED_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_RUNTIME_SUPPORT_FILES: usize = 4096;
+const MAX_RUNTIME_SUPPORT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const RUNTIME_SUPPORT_DIRECTORY: &str = "_internal";
 
 #[derive(Debug, Clone)]
 pub struct VerifiedSidecarSet {
@@ -40,6 +43,16 @@ struct ManifestBinary {
     bytes: u64,
     sha256: String,
     transport: String,
+    #[serde(default)]
+    support_files: Vec<ManifestSupportFile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ManifestSupportFile {
+    file: String,
+    bytes: u64,
+    sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +131,15 @@ pub fn verify_sidecar_directory(directory: &Path) -> HostResult<VerifiedSidecarS
         }
         let path = directory.join(&binary.file);
         verify_file(&path, binary.bytes, &binary.sha256)?;
+        match binary.id.as_str() {
+            "runtime" => verify_runtime_support(&directory, &binary.support_files)?,
+            "tool-broker" if !binary.support_files.is_empty() => {
+                return Err(HostError::internal(
+                    "Tool broker must not declare runtime support files",
+                ));
+            }
+            _ => {}
+        }
         match binary.id.as_str() {
             "tool-broker" => broker = Some(path),
             "runtime" => runtime = Some(path),
@@ -205,6 +227,99 @@ pub fn verify_sidecar_directory(directory: &Path) -> HostResult<VerifiedSidecarS
     })
 }
 
+fn verify_runtime_support(directory: &Path, declared: &[ManifestSupportFile]) -> HostResult<()> {
+    if declared.is_empty() || declared.len() > MAX_RUNTIME_SUPPORT_FILES {
+        return Err(HostError::internal(
+            "Packaged runtime support manifest is incomplete",
+        ));
+    }
+    let support_root = fs::canonicalize(directory.join(RUNTIME_SUPPORT_DIRECTORY))
+        .map_err(|_| HostError::unavailable("Packaged runtime support directory is unavailable"))?;
+    ensure_descendant(directory, &support_root)?;
+    let mut declared_paths = HashSet::with_capacity(declared.len());
+    let mut total_bytes = 0_u64;
+    for record in declared {
+        let relative = Path::new(&record.file);
+        if !safe_relative_path(&record.file)
+            || !relative.starts_with(Path::new(RUNTIME_SUPPORT_DIRECTORY))
+            || relative.components().count() < 2
+            || !declared_paths.insert(relative.to_path_buf())
+        {
+            return Err(HostError::internal(
+                "Packaged runtime support record is invalid",
+            ));
+        }
+        total_bytes = total_bytes
+            .checked_add(record.bytes)
+            .ok_or_else(|| HostError::internal("Packaged runtime support size overflow"))?;
+        if total_bytes > MAX_RUNTIME_SUPPORT_BYTES {
+            return Err(HostError::internal(
+                "Packaged runtime support exceeds its size limit",
+            ));
+        }
+        let path = directory.join(relative);
+        let metadata = fs::symlink_metadata(&path).map_err(|_| {
+            HostError::unavailable("A packaged runtime support file is unavailable")
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(HostError::internal(
+                "Packaged runtime support must not contain links",
+            ));
+        }
+        let canonical = fs::canonicalize(&path).map_err(|_| {
+            HostError::unavailable("A packaged runtime support file is unavailable")
+        })?;
+        ensure_descendant(directory, &canonical)?;
+        verify_support_file(&canonical, record.bytes, &record.sha256)?;
+    }
+
+    let mut actual_paths = HashSet::with_capacity(declared.len());
+    let mut pending = vec![support_root];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current)
+            .map_err(|_| HostError::internal("Packaged runtime support cannot be inspected"))?
+        {
+            let entry = entry
+                .map_err(|_| HostError::internal("Packaged runtime support cannot be inspected"))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|_| HostError::internal("Packaged runtime support cannot be inspected"))?;
+            if file_type.is_symlink() {
+                return Err(HostError::internal(
+                    "Packaged runtime support must not contain links",
+                ));
+            }
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else if file_type.is_file() {
+                let relative = entry
+                    .path()
+                    .strip_prefix(directory)
+                    .map_err(|_| HostError::internal("Packaged runtime support escaped its root"))?
+                    .to_path_buf();
+                actual_paths.insert(relative);
+                if actual_paths.len() > MAX_RUNTIME_SUPPORT_FILES {
+                    return Err(HostError::internal(
+                        "Packaged runtime support contains too many files",
+                    ));
+                }
+            } else {
+                return Err(HostError::internal(
+                    "Packaged runtime support contains an unsupported entry",
+                ));
+            }
+        }
+    }
+    if actual_paths != declared_paths {
+        return Err(HostError::new(
+            "SIDECAR_MANIFEST_MISMATCH",
+            "Packaged runtime support does not match its manifest",
+            false,
+        ));
+    }
+    Ok(())
+}
+
 fn read_bounded_json<T: for<'de> Deserialize<'de>>(path: &Path) -> HostResult<T> {
     let metadata = fs::metadata(path)
         .map_err(|_| HostError::unavailable("Packaged manifest is unavailable"))?;
@@ -236,6 +351,31 @@ fn verify_file(path: &Path, expected_bytes: u64, expected_digest: &str) -> HostR
         return Err(HostError::new(
             "SIDECAR_DIGEST_MISMATCH",
             "A packaged sidecar failed integrity verification",
+            false,
+        ));
+    }
+    Ok(())
+}
+
+fn verify_support_file(path: &Path, expected_bytes: u64, expected_digest: &str) -> HostResult<()> {
+    if expected_bytes > MAX_HASHED_FILE_BYTES || !valid_digest(expected_digest) {
+        return Err(HostError::internal(
+            "Packaged runtime support metadata is invalid",
+        ));
+    }
+    let metadata = fs::metadata(path)
+        .map_err(|_| HostError::unavailable("A packaged runtime support file is unavailable"))?;
+    if !metadata.is_file() || metadata.len() != expected_bytes {
+        return Err(HostError::new(
+            "SIDECAR_SIZE_MISMATCH",
+            "A packaged runtime support file failed size verification",
+            false,
+        ));
+    }
+    if digest_file(path, MAX_HASHED_FILE_BYTES)? != expected_digest {
+        return Err(HostError::new(
+            "SIDECAR_DIGEST_MISMATCH",
+            "A packaged runtime support file failed integrity verification",
             false,
         ));
     }
@@ -405,6 +545,12 @@ mod tests {
             write_file(&directory.path().join("cupcake-tool-broker.exe"), b"broker");
         let (runtime_bytes, runtime_digest) =
             write_file(&directory.path().join("cupcake-runtime.exe"), b"runtime");
+        let runtime_support = directory.path().join(RUNTIME_SUPPORT_DIRECTORY);
+        fs::create_dir(&runtime_support).unwrap();
+        let (support_bytes, support_digest) =
+            write_file(&runtime_support.join("python3.dll"), b"support");
+        let (empty_support_bytes, empty_support_digest) =
+            write_file(&runtime_support.join("empty.marker"), b"");
         let manifest = json!({
             "schemaVersion": 1,
             "protocolVersion": 1,
@@ -412,8 +558,8 @@ mod tests {
             "architecture": "x64",
             "generatedAt": "2026-08-29T00:00:00Z",
             "binaries": [
-                {"id":"runtime","file":"cupcake-runtime.exe","bytes":runtime_bytes,"sha256":runtime_digest,"transport":"authenticated-length-prefixed-json"},
-                {"id":"tool-broker","file":"cupcake-tool-broker.exe","bytes":broker_bytes,"sha256":broker_digest,"transport":"authenticated-length-prefixed-json"}
+                {"id":"runtime","file":"cupcake-runtime.exe","bytes":runtime_bytes,"sha256":runtime_digest,"transport":"authenticated-length-prefixed-json","supportFiles":[{"file":"_internal/python3.dll","bytes":support_bytes,"sha256":support_digest},{"file":"_internal/empty.marker","bytes":empty_support_bytes,"sha256":empty_support_digest}]},
+                {"id":"tool-broker","file":"cupcake-tool-broker.exe","bytes":broker_bytes,"sha256":broker_digest,"transport":"authenticated-length-prefixed-json","supportFiles":[]}
             ],
             "resources": [{"id":"cupcake-local-cpu-baseline","directory":"cupcake-local","manifest":"cupcake-local/cupcake-local.manifest.json","sha256":local_digest}]
         });
@@ -427,6 +573,18 @@ mod tests {
         assert_eq!(
             verify_sidecar_directory(directory.path()).unwrap_err().code,
             "SIDECAR_SIZE_MISMATCH"
+        );
+        fs::write(directory.path().join("cupcake-runtime.exe"), b"runtime").unwrap();
+        fs::write(runtime_support.join("python3.dll"), b"suppory").unwrap();
+        assert_eq!(
+            verify_sidecar_directory(directory.path()).unwrap_err().code,
+            "SIDECAR_DIGEST_MISMATCH"
+        );
+        fs::write(runtime_support.join("python3.dll"), b"support").unwrap();
+        fs::write(runtime_support.join("undeclared.dll"), b"extra").unwrap();
+        assert_eq!(
+            verify_sidecar_directory(directory.path()).unwrap_err().code,
+            "SIDECAR_MANIFEST_MISMATCH"
         );
     }
 

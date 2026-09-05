@@ -78,6 +78,46 @@ for (const binary of manifest.binaries) {
       );
     }
   }
+  if (!Array.isArray(binary.supportFiles)) {
+    throw new Error(`Sidecar support manifest is missing: ${binary.id}`);
+  }
+  if (binary.id === 'runtime') {
+    if (binary.supportFiles.length === 0) {
+      throw new Error('Packaged runtime support manifest is empty');
+    }
+    const actualSupportFiles = (await walkFiles(join(resourceRoot, '_internal')))
+      .map((path) => relative(resourceRoot, path).replaceAll('\\', '/'))
+      .sort((left, right) => left.localeCompare(right));
+    const declaredSupportFiles = binary.supportFiles
+      .map((record) => (typeof record?.file === 'string' ? record.file : ''))
+      .sort((left, right) => left.localeCompare(right));
+    if (JSON.stringify(actualSupportFiles) !== JSON.stringify(declaredSupportFiles)) {
+      throw new Error('Packaged runtime support directory does not exactly match its manifest');
+    }
+    for (const record of binary.supportFiles) {
+      if (
+        !record ||
+        typeof record !== 'object' ||
+        typeof record.file !== 'string' ||
+        !record.file.startsWith('_internal/') ||
+        record.file.includes('\\') ||
+        record.file.split('/').some((part) => !part || part === '.' || part === '..') ||
+        !Number.isSafeInteger(record.bytes) ||
+        record.bytes < 0 ||
+        !/^[a-f0-9]{64}$/.test(record.sha256)
+      ) {
+        throw new Error(`Invalid packaged runtime support record: ${String(record?.file)}`);
+      }
+      const path = join(resourceRoot, record.file);
+      if ((await fileSize(path)) !== record.bytes || (await sha256File(path)) !== record.sha256) {
+        throw new Error(
+          `Packaged runtime support file failed integrity verification: ${record.file}`,
+        );
+      }
+    }
+  } else if (binary.supportFiles.length !== 0) {
+    throw new Error(`${binary.id} must not declare runtime support files`);
+  }
 }
 
 if (!Array.isArray(manifest.resources) || manifest.resources.length !== 1) {

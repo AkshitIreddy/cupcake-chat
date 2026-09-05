@@ -223,6 +223,9 @@ async function auditWindowsOnlyPackaging() {
     hasSidecarResource &&
     packageScript.includes("targetPlatform !== 'win32' || targetArch !== 'x64'") &&
     packageScript.includes(targetTriple) &&
+    packageScript.includes("'--onedir'") &&
+    packageScript.includes("'--contents-directory'") &&
+    !packageScript.includes("'--onefile'") &&
     /runs-on:\s*windows-latest/.test(workflow) &&
     /bundle:nsis/.test(workflow) &&
     !/runs-on:\s*(?:ubuntu|macos)-latest/.test(workflow);
@@ -273,6 +276,42 @@ async function auditArtifacts() {
           (await fileSize(external)) === binary.bytes &&
           (await sha256File(packaged)) === binary.sha256 &&
           (await sha256File(external)) === binary.sha256;
+      }
+      if (binary.id === 'runtime') {
+        const supportRecords = Array.isArray(binary.supportFiles) ? binary.supportFiles : [];
+        const actualSupportFiles = (await walkFiles(join(resourceRoot, '_internal')))
+          .map((path) => relative(resourceRoot, path).replaceAll('\\', '/'))
+          .sort((left, right) => left.localeCompare(right));
+        const declaredSupportFiles = supportRecords
+          .map((record) => (typeof record?.file === 'string' ? record.file : ''))
+          .sort((left, right) => left.localeCompare(right));
+        valid &&=
+          supportRecords.length > 0 &&
+          JSON.stringify(actualSupportFiles) === JSON.stringify(declaredSupportFiles);
+        for (const record of supportRecords) {
+          if (!record || typeof record !== 'object') {
+            valid = false;
+            continue;
+          }
+          const supportRelative = typeof record.file === 'string' ? record.file : 'missing';
+          const supportFile = join(resourceRoot, supportRelative);
+          valid &&=
+            typeof record.file === 'string' &&
+            record.file.startsWith('_internal/') &&
+            !record.file.includes('\\') &&
+            !record.file.split('/').some((part) => !part || part === '.' || part === '..') &&
+            Number.isSafeInteger(record.bytes) &&
+            record.bytes >= 0 &&
+            /^[a-f0-9]{64}$/.test(record.sha256 ?? '') &&
+            (await exists(supportFile));
+          if (await exists(supportFile)) {
+            valid &&=
+              (await fileSize(supportFile)) === record.bytes &&
+              (await sha256File(supportFile)) === record.sha256;
+          }
+        }
+      } else {
+        valid &&= Array.isArray(binary.supportFiles) && binary.supportFiles.length === 0;
       }
     }
     const resource = manifest.resources?.[0];
