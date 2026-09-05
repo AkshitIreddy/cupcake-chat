@@ -109,6 +109,7 @@ BUILTIN_MODELS: tuple[ModelDescriptor, ...] = (
         documents=True,
         input_price="0.75",
         output_price="3.75",
+        default_reasoning=R.LOW,
     ),
     _cloud(
         "xai",

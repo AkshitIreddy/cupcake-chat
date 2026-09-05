@@ -129,6 +129,8 @@ def test_verified_current_nim_card_supplies_context_when_models_api_omits_it() -
         )
     )
     assert result.models[0].context_window == 1_000_000
+    assert result.models[0].max_output_tokens == 32_768
+    assert result.models[0].metadata["max_output_tokens_known"] is True
 
 
 def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:

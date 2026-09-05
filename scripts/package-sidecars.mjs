@@ -233,6 +233,7 @@ async function buildRuntime() {
   const builtDirectory = join(distRoot, 'cupcake-runtime');
   const built = join(builtDirectory, outputName('runtime'));
   if (!(await exists(built))) throw new Error(`PyInstaller did not create ${built}`);
+  run(built, ['--provider-load-check']);
   run(built, ['--help']);
   await copyFile(built, join(outputDir, outputName('runtime')));
   await cp(
@@ -257,6 +258,7 @@ async function reuseFrozenRuntime() {
   if (!(await exists(built))) {
     throw new Error(`Reusable frozen runtime is missing: ${built}`);
   }
+  run(built, ['--provider-load-check']);
   run(built, ['--help']);
   await copyFile(built, join(outputDir, outputName('runtime')));
   await cp(

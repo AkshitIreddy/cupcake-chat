@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from httpx2 import AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -78,6 +79,9 @@ class CupcakeAgentEngineProbe(CupcakeAgentEngine):
             request,
             output_tokens,
         )
+
+    def output_tokens_for_test(self, descriptor: ModelDescriptor, request: ModelRequest) -> int:
+        return self._output_tokens(descriptor, request)
 
     @staticmethod
     def normalize_event_for_test(
@@ -349,6 +353,146 @@ async def test_cancellation_interrupts_an_in_flight_pydantic_model_stream() -> N
     assert cancellation.cancelled
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected_code", "expected_retryable"),
+    (
+        (400, "invalid_request", False),
+        (404, "model_unavailable", False),
+        (429, "rate_limit", True),
+    ),
+)
+async def test_nested_numeric_provider_status_is_safely_classified(
+    status: int,
+    expected_code: str,
+    expected_retryable: bool,
+) -> None:
+    class NumericProviderError(Exception):
+        def __init__(self) -> None:
+            super().__init__("provider body with secret=must-not-leak")
+            self.code = status
+
+    async def fail_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        try:
+            raise NumericProviderError
+        except NumericProviderError as error:
+            raise UnexpectedModelBehavior("provider wrapper") from error
+        yield "unreachable"
+
+    registry = ProviderRegistry()
+    engine = CupcakeAgentEngine(
+        registry,
+        model_factory=FixedFactory(
+            FunctionModel(stream_function=fail_stream, model_name="numeric-provider-error")
+        ),
+    )
+    events = await collect(
+        engine,
+        ModelRequest(MOCK_DESCRIPTOR.id, (CanonicalMessage("user", "fail safely"),)),
+    )
+
+    failure = events[-1]
+    assert failure.type is StreamEventType.ERROR
+    assert failure.error_code == expected_code
+    assert failure.retryable is expected_retryable
+    assert "must-not-leak" not in str(failure)
+
+
+@pytest.mark.asyncio
+async def test_thinking_only_output_limit_has_actionable_safe_error() -> None:
+    async def fail_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        raise UnexpectedModelBehavior(
+            "Model token limit (420) exceeded before any response was generated."
+        )
+        yield "unreachable"
+
+    registry = ProviderRegistry()
+    engine = CupcakeAgentEngine(
+        registry,
+        model_factory=FixedFactory(
+            FunctionModel(stream_function=fail_stream, model_name="thinking-only-limit")
+        ),
+    )
+    events = await collect(
+        engine,
+        ModelRequest(MOCK_DESCRIPTOR.id, (CanonicalMessage("user", "fail safely"),)),
+    )
+
+    failure = events[-1]
+    assert failure.type is StreamEventType.ERROR
+    assert failure.error_code == "output_limit"
+    assert failure.text == "The model used its output allowance before producing a response."
+
+
+def test_google_defaults_to_low_supported_thinking_for_short_chat() -> None:
+    descriptor = ProviderRegistry().catalog.get("google:gemini-3.8-flash")
+    settings = CupcakeAgentEngineProbe.model_settings_for_test(
+        descriptor,
+        ModelRequest(descriptor.id, (CanonicalMessage("user", "Short answer"),)),
+        420,
+    )
+
+    assert settings.get("google_thinking_config") == {
+        "thinking_level": "low",
+        "include_thoughts": False,
+    }
+    assert "thinking" not in settings
+
+
+def test_unknown_conservative_output_limit_does_not_reject_explicit_valid_request() -> None:
+    descriptor = ModelDescriptor(
+        id="nvidia-nim:vendor/unknown-chat",
+        provider=NVIDIA_NIM_PROVIDER,
+        model="vendor/unknown-chat",
+        display_name="Unknown output limit",
+        family="nvidia-nim:vendor/unknown-chat",
+        context_window=32_768,
+        max_output_tokens=1_024,
+        capabilities=ModelCapabilities(streaming=True),
+        metadata={
+            "max_output_tokens_known": False,
+            "conservative_max_output_tokens": 1_024,
+        },
+    )
+    engine = CupcakeAgentEngineProbe(ProviderRegistry())
+    request = ModelRequest(
+        descriptor.id,
+        (CanonicalMessage("user", "Write the complete answer"),),
+        max_output_tokens=6_144,
+    )
+
+    assert engine.output_tokens_for_test(descriptor, request) == 6_144
+
+
+def test_openrouter_reasoning_is_explicitly_disabled_and_excluded() -> None:
+    descriptor = ModelDescriptor(
+        id="openai-compatible:openrouter/vendor/model:free",
+        provider="openai-compatible",
+        model="vendor/model:free",
+        display_name="OpenRouter free model",
+        family="openai-compatible:openrouter:vendor/model:free",
+        context_window=32_768,
+        max_output_tokens=4_096,
+        capabilities=ModelCapabilities(streaming=True, reasoning=True),
+        reasoning_efforts=(ReasoningEffort.NONE, ReasoningEffort.LOW),
+        metadata={"endpoint_id": "openrouter"},
+    )
+    settings = CupcakeAgentEngineProbe.model_settings_for_test(
+        descriptor,
+        ModelRequest(
+            descriptor.id,
+            (CanonicalMessage("user", "Answer directly"),),
+            reasoning_effort=ReasoningEffort.NONE,
+        ),
+        200,
+    )
+
+    assert settings.get("extra_body") == {"reasoning": {"effort": "none", "exclude": True}}
+    assert "thinking" not in settings
 
 
 def test_prepare_rejects_unsupported_output_without_silent_coercion() -> None:

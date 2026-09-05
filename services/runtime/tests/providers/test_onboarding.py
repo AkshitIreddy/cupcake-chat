@@ -14,6 +14,7 @@ from cupcake_runtime.providers.onboarding import (
     OnboardingCancellation,
     ProviderOnboardingService,
     ProviderTestState,
+    _normalize_cloudflare_model_search,
     named_compatible_base_url,
     named_compatible_model_allowed,
     validate_remote_openai_compatible_endpoint,
@@ -128,6 +129,50 @@ def test_mistral_async_model_listing_shape_is_supported() -> None:
     )
     assert result.state is ProviderTestState.READY
     assert models.calls == 1
+
+
+def test_mistral_v2_sdk_client_is_loaded_from_client_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    models = FakeModels()
+
+    class FakeMistral:
+        def __init__(self, **options: Any) -> None:
+            assert options["api_key"] == SECRET_CANARY
+            self.models = SimpleNamespace(list_async=models.list)
+
+    monkeypatch.setattr("mistralai.client.Mistral", FakeMistral)
+    result = asyncio.run(
+        ProviderOnboardingService().test_connection(
+            "mistral", ProviderConfig(api_key=SECRET_CANARY)
+        )
+    )
+
+    assert result.state is ProviderTestState.READY
+    assert models.calls == 1
+
+
+def test_cloudflare_catalog_uses_invocable_name_instead_of_opaque_record_id() -> None:
+    normalized = _normalize_cloudflare_model_search(
+        {
+            "success": True,
+            "result": [
+                {
+                    "id": "opaque-catalog-record",
+                    "name": "@cf/meta/llama-3.1-8b-instruct-fp8",
+                }
+            ],
+        }
+    )
+
+    assert normalized == {
+        "data": [
+            {
+                "id": "@cf/meta/llama-3.1-8b-instruct-fp8",
+                "name": "@cf/meta/llama-3.1-8b-instruct-fp8",
+            }
+        ]
+    }
 
 
 def test_nvidia_nim_reuses_bounded_capability_aware_discovery() -> None:

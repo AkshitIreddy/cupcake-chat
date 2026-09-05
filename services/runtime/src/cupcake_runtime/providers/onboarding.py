@@ -13,7 +13,6 @@ configuration, or credential is copied into an onboarding result.
 from __future__ import annotations
 
 import asyncio
-import importlib
 import inspect
 import ipaddress
 import re
@@ -274,7 +273,7 @@ class ProviderOnboardingService:
                     nvidia_nim_catalog=catalog,
                 )
 
-            resolved_client = client or _create_client(normalized_provider, config)
+            resolved_client = client or create_onboarding_client(normalized_provider, config)
             try:
                 models = await _await_or_cancel(
                     self._discover(normalized_provider, resolved_client), cancellation
@@ -747,10 +746,11 @@ class _CloudflareModelsClient:
                 url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 params={
-                    "task": "Text Generation",
+                    "search": NAMED_COMPATIBLE_DEFAULT_MODELS["cloudflare"].rsplit("/", 1)[-1],
                     "hide_experimental": "true",
                     "include_deprecated": "false",
-                    "per_page": str(MAX_DISCOVERED_MODELS),
+                    # Cloudflare documents 100 as the maximum page size.
+                    "per_page": "100",
                 },
             )
             response.raise_for_status()
@@ -766,10 +766,29 @@ class _CloudflareModelsClient:
                 "Cloudflare returned an invalid Workers AI model catalog.",
                 code="invalid_model_catalog",
             )
-        return payload_map
+        return _normalize_cloudflare_model_search(payload_map)
 
 
-def _create_client(provider: str, config: ProviderConfig) -> Any:
+def _normalize_cloudflare_model_search(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Expose invocable Workers AI names instead of opaque catalog record IDs."""
+
+    records = payload.get("result")
+    if not isinstance(records, list):
+        raise ProviderError(
+            "Cloudflare returned an invalid Workers AI model catalog.",
+            code="invalid_model_catalog",
+        )
+    normalized: list[dict[str, str]] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        name = record.get("name")
+        if isinstance(name, str) and name.startswith("@cf/"):
+            normalized.append({"id": name, "name": name})
+    return {"data": normalized}
+
+
+def create_onboarding_client(provider: str, config: ProviderConfig) -> Any:
     if provider == "cloudflare":
         account_id = (config.account_id or "").strip()
         named_compatible_base_url(provider, account_id)
@@ -827,11 +846,10 @@ def _create_client(provider: str, config: ProviderConfig) -> Any:
         )
     if provider == "mistral":
         try:
-            module = importlib.import_module("mistralai")
-            constructor = module.Mistral
-        except (AttributeError, ImportError) as error:
+            from mistralai.client import Mistral
+        except ImportError as error:
             raise MissingProviderDependency(provider, "mistralai") from error
-        return constructor(api_key=config.api_key, server_url=config.base_url)
+        return Mistral(api_key=config.api_key, server_url=config.base_url)
     if provider == "cohere":
         try:
             from cohere import AsyncClientV2

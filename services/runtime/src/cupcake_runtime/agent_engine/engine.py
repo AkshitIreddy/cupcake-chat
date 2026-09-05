@@ -30,7 +30,7 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import UsageLimits
 
 from cupcake_runtime.personality import BASE_SYSTEM_INSTRUCTION
-from cupcake_runtime.providers.base import EventBuilder
+from cupcake_runtime.providers.base import EventBuilder, classify_provider_error
 from cupcake_runtime.providers.nvidia_nim import NVIDIA_NIM_PROVIDER
 from cupcake_runtime.providers.registry import ProviderRegistry
 from cupcake_runtime.providers.types import (
@@ -254,12 +254,13 @@ class CupcakeAgentEngine:
                     )
                 )
             except Exception as exc:
+                classified = classify_provider_error(exc)
                 await queue.put(
                     events.make(
                         StreamEventType.ERROR,
-                        text="The selected model could not complete the request.",
-                        error_code=self._error_code(exc),
-                        retryable=self._retryable(exc),
+                        text=classified.message,
+                        error_code=classified.code,
+                        retryable=classified.retryable,
                         metadata={"exception_type": type(exc).__name__},
                     )
                 )
@@ -287,7 +288,12 @@ class CupcakeAgentEngine:
         )
         if requested <= 0:
             raise ValueError("max_output_tokens must be positive")
-        if descriptor.max_output_tokens is not None and requested > descriptor.max_output_tokens:
+        output_limit_known = descriptor.metadata.get("max_output_tokens_known") is not False
+        if (
+            output_limit_known
+            and descriptor.max_output_tokens is not None
+            and requested > descriptor.max_output_tokens
+        ):
             raise OutputLimitExceeded(
                 f"{descriptor.id} supports at most {descriptor.max_output_tokens} output tokens"
             )
@@ -336,6 +342,28 @@ class CupcakeAgentEngine:
         elif descriptor.provider == "openai":
             settings["openai_reasoning_effort"] = effort.value
             settings["openai_reasoning_summary"] = "auto"
+        elif descriptor.provider == "google" and descriptor.family.startswith("gemini-3"):
+            # Gemini 3 exposes relative thinking levels rather than token
+            # budgets. Pin the provider-specific field so support does not
+            # depend on Pydantic AI recognizing a model released after its
+            # profile snapshot.
+            settings["google_thinking_config"] = {
+                "thinking_level": effort.value,
+                "include_thoughts": False,
+            }
+        elif (
+            descriptor.provider == "openai-compatible"
+            and descriptor.metadata.get("endpoint_id") == "openrouter"
+        ):
+            # OpenRouter accepts a provider-specific reasoning envelope. Keep
+            # private reasoning out of product output and explicitly disable
+            # its token use when the user selected no reasoning.
+            settings["extra_body"] = {
+                "reasoning": {
+                    "effort": effort.value,
+                    "exclude": True,
+                }
+            }
         elif descriptor.provider in {"xai", "openai-compatible"}:
             if effort is ReasoningEffort.NONE:
                 settings["thinking"] = False
@@ -492,16 +520,3 @@ class CupcakeAgentEngine:
     @staticmethod
     def _finish_reason(response: ModelResponse | None) -> str:
         return response.finish_reason if response and response.finish_reason else "stop"
-
-    @staticmethod
-    def _error_code(error: Exception) -> str:
-        code = getattr(error, "code", None)
-        return str(code) if isinstance(code, str) and len(code) <= 80 else "agent_error"
-
-    @staticmethod
-    def _retryable(error: Exception) -> bool:
-        retryable = getattr(error, "retryable", None)
-        if isinstance(retryable, bool):
-            return retryable
-        status = getattr(error, "status_code", None)
-        return status in {408, 409, 429, 500, 502, 503, 504}

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
 from .base import (
@@ -34,14 +33,10 @@ class MistralAdapter(ProviderAdapter):
         if self._client is not None:
             return self._client
         try:
-            module = importlib.import_module("mistralai")
-            raw_constructor = vars(module).get("Mistral")
-            if raw_constructor is None:
-                raise AttributeError("mistralai.Mistral is unavailable")
-            constructor = cast(Callable[..., Any], raw_constructor)
-        except (AttributeError, ImportError) as exc:
+            from mistralai.client import Mistral
+        except ImportError as exc:
             raise MissingProviderDependency(self.provider, "mistralai") from exc
-        self._client = constructor(api_key=self.config.api_key, server_url=self.config.base_url)
+        self._client = Mistral(api_key=self.config.api_key, server_url=self.config.base_url)
         return self._client
 
     def build_request(self, request: ModelRequest) -> dict[str, Any]:

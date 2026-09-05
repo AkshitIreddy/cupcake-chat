@@ -4,7 +4,7 @@ import sqlite3
 
 import sqlcipher3
 
-from cupcake_runtime.__main__ import runtime_failure_diagnostic
+from cupcake_runtime.__main__ import packaged_provider_load_check, runtime_failure_diagnostic
 
 
 def _diagnostic_for(error: Exception) -> dict[str, object]:
@@ -12,6 +12,21 @@ def _diagnostic_for(error: Exception) -> dict[str, object]:
         raise error
     except Exception as caught:
         return runtime_failure_diagnostic(caught)
+
+
+def test_provider_load_check_constructs_every_retained_sdk_without_network() -> None:
+    result = packaged_provider_load_check()
+
+    assert result["ok"] is True
+    assert set(result["providers"]) == {
+        "openai",
+        "anthropic",
+        "google",
+        "xai",
+        "mistral",
+        "cohere",
+    }
+    assert all(item["ok"] for item in result["providers"].values())
 
 
 def test_runtime_database_diagnostic_is_actionable_and_secret_free() -> None:

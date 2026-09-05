@@ -74,6 +74,41 @@ def _traceback_operation(traceback: TracebackType | None) -> str | None:
     return operation
 
 
+def packaged_provider_load_check() -> dict[str, Any]:
+    """Construct retained provider clients and Pydantic models without network access."""
+
+    from cupcake_runtime.agent_engine import PydanticModelFactory
+    from cupcake_runtime.providers import ProviderRegistry
+    from cupcake_runtime.providers.base import ProviderConfig
+    from cupcake_runtime.providers.onboarding import create_onboarding_client
+    from cupcake_runtime.providers.types import CanonicalMessage, ModelRequest
+
+    registry = ProviderRegistry()
+    factory = PydanticModelFactory()
+    providers: dict[str, dict[str, Any]] = {}
+    for provider in ("openai", "anthropic", "google", "xai", "mistral", "cohere"):
+        descriptor = registry.catalog.list(provider=provider)[0]
+        config = ProviderConfig(api_key="provider-load-placeholder")
+        try:
+            client = create_onboarding_client(provider, config)
+            model = factory.build(
+                descriptor,
+                config,
+                ModelRequest(
+                    descriptor.id,
+                    (CanonicalMessage(role="user", content="provider load check"),),
+                ),
+            )
+            providers[provider] = {
+                "ok": True,
+                "clientType": type(client).__name__,
+                "modelType": type(model).__name__,
+            }
+        except Exception as exc:
+            providers[provider] = {"ok": False, "errorType": type(exc).__name__}
+    return {"ok": all(item["ok"] for item in providers.values()), "providers": providers}
+
+
 def _install_frozen_metadata_fallback() -> None:
     """Keep import-time version modules working inside a one-file bundle.
 
@@ -117,9 +152,16 @@ def main() -> int:
         action="store_true",
         help="run one isolated staged Python request",
     )
+    modes.add_argument("--provider-load-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stage-root")
     parser.add_argument("--worker-transport", choices=("stdio", "staged"))
     args = parser.parse_args()
+    if args.provider_load_check:
+        if args.stage_root or args.worker_transport:
+            parser.error("--provider-load-check does not accept worker options")
+        result = packaged_provider_load_check()
+        print(json.dumps(result, sort_keys=True), flush=True)
+        return 0 if result["ok"] else 1
     if args.document_worker:
         if not args.stage_root:
             parser.error("--document-worker requires --stage-root")

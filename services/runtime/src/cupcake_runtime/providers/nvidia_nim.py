@@ -128,6 +128,12 @@ _VERIFIED_HOSTED_CONTEXT_WINDOWS: dict[str, int] = {
     "nvidia/nemotron-3.5-lightning-30b-a3b": 1_000_000,
 }
 
+# NVIDIA's inference reference publishes this exact max_tokens range even
+# though the hosted model-list response omits it.
+_VERIFIED_HOSTED_OUTPUT_LIMITS: dict[str, int] = {
+    "nvidia/nemotron-3-super-120b-a12b": 32_768,
+}
+
 
 class ChatCompatibility(StrEnum):
     CHAT = "chat"
@@ -406,7 +412,7 @@ def _descriptor_from_record(
     ) or _VERIFIED_HOSTED_CONTEXT_WINDOWS.get(model_id)
     output = _bounded_positive_integer(
         record.get("max_output_tokens") or record.get("max_tokens"), maximum=10_000_000
-    )
+    ) or _VERIFIED_HOSTED_OUTPUT_LIMITS.get(model_id)
     reasoning = "reasoning" in declared or "reasoning-effort" in declared
     tools = bool(declared & {"tools", "tool-calling", "function-calling"})
     structured = bool(declared & {"structured-output", "json-schema", "json-mode"})

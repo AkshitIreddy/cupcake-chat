@@ -166,15 +166,36 @@ def classify_provider_error(error: Exception) -> ClassifiedProviderError:
     messages and only exposes a stable category and retryability bit.
     """
 
-    if isinstance(error, ProviderError):
-        return ClassifiedProviderError(str(error), error.code, error.retryable)
-
-    status = get_path(error, "status_code") or get_path(error, "response.status_code")
+    current: BaseException | None = error
+    status = None
+    class_names: list[str] = []
+    for _ in range(5):
+        if current is None:
+            break
+        if isinstance(current, ProviderError):
+            return ClassifiedProviderError(str(current), current.code, current.retryable)
+        class_names.append(type(current).__name__.lower())
+        status = (
+            get_path(current, "status_code")
+            or get_path(current, "response.status_code")
+            or get_path(current, "code")
+        )
+        if status is not None:
+            break
+        current = current.__cause__ or current.__context__
     try:
         status_code = int(status) if status is not None else None
     except (TypeError, ValueError):
         status_code = None
-    class_name = type(error).__name__.lower()
+    class_name = " ".join(class_names)
+    error_message = str(getattr(error, "message", ""))
+
+    if "unexpectedmodelbehavior" in class_name and error_message.startswith("Model token limit ("):
+        return ClassifiedProviderError(
+            "The model used its output allowance before producing a response.",
+            "output_limit",
+            False,
+        )
 
     if status_code in {401, 403} or "authentication" in class_name or "permission" in class_name:
         return ClassifiedProviderError(
@@ -193,6 +214,18 @@ def classify_provider_error(error: Exception) -> ClassifiedProviderError:
             "The provider request timed out.",
             "timeout",
             True,
+        )
+    if status_code == 404:
+        return ClassifiedProviderError(
+            "The selected model is unavailable for this provider account.",
+            "model_unavailable",
+            False,
+        )
+    if status_code is not None and 400 <= status_code < 500:
+        return ClassifiedProviderError(
+            "The provider rejected the model request.",
+            "invalid_request",
+            False,
         )
     if status_code is not None and status_code >= 500:
         return ClassifiedProviderError(
