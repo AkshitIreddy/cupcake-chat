@@ -99,6 +99,18 @@ class RuntimePackStore:
         *,
         companion_archives: dict[str, Path] | None = None,
     ) -> InstalledRuntimePack:
+        destination = self._directory(artifact.version, artifact.backend)
+        if destination.exists():
+            installed = self._read_install(destination)
+            if not self.verify_against_artifact(installed, artifact):
+                raise RuntimePackIntegrityError(
+                    "an incompatible or corrupt runtime already occupies this version"
+                )
+            return replace(
+                self._with_active(installed, verify_integrity=False),
+                integrity_verified=True,
+            )
+
         self._verify_archive(artifact, archive)
         companions = companion_archives or {}
         expected_companions = {companion.id for companion in artifact.companions}
@@ -108,15 +120,6 @@ class RuntimePackStore:
             )
         for companion in artifact.companions:
             self._verify_archive(companion, companions[companion.id])
-
-        destination = self._directory(artifact.version, artifact.backend)
-        if destination.exists():
-            installed = self._read_install(destination)
-            if installed.id != artifact.id or not self.verify(installed):
-                raise RuntimePackIntegrityError(
-                    "an incompatible or corrupt runtime already occupies this version"
-                )
-            return self._with_active(installed)
 
         self.versions.mkdir(parents=True, exist_ok=True)
         temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=self.versions))
@@ -215,24 +218,30 @@ class RuntimePackStore:
         )
         return self._with_active(installed)
 
-    def active(self) -> InstalledRuntimePack | None:
+    def active(self, *, verify_integrity: bool = True) -> InstalledRuntimePack | None:
         try:
             value = json.loads(self.active_file.read_text(encoding="utf-8"))
             return self._with_active(
                 self._read_install(
                     self._directory(str(value["version"]), RuntimeBackend(str(value["backend"])))
-                )
+                ),
+                verify_integrity=verify_integrity,
             )
         except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             return None
 
-    def list(self) -> tuple[InstalledRuntimePack, ...]:
+    def list(self, *, verify_integrity: bool = True) -> tuple[InstalledRuntimePack, ...]:
         packs: list[InstalledRuntimePack] = []
         if not self.versions.is_dir():
             return ()
         for metadata in sorted(self.versions.glob(f"*/*/{self.METADATA_NAME}")):
             try:
-                packs.append(self._with_active(self._read_install(metadata.parent)))
+                packs.append(
+                    self._with_active(
+                        self._read_install(metadata.parent),
+                        verify_integrity=verify_integrity,
+                    )
+                )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return tuple(packs)
@@ -254,6 +263,42 @@ class RuntimePackStore:
                 if not path.is_file() or sha256_file(path).lower() != str(expected).lower():
                     return False
             return True
+        except (FileNotFoundError, OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return False
+
+    def verify_against_artifact(
+        self, installed: InstalledRuntimePack, artifact: RuntimePackArtifact
+    ) -> bool:
+        """Bind an installed receipt and every file to signed catalog metadata."""
+
+        try:
+            directory = Path(installed.directory).resolve(strict=True)
+            if self.versions.resolve() not in directory.parents:
+                return False
+            metadata = _JSON_OBJECT_ADAPTER.validate_json(
+                (directory / self.METADATA_NAME).read_text(encoding="utf-8")
+            )
+            files = _FILE_MANIFEST_ADAPTER.validate_python(metadata["files"])
+            expected_files = self._all_files(artifact)
+            if set(files) != set(expected_files) or any(
+                files[path].lower() != digest.lower() for path, digest in expected_files.items()
+            ):
+                return False
+            expected_executable = directory.joinpath(*_safe_member(artifact.executable).parts)
+            if (
+                installed.id != artifact.id
+                or installed.version != artifact.version
+                or installed.backend != artifact.backend
+                or installed.source_revision != artifact.source_revision
+                or Path(installed.executable) != expected_executable
+                or metadata.get("id") != artifact.id
+                or metadata.get("version") != artifact.version
+                or metadata.get("backend") != artifact.backend.value
+                or metadata.get("executable") != artifact.executable
+                or metadata.get("source_revision") != artifact.source_revision
+            ):
+                return False
+            return self.verify(installed)
         except (FileNotFoundError, OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             return False
 
@@ -389,7 +434,9 @@ class RuntimePackStore:
             integrity_verified=False,
         )
 
-    def _with_active(self, installed: InstalledRuntimePack) -> InstalledRuntimePack:
+    def _with_active(
+        self, installed: InstalledRuntimePack, *, verify_integrity: bool = True
+    ) -> InstalledRuntimePack:
         active_coordinate: tuple[str, RuntimeBackend] | None = None
         try:
             value = _JSON_OBJECT_ADAPTER.validate_json(self.active_file.read_text(encoding="utf-8"))
@@ -399,5 +446,5 @@ class RuntimePackStore:
         return replace(
             installed,
             active=active_coordinate == (installed.version, installed.backend),
-            integrity_verified=self.verify(installed),
+            integrity_verified=self.verify(installed) if verify_integrity else False,
         )

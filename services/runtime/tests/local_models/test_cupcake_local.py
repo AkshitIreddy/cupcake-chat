@@ -189,9 +189,21 @@ def test_runtime_pack_install_activate_verify_and_detect_tampering(tmp_path: Pat
     assert store.active() is not None
 
     Path(active.executable).write_bytes(b"tampered")
+    metadata_only = store.active(verify_integrity=False)
+    assert metadata_only is not None
+    assert metadata_only.active is True
+    assert metadata_only.integrity_verified is False
+    assert store.list(verify_integrity=False)[0].integrity_verified is False
     assert store.verify(active) is False
     with pytest.raises(RuntimePackIntegrityError, match="corrupt"):
         store.activate(artifact.version, artifact.backend)
+
+    metadata_path = Path(active.directory, store.METADATA_NAME)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["files"]["llama-server.exe"] = _digest(b"tampered")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    assert store.verify(active) is True
+    assert store.verify_against_artifact(active, artifact) is False
 
 
 def test_acceleration_pack_companion_install_and_rollback(
@@ -240,6 +252,9 @@ def test_acceleration_pack_companion_install_and_rollback(
     )
     monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
     manager = CupcakeLocalManager(tmp_path / "profile")
+    manager.configure_catalogs(
+        runtimes=SignedRuntimeCatalog(1, "2026-09-05T00:00:00Z", (cpu, cuda), "test")
+    )
     manager.install_runtime(cpu, cpu_archive)
     with pytest.raises(RuntimePackIntegrityError, match="companion archive set"):
         manager.install_runtime(cuda, cuda_archive)
@@ -683,6 +698,9 @@ def test_accelerated_runtime_activation_requires_matching_live_device_probe(
         "cupcake_runtime.local_models.managed.LlamaCppSupervisor", _NoCudaSupervisor
     )
     manager = CupcakeLocalManager(tmp_path / "profile")
+    manager.configure_catalogs(
+        runtimes=SignedRuntimeCatalog(1, "2026-09-05T00:00:00Z", (artifact,), "test")
+    )
     manager.install_runtime(artifact, archive, activate=False)
 
     with pytest.raises(RuntimePackIntegrityError, match="CUDA device"):
@@ -703,6 +721,14 @@ def test_cupcake_local_installs_loads_unloads_and_removes_without_bundled_weight
 
     monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
     manager = CupcakeLocalManager(tmp_path / "cupcake-local")
+    manager.configure_catalogs(
+        runtimes=SignedRuntimeCatalog(
+            version=1,
+            generated_at="2026-09-05T00:00:00Z",
+            runtimes=(runtime_artifact,),
+            key_id="local-test",
+        )
+    )
     runtime = manager.install_runtime(runtime_artifact, archive)
     assert runtime.active is True
     assert manager.status()["modelWeightsBundled"] is False
@@ -793,9 +819,23 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
     )
     monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
     manager = CupcakeLocalManager(tmp_path / "profile")
+    configured = manager.configure_packaged_baseline(baseline)
+    assert configured is not None
+    assert configured.id == artifact.id
+    assert manager.runtimes.list() == ()
+    status = manager.status()
+    assert status["availableRuntimes"][0]["id"] == artifact.id
+    assert status["activeRuntime"] is None
+
     installed = manager.seed_packaged_baseline(baseline)
     assert installed is not None
     assert installed.active is True
+    manager.verify_runtime_for_execution(installed)
+
+    Path(installed.executable).write_bytes(b"tampered")
+    with pytest.raises(RuntimePackIntegrityError, match="corrupt runtime pack"):
+        manager.verify_runtime_for_execution(installed)
+    Path(installed.executable).write_bytes(files["llama-server.exe"])
 
     gpu_artifact = replace(
         artifact,
@@ -804,6 +844,14 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
         filename="llama-b10672-bin-win-cuda-13.3-x64.zip",
     )
     manager.runtimes.install(gpu_artifact, archive)
+    manager.configure_catalogs(
+        runtimes=SignedRuntimeCatalog(
+            1,
+            "2026-09-05T00:00:00Z",
+            (artifact, gpu_artifact),
+            "local-test",
+        )
+    )
     manager.activate_runtime(gpu_artifact.version, gpu_artifact.backend)
     installed_again = manager.seed_packaged_baseline(baseline)
     assert installed_again is not None

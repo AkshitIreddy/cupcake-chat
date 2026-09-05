@@ -96,15 +96,14 @@ class CupcakeLocalManager:
         self.configure_catalogs(models=bundle.models, runtimes=bundle.runtimes)
         return bundle
 
-    def seed_packaged_baseline(self, baseline_dir: Path) -> InstalledRuntimePack | None:
-        """Install the signed CPU pack and activate it only as a safe default.
+    def configure_packaged_baseline(self, baseline_dir: Path) -> RuntimePackArtifact | None:
+        """Verify packaged catalog metadata without installing its runtime pack.
 
-        A missing optional resource returns ``None`` for source/developer runs.
-        Once the directory exists, missing files, malformed provenance, an
-        invalid Ed25519 signature, archive/file checksum drift, or executable
-        version drift fail closed with their specific exception.
+        The host already verifies every packaged resource before the broker is
+        allowed to start. Loading the signed catalog here keeps Models metadata
+        available immediately, while archive, installed-file, and executable
+        checks stay deferred until a local runtime is actually requested.
         """
-
         if not baseline_dir.is_dir():
             return None
         bundle = self.configure_pinned_catalogs(
@@ -139,14 +138,40 @@ class CupcakeLocalManager:
         )
         if len(candidates) != 1:
             raise ValueError("packaged catalog must contain exactly one Windows x64 CPU baseline")
-        artifact = candidates[0]
+        return candidates[0]
+
+    def seed_packaged_baseline(self, baseline_dir: Path) -> InstalledRuntimePack | None:
+        """Install and verify the signed CPU pack on first local-runtime use.
+
+        A missing optional resource returns ``None`` for source/developer runs.
+        Once the directory exists, missing files, malformed provenance, an
+        invalid Ed25519 signature, archive/file checksum drift, or executable
+        version drift fail closed with their specific exception.
+        """
+
+        artifact = self.configure_packaged_baseline(baseline_dir)
+        if artifact is None:
+            return None
         archive = baseline_dir / "archive" / artifact.filename
         installed = self.install_runtime(
             artifact,
             archive,
-            activate=self.runtimes.active() is None,
+            activate=self.runtimes.active(verify_integrity=False) is None,
         )
         return installed
+
+    def verify_runtime_for_execution(self, installed: InstalledRuntimePack) -> str:
+        """Recheck the signed pack and reported llama.cpp version before launch."""
+
+        try:
+            artifact = self.runtime_artifact(installed.id)
+        except (KeyError, RuntimeError) as exc:
+            raise RuntimePackIntegrityError(
+                "installed runtime has no verified catalog metadata"
+            ) from exc
+        if not self.runtimes.verify_against_artifact(installed, artifact):
+            raise RuntimePackIntegrityError("refusing to execute a corrupt runtime pack")
+        return self._verify_runtime_version(installed, artifact)
 
     async def download_runtime_by_id(
         self,
@@ -181,7 +206,8 @@ class CupcakeLocalManager:
         return await self.download_model(self._model_catalog.get(model_id))
 
     def status(self, *, verify_integrity: bool = False) -> dict[str, Any]:
-        active_runtime = self.runtimes.active()
+        installed_runtimes = self.runtimes.list(verify_integrity=verify_integrity)
+        active_runtime = next((item for item in installed_runtimes if item.active), None)
         supervisor = self._supervisor
         if supervisor is not None:
             endpoint = supervisor.endpoint()
@@ -205,7 +231,7 @@ class CupcakeLocalManager:
                 detail="install the verified Cupcake Local CPU runtime pack",
             )
         installed_packs = tuple(
-            item.backend.value for item in self.runtimes.list() if item.integrity_verified
+            item.backend.value for item in installed_runtimes if item.integrity_verified
         )
         hardware = detect_hardware(self.root, installed_acceleration_packs=installed_packs)
         available_models = self._model_catalog.models if self._model_catalog else ()
@@ -218,7 +244,7 @@ class CupcakeLocalManager:
             "endpoint": asdict(endpoint),
             "hardware": asdict(hardware),
             "activeRuntime": asdict(active_runtime) if active_runtime else None,
-            "runtimes": [asdict(item) for item in self.runtimes.list()],
+            "runtimes": [asdict(item) for item in installed_runtimes],
             "models": [asdict(item) for item in self.models.list(verify=verify_integrity)],
             "downloads": [asdict(item) for item in self.download_snapshots()],
             "availableRuntimes": [asdict(item) for item in available_runtimes],
@@ -266,18 +292,25 @@ class CupcakeLocalManager:
         activate: bool = True,
     ) -> InstalledRuntimePack:
         installed = self.runtimes.install(artifact, archive, companion_archives=companion_archives)
+        self._verify_runtime_version(installed, artifact)
+        if activate:
+            installed = self.activate_runtime(artifact.version, artifact.backend)
+        return installed
+
+    @staticmethod
+    def _verify_runtime_version(
+        installed: InstalledRuntimePack, artifact: RuntimePackArtifact
+    ) -> str:
         supervisor = LlamaCppSupervisor(Path(installed.executable))
         reported = supervisor.version()
         expected = artifact.version.removeprefix("b")
         if expected not in reported and artifact.source_revision[:7] not in reported:
-            # The archive and files may be intact but not the version promised
-            # by the signed catalog. Do not make it active.
+            # The files may be intact but still not be the executable promised
+            # by the signed catalog. Never launch it under a trusted runtime ID.
             raise RuntimePackIntegrityError(
                 f"llama.cpp executable reports an unexpected version: {reported[:200]}"
             )
-        if activate:
-            installed = self.activate_runtime(artifact.version, artifact.backend)
-        return installed
+        return reported
 
     def activate_runtime(self, version: str, backend: RuntimeBackend) -> InstalledRuntimePack:
         if self._supervisor and self._supervisor.state not in {
@@ -286,17 +319,18 @@ class CupcakeLocalManager:
             RuntimeState.FAILED,
         }:
             raise RuntimeError("unload the active model before changing runtime packs")
-        previous = self.runtimes.active()
+        previous = self.runtimes.active(verify_integrity=False)
         candidate = next(
             (
                 item
-                for item in self.runtimes.list()
+                for item in self.runtimes.list(verify_integrity=False)
                 if item.version == version and item.backend == backend
             ),
             None,
         )
         if candidate is None:
             raise FileNotFoundError(f"runtime pack {version}/{backend.value} is not installed")
+        self.verify_runtime_for_execution(candidate)
         self._probe_accelerated_runtime(candidate)
         installed = self.runtimes.activate(version, backend)
         if previous and (previous.version, previous.backend) != (version, backend):
@@ -448,11 +482,10 @@ class CupcakeLocalManager:
         model = self.models.get(model_id, verify=True)
         if not model.integrity_verified:
             raise RuntimePackIntegrityError("refusing to load a corrupt GGUF artifact")
-        runtime = self.runtimes.active()
+        runtime = self.runtimes.active(verify_integrity=False)
         if runtime is None:
             raise FileNotFoundError("no active Cupcake Local runtime pack")
-        if not runtime.integrity_verified:
-            raise RuntimePackIntegrityError("refusing to load with a corrupt runtime pack")
+        self.verify_runtime_for_execution(runtime)
         selected = config or self._baseline_config(runtime.backend)
         selected.validate()
         if selected.context_size > model.context_window:
@@ -510,7 +543,7 @@ class CupcakeLocalManager:
             await supervisor.stop()
         self._supervisor = None
         self._runtime_id = None
-        active = self.runtimes.active()
+        active = self.runtimes.active(verify_integrity=False)
         return RuntimeEndpoint(
             id=f"{RuntimeKind.CUPCAKE_LLAMA_CPP.value}:managed",
             kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
@@ -535,16 +568,16 @@ class CupcakeLocalManager:
         self.models.remove(model_id, active_model_id=self._active_model_id())
 
     def version(self) -> str | None:
-        active = self.runtimes.active()
+        active = self.runtimes.active(verify_integrity=False)
         if active is None:
             return None
-        supervisor = LlamaCppSupervisor(Path(active.executable))
-        return supervisor.version()
+        return self.verify_runtime_for_execution(active)
 
     def devices(self) -> tuple[str, ...]:
-        active = self.runtimes.active()
+        active = self.runtimes.active(verify_integrity=False)
         if active is None:
             return ()
+        self.verify_runtime_for_execution(active)
         supervisor = LlamaCppSupervisor(Path(active.executable))
         return supervisor.list_devices()
 

@@ -288,11 +288,13 @@ class RuntimeService:
         self._agent_engine: CupcakeAgentEngine | None = None
         self.cupcake_local = CupcakeLocalManager(self.data_dir / "local-models")
         baseline_directory = os.environ.get("CUPCAKE_LOCAL_BASELINE_DIR")
-        self.packaged_local_runtime = (
-            self.cupcake_local.seed_packaged_baseline(Path(baseline_directory))
-            if baseline_directory
+        self._packaged_local_baseline = Path(baseline_directory) if baseline_directory else None
+        self._packaged_local_artifact = (
+            self.cupcake_local.configure_packaged_baseline(self._packaged_local_baseline)
+            if self._packaged_local_baseline is not None
             else None
         )
+        self.packaged_local_runtime: InstalledRuntimePack | None = None
         self.tools = ToolRegistry(native_tool_descriptors())
         self.mcp_schemas = SchemaCatalog()
         self.traces = DeveloperTraceStore(str(self.data_dir / "developer-traces.db"))
@@ -1121,10 +1123,21 @@ class RuntimeService:
             backend = RuntimeBackend(_required_string(params, "backend"))
         except ValueError as exc:
             raise RuntimeCommandError("INVALID_ARGUMENT", "Unknown local runtime backend") from exc
+        packaged = self._packaged_local_artifact
+        if (
+            packaged is not None
+            and packaged.version == version
+            and packaged.backend == backend
+            and not any(
+                item.version == version and item.backend == backend
+                for item in self.cupcake_local.runtimes.list(verify_integrity=False)
+            )
+        ):
+            self._ensure_packaged_local_runtime()
         return _redact_local_paths(self.cupcake_local.activate_runtime(version, backend))
 
     def _cupcake_local_load(self, params: Mapping[str, Any]) -> Any:
-        active_runtime = self.cupcake_local.runtimes.active()
+        active_runtime = self.cupcake_local.runtimes.active(verify_integrity=False)
         model_id = _required_string(params, "modelId")
         allow_ram_fallback = params.get("allowRamFallback") is not False
         ram_limit_mode = str(params.get("ramLimitMode", "auto"))
@@ -1169,6 +1182,8 @@ class RuntimeService:
                 f"headroom including weights, KV cache, and runtime buffers, above the "
                 f"current {safe_ram_gb:.1f} GB safe RAM budget after reserves",
             )
+        if active_runtime is None:
+            active_runtime = self._ensure_packaged_local_runtime()
         observed_free_vram_gb = hardware.available_vram_gb
         if (
             not allow_ram_fallback
@@ -1278,6 +1293,14 @@ class RuntimeService:
                 "mode": "hybrid_allowed" if allow_ram_fallback else "vram_only",
             },
         }
+
+    def _ensure_packaged_local_runtime(self) -> InstalledRuntimePack | None:
+        if self._packaged_local_baseline is None or self._packaged_local_artifact is None:
+            return None
+        self.packaged_local_runtime = self.cupcake_local.seed_packaged_baseline(
+            self._packaged_local_baseline
+        )
+        return self.packaged_local_runtime
 
     def _cupcake_local_unload(self, _params: Mapping[str, Any]) -> Any:
         with self._state_lock:

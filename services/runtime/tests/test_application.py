@@ -22,6 +22,7 @@ from cupcake_runtime.agents import (
 )
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.domain.models import Setting
+from cupcake_runtime.local_models import CupcakeLocalManager
 from cupcake_runtime.local_models.types import (
     HardwareProfile,
     ModelArtifact,
@@ -119,6 +120,38 @@ def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
         "deferredUntilUse": True,
         "errorType": None,
     }
+    runtime.close()
+
+
+def test_packaged_local_runtime_install_is_deferred_until_local_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = tmp_path / "packaged-local"
+    baseline.mkdir()
+    configured: list[Path] = []
+    seeded: list[Path] = []
+    artifact = SimpleNamespace(version="b10679", backend=RuntimeBackend.CPU)
+    installed = SimpleNamespace(id="llama-b10679-cpu", active=True)
+
+    def configure(_manager: CupcakeLocalManager, path: Path) -> Any:
+        configured.append(path)
+        return artifact
+
+    def seed(_manager: CupcakeLocalManager, path: Path) -> Any:
+        seeded.append(path)
+        return installed
+
+    monkeypatch.setenv("CUPCAKE_LOCAL_BASELINE_DIR", str(baseline))
+    monkeypatch.setattr(CupcakeLocalManager, "configure_packaged_baseline", configure)
+    monkeypatch.setattr(CupcakeLocalManager, "seed_packaged_baseline", seed)
+
+    runtime = service(tmp_path / "profile")
+
+    assert configured == [baseline]
+    assert seeded == []
+    assert runtime.packaged_local_runtime is None
+    assert runtime._ensure_packaged_local_runtime() is installed  # pyright: ignore[reportPrivateUsage]
+    assert seeded == [baseline]
     runtime.close()
 
 
