@@ -150,9 +150,12 @@ turn, one request-specific recovery turn is allowed; its stable request hash pre
 turn from being mistaken for another. A second unresolved interruption stops the scenario instead of
 stacking duplicate prompts. The known incomplete NVIDIA analysis and code expansion remain in
 immutable chat history as observed partial turns. Neither is retried merely to increase the turn
-count; only the later bounded correction is required to produce the completed code artifact. When a
-repaired provider produces a valid replacement, the harness revises an existing stale artifact with
-the actual completed response and records that response as the revision source. Archived
+count. The first bounded replacement completed, but inspection in the owner profile found wrong CSV
+row numbers, missing-field classification defects, unsafe short-row access, broken integer
+assertions, and an undefined CLI name. That response remains real stage history; one focused final
+correction is now required, and only its completed output can become the code artifact source. When
+a repaired provider produces a valid replacement, the harness revises an existing stale artifact
+with the actual completed response and records that response as the revision source. Archived
 conversations stay archived and never trigger inference. Duplicate stable names are treated as an
 error because the harness cannot safely guess which owner item to keep.
 

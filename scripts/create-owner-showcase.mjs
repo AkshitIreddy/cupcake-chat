@@ -152,7 +152,7 @@ const SCENARIOS = {
     artifact: 'harbor_sensor_triage.py',
     artifactKind: 'code',
     maxOutputTokens: 6144,
-    requiredPromptIndexes: [2],
+    requiredPromptIndexes: [2, 3],
     modelPreferences: [
       'nvidia/nemotron-3-super-120b-a12b',
       'nvidia/nemotron-3.5-lightning-30b-a3b',
@@ -163,6 +163,16 @@ const SCENARIOS = {
       `Analyze this small incident sample and state what is supported by the data before proposing code:\n\ntimestamp,sensor_id,reading,status\n2026-08-11T10:00:00Z,A17,18.2,ok\n2026-08-11T10:01:00Z,A17,91.4,alert\n2026-08-11T10:01:00Z,A17,91.4,alert\n2026-08-11T10:02:00Z,B04,,missing\n2026-08-11T10:03:00Z,B04,19.1,ok\n2026-08-11T10:04:00Z,A17,not-a-number,error\n\nThen write a dependency-free Python 3.12 function that accepts CSV text and returns a JSON-serializable quality report with duplicates, invalid readings, missing readings, status counts, and per-sensor valid-reading statistics. Include type hints and preserve source row numbers.`,
       `Turn that into a complete, production-minded harbor_sensor_triage.py module. Add an argparse CLI, deterministic JSON output, tests runnable with “python -m unittest”, clear error handling, and no third-party packages. Keep the evidence claims limited to the supplied rows. Return the complete final module in one fenced code block followed by a short test command.`,
       `The saved answer stopped in the middle of the module. Produce a complete compact replacement, at most 180 lines, in exactly one closed Python code block. Include the analyzer, CLI and embedded unittest classes. Validate finite readings and malformed rows. Explicitly count every valid row, including duplicates, in sensor statistics: the supplied A17 values are 18.2, 91.4 and 91.4, so its count is 3 and mean is 67.0; separately flag the repeated timestamp/sensor pair. Include tests for those exact facts, missing and invalid readings, non-finite input, bad headers and empty input. Running python -m unittest harbor_sensor_triage must execute the tests. Do not claim they passed until the app actually runs them.`,
+      `Review found concrete defects in the saved module. Return a corrected complete harbor_sensor_triage.py in exactly one closed Python code block, at most 180 lines, with no prose outside the block. Preserve the dependency-free Python 3.12 analyzer, deterministic JSON CLI, type hints, and embedded unittest classes. Apply these exact semantics and tests:
+
+- CSV physical row numbers include the header as row 1. In the supplied sample, the repeated A17 timestamp/sensor pair is row 4 duplicating row 3, the missing B04 reading is row 5, and the nonnumeric A17 reading is row 7.
+- Require the header to be exactly timestamp,sensor_id,reading,status in that order. Treat rows with the wrong field count, including short or wide rows, as malformed without calling string methods on None.
+- Treat a row such as ,,, as malformed because required identity/status fields are blank. Count a missing reading only when timestamp, sensor_id, and status are otherwise populated and the reading field alone is blank. Count nonnumeric or non-finite populated readings as invalid readings.
+- Include every structurally valid finite-reading row in sensor statistics even when its timestamp/sensor pair is a duplicate. The sample A17 count is the integer 3 and its mean is 67.0. Keep duplicate reporting separate.
+- Tests must assert integer counts directly, never call len() on an integer. Cover the exact supplied row numbers and statistics, the ,,, case, short and wide rows, missing-only-reading classification, nonnumeric and non-finite readings, bad headers, empty input, and deterministic output.
+- The module must contain no undefined names. If BrokenPipeError handling uses os.devnull, import os; otherwise avoid os entirely. Running python -m unittest harbor_sensor_triage must discover and execute the embedded tests.
+
+Do not claim tests passed; the app will run the saved immutable artifact in its Windows sandbox and record the result.`,
     ],
     task: {
       prompt:
@@ -1916,7 +1926,7 @@ function runSelfTests() {
     prompts: ['analysis', 'obsolete expansion', 'bounded correction'],
     requiredPromptIndexes: [0, 2],
   };
-  assert.deepEqual(requiredPromptIndexes(SCENARIOS['nvidia-nim']), [2]);
+  assert.deepEqual(requiredPromptIndexes(SCENARIOS['nvidia-nim']), [2, 3]);
   const optionalPromptInspection = inspectScenarioHistory(
     [
       user('u-analysis', 'analysis'),
@@ -1932,6 +1942,24 @@ function runSelfTests() {
   assert.equal(optionalPromptInspection.requiredTurnCount, 2);
   assert.equal(optionalPromptInspection.completeTurnCount, 2);
   assert.equal(optionalPromptInspection.partialAssistantCount, 1);
+
+  const reviewedCodeScenario = {
+    prompts: ['partial analysis', 'partial expansion', 'first replacement', 'review correction'],
+    requiredPromptIndexes: [2, 3],
+  };
+  const reviewedCodeHistory = [
+    user('u-replacement', 'first replacement'),
+    assistant('a-replacement', 'complete but review failed'),
+  ];
+  assert.equal(inspectScenarioHistory(reviewedCodeHistory, reviewedCodeScenario).complete, false);
+  reviewedCodeHistory.push(
+    user('u-review-correction', 'review correction'),
+    assistant('a-review-correction', 'corrected module'),
+  );
+  const reviewedCodeInspection = inspectScenarioHistory(reviewedCodeHistory, reviewedCodeScenario);
+  assert.equal(reviewedCodeInspection.complete, true);
+  assert.equal(reviewedCodeInspection.finalAssistant?.id, 'a-review-correction');
+  assert.equal(reviewedCodeInspection.artifactSourceAssistant?.id, 'a-review-correction');
 
   assert.equal(artifactContent('code', '```python\nvalue = 1\n```\n'), 'value = 1\n');
   assert.throws(() => artifactContent('code', '```python\nvalue = 1'), /exactly one non-empty/u);
