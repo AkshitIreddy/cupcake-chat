@@ -414,9 +414,7 @@ def test_named_compatible_endpoints_and_model_policy_are_fixed() -> None:
     assert named_compatible_base_url("groq") == "https://api.groq.com/openai/v1"
     assert named_compatible_base_url("openrouter") == "https://openrouter.ai/api/v1"
     assert named_compatible_base_url("cloudflare", "b" * 32).endswith(f"/{'b' * 32}/ai/v1")
-    assert named_compatible_model_allowed(
-        "openrouter", "nvidia/nemotron-3.5-lightning:free"
-    )
+    assert named_compatible_model_allowed("openrouter", "nvidia/nemotron-3.5-lightning:free")
     assert named_compatible_model_allowed("openrouter", "vendor/model:free")
     assert not named_compatible_model_allowed("openrouter", "vendor/model")
 
