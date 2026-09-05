@@ -8,12 +8,16 @@
 
 use super::{NetworkPolicy, ProcessState, ResolvedProcessPlan, SandboxBackend, SandboxOutput};
 use crate::{BrokerError, Result};
-use std::collections::HashMap;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, OsStr};
 use std::fs;
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, BorrowedHandle};
+use std::path::{Component, Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -29,6 +33,9 @@ use windows_sys::Win32::Security::Isolation::{
 };
 use windows_sys::Win32::Security::{FreeSid, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
 use windows_sys::Win32::Storage::FileSystem::ReadFile;
+use windows_sys::Win32::Storage::FileSystem::{
+    SetFileAttributesW, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
+};
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicUIRestrictions,
@@ -54,6 +61,9 @@ const TERMINATED_EXIT_CODE: u32 = 0xC0C0_0001;
 const WAIT_SLICE_MS: u32 = 20;
 const MAX_STAGED_FILES: usize = 20_000;
 const MAX_STAGED_BYTES: u64 = 1024 * 1024 * 1024;
+const SIDECAR_MANIFEST_FILE: &str = "sidecars.manifest.json";
+const RUNTIME_SUPPORT_DIRECTORY: &str = "_internal";
+const MAX_SIDECAR_MANIFEST_BYTES: u64 = 512 * 1024;
 
 #[derive(Debug)]
 struct OwnedHandle(HANDLE);
@@ -233,11 +243,8 @@ impl WindowsSandbox {
         fs::create_dir_all(&internal_working_directory)?;
         fs::create_dir_all(&internal_bin_directory)?;
         copy_tree_bounded(&plan.working_directory, &internal_working_directory)?;
-        let executable_name = plan.executable.file_name().ok_or_else(|| {
-            BrokerError::InvalidConfig("sandbox executable has no file name".into())
-        })?;
-        let internal_executable = internal_bin_directory.join(executable_name);
-        fs::copy(&plan.executable, &internal_executable)?;
+        let internal_executable =
+            stage_verified_executable_bundle(&plan.executable, &internal_bin_directory)?;
         if control.cancelled.load(Ordering::Acquire) {
             return Ok(SandboxOutput {
                 state: ProcessState::Cancelled,
@@ -506,6 +513,10 @@ impl Drop for AppContainerSid {
             // SAFETY: Userenv returns a SID released by FreeSid.
             unsafe {
                 FreeSid(self.sid);
+                // Worker files are read-only during execution. Clear that
+                // disposable attribute only after process teardown so profile
+                // deletion cannot strand the packaged support tree.
+                let _ = clear_readonly_owned_tree(&self.folder);
                 // Profile deletion removes the private ACL namespace and staged
                 // files. A crash can leave an inert orphan profile, never reused.
                 let _ = DeleteAppContainerProfile(self.name.as_ptr());
@@ -759,6 +770,349 @@ unsafe fn wide_pointer_to_vec(pointer: *const u16) -> Vec<u16> {
     std::slice::from_raw_parts(pointer, length).to_vec()
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SandboxSidecarManifest {
+    schema_version: u16,
+    protocol_version: u16,
+    platform: String,
+    architecture: String,
+    #[allow(dead_code)]
+    generated_at: String,
+    binaries: Vec<SandboxManifestBinary>,
+    #[allow(dead_code)]
+    resources: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SandboxManifestBinary {
+    id: String,
+    file: String,
+    bytes: u64,
+    sha256: String,
+    transport: String,
+    #[serde(default)]
+    support_files: Vec<SandboxManifestSupportFile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SandboxManifestSupportFile {
+    file: String,
+    bytes: u64,
+    sha256: String,
+}
+
+/// Copy an approved executable and only the exact sibling support files bound
+/// to it by the packaged sidecar manifest. Development and unit-test binaries
+/// without either packaged artifact remain valid single-file executables.
+fn stage_verified_executable_bundle(executable: &Path, destination: &Path) -> Result<PathBuf> {
+    let executable = executable.canonicalize()?;
+    reject_reparse(&executable)?;
+    let package_root = executable.parent().ok_or_else(|| {
+        BrokerError::InvalidConfig("sandbox executable has no parent directory".into())
+    })?;
+    let executable_name = executable
+        .file_name()
+        .ok_or_else(|| BrokerError::InvalidConfig("sandbox executable has no file name".into()))?;
+    let manifest_path = package_root.join(SIDECAR_MANIFEST_FILE);
+    let support_root = package_root.join(RUNTIME_SUPPORT_DIRECTORY);
+    let manifest_exists = manifest_path.exists();
+    let support_exists = support_root.exists();
+
+    if manifest_exists != support_exists {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker manifest and support tree must be present together".into(),
+        ));
+    }
+
+    fs::create_dir_all(destination)?;
+    reject_reparse(destination)?;
+    let destination_root = destination.canonicalize()?;
+    let internal_executable = destination.join(executable_name);
+
+    if !manifest_exists {
+        copy_verified_file(
+            &executable,
+            &internal_executable,
+            fs::metadata(&executable)?.len(),
+            None,
+            &destination_root,
+        )?;
+        return Ok(internal_executable);
+    }
+
+    reject_reparse(&manifest_path)?;
+    let manifest_metadata = fs::metadata(&manifest_path)?;
+    if !manifest_metadata.is_file()
+        || manifest_metadata.len() == 0
+        || manifest_metadata.len() > MAX_SIDECAR_MANIFEST_BYTES
+    {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker manifest has an invalid size".into(),
+        ));
+    }
+    let manifest: SandboxSidecarManifest = serde_json::from_slice(&fs::read(&manifest_path)?)
+        .map_err(|_| {
+            BrokerError::Integrity("packaged sandbox worker manifest is invalid".into())
+        })?;
+    if manifest.schema_version != 1
+        || manifest.protocol_version != 1
+        || manifest.platform != "win32"
+        || manifest.architecture != "x64"
+    {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker manifest does not match this host".into(),
+        ));
+    }
+    let runtime_records: Vec<_> = manifest
+        .binaries
+        .iter()
+        .filter(|binary| binary.id == "runtime")
+        .collect();
+    if runtime_records.len() != 1 {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker manifest must contain one runtime".into(),
+        ));
+    }
+    let runtime = runtime_records[0];
+    if runtime.file != executable_name.to_string_lossy()
+        || runtime.transport != "authenticated-length-prefixed-json"
+        || runtime.bytes == 0
+        || runtime.support_files.is_empty()
+        || runtime.support_files.len() > MAX_STAGED_FILES
+        || !valid_sha256(&runtime.sha256)
+    {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker runtime record is invalid".into(),
+        ));
+    }
+    copy_verified_file(
+        &executable,
+        &internal_executable,
+        runtime.bytes,
+        Some(&runtime.sha256),
+        &destination_root,
+    )?;
+
+    let declared_paths = validate_support_records(&runtime.support_files)?;
+    let actual_paths = enumerate_support_files(package_root, &support_root)?;
+    if actual_paths != declared_paths {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker support tree does not match its manifest".into(),
+        ));
+    }
+
+    for record in &runtime.support_files {
+        let relative = Path::new(&record.file);
+        let source = package_root.join(relative);
+        let target = destination.join(relative);
+        let canonical_source = source.canonicalize()?;
+        if !canonical_source.starts_with(package_root) {
+            return Err(BrokerError::PathEscape);
+        }
+        reject_reparse(&source)?;
+        copy_verified_file(
+            &source,
+            &target,
+            record.bytes,
+            Some(&record.sha256),
+            &destination_root,
+        )?;
+    }
+    Ok(internal_executable)
+}
+
+fn validate_support_records(records: &[SandboxManifestSupportFile]) -> Result<HashSet<String>> {
+    let mut paths = HashSet::with_capacity(records.len());
+    let mut total_bytes = 0_u64;
+    for record in records {
+        let relative = Path::new(&record.file);
+        let components: Vec<_> = relative.components().collect();
+        if relative.is_absolute()
+            || record.file.contains('\\')
+            || components.len() < 2
+            || components.first() != Some(&Component::Normal(OsStr::new(RUNTIME_SUPPORT_DIRECTORY)))
+            || !components
+                .iter()
+                .all(|component| matches!(component, Component::Normal(_)))
+            || !valid_sha256(&record.sha256)
+        {
+            return Err(BrokerError::Integrity(
+                "packaged sandbox worker support record is invalid".into(),
+            ));
+        }
+        total_bytes = total_bytes.checked_add(record.bytes).ok_or_else(|| {
+            BrokerError::InvalidConfig("sandbox support byte count overflow".into())
+        })?;
+        if total_bytes > MAX_STAGED_BYTES {
+            return Err(BrokerError::InvalidConfig(
+                "sandbox support tree exceeds file-count or byte limits".into(),
+            ));
+        }
+        if !paths.insert(normalized_relative(relative)?) {
+            return Err(BrokerError::Integrity(
+                "packaged sandbox worker support manifest contains duplicate paths".into(),
+            ));
+        }
+    }
+    Ok(paths)
+}
+
+fn enumerate_support_files(package_root: &Path, support_root: &Path) -> Result<HashSet<String>> {
+    reject_reparse(support_root)?;
+    let canonical_root = support_root.canonicalize()?;
+    if !canonical_root.starts_with(package_root) {
+        return Err(BrokerError::PathEscape);
+    }
+    let mut pending = vec![support_root.to_path_buf()];
+    let mut paths = HashSet::new();
+    while let Some(directory) = pending.pop() {
+        reject_reparse(&directory)?;
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            reject_reparse(&path)?;
+            let metadata = fs::metadata(&path)?;
+            if metadata.is_dir() {
+                if !path.canonicalize()?.starts_with(&canonical_root) {
+                    return Err(BrokerError::PathEscape);
+                }
+                pending.push(path);
+            } else if metadata.is_file() {
+                let relative = path
+                    .strip_prefix(package_root)
+                    .map_err(|_| BrokerError::PathEscape)?;
+                if !paths.insert(normalized_relative(relative)?) || paths.len() > MAX_STAGED_FILES {
+                    return Err(BrokerError::Integrity(
+                        "packaged sandbox worker support tree contains invalid paths".into(),
+                    ));
+                }
+            } else {
+                return Err(BrokerError::Integrity(
+                    "packaged sandbox worker support tree contains an unsupported entry".into(),
+                ));
+            }
+        }
+    }
+    Ok(paths)
+}
+
+fn copy_verified_file(
+    source: &Path,
+    destination: &Path,
+    expected_bytes: u64,
+    expected_sha256: Option<&str>,
+    destination_root: &Path,
+) -> Result<()> {
+    reject_reparse(source)?;
+    let metadata = fs::metadata(source)?;
+    if !metadata.is_file() || metadata.len() != expected_bytes || expected_bytes > MAX_STAGED_BYTES
+    {
+        return Err(BrokerError::Integrity(
+            "packaged sandbox worker file size does not match its manifest".into(),
+        ));
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+        reject_reparse(parent)?;
+        if !parent.canonicalize()?.starts_with(destination_root) {
+            return Err(BrokerError::PathEscape);
+        }
+    }
+    if destination.exists() {
+        return Err(BrokerError::Integrity(
+            "sandbox executable staging destination is not empty".into(),
+        ));
+    }
+    fs::copy(source, destination)?;
+    reject_reparse(destination)?;
+    if fs::metadata(destination)?.len() != expected_bytes {
+        return Err(BrokerError::Integrity(
+            "staged sandbox worker file has an unexpected size".into(),
+        ));
+    }
+    if let Some(expected) = expected_sha256 {
+        let mut file = fs::File::open(destination)?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = std::io::Read::read(&mut file, &mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            digest.update(&buffer[..read]);
+        }
+        let actual = hex::encode(digest.finalize());
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(BrokerError::Integrity(
+                "staged sandbox worker file failed integrity verification".into(),
+            ));
+        }
+    }
+    let mut permissions = fs::metadata(destination)?.permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(destination, permissions)?;
+    Ok(())
+}
+
+fn reject_reparse(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(BrokerError::PathEscape);
+    }
+    Ok(())
+}
+
+fn clear_readonly_owned_tree(root: &Path) -> Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    reject_reparse(root)?;
+    let canonical_root = root.canonicalize()?;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        reject_reparse(&directory)?;
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            reject_reparse(&path)?;
+            let metadata = fs::metadata(&path)?;
+            if metadata.is_dir() {
+                if !path.canonicalize()?.starts_with(&canonical_root) {
+                    return Err(BrokerError::PathEscape);
+                }
+                pending.push(path);
+            } else if metadata.is_file() && metadata.permissions().readonly() {
+                let attributes = metadata.file_attributes() & !FILE_ATTRIBUTE_READONLY;
+                let path = wide(path.as_os_str());
+                if unsafe { SetFileAttributesW(path.as_ptr(), attributes) } == 0 {
+                    return Err(last_io("clear staged sandbox worker read-only attribute"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalized_relative(path: &Path) -> Result<String> {
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(BrokerError::PathEscape);
+    }
+    Ok(path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase())
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn copy_tree_bounded(source: &std::path::Path, destination: &std::path::Path) -> Result<()> {
     let source_root = source.canonicalize()?;
     if destination.exists() && fs::symlink_metadata(destination)?.file_type().is_symlink() {
@@ -892,6 +1246,161 @@ mod tests {
             "sandbox::windows::tests::appcontainer_probe".into(),
             "--nocapture".into(),
         ]
+    }
+
+    fn sha256(bytes: &[u8]) -> String {
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    fn write_packaged_worker_fixture(root: &Path, support: &[(&str, &[u8])]) -> PathBuf {
+        let executable = root.join("cupcake-runtime.exe");
+        let executable_bytes = b"packaged runtime fixture";
+        fs::write(&executable, executable_bytes).unwrap();
+        let records: Vec<_> = support
+            .iter()
+            .map(|(relative, bytes)| {
+                let path = root.join(relative);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, bytes).unwrap();
+                serde_json::json!({
+                    "file": relative.replace('\\', "/"),
+                    "bytes": bytes.len(),
+                    "sha256": sha256(bytes),
+                })
+            })
+            .collect();
+        fs::write(
+            root.join(SIDECAR_MANIFEST_FILE),
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "protocolVersion": 1,
+                "platform": "win32",
+                "architecture": "x64",
+                "generatedAt": "2026-09-05T00:00:00Z",
+                "binaries": [{
+                    "id": "runtime",
+                    "file": "cupcake-runtime.exe",
+                    "bytes": executable_bytes.len(),
+                    "sha256": sha256(executable_bytes),
+                    "transport": "authenticated-length-prefixed-json",
+                    "supportFiles": records,
+                }],
+                "resources": [],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        executable
+    }
+
+    #[test]
+    fn packaged_worker_stages_only_manifest_verified_read_only_support() {
+        let source = tempfile::tempdir().unwrap();
+        let executable = write_packaged_worker_fixture(
+            source.path(),
+            &[
+                ("_internal/python3.dll", b"python"),
+                ("_internal/pkg/module.pyd", b"module"),
+            ],
+        );
+        let destination = tempfile::tempdir().unwrap();
+        let staged = stage_verified_executable_bundle(&executable, destination.path()).unwrap();
+        assert_eq!(fs::read(staged).unwrap(), b"packaged runtime fixture");
+        assert_eq!(
+            fs::read(destination.path().join("_internal/python3.dll")).unwrap(),
+            b"python"
+        );
+        assert_eq!(
+            fs::read(destination.path().join("_internal/pkg/module.pyd")).unwrap(),
+            b"module"
+        );
+        assert!(
+            fs::metadata(destination.path().join("_internal/python3.dll"))
+                .unwrap()
+                .permissions()
+                .readonly()
+        );
+        clear_readonly_owned_tree(destination.path()).unwrap();
+        assert!(
+            !fs::metadata(destination.path().join("_internal/python3.dll"))
+                .unwrap()
+                .permissions()
+                .readonly()
+        );
+    }
+
+    #[test]
+    fn packaged_worker_rejects_tampered_and_undeclared_support() {
+        let tampered = tempfile::tempdir().unwrap();
+        let executable =
+            write_packaged_worker_fixture(tampered.path(), &[("_internal/python3.dll", b"python")]);
+        fs::write(tampered.path().join("_internal/python3.dll"), b"tamper").unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            stage_verified_executable_bundle(&executable, destination.path()),
+            Err(BrokerError::Integrity(_))
+        ));
+
+        let undeclared = tempfile::tempdir().unwrap();
+        let executable = write_packaged_worker_fixture(
+            undeclared.path(),
+            &[("_internal/python3.dll", b"python")],
+        );
+        fs::write(undeclared.path().join("_internal/undeclared.pyd"), b"extra").unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            stage_verified_executable_bundle(&executable, destination.path()),
+            Err(BrokerError::Integrity(_))
+        ));
+    }
+
+    #[test]
+    fn packaged_worker_rejects_manifest_traversal_and_reparse_support() {
+        let traversal = SandboxManifestSupportFile {
+            file: "_internal/../outside.dll".into(),
+            bytes: 1,
+            sha256: "a".repeat(64),
+        };
+        assert!(matches!(
+            validate_support_records(&[traversal]),
+            Err(BrokerError::Integrity(_))
+        ));
+        let oversized = SandboxManifestSupportFile {
+            file: "_internal/oversized.bin".into(),
+            bytes: MAX_STAGED_BYTES + 1,
+            sha256: "a".repeat(64),
+        };
+        assert!(matches!(
+            validate_support_records(&[oversized]),
+            Err(BrokerError::InvalidConfig(_))
+        ));
+
+        let source = tempfile::tempdir().unwrap();
+        let executable =
+            write_packaged_worker_fixture(source.path(), &[("_internal/python3.dll", b"python")]);
+        let linked = source.path().join("_internal/linked.pyd");
+        if std::os::windows::fs::symlink_file(source.path().join("_internal/python3.dll"), &linked)
+            .is_err()
+        {
+            return;
+        }
+        let manifest_path = source.path().join(SIDECAR_MANIFEST_FILE);
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["binaries"][0]["supportFiles"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "file": "_internal/linked.pyd",
+                "bytes": 6,
+                "sha256": sha256(b"python"),
+            }));
+        fs::write(manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            stage_verified_executable_bundle(&executable, destination.path()),
+            Err(BrokerError::PathEscape)
+        ));
     }
 
     #[test]
