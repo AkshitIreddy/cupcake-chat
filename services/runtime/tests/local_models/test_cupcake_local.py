@@ -830,6 +830,9 @@ def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempoten
     installed = manager.seed_packaged_baseline(baseline)
     assert installed is not None
     assert installed.active is True
+    installed_status = manager.status()
+    assert installed_status["runtimes"][0]["integrity_verified"] is False
+    assert installed_status["hardware"]["installed_acceleration_packs"] == ("cpu",)
     manager.verify_runtime_for_execution(installed)
 
     Path(installed.executable).write_bytes(b"tampered")

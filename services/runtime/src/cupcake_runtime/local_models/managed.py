@@ -230,9 +230,10 @@ class CupcakeLocalManager:
                 managed=True,
                 detail="install the verified Cupcake Local CPU runtime pack",
             )
-        installed_packs = tuple(
-            item.backend.value for item in installed_runtimes if item.integrity_verified
-        )
+        # This hardware field reports installation metadata, not a fresh trust
+        # decision. Each runtime DTO keeps integrity_verified=False until the
+        # caller explicitly requests verification or the pack is executed.
+        installed_packs = tuple(item.backend.value for item in installed_runtimes)
         hardware = detect_hardware(self.root, installed_acceleration_packs=installed_packs)
         available_models = self._model_catalog.models if self._model_catalog else ()
         recommendations = rank_catalog(available_models, hardware) if available_models else ()
