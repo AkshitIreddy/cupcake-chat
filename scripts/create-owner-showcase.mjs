@@ -153,6 +153,7 @@ const SCENARIOS = {
     artifactKind: 'code',
     maxOutputTokens: 6144,
     requiredPromptIndexes: [2, 3],
+    preserveAfterFailedQualityReview: true,
     modelPreferences: [
       'nvidia/nemotron-3-super-120b-a12b',
       'nvidia/nemotron-3.5-lightning-30b-a3b',
@@ -246,6 +247,26 @@ Do not claim tests passed; the app will run the saved immutable artifact in its 
       `A harbor sensor service has these observed failure classes: malformed CSV rows, duplicate timestamp/sensor pairs, non-finite decimals, abrupt process termination during JSON write, and a downstream dashboard that treats missing data as zero. Draft a compact incident runbook with detection signals, immediate containment, evidence to preserve, a safe recovery action, and an owner for each class. Do not invent incidents or claim any check was run.`,
       `Stress-test the runbook for actions that could destroy evidence or conceal missing data. Return a final operator-ready Markdown runbook with “do not” guardrails, a severity rubric, rollback points, and a five-step post-incident review. Keep every statement tied to the supplied failure classes.`,
     ],
+  },
+  'groq-code-review': {
+    providerId: 'groq',
+    project: 'coding',
+    title: '[LIVE • GROQ] Sensor quality repair with reviewed tests',
+    artifact: 'harbor_quality_checked.py',
+    artifactKind: 'code',
+    pinnedSourceArtifact: 'harbor_sensor_triage.py',
+    maxOutputTokens: 6144,
+    modelPreferences: ['openai/gpt-oss-20b'],
+    prompts: [
+      `Act as an independent Python reviewer. Inspect only the pinned latest revision of harbor_sensor_triage.py and return a compact defect-and-acceptance brief; do not rewrite the module yet and do not claim tests ran. Check the implementation and embedded tests against this contract: CSV physical row numbers include the header as row 1; the supplied sample's duplicate is row 4 duplicating row 3, missing reading is row 5, and nonnumeric reading is row 7; the header must exactly equal timestamp,sensor_id,reading,status; short, wide, and blank-identity rows such as ,,, are malformed; a missing reading is counted only when timestamp, sensor_id, and status are populated; nonnumeric and non-finite populated readings are invalid; structurally valid finite duplicate rows still contribute to statistics; A17 count is the integer 3 and mean is 67.0; tests must assert integer values directly; every name and CLI error path must be defined. For each defect, state the cause and a concrete acceptance check.`,
+      `Using the review and pinned source only as defect evidence, produce a clean independent replacement named harbor_quality_checked.py. Return exactly one closed Python code block and no prose outside it. Keep the entire module at or below 120 lines, dependency-free on Python 3.12, with type hints, a deterministic JSON CLI, and embedded unittest classes discoverable by python -m unittest harbor_quality_checked. Implement these exact rules: require the four headers in exact order; preserve physical row numbers with the header as row 1; record every wrong-width row and every row with blank timestamp, sensor_id, or status in malformed_rows with its physical row number and reason, without calling string methods on None and without silently dropping it; record a blank reading in missing_readings only when the other required fields are populated; record nonnumeric or non-finite populated readings in invalid_readings; report duplicate timestamp/sensor pairs with both the repeated row and first row. Include every structurally valid finite row in per-sensor count/min/max/mean even when it is a duplicate. Include every structurally valid row in status_counts even when its reading is missing or invalid; exclude malformed rows. Embed the six-row sample and tests proving duplicate row 4 points to row 3, missing row 5, invalid row 7, status counts ok=2, alert=2, missing=1 and error=1, A17 integer count 3 and mean 67.0, and B04 count 1. Also test the exact quoted CSV row ",,," (exactly three commas and four empty fields). Test separate short and wide rows by asserting their malformed row records without expecting sensor statistics from those malformed rows. In a missing-only-reading case with one finite A17 row and one blank A17 reading, assert A17 count is 1, not 2. Cover infinity/NaN, nonnumeric input, exact bad-header rejection, empty input, deterministic output, and CLI-safe defined names. Tests must assert integer counts directly. Do not claim the tests passed; the app will execute this exact saved revision in its Windows sandbox.`,
+    ],
+    task: {
+      prompt:
+        '[SHOWCASE] Run the embedded unittest suite in the exact saved artifact harbor_quality_checked.py and record observed Windows sandbox evidence. Do not mark complete unless execution actually succeeds.',
+      workKind: 'code_execution',
+      toolStages: 1,
+    },
   },
   openrouter: {
     project: 'planning',
@@ -435,6 +456,15 @@ try {
           scenarioId !== 'local' && (scenario.providerId ?? scenarioId) === providerId,
       );
       for (const [scenarioId, scenario] of providerScenarios) {
+        if (scenario.preserveAfterFailedQualityReview) {
+          evidence.demos.push({
+            provider: providerId,
+            scenarioId,
+            routeType: 'hosted',
+            outcome: 'quality_review_failed_preserved',
+          });
+          continue;
+        }
         const model = chooseHostedModel(models, providerId, scenario.modelPreferences);
         if (!model) {
           evidence.demos.push({
@@ -467,6 +497,8 @@ try {
             conversationId: result.conversation.id,
             artifactId: result.artifact.artifact.id,
             artifactRevisionId: result.artifact.revision.id,
+            pinnedSourceArtifactId: result.pinnedSourceArtifact?.artifact.id ?? null,
+            pinnedSourceArtifactRevisionId: result.pinnedSourceArtifact?.revision.id ?? null,
             memoryId: result.memory?.id ?? null,
             memorySourceMessageId: result.memorySourceMessageId ?? null,
             taskRunId: result.task?.run_id ?? null,
@@ -608,11 +640,25 @@ async function runScenario(activePage, scenario, model, routeType) {
   let branchId = conversation.branchId;
   let firstAssistant;
   let artifact;
+  const pinnedSourceArtifact = scenario.pinnedSourceArtifact
+    ? await findArtifact(activePage, project.id, scenario.pinnedSourceArtifact)
+    : null;
+  if (scenario.pinnedSourceArtifact && !pinnedSourceArtifact) {
+    throw new Error(`Pinned source artifact is unavailable: ${scenario.pinnedSourceArtifact}`);
+  }
   const assistants = [];
   const requiredIndexes = requiredPromptIndexes(scenario);
   for (let index = 0; index < scenario.prompts.length; index += 1) {
     if (!requiredIndexes.includes(index)) continue;
-    let references = [];
+    const references = pinnedSourceArtifact
+      ? [
+          {
+            id: pinnedSourceArtifact.artifact.id,
+            type: 'artifact',
+            revisionId: pinnedSourceArtifact.revision.id,
+          },
+        ]
+      : [];
     if (index === 1 && scenario.groundSecondTurn) {
       if (!firstAssistant) throw new Error('Grounding source response is unavailable');
       artifact = await ensureArtifact(
@@ -622,13 +668,11 @@ async function runScenario(activePage, scenario, model, routeType) {
         scenario,
         firstAssistant,
       );
-      references = [
-        {
-          id: artifact.artifact.id,
-          type: 'artifact',
-          revisionId: artifact.revision.id,
-        },
-      ];
+      references.push({
+        id: artifact.artifact.id,
+        type: 'artifact',
+        revisionId: artifact.revision.id,
+      });
     }
     const turn = await ensureTurn(activePage, {
       content: scenario.prompts[index],
@@ -664,12 +708,13 @@ async function runScenario(activePage, scenario, model, routeType) {
     : null;
   const task =
     scenario.task && !args.includes('--skip-tasks')
-      ? await ensureTask(activePage, project.id, scenario.task)
+      ? await ensureTask(activePage, project.id, scenario.task, artifact)
       : null;
   return {
     project,
     conversation: { ...conversation, branchId },
     artifact,
+    pinnedSourceArtifact,
     memory,
     memorySourceMessageId: memory ? finalAssistant.id : null,
     task,
@@ -1028,9 +1073,14 @@ async function ensureDecisionMemory(activePage, projectId, definition, assistant
   );
 }
 
-async function ensureTask(activePage, projectId, definition) {
+async function ensureTask(activePage, projectId, definition, artifact) {
+  const artifactId = artifact?.artifact?.id;
+  const revisionId = artifact?.revision?.id;
+  if (!artifactId || !revisionId) {
+    throw new Error('A showcase task requires an exact saved artifact revision');
+  }
   const tasks = await runtimeRequest(activePage, 'tasks.list', { limit: 200 }, 120_000);
-  const matches = tasks.filter((task) => task.spec?.prompt === definition.prompt);
+  const matches = tasksBoundToArtifact(tasks, projectId, artifactId, revisionId);
   if (matches.length > 1) throw new Error('Duplicate showcase task detected');
   if (matches.length) return matches[0];
   const created = await runtimeRequest(
@@ -1039,6 +1089,8 @@ async function ensureTask(activePage, projectId, definition) {
     {
       prompt: definition.prompt,
       projectId,
+      artifactId,
+      revisionId,
       workKind: definition.workKind,
       estimatedSeconds: 90,
       toolStages: definition.toolStages,
@@ -1311,6 +1363,17 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
       }
       const history = await runtimeRequest(activePage, 'chat.history', { branchId }, 120_000);
       const inspection = inspectScenarioHistory(history, scenario);
+      if (scenario.preserveAfterFailedQualityReview) {
+        scenarioResults.push({
+          scenarioId,
+          conversationId: conversation.id,
+          outcome: 'quality_review_failed_preserved',
+          requiredTurnCount: inspection.requiredTurnCount,
+          completeTurnCount: inspection.completeTurnCount,
+          partialAssistantCount: inspection.partialAssistantCount,
+        });
+        continue;
+      }
       const archived = conversation.status === 'archived';
       if (archived || !inspection.complete) {
         scenarioResults.push({
@@ -1431,7 +1494,9 @@ async function verifyPersistedShowcase(activePage, manifest, outputDirectory) {
       partialAssistantTurns,
       verifiedScenarioCount: verifiedScenarios.length,
       observedIncompleteScenarioCount: scenarioResults.filter((item) =>
-        ['observed_incomplete', 'archived_preserved'].includes(item.outcome),
+        ['observed_incomplete', 'archived_preserved', 'quality_review_failed_preserved'].includes(
+          item.outcome,
+        ),
       ).length,
       taskExecutionProofCount: scenarioResults.filter((item) => item.taskExecutionProven).length,
       scenarios: scenarioResults,
@@ -1927,6 +1992,11 @@ function runSelfTests() {
     requiredPromptIndexes: [0, 2],
   };
   assert.deepEqual(requiredPromptIndexes(SCENARIOS['nvidia-nim']), [2, 3]);
+  assert.equal(SCENARIOS['nvidia-nim'].preserveAfterFailedQualityReview, true);
+  assert.equal(SCENARIOS['groq-code-review'].providerId, 'groq');
+  assert.deepEqual(SCENARIOS['groq-code-review'].modelPreferences, ['openai/gpt-oss-20b']);
+  assert.equal(SCENARIOS['groq-code-review'].pinnedSourceArtifact, 'harbor_sensor_triage.py');
+  assert.deepEqual(requiredPromptIndexes(SCENARIOS['groq-code-review']), [0, 1]);
   const optionalPromptInspection = inspectScenarioHistory(
     [
       user('u-analysis', 'analysis'),

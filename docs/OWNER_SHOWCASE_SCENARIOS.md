@@ -62,7 +62,7 @@ and [Cloudflare Workers AI pricing](https://developers.cloudflare.com/workers-ai
 | Project                                | Real conversations                                                                                 | What it proves                                                                                    | Saved output                           |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `[LIVE] Northstar Launch Studio`       | Cohere launch plan; OpenRouter free decision card; optional Anthropic audit                        | Planning, critique, a bounded one-pass smoke, owner/project organization, explicit hosted routing | Actual model-produced planning outputs |
-| `[LIVE] Harbor Data Reliability Lab`   | NVIDIA NIM sensor triage; Groq incident runbook; optional OpenAI analyzer                          | Inline data reasoning, code generation, operational review, provider/model provenance             | Actual model-produced code and runbook |
+| `[LIVE] Harbor Data Reliability Lab`   | Preserved NVIDIA review failure; Groq incident runbook; Groq reviewed sensor repair                | Honest failure history, pinned-artifact review, code generation, sandbox evidence                 | Reviewed Groq code and runbook         |
 | `[LIVE] Atlas Grounded Decision Room`  | NVIDIA NIM pinned decision; Gemini and Mistral grounded variants; Cloudflare free-allocation smoke | Revision-pinned reasoning, explicit hosted-route constraints, persisted response provenance       | Source memos, decisions, and checklist |
 | `[LOCAL CUDA] Private Studio Notebook` | Cupcake Local action brief                                                                         | Explicit offline route, app-managed NVIDIA CUDA inference, two-turn continuity, local persistence | Final local-model action brief         |
 
@@ -79,34 +79,33 @@ The NVIDIA NIM grounded response ends with an explicit decision sentence; the ha
 exact model-produced sentence as project-scoped decision memory and binds its provenance to the
 persisted assistant message ID.
 
-The Harbor scenario also creates one real durable code-execution task asking CupcakeAI to review the
-saved Python artifact and run its embedded tests in a sandbox. Its observed runtime status is
-recorded as returned. A `succeeded` task row alone is not proof. Verification requires the persisted
-terminal checkpoint to identify `python.run` and `native.sandbox.python`, bind the exact immutable
-revision sourced from the completed model response in the same project, report exit status 0, report
-successful tests, and contain non-empty sandbox provenance. Task lookup follows that persisted
-artifact/revision binding rather than relying on prompt wording, so a UI-created “Run tests” task is
-recognized without accepting a task for a stale or different artifact. The showcase labels the
-generated Python as tested only when all of that evidence exists.
+The reviewed Groq Harbor scenario pins the latest NVIDIA artifact revision for an independent defect
+brief, then creates a separate `harbor_quality_checked.py` replacement. The NVIDIA attempts remain
+visible as failed quality evidence and are never described as tested code. The Groq scenario also
+creates one real durable code-execution task for its separate saved artifact. A `succeeded` task row
+alone is not proof. Verification requires the persisted terminal checkpoint to identify `python.run`
+and `native.sandbox.python`, bind the exact immutable revision sourced from the completed Groq
+response in the same project, report exit status 0, report successful tests, and contain non-empty
+sandbox provenance. Task lookup follows that persisted artifact/revision binding rather than relying
+on prompt wording, so a UI-created “Run tests” task is recognized without accepting a task for a
+stale or different artifact.
 
 ## Intended low-quota run
 
 1. Start the freshly packaged `CupcakeAI.exe` hidden with
    `CUPCAKE_TEST_DATA_DIR=E:\temp\cupcakeai-owner-test-20260902`, a dedicated WebView2 directory
    under `E:\temp`, and a chosen remote-debugging port.
-2. Continue the current hosted work only on the repaired Mistral and Google routes. The completed
-   Groq and Cohere examples are retained and should not consume another request:
+2. Create only the new Groq reviewed coding scenario. The existing Groq incident runbook is reused
+   idempotently, so this makes two new Groq calls without repeating its earlier prompts. Keep task
+   creation for the visible artifact workflow:
 
    ```powershell
-   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers mistral,google
+   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers groq --skip-tasks
    ```
 
-3. Run the repaired NVIDIA NIM code scenario explicitly. Its existing grounded NIM example is reused
-   without another request:
-
-   ```powershell
-   node scripts/create-owner-showcase.mjs --port 10071 --phase hosted --providers nvidia-nim
-   ```
+3. Open `harbor_quality_checked.py` in Artifacts, choose **Run tests**, and retain the real task
+   only if its exact immutable revision finishes with sandbox evidence. Make no further NVIDIA code
+   calls.
 
 4. Do not rerun OpenRouter during the current acceptance pass. Its incomplete 200-token response is
    retained and archived as historical evidence. Cloudflare's earlier attempt failed during catalog
@@ -148,14 +147,12 @@ Projects, conversations, and artifacts use stable exact names. A rerun reuses th
 turn with a strictly completed assistant response. If a provider fails after persisting the user
 turn, one request-specific recovery turn is allowed; its stable request hash prevents one failed
 turn from being mistaken for another. A second unresolved interruption stops the scenario instead of
-stacking duplicate prompts. The known incomplete NVIDIA analysis and code expansion remain in
-immutable chat history as observed partial turns. Neither is retried merely to increase the turn
-count. The first bounded replacement completed, but inspection in the owner profile found wrong CSV
-row numbers, missing-field classification defects, unsafe short-row access, broken integer
-assertions, and an undefined CLI name. That response remains real stage history; one focused final
-correction is now required, and only its completed output can become the code artifact source. When
-a repaired provider produces a valid replacement, the harness revises an existing stale artifact
-with the actual completed response and records that response as the revision source. Archived
+stacking duplicate prompts. The NVIDIA analysis, expansion, and two bounded replacements remain in
+immutable chat history. Owner review found the replacements still had incorrect row expectations,
+silent malformed-row handling, unsafe assertions, and an undefined CLI name. The harness preserves
+that scenario with `quality_review_failed_preserved` and cannot send it another request or promote
+its artifact as quality proof. The separate Groq review pins the latest NVIDIA revision as evidence,
+but only the final completed Groq implementation can source `harbor_quality_checked.py`. Archived
 conversations stay archived and never trigger inference. Duplicate stable names are treated as an
 error because the harness cannot safely guess which owner item to keep.
 
