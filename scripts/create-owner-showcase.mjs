@@ -827,11 +827,25 @@ async function ensureArtifact(activePage, projectId, conversationId, scenario, a
       title: scenario.artifact,
       kind: scenario.artifactKind,
       mimeType: scenario.artifactKind === 'code' ? 'text/x-python' : 'text/markdown',
-      content: assistant.content,
+      content: artifactContent(scenario.artifactKind, assistant.content),
       authorKind: 'assistant',
     },
     120_000,
   );
+}
+
+function artifactContent(kind, content) {
+  const text = String(content ?? '');
+  if (kind !== 'code') return text;
+  const blocks = [
+    ...text.matchAll(
+      /(?:^|\n)```(?:python|python3|py)?[\t ]*\r?\n([\s\S]*?)\r?\n```(?=\r?\n|$)/giu,
+    ),
+  ];
+  if (blocks.length !== 1 || !blocks[0][1].trim()) {
+    throw new Error('A Python artifact requires exactly one non-empty model-produced code block');
+  }
+  return `${blocks[0][1].trim()}\n`;
 }
 
 async function ensureDecisionMemory(activePage, projectId, definition, assistant) {
