@@ -6,10 +6,16 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $tempRoot = [IO.Path]::GetFullPath('E:\temp\')
-$logPath = 'E:\temp\cupcake-cleanup-20260905.log'
+$archiveParent = [IO.Path]::GetFullPath('E:\uesless\')
+$archiveBatchName = 'CupcakeAI-cleanup-{0}-{1}-{2}' -f (Get-Date).ToString('yyyyMMdd-HHmmss-fff'), $PID, ([Guid]::NewGuid().ToString('N').Substring(0, 8))
+$archiveRoot = [IO.Path]::GetFullPath((Join-Path $archiveParent $archiveBatchName))
+$manifestPath = [IO.Path]::GetFullPath((Join-Path $archiveRoot 'manifest.jsonl'))
+$logPath = 'E:\temp\cupcake-archive-20260905.log'
 $ledgerPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'docs\worklogs\2026-09-05-e-drive-cleanup.md'))
 $batchPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'Cleanup CupcakeAI E Drive.bat'))
+$archiveBatchPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'Archive Obsolete CupcakeAI E Drive.bat'))
 $scriptPath = [IO.Path]::GetFullPath($PSCommandPath)
+$archiveInitialized = $false
 
 $protectedPaths = @(
     'E:\temp\cupcakeai-owner-test-20260902',
@@ -19,9 +25,16 @@ $protectedPaths = @(
     'E:\temp\cupcakeagi-tauri-target',
     'E:\temp\cupcake-overhaul-20260905',
     'E:\temp\cupcake-overhaul-20260905\broker-target',
-    'E:\temp\CupcakeAI\normal-profile\local-models\models',
-    'E:\temp\CupcakeAI\normal-profile\local-models\runtime',
-    'E:\temp\CupcakeAI\quarantine'
+    'E:\temp\cupcakeai-models',
+    'E:\temp\cupcake-security-native-20260905-fresh',
+    'E:\temp\cupcakeai-onboarding-qa-20260905',
+    'E:\temp\cupcakeai-owner-showcase-20260905',
+    'E:\temp\cupcake-model-catalog-qa-20260905',
+    'E:\temp\cupcake-startup-profile-20260905',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\cupcake-dbos-system.db',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\cupcake-runtime.db',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\cupcake.db',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\developer-traces.db'
 ) | ForEach-Object { [IO.Path]::GetFullPath($_) }
 
 $directoryTargets = @(
@@ -56,7 +69,76 @@ $directoryTargets = @(
     'E:\temp\cupcakeagi-target\security-backup',
     'E:\temp\Cupcakeagi-cargo-target',
     'E:\temp\cupcakeagi-target',
-    'E:\temp\cupcakeagi-tool-broker-target'
+    'E:\temp\cupcakeagi-tool-broker-target',
+    'E:\temp\CupcakeAI\normal-profile',
+    'E:\temp\CupcakeAI\qa',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\local-models.cupcake-migration-backup',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\runtime',
+    'E:\temp\cupcakeai-direct-open-smoke-20260904-v2',
+    'E:\temp\cupcakeai-default-open-20260904',
+    'E:\temp\Cupcakeagi-legacy-tests',
+    'E:\temp\cupcakeai-owner-test-20260903-ui',
+    'E:\temp\cupcake-wallpaper-qa-20260904',
+    'E:\temp\cupcakeai-ui-pass2',
+    'E:\temp\cupcakeai-visual-20260903',
+    'E:\temp\cupcakeai-default-open-native-20260904',
+    'E:\temp\cupcakeai-owner-test-20260902-ui',
+    'E:\temp\cupcakeai-owner-optional-security-20260904',
+    'E:\temp\cupcakeai-owner-final-build-20260903',
+    'E:\temp\cupcakeai-owner-final-20260903',
+    'E:\temp\cupcakeai-owner-migration-20260903-v3',
+    'E:\temp\cupcakeai-owner-migration-20260903-v2',
+    'E:\temp\cupcakeai-brand-research',
+    'E:\temp\cupcakeai-ui-qa',
+    'E:\temp\cupcakeai-owner-migration-20260903'
+) | ForEach-Object { [IO.Path]::GetFullPath($_) }
+
+$repositoryReferenceExemptTargets = @(
+    'E:\temp\CupcakeAI\normal-profile',
+    'E:\temp\CupcakeAI\qa',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\local-models.cupcake-migration-backup',
+    'E:\temp\CupcakeAI\quarantine\normal-profile-key-mismatch-20260901T1934Z\runtime',
+    'E:\temp\cupcakeai-direct-open-smoke-20260904-v2',
+    'E:\temp\cupcakeai-default-open-20260904',
+    'E:\temp\Cupcakeagi-legacy-tests',
+    'E:\temp\cupcakeai-owner-test-20260903-ui',
+    'E:\temp\cupcake-wallpaper-qa-20260904',
+    'E:\temp\cupcakeai-ui-pass2',
+    'E:\temp\cupcakeai-visual-20260903',
+    'E:\temp\cupcakeai-default-open-native-20260904',
+    'E:\temp\cupcakeai-owner-test-20260902-ui',
+    'E:\temp\cupcakeai-owner-optional-security-20260904',
+    'E:\temp\cupcakeai-owner-final-build-20260903',
+    'E:\temp\cupcakeai-owner-final-20260903',
+    'E:\temp\cupcakeai-owner-migration-20260903-v3',
+    'E:\temp\cupcakeai-owner-migration-20260903-v2',
+    'E:\temp\cupcakeai-brand-research',
+    'E:\temp\cupcakeai-ui-qa',
+    'E:\temp\cupcakeai-owner-migration-20260903'
+) | ForEach-Object { [IO.Path]::GetFullPath($_) }
+
+$fileTargets = @(
+    'E:\temp\cupcake-opening-titlebar.png',
+    'E:\temp\cupcakeai-opening-review.png',
+    'E:\temp\cupcakeai-chat-review-corrected.png',
+    'E:\temp\cupcakeai-chat-review.png',
+    'E:\temp\cupcakeai-wallpaper-picker-review.png',
+    'E:\temp\cupcake-chat-wallpaper.png',
+    'E:\temp\cupcakeai-chat-narrow-main-review.png',
+    'E:\temp\cupcake-models-filters-v2.png',
+    'E:\temp\cupcakeai-models-review.png',
+    'E:\temp\cupcake-models-curated-v2.png',
+    'E:\temp\cupcake-models-filters.png',
+    'E:\temp\cupcake-models-curated.png',
+    'E:\temp\cupcake-security-desktop-home.png',
+    'E:\temp\cupcake-security-desktop-settings.png',
+    'E:\temp\cupcakeai-chat-narrow-review.png',
+    'E:\temp\cupcake-models-narrow-v2.png',
+    'E:\temp\cupcake-security-narrow-home.png',
+    'E:\temp\cupcake-security-narrow-settings.png',
+    'E:\temp\cupcake-security-narrow-detail.png',
+    'E:\temp\cupcake-security-desktop-detail.png',
+    'E:\temp\cupcakeai-owner-test-20260902-evidence.json'
 ) | ForEach-Object { [IO.Path]::GetFullPath($_) }
 
 $runtimeDownloadRoot = [IO.Path]::GetFullPath('E:\temp\CupcakeAI\normal-profile\local-models\downloads\runtime\')
@@ -162,6 +244,189 @@ function Test-ProtectedOverlap {
     return $false
 }
 
+function Assert-OrdinaryArchiveParent {
+    $full = [IO.Path]::GetFullPath($archiveParent).TrimEnd('\')
+    if (-not $full.Equals('E:\uesless', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unexpected archive parent: $full"
+    }
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) {
+        New-Item -ItemType Directory -Path $full -ErrorAction Stop | Out-Null
+    }
+    $resolved = (Resolve-Path -LiteralPath $full -ErrorAction Stop).Path
+    if (-not $resolved.Equals($full, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Resolved archive parent mismatch: $resolved"
+    }
+    $ancestor = $full
+    while ($null -ne $ancestor) {
+        $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Archive parent has a reparse-point ancestor: $ancestor"
+        }
+        $parent = [IO.Directory]::GetParent($ancestor)
+        $ancestor = if ($null -eq $parent) { $null } else { $parent.FullName }
+    }
+    return $full
+}
+
+function Get-ArchiveDestinationPlan {
+    param([string]$SourcePath)
+    $source = [IO.Path]::GetFullPath($SourcePath)
+    if (-not $source.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Archive source escaped E:\temp: $source"
+    }
+    $relative = $source.Substring($tempRoot.Length).TrimStart('\')
+    if ([string]::IsNullOrWhiteSpace($relative)) {
+        throw 'Refusing to archive the E:\temp root.'
+    }
+    $destination = [IO.Path]::GetFullPath((Join-Path $archiveRoot $relative))
+    $archivePrefix = $archiveRoot.TrimEnd('\') + '\'
+    if (-not $destination.StartsWith($archivePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Archive destination escaped its unique batch: $destination"
+    }
+    if (Test-Path -LiteralPath $destination) {
+        throw "Archive destination collision (never overwrite): $destination"
+    }
+    return $destination
+}
+
+function Initialize-ArchiveBatch {
+    if ($script:archiveInitialized) {
+        return
+    }
+    Assert-OrdinaryArchiveParent | Out-Null
+    if (Test-Path -LiteralPath $archiveRoot) {
+        throw "Unique archive batch already exists: $archiveRoot"
+    }
+    New-Item -ItemType Directory -Path $archiveRoot -ErrorAction Stop | Out-Null
+    $item = Get-Item -LiteralPath $archiveRoot -Force -ErrorAction Stop
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Archive batch is a reparse point: $archiveRoot"
+    }
+    $script:archiveInitialized = $true
+    Write-Log "Archive batch created: $archiveRoot"
+}
+
+function Initialize-ArchiveDestinationParent {
+    param([string]$Destination)
+    Initialize-ArchiveBatch
+    $parent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Destination))
+    $archivePrefix = $archiveRoot.TrimEnd('\') + '\'
+    if (-not ($parent.Equals($archiveRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        $parent.StartsWith($archivePrefix, [StringComparison]::OrdinalIgnoreCase))) {
+        throw "Archive destination parent escaped its batch: $parent"
+    }
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
+    }
+    $ancestor = $parent
+    while ($true) {
+        $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Archive destination has a reparse-point ancestor: $ancestor"
+        }
+        if ($ancestor.Equals($archiveRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+        $ancestor = [IO.Directory]::GetParent($ancestor).FullName
+    }
+}
+
+function Get-PathFingerprint {
+    param([string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (-not $item.PSIsContainer) {
+        return [pscustomobject]@{
+            Type = 'file'
+            Bytes = [int64]$item.Length
+            Sha256 = Get-Sha256Hex -Path $item.FullName
+            HashScheme = 'sha256-file-v1'
+        }
+    }
+    $root = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $entries = @(Get-ChildItem -LiteralPath $root -Force -Recurse -ErrorAction Stop | Sort-Object FullName)
+    $builder = [Text.StringBuilder]::new()
+    $bytes = [int64]0
+    foreach ($entry in $entries) {
+        $relative = $entry.FullName.Substring($root.Length).TrimStart('\').Replace('\', '/')
+        if ($entry.PSIsContainer) {
+            [void]$builder.Append("D|$relative`n")
+        }
+        else {
+            $length = [int64]$entry.Length
+            $hash = Get-Sha256Hex -Path $entry.FullName
+            $bytes += $length
+            [void]$builder.Append("F|$relative|$length|$hash`n")
+        }
+    }
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($builder.ToString()))
+        $treeHash = ([BitConverter]::ToString($digest)).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+    return [pscustomobject]@{
+        Type = 'directory'
+        Bytes = $bytes
+        Sha256 = $treeHash
+        HashScheme = 'sha256-tree-v1:path-type-length-content-hash'
+    }
+}
+
+function Write-ArchiveManifestRecord {
+    param([System.Collections.IDictionary]$Record)
+    Initialize-ArchiveBatch
+    $line = [pscustomobject]$Record | ConvertTo-Json -Compress -Depth 8
+    Add-Content -LiteralPath $manifestPath -Value $line -Encoding UTF8
+}
+
+function Move-ValidatedPathToArchive {
+    param(
+        [string]$Source,
+        [string]$Category,
+        [string]$GroupId = ''
+    )
+    $destination = Get-ArchiveDestinationPlan -SourcePath $Source
+    $fingerprint = Get-PathFingerprint -Path $Source
+    if ($ValidateOnly) {
+        return [pscustomobject]@{ Bytes = $fingerprint.Bytes; Destination = $destination; Sha256 = $fingerprint.Sha256; Planned = $true }
+    }
+    Initialize-ArchiveDestinationParent -Destination $destination
+    Write-ArchiveManifestRecord -Record ([ordered]@{
+        Status = 'planned'
+        OriginalPath = $Source
+        ArchivePath = $destination
+        Category = $Category
+        GroupId = $GroupId
+        Type = $fingerprint.Type
+        Bytes = $fingerprint.Bytes
+        Sha256 = $fingerprint.Sha256
+        HashScheme = $fingerprint.HashScheme
+        RecordedAt = (Get-Date).ToString('o')
+    })
+    if (Test-Path -LiteralPath $destination) {
+        throw "Archive destination collision before move (never overwrite): $destination"
+    }
+    Move-Item -LiteralPath $Source -Destination $destination -ErrorAction Stop
+    if ((Test-Path -LiteralPath $Source) -or -not (Test-Path -LiteralPath $destination)) {
+        throw "Archive move verification failed: $Source -> $destination"
+    }
+    Write-ArchiveManifestRecord -Record ([ordered]@{
+        Status = 'moved'
+        OriginalPath = $Source
+        ArchivePath = $destination
+        Category = $Category
+        GroupId = $GroupId
+        Type = $fingerprint.Type
+        Bytes = $fingerprint.Bytes
+        Sha256 = $fingerprint.Sha256
+        HashScheme = $fingerprint.HashScheme
+        RecordedAt = (Get-Date).ToString('o')
+    })
+    return [pscustomobject]@{ Bytes = $fingerprint.Bytes; Destination = $destination; Sha256 = $fingerprint.Sha256; Planned = $false }
+}
+
 function Get-ReferencingProcesses {
     param([string]$Path)
     $matches = @()
@@ -193,11 +458,12 @@ function Get-RepositoryReferences {
     return @($references | Sort-Object -Unique)
 }
 
-Set-Content -LiteralPath $logPath -Value ('CupcakeAI E: cleanup started {0}' -f (Get-Date).ToString('o')) -Encoding UTF8
+Set-Content -LiteralPath $logPath -Value ('CupcakeAI E: reversible archive pass started {0}' -f (Get-Date).ToString('o')) -Encoding UTF8
+Assert-OrdinaryArchiveParent | Out-Null
 $driveBefore = Get-PSDrive -Name E
 $freeBefore = [int64]$driveBefore.Free
-$logicalBytesDeleted = [int64]0
-$deletedCount = 0
+$logicalBytesMoved = [int64]0
+$movedCount = 0
 $skippedCount = 0
 $failedCount = 0
 $auditReadyCount = 0
@@ -215,10 +481,12 @@ $script:referenceFiles = @($gitPaths |
         $referenceExtensions -contains [IO.Path]::GetExtension($full).ToLowerInvariant() -and
         -not $full.Equals($scriptPath, [StringComparison]::OrdinalIgnoreCase) -and
         -not $full.Equals($batchPath, [StringComparison]::OrdinalIgnoreCase) -and
+        -not $full.Equals($archiveBatchPath, [StringComparison]::OrdinalIgnoreCase) -and
         -not $full.Equals($ledgerPath, [StringComparison]::OrdinalIgnoreCase)
     })
 
 Write-Log "Free bytes before: $freeBefore"
+Write-Log "Planned unique archive batch: $archiveRoot"
 
 foreach ($target in $directoryTargets) {
     try {
@@ -238,21 +506,23 @@ foreach ($target in $directoryTargets) {
         }
         $references = @(Get-RepositoryReferences -Path $validated)
         if ($references.Count -gt 0) {
-            throw "Current repository reference: $($references -join ', ')"
+            if ($repositoryReferenceExemptTargets -contains $validated) {
+                Write-Log "SUPERSEDED historical repository reference(s): $validated :: $($references -join ', ')"
+            }
+            else {
+                throw "Current repository reference: $($references -join ', ')"
+            }
         }
-        $bytes = Get-TreeBytes -Path $validated
+        $result = Move-ValidatedPathToArchive -Source $validated -Category 'obsolete-directory'
         if ($ValidateOnly) {
             $auditReadyCount++
-            Write-Log "AUDIT ready directory ($bytes bytes): $validated"
-            continue
+            Write-Log "AUDIT ready directory archive ($($result.Bytes) bytes, SHA256=$($result.Sha256)): $validated -> $($result.Destination)"
         }
-        Remove-Item -LiteralPath $validated -Recurse -Force -ErrorAction Stop
-        if (Test-Path -LiteralPath $validated) {
-            throw "Deletion verification failed: $validated"
+        else {
+            $logicalBytesMoved += [int64]$result.Bytes
+            $movedCount++
+            Write-Log "ARCHIVED directory ($($result.Bytes) bytes, SHA256=$($result.Sha256)): $validated -> $($result.Destination)"
         }
-        $logicalBytesDeleted += $bytes
-        $deletedCount++
-        Write-Log "DELETED directory ($bytes bytes): $validated"
     }
     catch {
         $failedCount++
@@ -260,8 +530,41 @@ foreach ($target in $directoryTargets) {
     }
 }
 
+foreach ($target in $fileTargets) {
+    try {
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            Write-Log "SKIP file already absent: $target"
+            $skippedCount++
+            continue
+        }
+        if (Test-ProtectedOverlap -Path $target) {
+            throw "File target overlaps a protected path: $target"
+        }
+        $validated = Assert-ContainedOrdinaryPath -Path $target
+        $processes = @(Get-ReferencingProcesses -Path $validated)
+        if ($processes.Count -gt 0) {
+            $names = ($processes | ForEach-Object { '{0}:{1}' -f $_.Name, $_.ProcessId }) -join ', '
+            throw "Active process reference: $names"
+        }
+        $result = Move-ValidatedPathToArchive -Source $validated -Category 'superseded-file'
+        if ($ValidateOnly) {
+            $auditReadyCount++
+            Write-Log "AUDIT ready file archive ($($result.Bytes) bytes, SHA256=$($result.Sha256)): $validated -> $($result.Destination)"
+        }
+        else {
+            $logicalBytesMoved += [int64]$result.Bytes
+            $movedCount++
+            Write-Log "ARCHIVED file ($($result.Bytes) bytes, SHA256=$($result.Sha256)): $validated -> $($result.Destination)"
+        }
+    }
+    catch {
+        $failedCount++
+        Write-Log "PRESERVED file: $target :: $($_.Exception.Message)"
+    }
+}
+
 $installedBackends = @('cpu', 'cuda-12', 'cuda-13', 'vulkan')
-$installedRoot = 'E:\temp\CupcakeAI\normal-profile\local-models\runtime\versions\b10679'
+$installedRoot = 'E:\temp\cupcakeai-owner-test-20260902\local-models\runtime\versions\b10679'
 $installedReady = $true
 foreach ($backend in $installedBackends) {
     if (-not (Test-Path -LiteralPath (Join-Path $installedRoot $backend) -PathType Container)) {
@@ -306,20 +609,80 @@ if ($installedReady) {
             if (-not $oldHash.Equals($copyHash, [StringComparison]::OrdinalIgnoreCase)) {
                 throw "Protected duplicate hash mismatch for $archiveName"
             }
-            $bytes = (Get-TreeBytes -Path $oldArchive) + (Get-TreeBytes -Path $oldMetadata)
+            $archiveFingerprint = Get-PathFingerprint -Path $oldArchive
+            $metadataFingerprint = Get-PathFingerprint -Path $oldMetadata
+            $bytes = [int64]$archiveFingerprint.Bytes + [int64]$metadataFingerprint.Bytes
+            $archiveDestination = Get-ArchiveDestinationPlan -SourcePath $oldArchive
+            $metadataDestination = Get-ArchiveDestinationPlan -SourcePath $oldMetadata
+            $groupId = 'runtime-cache-pair:{0}' -f $archiveName
             if ($ValidateOnly) {
                 $auditReadyCount++
-                Write-Log "AUDIT ready verified duplicate archive and metadata ($bytes bytes): $archiveName SHA256=$oldHash"
+                Write-Log "AUDIT ready paired runtime archive ($bytes bytes): $oldArchive -> $archiveDestination; $oldMetadata -> $metadataDestination; archive SHA256=$oldHash; metadata SHA256=$($metadataFingerprint.Sha256)"
                 continue
             }
-            Remove-Item -LiteralPath $oldArchive -Force -ErrorAction Stop
-            Remove-Item -LiteralPath $oldMetadata -Force -ErrorAction Stop
-            if ((Test-Path -LiteralPath $oldArchive) -or (Test-Path -LiteralPath $oldMetadata)) {
-                throw "Runtime cache deletion verification failed for $archiveName"
+            Initialize-ArchiveDestinationParent -Destination $archiveDestination
+            Initialize-ArchiveDestinationParent -Destination $metadataDestination
+            foreach ($entry in @(
+                @{ Original = $oldArchive; Destination = $archiveDestination; Fingerprint = $archiveFingerprint; Role = 'archive' },
+                @{ Original = $oldMetadata; Destination = $metadataDestination; Fingerprint = $metadataFingerprint; Role = 'metadata' }
+            )) {
+                Write-ArchiveManifestRecord -Record ([ordered]@{
+                    Status = 'planned'
+                    OriginalPath = $entry.Original
+                    ArchivePath = $entry.Destination
+                    Category = 'verified-runtime-cache-pair'
+                    GroupId = $groupId
+                    PairRole = $entry.Role
+                    Type = $entry.Fingerprint.Type
+                    Bytes = $entry.Fingerprint.Bytes
+                    Sha256 = $entry.Fingerprint.Sha256
+                    HashScheme = $entry.Fingerprint.HashScheme
+                    RecordedAt = (Get-Date).ToString('o')
+                })
             }
-            $logicalBytesDeleted += $bytes
-            $deletedCount++
-            Write-Log "DELETED verified duplicate archive and metadata ($bytes bytes): $archiveName SHA256=$oldHash"
+            $archiveMoved = $false
+            try {
+                if ((Test-Path -LiteralPath $archiveDestination) -or (Test-Path -LiteralPath $metadataDestination)) {
+                    throw "Runtime pair archive collision before move (never overwrite): $archiveName"
+                }
+                Move-Item -LiteralPath $oldArchive -Destination $archiveDestination -ErrorAction Stop
+                $archiveMoved = $true
+                Move-Item -LiteralPath $oldMetadata -Destination $metadataDestination -ErrorAction Stop
+            }
+            catch {
+                $pairError = $_
+                if ($archiveMoved -and (Test-Path -LiteralPath $archiveDestination) -and -not (Test-Path -LiteralPath $oldArchive)) {
+                    Move-Item -LiteralPath $archiveDestination -Destination $oldArchive -ErrorAction Stop
+                    Write-Log "ROLLED BACK incomplete runtime pair archive: $archiveName"
+                }
+                throw $pairError
+            }
+            if ((Test-Path -LiteralPath $oldArchive) -or (Test-Path -LiteralPath $oldMetadata) -or
+                -not (Test-Path -LiteralPath $archiveDestination -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $metadataDestination -PathType Leaf)) {
+                throw "Runtime cache pair archive verification failed for $archiveName"
+            }
+            foreach ($entry in @(
+                @{ Original = $oldArchive; Destination = $archiveDestination; Fingerprint = $archiveFingerprint; Role = 'archive' },
+                @{ Original = $oldMetadata; Destination = $metadataDestination; Fingerprint = $metadataFingerprint; Role = 'metadata' }
+            )) {
+                Write-ArchiveManifestRecord -Record ([ordered]@{
+                    Status = 'moved'
+                    OriginalPath = $entry.Original
+                    ArchivePath = $entry.Destination
+                    Category = 'verified-runtime-cache-pair'
+                    GroupId = $groupId
+                    PairRole = $entry.Role
+                    Type = $entry.Fingerprint.Type
+                    Bytes = $entry.Fingerprint.Bytes
+                    Sha256 = $entry.Fingerprint.Sha256
+                    HashScheme = $entry.Fingerprint.HashScheme
+                    RecordedAt = (Get-Date).ToString('o')
+                })
+            }
+            $logicalBytesMoved += $bytes
+            $movedCount++
+            Write-Log "ARCHIVED paired runtime archive and metadata ($bytes bytes): $archiveName archive SHA256=$oldHash metadata SHA256=$($metadataFingerprint.Sha256)"
         }
         catch {
             $failedCount++
@@ -331,9 +694,15 @@ if ($installedReady) {
 $driveAfter = Get-PSDrive -Name E
 $freeAfter = [int64]$driveAfter.Free
 Write-Log "Free bytes after: $freeAfter"
-Write-Log "Logical bytes deleted: $logicalBytesDeleted"
-Write-Log "Deleted entries: $deletedCount; skipped absent: $skippedCount; preserved/failed: $failedCount"
+Write-Log "Logical bytes moved to E:\uesless: $logicalBytesMoved"
+Write-Log "Archived entries/groups: $movedCount; skipped absent: $skippedCount; preserved/failed: $failedCount"
 Write-Log "Audit-ready entries: $auditReadyCount"
+if ($archiveInitialized) {
+    Write-Log "Archive manifest: $manifestPath"
+}
+else {
+    Write-Log 'No archive batch created because no source target was present.'
+}
 
 if ($failedCount -gt 0) {
     exit 1
