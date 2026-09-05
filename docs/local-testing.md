@@ -130,6 +130,23 @@ WebView/CDP captures for application color review; document the overlay when int
 captures. Archive obsolete task-owned files to `E:\uesless` with a restore manifest. Moving files
 within E is reversible organization, not disk-space reclamation.
 
+## Group conversation acceptance
+
+Run `node scripts/accept-owner-group-showcase.mjs --self-test` before attaching it to the explicitly
+authorized owner app with `--port`. It checks exact Groq/Cohere routes, visible cloud disclosure,
+separate attributed speaker rows, a direct mention with zero selector calls, and a closing
+acknowledgment that produces one selector call and no assistant reply. It never retries an existing
+incomplete showcase prompt. Its optional local Cupcake is configured disabled without loading a
+model. Owner scenarios and quota boundaries are in
+[the showcase guide](OWNER_SHOWCASE_SCENARIOS.md).
+
+The runtime independently checks UTF-16 mention spans, roster and branch revisions, privacy changes,
+provider readiness, exact context hashes, and one active turn per branch. Stop must work during
+selection and between speakers, preserve any committed user message, and never resume automatically
+after restart. Read and inspect the actual persisted turn and native app screenshots in addition to
+browser bridge tests. A local direct-mention retake must obey the GPU lock and prove zero cloud
+selector calls.
+
 ## 8. Native window and visual matrix
 
 Open and inspect every image; DOM assertions are insufficient. Cover all four themes at 360, 768,

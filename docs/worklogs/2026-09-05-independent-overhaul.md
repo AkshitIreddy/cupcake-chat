@@ -252,6 +252,34 @@ terminal task presentation is being corrected before the final package.
 
 ## Final source qualification and native storage proof
 
+The aggregate group-enabled production source is frozen at `739f524`. Fresh combined qualification
+passes **161 JavaScript unit/contract tests**, **87 browser E2E tests** (one wide-only omission of a
+narrow-specific test), and **487 Python tests** (one skipped). Broker tests pass 140 with one
+intentional native-probe skip; the host passes 29. Both Rust Clippy checks deny warnings, both Rust
+format checks pass, strict Pyright reports zero errors/warnings, and mypy covers 121 source files.
+All hand-authored Python formatting and full Ruff lint pass; generated Python formatting is owned by
+the canonical generator and verified with the passing schema-drift check. The JavaScript lint and
+TypeScript gates pass. Repository-wide Prettier still includes untouched historical files and the
+owner's two preserved runtime receipts; current changed source and evidence were formatted.
+
+The full run independently found two integration defects beyond scoped agent tests. A worker test
+left its intentionally denied socket APIs in the pytest process; its isolated cleanup fix is
+`2fe1b49` and leaves production sandbox restrictions unchanged. Older bridge fixtures returned
+successful undefined optional group state and crashed the renderer when opening a solo chat;
+`739f524` validates those boundaries. All eight affected browser cases and the complete 88-case
+matrix now pass. Root also opened the narrow roster/mention and corrected failing-task screenshots.
+The pre-final exact-token scan covered 2,090 owned text files and found no matches; final native
+demo output still requires a new scan after creation.
+
+Final package construction uses immutable production `739f524`; its runtime production bytes match
+the earlier committed `5cb86fd` snapshot. Frozen runtime SHA-256 is
+`71BB0C6000D5161FAB071F7298E1EAB902101744A9C247B8F91C97D93E88D407`, broker is
+`083E78A27AA6D73AC505290D79BFB017B5CA064C2809BE2587C9BDF0F430C25D`, and manifest is
+`461FCE6A38804E91B2C58FEE22344000B8056854159AF46C3CC61316BD20193B`. Six frozen provider
+constructions, runtime startup/help, local runtime verification, and independent sidecar integrity
+verification pass. Host/installer and owner group/CUDA retakes remain open until their actual
+results are recorded below. Older results below are historical checkpoints.
+
 - Production snapshot `359f150` includes provider repairs, startup hydration, provider-preserving
   partial-response continuation, populated wallpaper readability, authoritative artifact revision
   counts, real Windows sandbox execution, and the saved-artifact **Run tests** workflow.

@@ -8,23 +8,32 @@ a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
 > **Corrective local candidate, not an accepted release.** The previous desktop baseline was
 > rejected by the owner. The Tauri executable, verified sidecars, unsigned NSIS bundle, and fresh
-> in-app NVIDIA NIM/Cohere conversations now pass local testing. App-managed local inference,
-> clean-machine installer lifecycle, the complete native accessibility/performance matrix, and owner
-> acceptance remain governed by the live checklist. Nothing here is approved for distribution.
+> in-app Groq/Cohere/NVIDIA NIM conversations and app-managed CUDA inference have passed provisional
+> local testing. The final group-enabled package, clean-machine installer lifecycle, the complete
+> native accessibility/performance matrix, and owner acceptance remain governed by the live
+> checklist. Nothing here is approved for distribution.
 
 ## Product contract
 
-- Chat remains the primary surface. Voice and automatic model routing are excluded.
+- Chat remains the primary surface. Voice is excluded.
 - Model choice is explicit. Optional fallbacks are off by default and disclose cost/privacy changes.
+- Group conversations use reusable named Cupcakes with roles, personality, and exact models.
+  Structured `@mentions` call only the selected members. Smart mode chooses useful contributions
+  within a disclosed roster, can keep the entire turn quiet, and defaults to at most two replies. It
+  never invents a model route, silently falls back, or continues without a new user turn.
 - Provider setup stays inside CupcakeAI: key entry, privacy/cost disclosure, connection testing,
   supported-model discovery, saved masked identity, reconnect, and removal.
 - Cupcake Local is the only installed local-model manager. It owns a pinned llama.cpp runtime and
   optional downloaded GGUF weights; users do not need Node, Python, Conda, or a separate model
   server.
-- OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, NVIDIA NIM, and generic remote OpenAI-compatible
-  endpoints remain explicit hosted routes.
+- OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, NVIDIA NIM, Groq, OpenRouter, Cloudflare Workers
+  AI, and generic remote OpenAI-compatible endpoints remain explicit hosted routes. Free access and
+  provider limits vary; the app reports actual availability and errors.
 - Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, and Settings remain
   persistent destinations.
+- Saved Python artifacts can run their exact revision in the contained Windows sandbox. Results
+  distinguish passing tests, failing tests, infrastructure errors, and cancellation, and remain
+  available after restart. Group conversations do not run tools in their first version.
 - Cupcake Light, Cupcake Dark, Minimal, and Classic remain the four themes.
 
 The corrective Models-screen target is useful before installation: detect the current device, load
