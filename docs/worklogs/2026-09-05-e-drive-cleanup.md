@@ -69,6 +69,15 @@ packs, build targets, rollback snapshots, and current group, browser, native, an
 
 ## Protected paths
 
+### Resume check — 2026-09-07
+
+The previously verified final archive batch and its manifest are no longer present at the recorded
+path. `E:\uesless` exists but was empty when inspected. This task did not remove the batch, and the
+available evidence does not identify what changed it during the pause. The September 5 hash
+verification remains a historical result; the restore worker cannot restore missing archive data.
+The owner profile and protected Guarded security evidence are still present. No new cleanup or
+deletion was performed during this resume check.
+
 The audit did not modify the current owner profile, current package/build roots, current overhaul
 evidence, current showcase, active security evidence, the preserved rollback, current QA evidence,
 Git worktrees, or paths belonging to other projects. The final inventory verified these 12 necessary
