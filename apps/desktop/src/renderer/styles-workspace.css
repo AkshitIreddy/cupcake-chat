@@ -450,6 +450,7 @@
   transition: opacity 0.16s;
 }
 .message:hover > .message-actions,
+.message:focus-within > .message-actions,
 .message-footer .message-actions {
   opacity: 1;
 }
