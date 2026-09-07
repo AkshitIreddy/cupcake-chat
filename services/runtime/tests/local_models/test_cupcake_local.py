@@ -714,6 +714,30 @@ class _FakeSupervisor:
         self.active_model = None
 
 
+def test_readiness_snapshot_uses_only_live_endpoint_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = CupcakeLocalManager(tmp_path / "profile")
+    supervisor = _FakeSupervisor(tmp_path / "llama-server.exe")
+    supervisor.state = RuntimeState.READY
+    manager._supervisor = supervisor  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    manager._loaded_model_id = "qwen:8b-q4"  # pyright: ignore[reportPrivateUsage]
+
+    def reject_scan(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("readiness must not scan installed artifacts")
+
+    monkeypatch.setattr(manager.models, "list", reject_scan)
+    monkeypatch.setattr(manager.runtimes, "list", reject_scan)
+    endpoint = manager.readiness()
+    assert endpoint.state is RuntimeState.READY
+    assert endpoint.models == ("qwen:8b-q4",)
+
+    supervisor.state = RuntimeState.FAILED
+    assert manager.readiness().state is RuntimeState.FAILED
+    manager._supervisor = None  # pyright: ignore[reportPrivateUsage]
+    assert manager.readiness().state is RuntimeState.STOPPED
+
+
 def test_signed_runtime_gate_rejects_tampering_before_any_runtime_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

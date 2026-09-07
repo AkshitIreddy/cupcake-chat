@@ -58,6 +58,7 @@ class CupcakeLocalManager:
         self.downloads = root / "downloads"
         self._supervisor: LlamaCppSupervisor | None = None
         self._runtime_id: str | None = None
+        self._loaded_model_id: str | None = None
         self._downloads: dict[str, CheckedDownload] = {}
         self._model_catalog: SignedModelCatalog | None = None
         self._runtime_catalog: SignedRuntimeCatalog | None = None
@@ -368,6 +369,7 @@ class CupcakeLocalManager:
             self._activation_history.append((previous.version, previous.backend))
         self._supervisor = None
         self._runtime_id = None
+        self._loaded_model_id = None
         return installed
 
     @staticmethod
@@ -407,6 +409,7 @@ class CupcakeLocalManager:
                 continue
             self._supervisor = None
             self._runtime_id = None
+            self._loaded_model_id = None
             return installed
         raise RuntimeError("no verified runtime rollback target is available")
 
@@ -531,6 +534,7 @@ class CupcakeLocalManager:
             RuntimeState.FAILED,
         }:
             await self._supervisor.stop()
+        self._loaded_model_id = None
         supervisor = LlamaCppSupervisor(
             Path(runtime.executable),
             port=0,
@@ -556,7 +560,9 @@ class CupcakeLocalManager:
             await supervisor.stop()
             self._supervisor = None
             self._runtime_id = None
+            self._loaded_model_id = None
             raise
+        self._loaded_model_id = model.id
         return replace(
             endpoint,
             version=runtime.version,
@@ -575,6 +581,7 @@ class CupcakeLocalManager:
             await supervisor.stop()
         self._supervisor = None
         self._runtime_id = None
+        self._loaded_model_id = None
         active = self.runtimes.active(verify_integrity=False)
         return RuntimeEndpoint(
             id=f"{RuntimeKind.CUPCAKE_LLAMA_CPP.value}:managed",
@@ -616,15 +623,24 @@ class CupcakeLocalManager:
     async def close(self) -> None:
         await self.unload()
 
-    def _active_model_id(self) -> str | None:
+    def readiness(self) -> RuntimeEndpoint:
+        """Return the live managed endpoint without scanning hardware or installations."""
+
         supervisor = self._supervisor
-        if supervisor is None or supervisor.active_model is None:
-            return None
-        active_path = supervisor.active_model.resolve()
-        for model in self.models.list():
-            if Path(model.path).resolve() == active_path:
-                return model.id
-        return None
+        if supervisor is None:
+            return RuntimeEndpoint(
+                id=f"{RuntimeKind.CUPCAKE_LLAMA_CPP.value}:managed",
+                kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
+                base_url="",
+                state=RuntimeState.STOPPED,
+                managed=True,
+            )
+        endpoint = supervisor.endpoint()
+        models = (self._loaded_model_id,) if self._loaded_model_id is not None else ()
+        return replace(endpoint, models=models)
+
+    def _active_model_id(self) -> str | None:
+        return self._loaded_model_id
 
     def _rehydrate_downloads(self) -> None:
         """Reconstruct crash-recoverable downloads after catalogs are restored."""

@@ -15,6 +15,7 @@ import pytest
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.domain.models import MessageRole
 from cupcake_runtime.groups import GroupTurnStatus
+from cupcake_runtime.local_models.types import RuntimeEndpoint, RuntimeKind, RuntimeState
 from cupcake_runtime.providers.base import ProviderConfig
 from cupcake_runtime.providers.types import (
     ModelCapabilities,
@@ -1006,7 +1007,7 @@ def test_solo_chat_actions_cannot_bypass_group_roster_or_attribution(tmp_path: P
     runtime.close()
 
 
-def test_unavailable_direct_mention_returns_repair_without_loading_or_model_io(
+def test_stopped_local_direct_mention_returns_repair_without_loading_or_model_io(
     tmp_path: Path,
 ) -> None:
     runtime = service(tmp_path)
@@ -1016,7 +1017,9 @@ def test_unavailable_direct_mention_returns_repair_without_loading_or_model_io(
         model="local-model",
         display_name="Unloaded Local",
         base_url="http://127.0.0.1:65530/v1",
-        metadata={"runtime_kind": "cupcake_llama_cpp", "runtime_loaded": False},
+        # This mirrors the stale descriptor left behind after a successful load
+        # followed by an unload. Live manager state must remain authoritative.
+        metadata={"runtime_kind": "cupcake_llama_cpp", "runtime_loaded": True},
     )
     runtime.providers.catalog.register(
         replace(descriptor, privacy_route=PrivacyRoute.LOCAL), replace=True
@@ -1065,4 +1068,92 @@ def test_unavailable_direct_mention_returns_repair_without_loading_or_model_io(
                 },
             )
         )
+    runtime.close()
+
+
+@pytest.mark.parametrize(
+    "live_after_preflight",
+    [
+        {"activeModelId": None, "endpoint": {"state": "stopped", "base_url": ""}},
+        {
+            "activeModelId": "different-local-model",
+            "endpoint": {"state": "ready", "base_url": "http://127.0.0.1:65530/v1"},
+        },
+        {
+            "activeModelId": "local-model",
+            "endpoint": {"state": "ready", "base_url": "http://127.0.0.1:65531/v1"},
+        },
+    ],
+    ids=("stopped", "different-model", "replaced-endpoint"),
+)
+def test_local_route_drift_after_preflight_fails_before_model_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_after_preflight: dict[str, Any],
+) -> None:
+    runtime = service(tmp_path)
+    group = configured_group(runtime, max_replies=1)
+    engine = ScriptedGroupEngine(lambda _payload, _index: "unused")
+    runtime.agent_engine = engine  # type: ignore[assignment]
+    descriptor = runtime.providers.register_openai_compatible_endpoint(
+        "cupcake-local",
+        model="local-model",
+        display_name="Managed Local",
+        base_url="http://127.0.0.1:65530/v1",
+        metadata={"runtime_kind": "cupcake_llama_cpp", "runtime_loaded": True},
+    )
+    runtime.providers.catalog.register(
+        replace(descriptor, privacy_route=PrivacyRoute.LOCAL), replace=True
+    )
+    first_persona = group["personas"][0]
+    runtime.handle("personas.update", {"personaId": first_persona["id"], "modelId": descriptor.id})
+    participant = runtime.handle(
+        "conversations.participants.list", {"conversationId": group["conversationId"]}
+    )[0][0]
+    live = RuntimeEndpoint(
+        id="cupcake_llama_cpp:test",
+        kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
+        base_url="http://127.0.0.1:65530/v1",
+        state=RuntimeState.READY,
+        models=("local-model",),
+        managed=True,
+    )
+
+    def readiness() -> RuntimeEndpoint:
+        return live
+
+    monkeypatch.setattr(runtime.cupcake_local, "readiness", readiness)
+    content = "@mira help"
+    base: dict[str, Any] = {
+        "conversationId": group["conversationId"],
+        "branchId": group["branchId"],
+        "content": content,
+        "mentions": [
+            {
+                "participantId": participant["id"],
+                "personaId": participant["personaId"],
+                "start": 0,
+                "end": 5,
+                "token": "@mira",
+            }
+        ],
+    }
+    preflight, _ = runtime.handle("groups.turn.preflight", base)
+    assert preflight["sendable"] is True
+
+    endpoint = live_after_preflight["endpoint"]
+    live = RuntimeEndpoint(
+        id="cupcake_llama_cpp:test",
+        kind=RuntimeKind.CUPCAKE_LLAMA_CPP,
+        base_url=str(endpoint["base_url"]),
+        state=RuntimeState(str(endpoint["state"])),
+        models=(str(live_after_preflight["activeModelId"]),)
+        if live_after_preflight["activeModelId"] is not None
+        else (),
+        managed=True,
+    )
+    with pytest.raises(RuntimeCommandError) as error:
+        asyncio.run(send(runtime, send_params(base, preflight)))
+    assert error.value.code == "GROUP_MEMBER_UNAVAILABLE"
+    assert engine.member_requests == []
     runtime.close()

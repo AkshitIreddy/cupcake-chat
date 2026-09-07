@@ -70,7 +70,12 @@ from cupcake_runtime.local_models import (
 )
 from cupcake_runtime.local_models.discovery import search_huggingface_gguf
 from cupcake_runtime.local_models.recommendations import estimate_model_memory
-from cupcake_runtime.local_models.types import InstalledModel, InstalledRuntimePack, RuntimeBackend
+from cupcake_runtime.local_models.types import (
+    InstalledModel,
+    InstalledRuntimePack,
+    RuntimeBackend,
+    RuntimeState,
+)
 from cupcake_runtime.mcp import (
     MCPCallBrokerRequest,
     MCPConnectBrokerRequest,
@@ -2217,7 +2222,14 @@ class RuntimeService:
         if descriptor.privacy_route is PrivacyRoute.LOCAL and descriptor.provider != "mock":
             loaded = descriptor.metadata.get("runtime_loaded") is True
             route = self.providers.compatible_runtime_route(model_id)
-            if not loaded or route is None:
+            if (
+                not loaded
+                or route is None
+                or (
+                    descriptor.metadata.get("runtime_kind") == "cupcake_llama_cpp"
+                    and not self._cupcake_local_route_is_ready(model_id, route)
+                )
+            ):
                 return {
                     "status": "local_not_loaded",
                     "message": "Load this exact local model before the group turn.",
@@ -2235,6 +2247,18 @@ class RuntimeService:
                 "message": "Reconnect this model's provider.",
             }
         return {"status": "ready", "message": ""}
+
+    def _cupcake_local_route_is_ready(self, model_id: str, route: Mapping[str, str]) -> bool:
+        try:
+            endpoint = self.cupcake_local.readiness()
+        except (OSError, RuntimeError, ValueError):
+            return False
+        expected_model_id = model_id.removeprefix("openai-compatible:cupcake-local/")
+        return (
+            endpoint.state is RuntimeState.READY
+            and endpoint.models == (expected_model_id,)
+            and endpoint.base_url.rstrip("/") == route["baseUrl"].rstrip("/")
+        )
 
     def _group_turn_preflight(self, params: Mapping[str, Any]) -> dict[str, Any]:
         if any(
