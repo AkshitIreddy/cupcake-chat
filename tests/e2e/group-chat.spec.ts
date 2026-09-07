@@ -724,11 +724,53 @@ async function chooseMention(page: Page, handle: string) {
   await expect(composer).toHaveValue(new RegExp(`^@${handle}\\s`));
 }
 
+async function expectOpaqueCopperSurface(page: Page, selector: string) {
+  const surface = page.locator(selector);
+  await expect(surface).toBeVisible();
+  await expect
+    .poll(() => surface.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe('rgb(69, 39, 25)');
+}
+
 test('solo chats offer Cupcakes without claiming a group route', async ({ page }) => {
   await installGroupBridge(page, 'solo');
   await openGroupChat(page);
   await expect(page.getByTestId('add-cupcake')).toBeVisible();
   await expect(page.locator('.participant-tray__summary')).toHaveCount(0);
+});
+
+test('wallpaper group settings use an opaque surface and honor scrollbar preferences', async ({
+  page,
+}, testInfo) => {
+  await installGroupBridge(page, 'unloaded-local');
+  await openGroupChat(page);
+  await page.getByTestId('group-settings').click();
+  await expectOpaqueCopperSurface(page, '.group-settings-popover');
+  await page.screenshot({
+    path: `E:/temp/cupcake-overhaul-20260905/group-settings-opaque-${testInfo.project.name}.png`,
+  });
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.scrollbars = 'minimal';
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--scrollbar-size').trim(),
+      ),
+    )
+    .toBe('4px');
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.scrollbars = 'hidden';
+  });
+  await expect
+    .poll(() =>
+      page.locator('.group-settings-popover').evaluate((element) => {
+        return getComputedStyle(element).scrollbarWidth;
+      }),
+    )
+    .toBe('none');
 });
 
 test('a paused member is visible and can rejoin mention choices without inference', async ({
@@ -1013,8 +1055,9 @@ test('a local Cupcake can be configured without loading its installed model', as
   await editor.getByLabel('Show routes that need setup or loading').check();
   await editor.getByRole('option').filter({ hasText: 'Qwen3 4B' }).click();
   await expect(editor.locator('.persona-editor__preview')).toContainText('Qwen3 4B');
+  await expectOpaqueCopperSurface(page, '.group-dialog');
   await page.screenshot({
-    path: `E:/temp/cupcake-overhaul-20260905/local-persona-${testInfo.project.name}.png`,
+    path: `E:/temp/cupcake-overhaul-20260905/local-persona-opaque-${testInfo.project.name}.png`,
   });
   await editor.getByRole('button', { name: 'Create Cupcake', exact: true }).click();
   await expect(editor).toBeHidden();

@@ -379,6 +379,49 @@
   --scrollbar-thumb-active: var(--berry);
 }
 
+.app-shell--wallpaper {
+  --group-floating-surface: #161c2a;
+}
+
+.app-shell--wallpaper[data-wallpaper='moonlit-archive'] {
+  --group-floating-surface: #122541;
+}
+
+.app-shell--wallpaper[data-wallpaper='pistachio-atelier'] {
+  --group-floating-surface: #223b2c;
+}
+
+.app-shell--wallpaper[data-wallpaper='blueberry-observatory'] {
+  --group-floating-surface: #30204e;
+}
+
+.app-shell--wallpaper[data-wallpaper='copper-workshop'] {
+  --group-floating-surface: #452719;
+}
+
+.app-shell--wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
+  --group-floating-surface: #09464c;
+}
+
+.app-shell--wallpaper[data-wallpaper='ink-snow-garden'] {
+  --group-floating-surface: #1a1f22;
+}
+
+.app-shell--wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
+  --group-floating-surface: #211d43;
+}
+
+.app-shell--wallpaper[data-wallpaper='saffron-paper-city'] {
+  --group-floating-surface: #342b3b;
+}
+
+.app-shell--wallpaper :is(.group-dialog, .group-settings-popover) {
+  --scrollbar-track: color-mix(in srgb, var(--group-floating-surface), #000 10%);
+  --scrollbar-thumb: color-mix(in srgb, var(--muted) 38%, var(--group-floating-surface));
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 58%, var(--group-floating-surface));
+  background: var(--group-floating-surface);
+}
+
 .group-dialog {
   display: grid;
   width: min(980px, calc(100vw - 48px));
