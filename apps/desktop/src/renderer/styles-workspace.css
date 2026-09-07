@@ -29,6 +29,18 @@
   --pistachio-ink: #b9f2d6;
   --pistachio-soft: rgba(78, 175, 129, 0.2);
   --gold: #f0c871;
+  --scrollbar-track: rgb(from var(--wallpaper-chrome) r g b / 1);
+  --scrollbar-thumb: color-mix(
+    in srgb,
+    var(--muted) 42%,
+    rgb(from var(--wallpaper-chrome) r g b / 1)
+  );
+  --scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--muted) 64%,
+    rgb(from var(--wallpaper-chrome) r g b / 1)
+  );
+  --scrollbar-thumb-active: var(--berry);
   --wallpaper-chrome: rgba(16, 20, 32, 0.82);
   --wallpaper-panel: rgba(16, 21, 34, 0.58);
   --wallpaper-panel-strong: rgba(18, 24, 38, 0.8);
@@ -180,6 +192,25 @@
   border-color: transparent;
   box-shadow: none;
   backdrop-filter: none;
+}
+.app-content--wallpaper .message-actions {
+  width: max-content;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgb(from var(--wallpaper-panel-strong) r g b / 1);
+  box-shadow: var(--wallpaper-shadow);
+  backdrop-filter: blur(12px) saturate(1.08);
+}
+.app-content--wallpaper .message-actions button {
+  color: var(--cocoa);
+}
+.app-content--wallpaper .message-actions button:hover,
+.app-content--wallpaper .message-actions button:focus-visible {
+  background: var(--soft);
+}
+.app-content--wallpaper .group-route-locked {
+  color: var(--cocoa);
 }
 .app-content--wallpaper .user-slip {
   border-color: color-mix(in srgb, var(--berry), transparent 48%);

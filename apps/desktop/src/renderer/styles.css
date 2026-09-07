@@ -147,6 +147,11 @@
 *::-webkit-scrollbar-corner {
   background: var(--scrollbar-track);
 }
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
 :root[data-scrollbars='minimal'] {
   --scrollbar-size: 4px;
 }
@@ -166,6 +171,23 @@
 :root[data-scrollbars='hidden'] *::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+  }
+  :root :is(.model-picker__intents, .onboarding-map nav) {
+    scrollbar-width: auto;
+  }
+  :root[data-scrollbars='hidden'] * {
+    scrollbar-width: none;
+  }
+}
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
 }
 html,
 body,
