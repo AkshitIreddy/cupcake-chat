@@ -49,7 +49,7 @@ class InstalledModelStore:
     def get(self, model_id: str, *, verify: bool = True) -> InstalledModel:
         path = self._manifest_path(model_id)
         model = _INSTALLED_MODEL_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
-        integrity = self.verify(model) if verify else model.integrity_verified
+        integrity = self.verify(model) if verify else False
         return replace(model, integrity_verified=integrity)
 
     def list(self, *, verify: bool = False) -> tuple[InstalledModel, ...]:
@@ -59,7 +59,7 @@ class InstalledModelStore:
         for path in sorted(self.manifests.glob("*.json")):
             try:
                 model = _INSTALLED_MODEL_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
-                integrity = self.verify(model) if verify else Path(model.path).is_file()
+                integrity = self.verify(model) if verify else False
                 models.append(replace(model, integrity_verified=integrity))
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 continue
@@ -76,6 +76,30 @@ class InstalledModelStore:
                 and self._sha256(path).lower() == model.sha256.lower()
             )
         except OSError:
+            return False
+
+    def verify_against_artifact(self, installed: InstalledModel, artifact: ModelArtifact) -> bool:
+        """Bind an installed receipt and its GGUF bytes to signed catalog metadata."""
+
+        try:
+            path = Path(installed.path).resolve(strict=True)
+            expected = artifact.target(self.root).resolve(strict=True)
+            if path != expected:
+                return False
+            if (
+                installed.id != artifact.id
+                or installed.display_name != artifact.display_name
+                or installed.filename != artifact.filename
+                or installed.size_bytes != artifact.size_bytes
+                or installed.sha256.lower() != artifact.sha256.lower()
+                or installed.quantization != artifact.quantization
+                or installed.context_window != artifact.context_window
+                or installed.license != artifact.license
+            ):
+                return False
+            verify_artifact(path, artifact)
+            return True
+        except (FileNotFoundError, OSError, TypeError, ValueError):
             return False
 
     def remove(self, model_id: str, *, active_model_id: str | None = None) -> None:
