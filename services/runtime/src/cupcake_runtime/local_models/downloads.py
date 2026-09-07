@@ -300,7 +300,20 @@ class CheckedDownload:
             ):
                 return fallback
             if snapshot.state == DownloadState.COMPLETED:
-                self._verify(self.destination)
+                # Recovery is presentation state, not an execution trust boundary. A
+                # completed model or acceleration pack can be several gigabytes; hashing
+                # every retained download while the product runtime starts made ordinary
+                # launches scale with the user's local-model library. Keep cheap structural
+                # checks here. Model registration, runtime-pack installation and every
+                # model/runtime activation still perform the full signed digest check before
+                # the bytes can be trusted or executed.
+                if (
+                    snapshot.bytes_downloaded != self.artifact.size_bytes
+                    or snapshot.bytes_total != self.artifact.size_bytes
+                    or not self.destination.is_file()
+                    or self.destination.stat().st_size != self.artifact.size_bytes
+                ):
+                    return fallback
                 return snapshot
             if snapshot.state == DownloadState.CANCELLED:
                 return snapshot
