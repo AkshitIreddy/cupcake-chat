@@ -632,21 +632,24 @@ function Shelf({
       </nav>
       <div className="shelf__recent">
         <div className="shelf-label">Recent</div>
-        {conversations.slice(0, 3).map((chat) => (
-          <button
-            key={chat.id}
-            onClick={() =>
-              onSelectConversation ? onSelectConversation(chat.id) : navigate('chat')
-            }
-          >
-            <span>{chat.title}</span>
-            {chat.unread && (
-              <span className="recent-unread" aria-label="Unread conversation">
-                <Icon name="sparkle" size={10} />
-              </span>
-            )}
-          </button>
-        ))}
+        {conversations
+          .filter((chat) => !chat.archived)
+          .slice(0, 3)
+          .map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() =>
+                onSelectConversation ? onSelectConversation(chat.id) : navigate('chat')
+              }
+            >
+              <span>{chat.title}</span>
+              {chat.unread && (
+                <span className="recent-unread" aria-label="Unread conversation">
+                  <Icon name="sparkle" size={10} />
+                </span>
+              )}
+            </button>
+          ))}
       </div>
       <div className="shelf__bottom">
         {developerMode && (
@@ -821,20 +824,23 @@ function HomeView({
             </button>
           </div>
           <div className="continue-list">
-            {conversations.slice(0, 5).map((c, i) => (
-              <button onClick={() => openChat(c.id)} key={c.id} className="continue-card">
-                <span className={cx('continue-card__index', i === 0 && 'is-berry')}>
-                  <Icon name="chat" size={16} />
-                </span>
-                <span>
-                  <strong>{c.title}</strong>
-                  <small>{c.preview}</small>
-                </span>
-                <time>{c.updated}</time>
-                <Icon name="arrow" />
-              </button>
-            ))}
-            {conversations.length === 0 && (
+            {conversations
+              .filter((chat) => !chat.archived)
+              .slice(0, 5)
+              .map((c, i) => (
+                <button onClick={() => openChat(c.id)} key={c.id} className="continue-card">
+                  <span className={cx('continue-card__index', i === 0 && 'is-berry')}>
+                    <Icon name="chat" size={16} />
+                  </span>
+                  <span>
+                    <strong>{c.title}</strong>
+                    <small>{c.preview}</small>
+                  </span>
+                  <time>{c.updated}</time>
+                  <Icon name="arrow" />
+                </button>
+              ))}
+            {conversations.every((chat) => chat.archived) && (
               <div className="continue-empty">
                 <Icon name="chat" />
                 <span>

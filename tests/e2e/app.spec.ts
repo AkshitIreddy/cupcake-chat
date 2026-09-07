@@ -618,10 +618,24 @@ test('conversation rename uses an accessible in-app editor and reports completio
   await expect(
     page.locator('.chat-list__row').getByText('A clearer project conversation', { exact: true }),
   ).toHaveCount(0);
+  await expect(page.locator('.shelf__recent')).not.toContainText('A clearer project conversation');
   await page.getByRole('button', { name: 'Archived', exact: true }).click();
   await expect(
     page.locator('.chat-list__row').getByText('A clearer project conversation', { exact: true }),
   ).toBeVisible();
+  const navigateHome = async () => {
+    const menu = page.getByRole('button', { name: 'Open navigation', exact: true });
+    if (await menu.isVisible()) await menu.click();
+    await page.getByRole('button', { name: 'Home', exact: true }).first().click();
+  };
+  await navigateHome();
+  await expect(page.locator('.continue-list')).not.toContainText('A clearer project conversation');
+  await page.getByRole('button', { name: 'All chats', exact: true }).click();
+  await page.getByRole('button', { name: 'Archived', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore A clearer project conversation' }).click();
+  await expect(page.locator('.shelf__recent')).toContainText('A clearer project conversation');
+  await navigateHome();
+  await expect(page.locator('.continue-list')).toContainText('A clearer project conversation');
 });
 
 test('task follow-up validates in-app and reports only confirmed queueing', async ({ page }) => {
