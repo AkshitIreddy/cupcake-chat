@@ -262,6 +262,11 @@
   color: var(--muted);
 }
 
+.group-settings-popover fieldset > button.is-selected small,
+.group-settings-popover .reply-limit-control > button.is-selected small {
+  color: var(--cocoa);
+}
+
 .group-settings-popover fieldset > button > svg {
   position: absolute;
   top: 50%;
@@ -381,6 +386,13 @@
 
 .app-shell--wallpaper {
   --group-floating-surface: #161c2a;
+  /* Keep controls in the artwork's palette instead of putting neutral glass over it. */
+  --paper: var(--group-floating-surface);
+  --paper-raised: color-mix(in srgb, var(--group-floating-surface) 84%, var(--berry));
+  --crumb: color-mix(in srgb, var(--group-floating-surface) 88%, #000);
+  --soft: color-mix(in srgb, var(--group-floating-surface) 84%, var(--berry));
+  --muted: color-mix(in srgb, var(--cocoa) 86%, var(--berry));
+  --danger: #ffb7ad;
 }
 
 .app-shell--wallpaper[data-wallpaper='moonlit-archive'] {
@@ -413,6 +425,19 @@
 
 .app-shell--wallpaper[data-wallpaper='saffron-paper-city'] {
   --group-floating-surface: #342b3b;
+}
+
+.app-shell--wallpaper :is(.participant-chip, .participant-add, .group-settings-trigger),
+.app-shell--wallpaper .participant-tray__summary > span {
+  background: var(--paper);
+}
+
+.app-shell--wallpaper :is(.participant-chip, .participant-add, .group-settings-trigger):hover {
+  background: var(--paper-raised);
+}
+
+.app-shell--wallpaper .button--primary {
+  color: var(--group-floating-surface);
 }
 
 .app-shell--wallpaper :is(.group-dialog, .group-settings-popover) {
@@ -831,6 +856,10 @@
 .persona-preset-row small {
   color: var(--muted);
   font-size: 9px;
+}
+
+.persona-preset-row button.is-selected small {
+  color: var(--cocoa);
 }
 
 .persona-sliders {
