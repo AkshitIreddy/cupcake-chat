@@ -127,6 +127,6 @@ class PydanticModelFactory:
 
 
 def is_bounded_group_call(request: ModelRequest) -> bool:
-    return request.metadata.get("group_call") is True or request.metadata.get(
-        "group_selector"
-    ) is True
+    return (
+        request.metadata.get("group_call") is True or request.metadata.get("group_selector") is True
+    )
