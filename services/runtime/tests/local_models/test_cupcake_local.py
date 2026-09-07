@@ -355,10 +355,48 @@ def test_installed_model_store_rechecks_checksum_and_blocks_active_removal(tmp_p
     destination.write_bytes(data)
     store.register(artifact, destination)
     assert store.get(artifact.id).integrity_verified is True
+    assert store.get(artifact.id, verify=False).integrity_verified is False
+    assert store.list(verify=False)[0].integrity_verified is False
+    assert store.verify_against_artifact(store.get(artifact.id, verify=False), artifact) is True
     with pytest.raises(ModelInUseError):
         store.remove(artifact.id, active_model_id=artifact.id)
     destination.write_bytes(b"tampered")
     assert store.get(artifact.id).integrity_verified is False
+
+
+def test_signed_model_binding_rejects_a_self_consistent_mutable_receipt(tmp_path: Path) -> None:
+    original = b"signed model bytes"
+    replacement = b"forged model bytes"
+    assert len(original) == len(replacement)
+    artifact = _model_artifact(original)
+    store = InstalledModelStore(tmp_path / "models")
+    destination = artifact.target(store.root)
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(original)
+    store.register(artifact, destination)
+
+    destination.write_bytes(replacement)
+    manifest_path = store.manifests / f"{hashlib.sha256(artifact.id.encode()).hexdigest()}.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["sha256"] = _digest(replacement)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    forged = store.get(artifact.id)
+
+    assert forged.integrity_verified is True
+    assert store.verify_against_artifact(forged, artifact) is False
+
+    manager = CupcakeLocalManager(tmp_path)
+    manager.configure_catalogs(
+        models=SignedModelCatalog(1, "2026-09-05T00:00:00Z", (artifact,), "test")
+    )
+    assert manager.status()["models"][0]["integrity_verified"] is False
+    assert manager.status(verify_integrity=True)["models"][0]["integrity_verified"] is False
+    with pytest.raises(RuntimePackIntegrityError, match="corrupt GGUF"):
+        asyncio.run(manager.load(artifact.id))
+
+    manager_without_catalog = CupcakeLocalManager(tmp_path)
+    with pytest.raises(RuntimeError, match="verified model catalog"):
+        asyncio.run(manager_without_catalog.load(artifact.id))
 
 
 class _InterruptedModelDownload(ModelDownload):
@@ -785,12 +823,18 @@ def test_cupcake_local_installs_loads_unloads_and_removes_without_bundled_weight
     monkeypatch.setattr("cupcake_runtime.local_models.managed.LlamaCppSupervisor", _FakeSupervisor)
     manager = CupcakeLocalManager(tmp_path / "cupcake-local")
     manager.configure_catalogs(
+        models=SignedModelCatalog(
+            version=1,
+            generated_at="2026-09-05T00:00:00Z",
+            models=(model_artifact,),
+            key_id="local-test",
+        ),
         runtimes=SignedRuntimeCatalog(
             version=1,
             generated_at="2026-09-05T00:00:00Z",
             runtimes=(runtime_artifact,),
             key_id="local-test",
-        )
+        ),
     )
     runtime = manager.install_runtime(runtime_artifact, archive)
     assert runtime.active is True

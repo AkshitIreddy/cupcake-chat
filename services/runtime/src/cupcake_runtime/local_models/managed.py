@@ -207,6 +207,7 @@ class CupcakeLocalManager:
 
     def status(self, *, verify_integrity: bool = False) -> dict[str, Any]:
         installed_runtimes = self.runtimes.list(verify_integrity=False)
+        installed_models = self.models.list(verify=False)
         if verify_integrity:
             installed_runtimes = tuple(
                 replace(
@@ -214,6 +215,13 @@ class CupcakeLocalManager:
                     integrity_verified=self._verify_installed_against_catalog(item),
                 )
                 for item in installed_runtimes
+            )
+            installed_models = tuple(
+                replace(
+                    item,
+                    integrity_verified=self._verify_model_against_catalog(item),
+                )
+                for item in installed_models
             )
         active_runtime = next((item for item in installed_runtimes if item.active), None)
         supervisor = self._supervisor
@@ -254,7 +262,7 @@ class CupcakeLocalManager:
             "hardware": asdict(hardware),
             "activeRuntime": asdict(active_runtime) if active_runtime else None,
             "runtimes": [asdict(item) for item in installed_runtimes],
-            "models": [asdict(item) for item in self.models.list(verify=verify_integrity)],
+            "models": [asdict(item) for item in installed_models],
             "downloads": [asdict(item) for item in self.download_snapshots()],
             "availableRuntimes": [asdict(item) for item in available_runtimes],
             "runtimeRecommendations": [asdict(item) for item in runtime_recommendations],
@@ -270,6 +278,13 @@ class CupcakeLocalManager:
         except (KeyError, RuntimeError):
             return False
         return self.runtimes.verify_against_artifact(installed, artifact)
+
+    def _verify_model_against_catalog(self, installed: InstalledModel) -> bool:
+        try:
+            artifact = self.model_artifact(installed.id)
+        except (KeyError, RuntimeError):
+            return False
+        return self.models.verify_against_artifact(installed, artifact)
 
     async def download_runtime(
         self,
@@ -495,8 +510,9 @@ class CupcakeLocalManager:
         config: LlamaServerConfig | None = None,
         timeout_seconds: float = 180.0,
     ) -> RuntimeEndpoint:
-        model = self.models.get(model_id, verify=True)
-        if not model.integrity_verified:
+        artifact = self.model_artifact(model_id)
+        model = self.models.get(model_id, verify=False)
+        if not self.models.verify_against_artifact(model, artifact):
             raise RuntimePackIntegrityError("refusing to load a corrupt GGUF artifact")
         runtime = self.runtimes.active(verify_integrity=False)
         if runtime is None:
