@@ -42,6 +42,38 @@ export function GroupTurnRail({
   const active = ACTIVE_TURN_STATES.has(turn.status);
   const choosing = turn.status === 'preparing' || turn.status === 'choosing';
   const completed = turn.speakers.filter((item) => item.status === 'completed');
+  // Successful replies already have durable speaker identity in the transcript.
+  if (
+    !turn.error &&
+    (turn.status === 'completed' || (turn.status === 'waiting_for_you' && completed.length > 0))
+  ) {
+    return null;
+  }
+  if (turn.status === 'waiting_for_you' && !turn.error) {
+    return (
+      <div
+        className="group-turn-note"
+        role="status"
+        aria-label="Group turn status"
+        aria-live="polite"
+        data-testid="group-turn-rail"
+      >
+        <Check size={13} aria-hidden="true" />
+        <span>No reply needed</span>
+        <details>
+          <summary>Why?</summary>
+          <div>
+            <p>{turn.selectionSummary || 'The group had no useful contribution to add.'}</p>
+            <small>
+              Smart selection used {Math.min(turn.callIndex, turn.maxSelectorCalls)} of{' '}
+              {turn.maxSelectorCalls} routing checks. It will only run again when you send a
+              message.
+            </small>
+          </div>
+        </details>
+      </div>
+    );
+  }
   const statusText =
     turn.status === 'interrupted'
       ? 'Group turn interrupted by restart'

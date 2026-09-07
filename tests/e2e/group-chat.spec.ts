@@ -864,7 +864,7 @@ test('mention routing preserves duplicate-name identity, keyboard focus, order, 
   await expect(assistantTurns.nth(1).locator('.message-meta')).toContainText(
     'Adversarial reviewer',
   );
-  await expect(page.getByText(/replied$/)).toContainText('Mira and Mira replied');
+  await expect(page.getByTestId('group-turn-rail')).toHaveCount(0);
 
   const calls = await page.evaluate(
     () =>

@@ -1357,6 +1357,62 @@
   background: color-mix(in srgb, var(--paper), var(--pistachio-soft) 25%);
 }
 
+.group-turn-note {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 0 auto -1px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 17px 17px 0 0;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 11px;
+}
+
+.group-turn-note > svg {
+  flex: 0 0 auto;
+  color: var(--pistachio-ink);
+}
+
+.group-turn-note details {
+  margin-left: auto;
+}
+
+.group-turn-note details[open] {
+  flex-basis: 100%;
+}
+
+.group-turn-note summary {
+  border-radius: 4px;
+  color: var(--berry-dark);
+  cursor: pointer;
+}
+
+.group-turn-note details > div {
+  padding-top: 8px;
+  color: var(--cocoa);
+}
+
+.group-turn-note p {
+  margin: 0 0 5px;
+  line-height: 1.5;
+}
+
+.group-turn-note small {
+  color: var(--muted);
+}
+
+.chat-composer-wrap:has(.group-turn-note) .composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 .group-turn-rail__status {
   display: flex;
   align-items: center;
