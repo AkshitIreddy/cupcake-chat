@@ -1,8 +1,12 @@
 # Packaged Windows workbench audit and startup research
 
-**Date:** 2026-09-05  
+**Initial audit:** 2026-09-05
+
+**Final qualification update:** 2026-09-07
+
 **Scope:** Existing packaged CupcakeAI candidate, owner test profile, Tauri/WebView2 lifecycle,
-packaged runtime startup, and major-screen visual baseline.  
+packaged runtime startup, and major-screen visual baseline.
+
 **Evidence type:** Direct observation unless a paragraph is explicitly labeled **Inference** or
 **Recommendation**.
 
@@ -287,60 +291,149 @@ Conditional screens absent from this owner state were recorded rather than fabri
 
 ## Acceptance gates for the rebuilt candidate
 
-### Final packaged candidate
+### Final packaged candidate — 2026-09-07
 
-The final local candidate combines the production runtime and broker frozen at `5cb86fd` with the
-defensive renderer boundary fix at `739f524`. The latter changed only `workspace.tsx`, so the
-previously built runtime and broker remain exact for the aggregate production source.
+The final local candidate is built from production source 89882fa91b34b7581061e0b07b4c188aa5ba3922.
+Its Python runtime source froze at 60cbc47; the intervening commits change the renderer and Tauri
+configuration only. They add real group-chat UX, exact live local-route readiness, wallpaper palette
+and contrast repairs, high-zoom reachability, quiet-turn presentation, and native WebView zoom
+hotkeys without changing the already validated runtime or broker.
 
-| Artifact                               |      Bytes | SHA-256                                                            |
-| -------------------------------------- | ---------: | ------------------------------------------------------------------ |
-| `CupcakeAI.exe`                        | 12,777,472 | `E6EA405033BE5AE0746D6A603E919F3E02C99BFB6AC53495A410CD9AFC613CDA` |
-| `CupcakeAI 2_2.0.0-rc.1_x64-setup.exe` | 82,447,264 | `C2372C9C6243F4618E6E21DDD86F3725EC72D458CEEA3043712760EF3569108A` |
-| `cupcake-runtime.exe`                  | 28,666,511 | `71BB0C6000D5161FAB071F7298E1EAB902101744A9C247B8F91C97D93E88D407` |
-| `cupcake-tool-broker.exe`              | 10,746,880 | `083E78A27AA6D73AC505290D79BFB017B5CA064C2809BE2587C9BDF0F430C25D` |
-| `sidecars.manifest.json`               |    161,448 | `461FCE6A38804E91B2C58FEE22344000B8056854159AF46C3CC61316BD20193B` |
+| Artifact                             |      Bytes | SHA-256                                                          |
+| ------------------------------------ | ---------: | ---------------------------------------------------------------- |
+| CupcakeAI.exe                        | 12,779,520 | E0B36BA64BA277AF6611AFA6EBDC1A06F894A849EC34D1629F936383E4424FFA |
+| CupcakeAI 2_2.0.0-rc.1_x64-setup.exe | 82,458,955 | E2DC0E04FC7DFAEA68EFA51BA7F3DED2535D5B041F9CE3AB46B0A073B71C390F |
+| cupcake-runtime.exe                  | 28,674,525 | AF89CF95BED9F26148E9EE3AE614EE172DB9F783B301DB5634C8C72D036FB19F |
+| cupcake-tool-broker.exe              | 10,749,440 | 6AE4A22F42B5D7B2AD5DB2670C31091E15273F05EF9BA6128E5C3B298E9E9CAC |
+| sidecars.manifest.json               |    161,448 | 4283994C1D7225CAB0B62427D60D78AA71737C45DD90713FADC5BD226E2CE461 |
 
-The exact source archive for `739f5243988fde4a643b788b1dc365cf03c3c829` is
-`E:\temp\cupcake-overhaul-20260905\immutable-final-739f524-20260905-150325\cupcakeagi-739f524.tar`
-(12,113,920 bytes, SHA-256 `9F7112065AF53336A1C4268B6222523A020F9E29575A190D1506393ECB0620F4`). The
-runtime manifest lists 820 support files totaling 87,338,636 bytes. Package-time construction checks
-passed for OpenAI, Anthropic, Google, xAI, Mistral, and Cohere without network access. The runtime
-help probe, pinned Cupcake Local b10679 verification, manifest verification, bundle smoke, and
-release-candidate audit all passed. The installer is intentionally unsigned and no publishing action
-occurred.
+The exact source archive is
+E:\temp\cupcake-overhaul-20260905\immutable-final-89882fa-20260907\cupcakeagi-89882fa.tar
+(12,247,040 bytes, SHA-256 39FDC565D38D68589B7AE3EB1FE29C3708A1846E25AACEDA1E68909737FC5388). The
+runtime manifest binds 820 support files totaling 87,338,636 bytes. Package construction checks
+passed for OpenAI, Anthropic, Google, xAI, Mistral, and Cohere without sending provider traffic. The
+broker-to-runtime encrypted-protocol smoke, exact manifest/tree validation, Tauri package smoke, and
+release-candidate audit all passed. The installer is intentionally unsigned. No signing, publishing,
+pushing, or release action occurred.
 
-A pristine packaged profile exposed CDP in 573 ms, reached the ready Home surface in 6,323 ms, and
-closed through the app's own Close control in 86 ms. The audit recorded zero renderer errors and no
-horizontal document or body overflow at 390 by 844. Direct WebView captures cover Home, Chats,
-Projects, Tasks, Artifacts, Memory, Models, Tools, Search, Settings, the OpenAI provider and local
-model-install dialogs, all eight onboarding chapters, About, the model picker, and narrow
-onboarding/navigation. They are stored under
-`E:\temp\cupcake-overhaul-20260905\final-packaged-major-views-739f524-r2`.
+The runtime validation associated with the final runtime collected 525 tests: 524 passed and one was
+skipped. Pyright reported zero errors and warnings, mypy checked 121 source files, and the scoped
+Ruff and formatting checks passed. The signed model catalog is enforced at explicit integrity status
+and every managed load. Group readiness reads the live managed endpoint and exact loaded model ID,
+so an unloaded or replaced local route cannot be presented as ready.
 
-Visual inspection found a populated four-card model recommendation set at wide size, three ready
-hosted routes in the narrow picker, explicit failed-or-cancelled task summary language, readable
-empty states, and narrow onboarding contained within seven-pixel side gutters. The narrow Models
-page capture occurred during its bounded refresh and therefore does not independently close the
-post-refresh first-card viewport gate; that state remains covered by the source browser matrix and
-should be recaptured from the packaged app after the owner showcase releases the singleton.
+#### Startup diagnosis and final distribution
 
-The NSIS registry inspection still returned no registered CupcakeAI entry and
-`%LOCALAPPDATA%\CupcakeAI 2` did not exist. The installer lifecycle was not run after the user added
-an exact Windows deletion procedure: an automated NSIS uninstall would remove files outside the
-required PowerShell/.NET deletion path. The built installer and clean pre-install state are retained
-without mutating the ordinary installation or user data.
+The owner-profile regression had two independent causes. One-folder PyInstaller packaging removed
+repeated _MEI extraction. The later 13–15 second runtime gate came from CheckedDownload._recover,
+which rehashed 6.24 GB of completed retained downloads on every startup: a 5,027,783,488-byte Qwen
+model and 1,214,386,338 bytes of runtime archives. Recovery now accepts an exact saved checkpoint,
+destination, existence, and byte length as metadata only. Full signed digest verification still runs
+at install, registration, explicit integrity status, and load. Tests cover completed recovery,
+wrong-size reset, same-size model tampering, and same-size runtime-archive tampering.
 
-The baseline is evidence for comparison, not acceptance of the changed product. The fresh package
-must still prove:
+An exact owner-profile direct health probe improved from 13,951 ms on the old frozen runtime to
+5,805 ms on the new cold runtime, an 8,146 ms or 58.4% reduction. Its immediate warm repeat was
+1,543 ms. Repeated full desktop starts on the final-runtime candidate separated page, Home, and
+route hydration:
 
-- process-to-first-useful-local-state and process-to-fully-hydrated timings, recorded separately;
-- one-folder runtime presence and exact manifest verification in installed resources;
-- no `_MEI` runtime child/extraction behavior for the new package;
-- saved conversation opening while optional provider/model status is still loading;
-- no stale async navigation reversal;
-- real close, explicit close-to-tray, and full child-process cleanup;
-- standard, narrow, zoom/high-DPI, ultrawide, reduced-motion, and high-contrast renders;
-- every conditional long-content, task-detail, artifact-revision, install, error, cancellation, and
-  offline state that was absent from the baseline profile;
-- persisted, owner-readable multi-provider and local-CUDA showcase content produced by real routes.
+| Owner-profile run                              | Tauri page | First Home | Stable selected route              |
+| ---------------------------------------------- | ---------: | ---------: | ---------------------------------- |
+| New WebView directory, first post-build access |  not timed |  21,604 ms | 22,644 ms, Groq openai/gpt-oss-20b |
+| Same WebView directory, repeat 1               |   1,952 ms |   3,972 ms | 4,578 ms, Groq openai/gpt-oss-20b  |
+| Same WebView directory, repeat 2               |   1,813 ms |   3,891 ms | 4,565 ms, Groq openai/gpt-oss-20b  |
+| Same WebView directory, repeat 3               |   1,825 ms |   3,833 ms | 4,373 ms, Groq openai/gpt-oss-20b  |
+| Existing owner/VBS WebView directory           |   1,750 ms |   3,798 ms | 4,354 ms, Groq at first Home       |
+| Second new WebView directory after warm-up     |   1,639 ms |   3,635 ms | 4,319 ms, Groq openai/gpt-oss-20b  |
+
+The first 21.6-second start remains a cold-path outlier and is not described as fast. It did not
+recur with the existing owner WebView directory or a second fresh directory, so the evidence does
+not support recurring WebView initialization as its cause. No phase trace exists for that one
+pre-page delay, and this audit does not attribute it to antivirus. Stable app.bootstrap times were
+1,226–1,374 ms and models.list took 45–64 ms.
+
+Three stable runs held 11 owned processes each: host, broker, one-folder runtime, two hidden console
+hosts, and six normal WebView2 processes. Their total working set was 745.9–757.6 MiB. No _MEI
+runtime child appeared. Host close took 1,257–1,381 ms; the complete tree was absent after
+2,339–2,537 ms. These distribution measurements use the same frozen runtime and renderer family,
+before the final bounded CSS and Tauri zoom-setting commits. Exact final-package lifecycle timings
+are recorded below.
+
+#### Exact final NSIS lifecycle
+
+The exact 89882fa installer was tested only after a clean current-user uninstall-registry query, an
+absent %LOCALAPPDATA%\CupcakeAI 2 directory, and zero owned process check. The harness used an
+isolated profile under E: and kept every app window headless.
+
+Silent install succeeded and the installed app reached Home in 5,073 ms. The harness created project
+sentinel 01a07b40-7cde-732f-86bc-41a0e668bfaa, closed through the app, and invoked the product's own
+silent uninstaller. The uninstall record and install directory were absent afterward. The same final
+portable executable reopened the retained isolated profile in 3,169 ms and returned the exact
+sentinel. Final cleanup found no CupcakeAI, broker, runtime, or llama process; no listener on ports
+10131 or 10141; no uninstall record; and no install directory.
+
+The receipt is E:\temp\cupcake-overhaul-20260905\final-nsis-lifecycle-89882fa\lifecycle-result.json
+(SHA-256 53DBF2523E95786D298F0CBDE995AD0D39615659E6F12D699D0C74B28DB4A74F). This qualifies clean
+install, uninstall, profile retention, and hidden launch/close on the owner's current Windows
+machine.
+
+A provisional lifecycle invocation earlier treated an unsupported --help flag as read-only. It was
+interrupted after installation and immediately reversed with the product's own silent uninstaller.
+Registry, install-directory, process, and port checks were clean before the accepted final run. That
+excluded attempt is recorded at
+E:\temp\cupcake-overhaul-20260905\provisional-lifecycle-interruption-20260907.json and is not part
+of the acceptance result.
+
+#### Final visual, group, and accessibility evidence
+
+Direct final-package WebView screenshots show the real three-person council, two active hosted
+members, paused local Juniper, the retained conversation, and the exact-route Persona editor. The
+quiet council state renders one compact composer-attached “No reply needed” row. Opening and closing
+its “Why?” disclosure did not change transcript history or invoke a model. The route receipt still
+reports one of two routing checks. Evidence is under
+E:\temp\cupcake-overhaul-20260905\final-native-89882fa.
+
+The final renderer's 27-surface palette matrix covered eight wallpapers, four base themes, group
+settings, Persona editor, Home, and Models. It reported zero Axe contrast findings; the minimum
+measured warning contrast was 5.946:1. Copper and the other artwork scenes now use their own solid
+surface colors instead of neutral translucent boxes. The conversation scrollbar is a thin,
+scene-colored treatment, message actions have an opaque backplate and keyboard-focus reveal, and the
+paused local-model warning clears normal-text contrast. Quiet-state tests at 390 by 844 and 360 by
+230 retained keyboard disclosure, composer reachability, zero horizontal overflow, unchanged
+history, and zero model or send calls.
+
+The clean-vault retake redirected product data and LOCALAPPDATA to isolated paths on E: and injected
+no keys, fixtures, or provider calls. Wide and 390-pixel Models views showed four local
+recommendations and no ready hosted route. The narrow first viewport includes Qwen3 14B's complete
+card and Install action. Evidence is under
+E:\temp\cupcake-overhaul-20260905\final-clean-vault-7583199-r2; the subsequent final commits do not
+change Models or onboarding layout.
+
+Reduced-motion and Forced Colors emulation retained structure without horizontal document overflow.
+Native WebView zoom hotkeys were added through Tauri's Windows WebView2 setting. On the final host,
+guarded owned-window input verified reset, Ctrl+=, Ctrl+Shift+=, numpad add, Ctrl+-, numpad
+subtract, and Ctrl+0 while the composer was focused. Exact 200% and 400% DOM measurements showed the
+high-zoom repair keeping transcript content, composer, Persona editor, and Save action reachable
+through vertical scrolling instead of collapsing the transcript to zero height. The test restored
+Ctrl+0 and the ordinary owner window geometry.
+
+Further zoom captures and visible-window checks stopped immediately when the owner said the repeated
+zoom work was not useful and required all UI testing to run headlessly. The bounded measurements and
+already captured frames are retained as diagnostic evidence; additional zoom, DPI, and visible tray
+qualification are outside the final owner-directed scope. The audit did not alter global display or
+accessibility settings.
+
+The final headless owner restart reached Home in 3,649 ms. All four real showcase projects
+persisted; the artifact project retained one proof, and both local projects remained complete with
+the local runtime stopped. Keyboard Enter and Space opened and closed the quiet explanation without
+changing the history or turn hash; the retained route counters were selector 1 and responder 0.
+Final close removed the 11-process owned tree in 2,100 ms, including harness observation overhead,
+and left zero models and no GPU lock. Receipts are under
+E:\temp\cupcake-overhaul-20260905\final-owner-restart-89882fa and
+E:\temp\cupcake-overhaul-20260905\final-owner-showcase-89882fa, with close state in
+E:\temp\cupcake-overhaul-20260905\final-owner-close-89882fa.json.
+
+The final exact package therefore completed hidden owner restart, saved-demo verification, close,
+install, uninstall, and retained-profile reopening. Cross-machine and VM qualification are outside
+this owner test scope by explicit direction; they are not reported as blockers for the current
+Windows acceptance.
