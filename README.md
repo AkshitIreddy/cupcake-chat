@@ -6,12 +6,17 @@ CupcakeAI is a Windows-first, text-first AI workbench for conversations, files, 
 citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside
 a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
-> **Corrective local candidate, not an accepted release.** The previous desktop baseline was
-> rejected by the owner. The Tauri executable, verified sidecars, unsigned NSIS bundle, and fresh
-> in-app Groq/Cohere/NVIDIA NIM conversations and app-managed CUDA inference have passed provisional
-> local testing. The final group-enabled package, clean-machine installer lifecycle, the complete
-> native accessibility/performance matrix, and owner acceptance remain governed by the live
-> checklist. Nothing here is approved for distribution.
+> **Local owner-test candidate.** Real Groq, Cohere, NVIDIA NIM, and app-managed CUDA demonstrations
+> are saved in the owner workspace, alongside a working two-provider group conversation. Local
+> installer lifecycle and retained-data reopening have observed evidence. Exact package versions,
+> final verification, and unavailable clean-machine/accessibility gates are recorded in the
+> [acceptance ledger](docs/worklogs/2026-09-05-independent-overhaul.md). Owner acceptance and
+> distribution approval remain separate decisions.
+
+For this machine, double-click `Launch CupcakeAI Test.vbs` to open the existing owner workspace
+without a terminal. The [owner guide](docs/OWNER_TEST_GUIDE.md) explains the four real projects,
+reviewed Python artifact, named Cupcakes, direct mentions, Smart selection, and local-model use.
+Ordinary fresh profiles receive no fabricated demo content.
 
 ## Product contract
 
