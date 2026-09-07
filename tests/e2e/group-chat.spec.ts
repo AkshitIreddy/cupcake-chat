@@ -1055,6 +1055,44 @@ test('a local Cupcake can be configured without loading its installed model', as
   await editor.getByLabel('Show routes that need setup or loading').check();
   await editor.getByRole('option').filter({ hasText: 'Qwen3 4B' }).click();
   await expect(editor.locator('.persona-editor__preview')).toContainText('Qwen3 4B');
+  const warningContrast = await editor
+    .locator('.persona-editor__preview > small.needs-attention')
+    .evaluate((element) => {
+      const toRgba = (color: string) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Canvas unavailable for contrast check');
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data] as [number, number, number, number];
+      };
+      const composite = (front: number[], back: number[]) => {
+        const alpha = front[3]! / 255;
+        return front
+          .slice(0, 3)
+          .map((channel, index) => Math.round(channel * alpha + back[index]! * (1 - alpha)));
+      };
+      const luminance = (color: number[]) => {
+        const linear = color.slice(0, 3).map((channel) => {
+          const value = channel / 255;
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
+      };
+      const style = getComputedStyle(element);
+      const shellStyle = getComputedStyle(element.closest('.app-shell')!);
+      const foreground = toRgba(style.color);
+      const surface = toRgba(shellStyle.getPropertyValue('--group-floating-surface'));
+      const background = composite(toRgba(style.backgroundColor), surface);
+      const [lighter, darker] = [luminance(foreground), luminance(background)].sort(
+        (left, right) => right - left,
+      );
+      return (lighter! + 0.05) / (darker! + 0.05);
+    });
+  expect(warningContrast).toBeGreaterThanOrEqual(4.5);
   await expectOpaqueCopperSurface(page, '.group-dialog');
   await page.screenshot({
     path: `E:/temp/cupcake-overhaul-20260905/local-persona-opaque-${testInfo.project.name}.png`,

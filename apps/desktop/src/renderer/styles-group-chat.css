@@ -575,6 +575,10 @@
   color: var(--danger);
 }
 
+.app-shell--wallpaper .persona-editor__preview > small.needs-attention {
+  color: color-mix(in srgb, var(--danger) 72%, #fff);
+}
+
 .persona-editor__fields {
   min-height: 0;
   padding: 20px;
