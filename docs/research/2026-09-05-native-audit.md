@@ -424,11 +424,11 @@ qualification are outside the final owner-directed scope. The audit did not alte
 accessibility settings.
 
 The final headless owner restart reached Home in 3,649 ms. All four real showcase projects
-persisted; the artifact project retained one proof, and both local projects remained complete with
-the local runtime stopped. Keyboard Enter and Space opened and closed the quiet explanation without
-changing the history or turn hash; the retained route counters were selector 1 and responder 0.
-Final close removed the 11-process owned tree in 2,100 ms, including harness observation overhead,
-and left zero models and no GPU lock. Receipts are under
+persisted; the artifact project retained one proof, and both local assistant turns remained complete
+with the local runtime stopped. Keyboard Enter and Space opened and closed the quiet explanation
+without changing the history or turn hash; the retained route counters were selector 1 and
+responder 0. Final close removed the 11-process owned tree in 2,100 ms, including harness
+observation overhead, and left zero models and no GPU lock. Receipts are under
 E:\temp\cupcake-overhaul-20260905\final-owner-restart-89882fa and
 E:\temp\cupcake-overhaul-20260905\final-owner-showcase-89882fa, with close state in
 E:\temp\cupcake-overhaul-20260905\final-owner-close-89882fa.json.

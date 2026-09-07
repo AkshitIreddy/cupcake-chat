@@ -9,7 +9,7 @@ a Tauri 2 host, with product behavior behind narrow versioned contracts.
 > **Local owner-test candidate.** Real Groq, Cohere, NVIDIA NIM, and app-managed CUDA demonstrations
 > are saved in the owner workspace, alongside a working two-provider group conversation. Local
 > installer lifecycle and retained-data reopening have observed evidence. Exact package versions,
-> final verification, and unavailable clean-machine/accessibility gates are recorded in the
+> final verification, and testing limits are recorded in the
 > [acceptance ledger](docs/worklogs/2026-09-05-independent-overhaul.md). Owner acceptance and
 > distribution approval remain separate decisions.
 

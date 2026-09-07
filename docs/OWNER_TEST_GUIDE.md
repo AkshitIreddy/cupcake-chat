@@ -4,6 +4,9 @@ Double-click `Launch CupcakeAI Test.vbs` in this repository. It opens the local 
 with the existing owner workspace, without a terminal or password prompt. It does not install,
 publish, or update anything.
 
+Use **Ctrl + Plus** or **Ctrl + Minus** to zoom and **Ctrl + 0** to reset. At high zoom, scroll the
+chat or Cupcake editor to reach the remaining content and controls.
+
 ## Explore the saved work
 
 | Project                      | What to open                                                                                                      | Real route                                                                           |
@@ -52,6 +55,10 @@ text and partial responses remain saved.
 A quiet Smart turn can still use a selector call to decide that nobody should speak. The default
 two-reply cap allows at most two selector calls and two replies; it is not a zero-cost background
 presence detector. Members never start another round without a new user submission.
+
+After a quiet turn, the composer shows **No reply needed**. Open **Why?** to read the saved reason
+and routing count. Opening that explanation does not ask a model again. Completed replies remain in
+the conversation without a second completion banner.
 
 Open **A small launch council** in Harbor to see Mara's Groq plan, Quill's separate Cohere critique,
 a direct `@Quill` follow-up, and a quiet closing turn. A later operator review challenges the first
