@@ -234,6 +234,14 @@ async function auditWindowsOnlyPackaging() {
     valid,
     valid ? 'Tauri NSIS, target-triple sidecars, resources, and Windows-only CI' : 'policy drift',
   );
+  const windows = config.app?.windows ?? [];
+  record(
+    'Native WebView zoom hotkeys',
+    windows.length > 0 && windows.every((window) => window.zoomHotkeysEnabled === true),
+    windows.length > 0 && windows.every((window) => window.zoomHotkeysEnabled === true)
+      ? 'enabled for every packaged window'
+      : 'zoomHotkeysEnabled must be true for every packaged window',
+  );
 }
 
 async function auditArtifacts() {

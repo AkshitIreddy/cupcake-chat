@@ -25,6 +25,7 @@
         "transparent": false,
         "visible": false,
         "resizable": true,
+        "zoomHotkeysEnabled": true,
         "fullscreen": false,
         "dragDropEnabled": false,
         "useHttpsScheme": true
