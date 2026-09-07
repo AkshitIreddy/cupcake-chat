@@ -1720,3 +1720,30 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
+
+@media (max-height: 520px) {
+  .app-content--chat {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .app-content--chat > .chat-layout {
+    flex: 0 0 auto;
+    min-height: 520px;
+  }
+
+  .app-shell .group-dialog-layer {
+    place-items: start center;
+    overflow-y: auto;
+  }
+
+  .app-shell .group-dialog {
+    display: block;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .app-shell .persona-editor__body {
+    overflow: visible;
+  }
+}

@@ -1140,3 +1140,63 @@ test('narrow group controls remain operable without page overflow', async ({ pag
     fullPage: true,
   });
 });
+
+test('group chat remains reachable at a 400 percent equivalent viewport', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'windows-chromium', 'Single high-zoom regression');
+  await page.setViewportSize({ width: 360, height: 230 });
+  await installGroupBridge(page, 'complete');
+  await openGroupChat(page);
+
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  await expect(openNavigation).toBeVisible();
+  await openNavigation.click();
+  await expect(page.getByRole('navigation')).toBeVisible();
+  const modelsNav = page.getByRole('button', { name: 'Models', exact: true });
+  await modelsNav.scrollIntoViewIfNeeded();
+  await expect(modelsNav).toBeVisible();
+  const settingsNav = page.getByRole('button', { name: 'Settings', exact: true });
+  await settingsNav.scrollIntoViewIfNeeded();
+  await expect(settingsNav).toBeVisible();
+  await page.locator('.shelf__close').click();
+
+  const transcript = page.locator('.conversation-scroll');
+  await expect(transcript).toBeVisible();
+  const composer = page.getByLabel('Message Cupcake');
+  await chooseMention(page, 'mira');
+  await composer.pressSequentially('Check the launch decision.');
+  await page.getByRole('button', { name: 'Send group message' }).click();
+  await expect(page.getByText('Answer from @mira.', { exact: true }).first()).toBeVisible();
+  await transcript.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: 'E:\\temp\\cupcake-overhaul-20260905\\group-chat-qa\\zoom-400-transcript.png',
+  });
+  await composer.focus();
+  await expect(composer).toBeFocused();
+  await page.screenshot({
+    path: 'E:\\temp\\cupcake-overhaul-20260905\\group-chat-qa\\zoom-400-chat.png',
+  });
+
+  await page.getByTestId('add-cupcake').click();
+  await page.getByRole('button', { name: 'Create a Cupcake', exact: true }).first().click();
+  const editor = page.getByTestId('persona-editor');
+  await expect(editor).toBeVisible();
+  const dialogLayer = page.locator('.group-dialog-layer');
+  await expect(editor.getByRole('heading', { name: 'Create a Cupcake' })).toBeVisible();
+  const instructions = editor.getByRole('textbox', { name: /^Instructions/ });
+  await instructions.scrollIntoViewIfNeeded();
+  await expect(instructions).toBeVisible();
+  expect(await dialogLayer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.screenshot({
+    path: 'E:\\temp\\cupcake-overhaul-20260905\\group-chat-qa\\zoom-400-persona-fields.png',
+  });
+  const save = editor.getByRole('button', { name: 'Create Cupcake', exact: true });
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeVisible();
+  await save.focus();
+  await expect(save).toBeFocused();
+  await page.screenshot({
+    path: 'E:\\temp\\cupcake-overhaul-20260905\\group-chat-qa\\zoom-400-persona-footer.png',
+  });
+});
