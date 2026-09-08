@@ -112,7 +112,7 @@
 .app-shell--wallpaper
   :is(
     .page:has(.task-summary-strip) > .page-intro,
-    .page:has(.memory-layout) > .page-intro,
+    .memory-page > .page-intro,
     .task-detail > .task-detail__head
   ) {
   background: linear-gradient(135deg, var(--paper-raised), var(--paper));

@@ -168,7 +168,7 @@
   flex: 0 0 auto;
 }
 
-.app-shell--wallpaper .task-detail > .interaction-notice {
+.app-shell--wallpaper :is(.task-detail, .memory-page) > .interaction-notice {
   border-color: color-mix(in srgb, var(--pistachio) 54%, var(--line));
   border-radius: 999px;
   background: color-mix(in srgb, var(--paper) 82%, var(--pistachio));
@@ -176,12 +176,12 @@
   color: var(--cocoa);
 }
 
-.app-shell--wallpaper .task-detail > .interaction-notice.is-pending {
+.app-shell--wallpaper :is(.task-detail, .memory-page) > .interaction-notice.is-pending {
   border-color: color-mix(in srgb, var(--blueberry) 54%, var(--line));
   background: color-mix(in srgb, var(--paper) 82%, var(--blueberry));
 }
 
-.app-shell--wallpaper .task-detail > .interaction-notice.is-error {
+.app-shell--wallpaper :is(.task-detail, .memory-page) > .interaction-notice.is-error {
   border-color: color-mix(in srgb, var(--danger) 54%, var(--line));
   background: color-mix(in srgb, var(--paper) 84%, var(--danger));
 }

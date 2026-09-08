@@ -5633,7 +5633,7 @@ function MemoryView({
     setSelected(next.find((m) => m.id === id) ?? null);
   };
   return (
-    <main className="page">
+    <main className="page memory-page">
       <div className="page-intro">
         <div>
           <p className="eyebrow">A recipe box you control</p>
