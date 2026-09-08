@@ -796,6 +796,28 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
     runtime.close()
 
 
+@pytest.mark.parametrize(
+    "wallpaper",
+    [
+        "aquamarine-tidepool-library",
+        "ink-snow-garden",
+        "raspberry-circuit-conservatory",
+        "saffron-paper-city",
+    ],
+)
+def test_every_extended_wallpaper_persists_through_restart(tmp_path: Path, wallpaper: str) -> None:
+    runtime = service(tmp_path)
+
+    saved, _ = runtime.handle("settings.set", {"key": "appearance.wallpaper", "value": wallpaper})
+    assert saved == {"key": "appearance.wallpaper", "value": wallpaper}
+    runtime.close()
+
+    reopened = service(tmp_path)
+    listed, _ = reopened.handle("settings.list")
+    assert listed["appearance.wallpaper"] == wallpaper
+    reopened.close()
+
+
 def test_continue_creates_a_visible_follow_up_on_the_selected_branch(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     created, _ = runtime.handle("conversations.create", {"title": "Continue"})
