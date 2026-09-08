@@ -2818,10 +2818,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           .then((counts) => setArtifactCounts(normalizeArtifactCounts(counts)))
           .catch(() => undefined);
       } else if (event.type.startsWith('memory.')) {
+        const projectId = activeProjectIdRef.current;
+        const generation = projectSelectionGeneration.current;
         void request<RuntimeMemory[]>('memory.list', {
+          projectId,
+          includeGlobal: true,
           states: ['active', 'candidate', 'superseded', 'expired'],
         })
-          .then((items) => setMemories(items.map((item) => mapMemory(item, projectsRef.current))))
+          .then((items) => {
+            if (
+              projectId !== activeProjectIdRef.current ||
+              generation !== projectSelectionGeneration.current
+            )
+              return;
+            setMemories(items.map((item) => mapMemory(item, projectsRef.current)));
+          })
           .catch(() => undefined);
       } else if (
         event.type.startsWith('local_model.download') ||
