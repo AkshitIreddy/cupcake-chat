@@ -195,6 +195,14 @@
   backdrop-filter: none;
 }
 
+.app-shell--wallpaper .memory-page > .empty-state {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--paper-raised), var(--paper));
+  color: var(--cocoa);
+  backdrop-filter: none;
+}
+
 .app-shell--wallpaper .memory-kind--instruction {
   color: var(--gold);
 }

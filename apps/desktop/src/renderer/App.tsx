@@ -5917,9 +5917,7 @@ function MemoryView({
                         setRecords(records.filter((m) => m.id !== selected.id));
                         setUndoForget(selected);
                         setMemoryNoticeTone('success');
-                        setMemoryNotice(
-                          'Memory forgotten. A tombstone preserves the audit history.',
-                        );
+                        setMemoryNotice('Memory removed.');
                         setSelected(null);
                       } catch (reason) {
                         setMemoryNoticeTone('error');
