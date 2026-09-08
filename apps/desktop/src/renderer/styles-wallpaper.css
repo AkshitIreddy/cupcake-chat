@@ -1,5 +1,48 @@
-/* Selected wallpaper worlds span every workbench route. This file loads last so
-   route-specific paper surfaces inherit the scene palette without hiding it. */
+/* Selected wallpaper worlds span every workbench route. Scene tokens live here
+   so route-specific paper surfaces inherit the artwork's palette. */
+.app-shell--wallpaper {
+  --wallpaper-surface: #161c2a;
+  --group-floating-surface: var(--wallpaper-surface);
+  --paper: var(--wallpaper-surface);
+  --paper-raised: color-mix(in srgb, var(--wallpaper-surface) 84%, var(--berry));
+  --crumb: color-mix(in srgb, var(--wallpaper-surface) 88%, #000);
+  --soft: color-mix(in srgb, var(--wallpaper-surface) 84%, var(--berry));
+  --muted: color-mix(in srgb, var(--cocoa) 86%, var(--berry));
+  --danger: #ffb7ad;
+}
+
+.app-shell--wallpaper[data-wallpaper='moonlit-archive'] {
+  --wallpaper-surface: #122541;
+}
+
+.app-shell--wallpaper[data-wallpaper='pistachio-atelier'] {
+  --wallpaper-surface: #223b2c;
+}
+
+.app-shell--wallpaper[data-wallpaper='blueberry-observatory'] {
+  --wallpaper-surface: #30204e;
+}
+
+.app-shell--wallpaper[data-wallpaper='copper-workshop'] {
+  --wallpaper-surface: #452719;
+}
+
+.app-shell--wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
+  --wallpaper-surface: #09464c;
+}
+
+.app-shell--wallpaper[data-wallpaper='ink-snow-garden'] {
+  --wallpaper-surface: #1a1f22;
+}
+
+.app-shell--wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
+  --wallpaper-surface: #211d43;
+}
+
+.app-shell--wallpaper[data-wallpaper='saffron-paper-city'] {
+  --wallpaper-surface: #342b3b;
+}
+
 .app-shell--wallpaper .app-content--wallpaper {
   background-color: #172033;
   background-image: var(--workspace-wallpaper);
@@ -64,6 +107,16 @@
 
 .app-shell--wallpaper .search-hero {
   margin-bottom: 28px;
+}
+
+.app-shell--wallpaper
+  :is(
+    .page:has(.task-summary-strip) > .page-intro,
+    .page:has(.memory-layout) > .page-intro,
+    .task-detail > .task-detail__head
+  ) {
+  background: linear-gradient(135deg, var(--paper-raised), var(--paper));
+  backdrop-filter: none;
 }
 
 .app-shell--wallpaper .chat-list {
@@ -135,6 +188,15 @@
 
 .app-shell--wallpaper :is(.task-summary-strip, .runtime-packs, .hardware-card, .run-tree) {
   backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.app-shell--wallpaper
+  :is(.task-summary-strip, .task-row, .task-panel, .memory-card, .memory-detail) {
+  backdrop-filter: none;
+}
+
+.app-shell--wallpaper .memory-kind--instruction {
+  color: var(--gold);
 }
 
 .app-shell--wallpaper .artifact-stage {

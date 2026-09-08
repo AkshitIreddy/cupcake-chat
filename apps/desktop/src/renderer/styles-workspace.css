@@ -180,12 +180,11 @@
   backdrop-filter: blur(14px) saturate(1.12);
 }
 .app-content--wallpaper .turn > .message {
-  padding: 12px 15px 14px;
+  padding: 20px 26px 18px;
   border: 1px solid var(--line);
-  border-radius: 5px 17px 17px 17px;
-  background: var(--wallpaper-panel);
-  box-shadow: var(--wallpaper-shadow);
-  backdrop-filter: blur(13px) saturate(1.08);
+  border-radius: 8px 22px 22px 22px;
+  background: color-mix(in srgb, var(--paper) 94%, var(--berry) 6%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 8%);
 }
 .app-content--wallpaper .turn--user > .message {
   background: transparent;
@@ -214,9 +213,8 @@
 }
 .app-content--wallpaper .user-slip {
   border-color: color-mix(in srgb, var(--berry), transparent 48%);
-  background: color-mix(in srgb, var(--berry-soft), var(--wallpaper-panel-strong) 72%);
-  box-shadow: var(--wallpaper-shadow);
-  backdrop-filter: blur(13px) saturate(1.1);
+  background: color-mix(in srgb, var(--paper) 84%, var(--berry) 16%);
+  box-shadow: none;
 }
 .app-content--wallpaper .chat-composer-wrap {
   background: transparent;
@@ -248,22 +246,39 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 0 0 61px;
-  padding: 0 22px;
+  gap: 18px;
+  flex: 0 0 auto;
+  min-height: 66px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--line);
 }
-.chat-header > div {
+.chat-header__identity,
+.chat-header__actions,
+.chat-header__navigation {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
-.chat-header > div:first-child {
-  display: block;
+.chat-header__identity {
+  flex: 1;
+  min-width: 0;
+}
+.chat-header__titles {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.chat-header__navigation,
+.chat-header__actions {
+  flex-shrink: 0;
 }
 .chat-header h1 {
-  margin: 2px 0 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font:
-    650 17px 'Bricolage Grotesque Variable',
+    650 19px/1.25 'Bricolage Grotesque Variable',
     'Bricolage Grotesque';
 }
 .chat-project {
@@ -274,8 +289,11 @@
   border: 0;
   background: transparent;
   color: var(--berry);
-  font-size: 10px;
-  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 500;
 }
 .context-toggle {
   display: flex;
@@ -297,6 +315,13 @@
   background: var(--soft);
   color: var(--cocoa);
   font: 500 9px 'IBM Plex Mono';
+}
+.chat-header__add span {
+  display: inline;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  height: auto;
 }
 .conversation-scroll {
   position: relative;
@@ -330,9 +355,9 @@
   transform: translateY(-1px);
 }
 .conversation {
-  width: min(800px, calc(100% - 54px));
+  width: min(1120px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 25px 0 80px;
+  padding: 28px 0 48px;
 }
 .branch-banner {
   display: flex;
@@ -359,13 +384,13 @@
   position: relative;
   display: grid;
   grid-template-columns: 33px minmax(0, 1fr);
-  gap: 16px;
-  padding-bottom: 29px;
+  gap: 14px;
+  padding-bottom: 28px;
   scroll-margin-top: 76px;
   scroll-margin-bottom: 140px;
 }
 .turn:not(:last-child)::before {
-  content: '';
+  content: none;
   position: absolute;
   left: 16px;
   top: 34px;
@@ -409,14 +434,15 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 25px;
-  margin-bottom: 5px;
+  min-height: 25px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .message-meta strong {
   color: var(--cocoa);
-  font-size: 12px;
+  font-size: 13px;
 }
 .message-meta time {
   margin-left: auto;
@@ -430,16 +456,29 @@
   line-height: 1.6;
 }
 .user-slip {
-  padding: 13px 15px;
+  padding: 16px 22px;
   border-radius: 5px 14px 14px 14px;
   background: var(--berry-soft);
   border: 1px solid color-mix(in srgb, var(--berry), transparent 75%);
 }
 .user-slip p {
   margin: 0;
-  line-height: 1.55;
+  font-size: 17px;
+  line-height: 1.65;
+  max-width: 80ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.chat-main .rich-markdown,
+.chat-main .user-slip p,
+.chat-main textarea,
+.chat-main .streaming-message {
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+.chat-main textarea {
+  font-size: 16px;
+  line-height: 1.6;
 }
 .message-actions {
   display: flex;
@@ -819,29 +858,29 @@
   font-size: 12px;
   line-height: 1.7;
 }
-.rich-response {
+.rich-response:not(:has(.rich-markdown)) {
   font-size: 14px;
   line-height: 1.65;
 }
-.rich-response > p {
+.rich-response:not(:has(.rich-markdown)) > p {
   margin: 0 0 15px;
 }
-.rich-response h2 {
+.rich-response:not(:has(.rich-markdown)) h2 {
   margin: 22px 0 8px;
   font:
     650 20px 'Bricolage Grotesque Variable',
     'Bricolage Grotesque';
 }
-.rich-response h3 {
+.rich-response:not(:has(.rich-markdown)) h3 {
   margin: 19px 0 7px;
   font:
     650 15px 'Bricolage Grotesque Variable',
     'Bricolage Grotesque';
 }
-.rich-response ol {
+.rich-response:not(:has(.rich-markdown)) ol {
   padding-left: 22px;
 }
-.rich-response li {
+.rich-response:not(:has(.rich-markdown)) li {
   margin: 5px 0;
   padding-left: 3px;
 }
@@ -862,7 +901,7 @@
 .callout p {
   margin: 0;
 }
-.rich-response pre {
+.rich-response:not(:has(.rich-markdown)) pre {
   overflow: hidden;
   margin: 16px 0;
   border: 1px solid var(--line);
@@ -886,7 +925,7 @@
   background: transparent;
   color: #bdb4ae;
 }
-.rich-response pre > code {
+.rich-response:not(:has(.rich-markdown)) pre > code {
   display: block;
   overflow: auto;
   padding: 14px;
@@ -896,19 +935,19 @@
   overflow: auto;
   margin: 12px 0;
 }
-.rich-response table {
+.rich-response:not(:has(.rich-markdown)) table {
   width: 100%;
   border-collapse: collapse;
   border: 1px solid var(--line);
   font-size: 12px;
 }
-.rich-response th,
-.rich-response td {
+.rich-response:not(:has(.rich-markdown)) th,
+.rich-response:not(:has(.rich-markdown)) td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
   text-align: left;
 }
-.rich-response th {
+.rich-response:not(:has(.rich-markdown)) th {
   background: var(--crumb);
   color: var(--muted);
   font: 500 9px 'IBM Plex Mono';
@@ -1017,7 +1056,7 @@
 .chat-composer-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: min(800px, calc(100% - 54px));
+  width: min(1120px, calc(100% - 64px));
   margin: 0 auto;
   padding: 10px 0 15px;
   background: var(--paper);
@@ -1355,7 +1394,8 @@
 .task-row__body p {
   margin: 4px 0 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .task-progress,
 .large-progress {
@@ -1379,7 +1419,7 @@
   gap: 14px;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 .back-button {
   display: flex;
@@ -1437,7 +1477,7 @@
   gap: 14px;
   margin-top: 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .task-detail__meta span {
   display: flex;
@@ -1609,7 +1649,11 @@
   gap: 2px;
 }
 .step strong {
-  font-size: 12px;
+  font-size: 13px;
+}
+.step small {
+  font-size: 10px;
+  line-height: 1.35;
 }
 .step small {
   color: var(--muted);

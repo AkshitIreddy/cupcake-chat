@@ -15,9 +15,9 @@
   z-index: 5;
   display: grid;
   gap: 6px;
-  width: min(100%, 980px);
-  margin: -2px auto 4px;
-  padding: 0 20px;
+  width: min(1120px, calc(100% - 64px));
+  margin: 8px auto 4px;
+  padding: 0;
 }
 
 .participant-tray__scroll {
@@ -382,49 +382,6 @@
   --scrollbar-thumb: color-mix(in srgb, var(--muted), var(--paper) 35%);
   --scrollbar-thumb-hover: var(--muted);
   --scrollbar-thumb-active: var(--berry);
-}
-
-.app-shell--wallpaper {
-  --group-floating-surface: #161c2a;
-  /* Keep controls in the artwork's palette instead of putting neutral glass over it. */
-  --paper: var(--group-floating-surface);
-  --paper-raised: color-mix(in srgb, var(--group-floating-surface) 84%, var(--berry));
-  --crumb: color-mix(in srgb, var(--group-floating-surface) 88%, #000);
-  --soft: color-mix(in srgb, var(--group-floating-surface) 84%, var(--berry));
-  --muted: color-mix(in srgb, var(--cocoa) 86%, var(--berry));
-  --danger: #ffb7ad;
-}
-
-.app-shell--wallpaper[data-wallpaper='moonlit-archive'] {
-  --group-floating-surface: #122541;
-}
-
-.app-shell--wallpaper[data-wallpaper='pistachio-atelier'] {
-  --group-floating-surface: #223b2c;
-}
-
-.app-shell--wallpaper[data-wallpaper='blueberry-observatory'] {
-  --group-floating-surface: #30204e;
-}
-
-.app-shell--wallpaper[data-wallpaper='copper-workshop'] {
-  --group-floating-surface: #452719;
-}
-
-.app-shell--wallpaper[data-wallpaper='aquamarine-tidepool-library'] {
-  --group-floating-surface: #09464c;
-}
-
-.app-shell--wallpaper[data-wallpaper='ink-snow-garden'] {
-  --group-floating-surface: #1a1f22;
-}
-
-.app-shell--wallpaper[data-wallpaper='raspberry-circuit-conservatory'] {
-  --group-floating-surface: #211d43;
-}
-
-.app-shell--wallpaper[data-wallpaper='saffron-paper-city'] {
-  --group-floating-surface: #342b3b;
 }
 
 .app-shell--wallpaper :is(.participant-chip, .participant-add, .group-settings-trigger),

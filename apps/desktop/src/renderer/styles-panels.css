@@ -503,7 +503,7 @@
 .memory-card p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .memory-card footer {
@@ -512,7 +512,7 @@
   gap: 8px;
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 .memory-card footer > span {
   flex: 1;
@@ -602,7 +602,7 @@
 }
 .detail-row small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 .detail-row > button:not(.toggle) {
   display: flex;
@@ -649,7 +649,8 @@
 }
 .memory-source small {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .memory-source button {
   border: 0;

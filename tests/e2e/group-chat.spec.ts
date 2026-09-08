@@ -709,7 +709,7 @@ async function installGroupBridge(page: Page, scenario: GroupScenario) {
 async function openGroupChat(page: Page) {
   await page.goto('/?view=chats');
   await page.locator('.chat-list__main').filter({ hasText: 'Group QA table' }).click();
-  await expect(page.getByTestId('participant-tray')).toBeVisible();
+  await expect(page.getByTestId('add-cupcake')).toBeVisible();
   await expect(page.getByLabel('Message Cupcake')).toBeVisible();
 }
 
@@ -736,7 +736,15 @@ test('solo chats offer Cupcakes without claiming a group route', async ({ page }
   await installGroupBridge(page, 'solo');
   await openGroupChat(page);
   await expect(page.getByTestId('add-cupcake')).toBeVisible();
-  await expect(page.locator('.participant-tray__summary')).toHaveCount(0);
+  await expect(page.getByTestId('participant-tray')).toHaveCount(0);
+  await expect(page.locator('.chat-header').getByTestId('add-cupcake')).toBeVisible();
+  expect(
+    await page.locator('.chat-header').evaluate((element) => element.clientHeight),
+  ).toBeLessThan(80);
+  await page.getByTestId('add-cupcake').click();
+  await expect(
+    page.getByRole('button', { name: 'Create a Cupcake', exact: true }).first(),
+  ).toBeVisible();
 });
 
 test('wallpaper group settings use an opaque surface and honor scrollbar preferences', async ({
@@ -1070,27 +1078,27 @@ test('a local Cupcake can be configured without loading its installed model', as
         return [...context.getImageData(0, 0, 1, 1).data] as [number, number, number, number];
       };
       const composite = (front: number[], back: number[]) => {
-        const alpha = front[3]! / 255;
+        const alpha = front[3] / 255;
         return front
           .slice(0, 3)
-          .map((channel, index) => Math.round(channel * alpha + back[index]! * (1 - alpha)));
+          .map((channel, index) => Math.round(channel * alpha + back[index] * (1 - alpha)));
       };
       const luminance = (color: number[]) => {
         const linear = color.slice(0, 3).map((channel) => {
           const value = channel / 255;
           return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
         });
-        return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
       };
       const style = getComputedStyle(element);
-      const shellStyle = getComputedStyle(element.closest('.app-shell')!);
+      const shellStyle = getComputedStyle(element.closest('.app-shell'));
       const foreground = toRgba(style.color);
       const surface = toRgba(shellStyle.getPropertyValue('--group-floating-surface'));
       const background = composite(toRgba(style.backgroundColor), surface);
       const [lighter, darker] = [luminance(foreground), luminance(background)].sort(
         (left, right) => right - left,
       );
-      return (lighter! + 0.05) / (darker! + 0.05);
+      return (lighter + 0.05) / (darker + 0.05);
     });
   expect(warningContrast).toBeGreaterThanOrEqual(4.5);
   await expectOpaqueCopperSurface(page, '.group-dialog');

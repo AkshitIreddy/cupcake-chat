@@ -851,16 +851,29 @@ html[data-reduced-motion='true'] .provider-spinner {
 @media (max-width: 719px) {
   .chat-header {
     padding-left: 52px;
+    gap: 8px;
   }
-  .chat-header > div:first-child {
-    min-width: 0;
+  .chat-header__navigation {
+    display: none;
+  }
+  .chat-header__actions {
+    gap: 4px;
+  }
+  .chat-header__add span {
+    display: none;
   }
   .chat-header h1,
   .chat-project {
-    max-width: 190px;
+    max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .chat-header h1 {
+    font-size: 16px;
+  }
+  .app-content--wallpaper .turn > .message {
+    padding: 14px 16px;
   }
   .composer__tools .composer-chip {
     display: none;

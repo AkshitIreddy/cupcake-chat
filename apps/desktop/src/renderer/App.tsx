@@ -1662,18 +1662,11 @@ function Composer({
       </div>
       {!compact && (
         <div className="composer__hint">
-          {selectedModel && <RouteBadge route={selectedModel.route} />}
-          <span>
-            {!selectedModel
-              ? 'Choose a ready model before sending.'
-              : !modelReady
-                ? modelAvailabilityDetail(selectedModel)
-                : selectedModel.route === 'Local'
-                  ? 'Runs privately on this computer. Nothing is sent to a model provider.'
-                  : offline
-                    ? `Sending to ${selectedModel.provider} is paused in offline mode.`
-                    : `Sent to ${selectedModel.provider} only when you press Send.`}
-          </span>
+          {(!selectedModel || !modelReady) && (
+            <span>
+              {selectedModel ? modelAvailabilityDetail(selectedModel) : 'Choose a model to start.'}
+            </span>
+          )}
           <span className="composer__keys">
             <kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> newline
           </span>
@@ -2947,44 +2940,68 @@ function ChatView({
     <div className={cx('chat-layout', contextOpen && 'is-context-open')}>
       <main className="chat-main">
         <header className="chat-header">
-          <div>
-            <button
-              className="icon-button"
-              title="Previous conversation (Alt+Up)"
-              aria-label="Previous conversation"
-              onClick={() => {
-                const index = workspace.conversations.findIndex(
-                  (item) => item.id === workspace.activeConversationId,
-                );
-                const previous = workspace.conversations[Math.max(0, index - 1)];
-                if (previous) void workspace.selectConversation(previous.id);
-              }}
-            >
-              <Icon name="arrow" />
-            </button>
-            <button
-              className="icon-button"
-              title="Next conversation (Alt+Down)"
-              aria-label="Next conversation"
-              onClick={() => {
-                const index = workspace.conversations.findIndex(
-                  (item) => item.id === workspace.activeConversationId,
-                );
-                const next =
-                  workspace.conversations[Math.min(workspace.conversations.length - 1, index + 1)];
-                if (next) void workspace.selectConversation(next.id);
-              }}
-            >
-              <Icon name="chevron" />
-            </button>
-            <button
-              className="chat-project"
-              onClick={() => void workspace.setActiveProject(workspace.activeProjectId)}
-            >
-              {workspace.projects.find((project) => project.id === workspace.activeProjectId)
-                ?.name ?? 'No project'}{' '}
-              <Icon name="chevron" size={12} />
-            </button>
+          <div className="chat-header__identity">
+            <nav className="chat-header__navigation" aria-label="Conversation navigation">
+              <button
+                className="icon-button"
+                title="Previous conversation (Alt+Up)"
+                aria-label="Previous conversation"
+                onClick={() => {
+                  const index = workspace.conversations.findIndex(
+                    (item) => item.id === workspace.activeConversationId,
+                  );
+                  const previous = workspace.conversations[Math.max(0, index - 1)];
+                  if (previous) void workspace.selectConversation(previous.id);
+                }}
+              >
+                <Icon name="arrow" />
+              </button>
+              <button
+                className="icon-button"
+                title="Next conversation (Alt+Down)"
+                aria-label="Next conversation"
+                onClick={() => {
+                  const index = workspace.conversations.findIndex(
+                    (item) => item.id === workspace.activeConversationId,
+                  );
+                  const next =
+                    workspace.conversations[
+                      Math.min(workspace.conversations.length - 1, index + 1)
+                    ];
+                  if (next) void workspace.selectConversation(next.id);
+                }}
+              >
+                <Icon name="chevron" />
+              </button>
+            </nav>
+            <div className="chat-header__titles">
+              <h1>
+                {workspace.conversations.find(
+                  (conversation) => conversation.id === workspace.activeConversationId,
+                )?.title ?? (workspace.fixtureMode ? 'Architecture review' : 'New conversation')}
+              </h1>
+              <button
+                className="chat-project"
+                onClick={() => void workspace.setActiveProject(workspace.activeProjectId)}
+              >
+                {workspace.projects.find((project) => project.id === workspace.activeProjectId)
+                  ?.name ?? 'No project'}{' '}
+                <Icon name="chevron" size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="chat-header__actions">
+            {workspace.participants.length === 0 && (
+              <button
+                className="context-toggle chat-header__add"
+                onClick={() => void openAddCupcake()}
+                data-testid="add-cupcake"
+                aria-label="Add Cupcake"
+              >
+                <Icon name="plus" size={15} />
+                <span>Add Cupcake</span>
+              </button>
+            )}
             <button
               className="context-toggle"
               onClick={() => document.querySelector<HTMLElement>('.frosting-outline')?.focus()}
@@ -2993,13 +3010,6 @@ function ChatView({
               <Icon name="history" />
               Outline
             </button>
-            <h1>
-              {workspace.conversations.find(
-                (conversation) => conversation.id === workspace.activeConversationId,
-              )?.title ?? (workspace.fixtureMode ? 'Architecture review' : 'New conversation')}
-            </h1>
-          </div>
-          <div>
             <button className="context-toggle" onClick={() => setContextOpen((v) => !v)}>
               <Icon name="eye" />
               Context{' '}
@@ -3010,43 +3020,45 @@ function ChatView({
             </button>
           </div>
         </header>
-        <ParticipantTray
-          participants={workspace.participants}
-          settings={workspace.groupSettings}
-          models={workspace.models}
-          onAdd={() => void openAddCupcake()}
-          onEdit={(persona) => openPersonaEditor(persona)}
-          onEnabledChange={async (participant, enabled) => {
-            setGroupUiError('');
-            try {
-              await workspace.setConversationParticipantEnabled(participant.id, enabled);
-            } catch (reason) {
-              setGroupUiError(
-                reason instanceof Error ? reason.message : 'The Cupcake could not be updated.',
-              );
-            }
-          }}
-          onRemove={async (participant) => {
-            setGroupUiError('');
-            try {
-              await workspace.removeConversationParticipant(participant.id);
-            } catch (reason) {
-              setGroupUiError(
-                reason instanceof Error ? reason.message : 'The Cupcake could not be removed.',
-              );
-            }
-          }}
-          onSettingsChange={async (patch) => {
-            setGroupUiError('');
-            try {
-              await workspace.updateGroupSettings(patch);
-            } catch (reason) {
-              setGroupUiError(
-                reason instanceof Error ? reason.message : 'Group settings could not be saved.',
-              );
-            }
-          }}
-        />
+        {workspace.participants.length > 0 && (
+          <ParticipantTray
+            participants={workspace.participants}
+            settings={workspace.groupSettings}
+            models={workspace.models}
+            onAdd={() => void openAddCupcake()}
+            onEdit={(persona) => openPersonaEditor(persona)}
+            onEnabledChange={async (participant, enabled) => {
+              setGroupUiError('');
+              try {
+                await workspace.setConversationParticipantEnabled(participant.id, enabled);
+              } catch (reason) {
+                setGroupUiError(
+                  reason instanceof Error ? reason.message : 'The Cupcake could not be updated.',
+                );
+              }
+            }}
+            onRemove={async (participant) => {
+              setGroupUiError('');
+              try {
+                await workspace.removeConversationParticipant(participant.id);
+              } catch (reason) {
+                setGroupUiError(
+                  reason instanceof Error ? reason.message : 'The Cupcake could not be removed.',
+                );
+              }
+            }}
+            onSettingsChange={async (patch) => {
+              setGroupUiError('');
+              try {
+                await workspace.updateGroupSettings(patch);
+              } catch (reason) {
+                setGroupUiError(
+                  reason instanceof Error ? reason.message : 'Group settings could not be saved.',
+                );
+              }
+            }}
+          />
+        )}
         {groupUiError && (
           <p className="group-inline-error" role="alert">
             {groupUiError}
