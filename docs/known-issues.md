@@ -3,6 +3,28 @@
 CupcakeAI 2.0 is a local owner-test candidate. Owner acceptance and distribution approval remain
 outstanding; nothing has been pushed or published.
 
+## September 8 owner revision
+
+The compact chat header, wider readable responses, consistent Task/Memory scene surfaces, and final
+four wallpaper selections are corrected. The owner test profile also contains three additional
+everyday projects with four real conversations and saved final plans, including a Groq/Cohere group
+and an app-managed local CUDA conversation. See
+`docs/worklogs/2026-09-08-reading-and-everyday-showcase.md` and the September 8 package audit for
+the exact current build and evidence; package hashes below are retained historical observations.
+
+Actual sample conversations still expose model limitations. The operator narrowed overcomplicated
+plans and challenged bad first drafts; failed/truncated setup trials are archived. Stronger model
+selection did not guarantee instruction compliance. The final Qwen card still includes an emoji and
+imperfect tab-saving advice, and the photo card's “15-minute” heading excludes its return trip. The
+model responses remain unchanged and are not represented as actions performed or perfect advice.
+
+Final `c0e08ac` also fixes project memories disappearing from the UI after save/undo; the exact
+restored record survived process restart. First opening of the new executable took 28.4 seconds,
+while reopening took 5.1 seconds. The first-opening delay's cause is not established. An optional
+startup `developer.events` request still returns `INVALID_ARGUMENT` because it omits the required
+run ID; historical diagnostics hydration is not verified. This caught request does not block the
+verified Home/chat/artifact/Memory flows. See the September 8 ledger for the exact receipts.
+
 ## Qualification status and remaining limits
 
 - The Tauri host, target-triple sidecars, verified resources, executable, and unsigned NSIS bundle

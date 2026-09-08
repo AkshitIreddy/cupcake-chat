@@ -4,10 +4,26 @@ Double-click `Launch CupcakeAI Test.vbs` in this repository. It opens the local 
 with the existing owner workspace, without a terminal or password prompt. It does not install,
 publish, or update anything.
 
-Use **Ctrl + Plus** or **Ctrl + Minus** to zoom and **Ctrl + 0** to reset. At high zoom, scroll the
-chat or Cupcake editor to reach the remaining content and controls.
+## Start with the everyday conversations
 
-## Explore the saved work
+These are owner samples with real model responses and scripted, conversational user prompts. Open
+**Projects**, choose a project, then **Chats**. The later follow-ups deliberately ask for less
+effort and correct weak first drafts. The models did not perform any of the proposed real-world
+actions.
+
+| Project              | Conversation                               | What it leaves you with                                                                                                                                                     |
+| -------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Small Things, Sorted | Friday, sorted: a movie and popcorn        | Milo, Sage, and Remy turn a vague movie-night request into a no-shopping invite and three prep steps. Groq GPT-OSS 120B and Cohere; direct mentions and a quiet final turn. |
+| Small Things, Sorted | Make Sunday feel lighter                   | A six-turn Groq conversation that narrows an overwhelming apartment cleanup to one coffee table and ten minutes. The artifact's latest revision contains the smaller plan.  |
+| Pocket Adventures    | The ordinary-street photo game             | Five Cohere exchanges produce a phone-photo outing, an orange colour hunt, public objects to photograph, and a simple way to pick three favourites.                         |
+| Private Reset Room   | A gentle reset that stays on this computer | A local Qwen conversation about tabs, unanswered messages, and packing tomorrow's bag, with a saved private reset plan.                                                     |
+
+The failed dinner attempt, an earlier movie draft, and the truncated photo trial are archived.
+Earlier replies remain visible in the featured conversations too; final saved revisions contain the
+requested corrections. The photo card's heading says “15-minute” while its instructions say to turn
+back after 15 minutes: allow the return journey as well. It is an outing idea, not a checked route.
+
+## Explore the deeper work
 
 | Project                      | What to open                                                                                                      | Real route                                                                           |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -80,7 +96,8 @@ profile.
 
 ## Evidence and limits
 
-See `docs/worklogs/2026-09-05-independent-overhaul.md` for the acceptance ledger,
+See `docs/worklogs/2026-09-08-reading-and-everyday-showcase.md` for the latest UI/demo evidence,
+`docs/worklogs/2026-09-05-independent-overhaul.md` for the broader acceptance ledger,
 `docs/research/2026-09-05-native-audit.md` for exact package and lifecycle evidence, and
 `docs/known-issues.md` for remaining limitations. No push, publication, production signing,
 distribution, or updater activation is authorized.

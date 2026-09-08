@@ -4,6 +4,11 @@ Checked means implementation and relevant observed evidence both exist. The date
 [acceptance ledger](../worklogs/2026-09-05-independent-overhaul.md) identifies exact source/package
 versions; historical results are not silently transferred to changed behavior.
 
+The September 8 owner refinements and everyday conversations are tracked separately in the
+[reading and showcase ledger](../worklogs/2026-09-08-reading-and-everyday-showcase.md). Its
+[package audit](../research/2026-09-08-package-audit.md) supersedes the September 7 artifact hashes;
+the earlier installer lifecycle remains evidence for the unchanged installer behavior.
+
 ## Host and package
 
 - [x] Actual Windows Tauri host boots with its private verified runtime and broker; no separate
