@@ -19,7 +19,7 @@ const OWNER_SENTINEL = {
   id: '01a07025-0334-7ee4-8c90-4b65b1115a40',
   name: '[LIVE] Harbor Data Reliability Lab',
 };
-const GROQ_MODEL = 'openai/gpt-oss-20b';
+const GROQ_MODEL = 'openai/gpt-oss-120b';
 const COHERE_MODEL = 'command-a-plus-05-2026';
 
 const PROJECTS = {
@@ -41,16 +41,18 @@ const PROJECTS = {
 };
 
 const DINNER = {
-  title: 'Friday dinner without the group-chat spiral',
-  artifact: 'Friday dinner — final plan.md',
+  title: 'Friday, sorted: a movie and popcorn',
+  artifact: 'Movie night — one small plan.md',
   prompts: {
     first:
-      'five of us are eating at my apartment on friday. we have about ₹2,500, one vegetarian, no oven, and one very nervous beginner cook. can you two rescue us from another 70-message planning chat?',
+      'i have somehow volunteered for movie night. four friends, two hours total, ₹600 for snacks. we already have popcorn, tea and enough mugs. pick between Paddington 2 and Into the Spider-Verse. please make this easy.',
     correction:
-      'small correction: the vegetarian guest is actually vegan, and someone else will be 45 minutes late. i care much more about a relaxed evening than an impressive menu.',
+      'one friend gets headaches from flashing animation, and i am not cooking anything beyond popcorn. everyone comes at 7:30. less organising is better.',
     mentionSuffix:
-      ', make the final call for me: one menu, a shopping list by aisle, and four jobs i can paste into our chat. give the beginner the least stressful job.',
-    quiet: 'perfect, i have enough to shop. no more replies needed.',
+      ', give me a friendly invite i can copy and a tiny before-people-arrive checklist. include when we will finish. we do not have to spend the budget just because it is there.',
+    finalSuffix:
+      ', one last change: no shopping at all, just the popcorn and tea we have. let people arrive at 7:30 and start at 7:45, finished by 9:30. please do not promise a film is safe for headaches — i will ask my friend if it works for them. and i am definitely not putting snack bags in an oven! give me the corrected invite and just three prep steps, under 150 words.',
+    quiet: 'that is the version i will use. thanks both — no more replies needed.',
   },
 };
 
@@ -68,11 +70,13 @@ const DIRECT_SCENARIOS = {
       'laundry is impossible tonight. the visual mess is mostly paper, delivery packaging, and random things with no obvious home.',
       'that still feels like too much sorting. can we make the win smaller and leave the hard decisions for another day?',
       'yes, that feels doable. give me the final 20-minute version i can glance at once, plus a tiny stopping ritual for tomorrow morning.',
+      'hold on — i do not want important papers mixed with rubbish, and blocking a door sounds awkward. give me a better version: one small clear surface, packaging in the recycling, papers kept together for later, and stop when the timer rings. please keep it under 180 words.',
+      'make it a sticky note for just the coffee table, please. no walking room to room. only clean cardboard can go in my recycling; the foam cannot. papers in one pile, other stuff in a temporary basket, stop after ten minutes. tomorrow i will decide where things belong.',
     ],
   },
   photoWalk: {
     project: 'adventures',
-    title: 'A photo walk for grey weather',
+    title: 'The ordinary-street photo game',
     artifact: 'Grey-day phone photo walk.md',
     providerChoices: [
       { provider: 'cohere', model: COHERE_MODEL },
@@ -84,6 +88,7 @@ const DIRECT_SCENARIOS = {
       'it is a very ordinary neighborhood, no scenic route. i like small human details, but i am shy about photographing strangers.',
       'light rain might start halfway through and an hour suddenly sounds ambitious. can you make it work as a 35-minute walk?',
       'nice. give me the pocket version: a loose route, seven shots in a satisfying order, one playful rule, and a quick way to choose my best three later.',
+      'i would rather skip people, their homes and addresses completely. and holding my phone with one finger in the rain sounds like a repair bill. how about seven ordinary public things, one colour to hunt for, turn back after 15 minutes, and pick three favourites without installing or learning anything? make that my final pocket card.',
     ],
   },
   localReset: {
@@ -96,34 +101,46 @@ const DIRECT_SCENARIOS = {
       'dishes can wait. the real friction is 14 browser tabs, three unanswered messages, and a bag i need ready for tomorrow morning.',
       'i am tempted to do all three messages properly right now. that is probably how i ended up stuck.',
       'okay. give me the final private 20-minute reset, a visible finish line, and one sentence i can send when a message needs more thought.',
+      'no bonus chores — the drawer can keep its secrets tonight. just save the tabs for later, put keys, wallet and charger in my work bag, and draft one holding reply. ten minutes max, then i stop. no pep talk or emojis needed; give me the little card i can follow.',
     ],
   },
 };
 
 const PERSONAS = {
+  reviewer: {
+    name: 'Remy',
+    handle: 'remy_notes',
+    avatar: 'atlas:11',
+    role: 'Friendly finisher',
+    description: 'Turns a settled plan into a message people can actually use.',
+    instructions:
+      'Write a natural copyable invite or a small checklist once the plan is settled. Keep it friendly, specific, and lightly playful without catchphrases. Do not invent purchases, messages sent, or checked availability. Usually stay under 180 words.',
+    speakWhen:
+      'Speak when the user asks for final wording or a copyable checklist. Let others choose the plan first. Pass when the conversation is closed.',
+    personality: { preset: 'warm', warmth: 0.65, brevity: 0.65, initiative: 0.5 },
+  },
   host: {
-    name: 'Maple',
-    handle: 'maple_host',
+    name: 'Milo',
+    handle: 'milo_night',
     avatar: 'atlas:6',
     role: 'Decisive, considerate host',
     description: 'Turns competing preferences into one hospitable plan people can actually follow.',
     instructions:
-      'Make a clear choice when the tradeoffs are known. Respect dietary constraints, uneven confidence, real budgets, and late arrivals. Use plain language and rough price bands when prices are unknown. Never claim shopping, cooking, or checking happened.',
+      'Make one clear choice and reduce organising. Treat the budget as a ceiling, not a target. Favor supplies already available and allow time for arrivals and cleanup. Keep ordinary replies under 180 words. Be conversational with a little dry warmth. Never invent purchases or completed work.',
     speakWhen:
       'Speak when the group needs a decision, a practical sequence, fair jobs, or a concise plan to share.',
     personality: { preset: 'warm', warmth: 0.72, brevity: 0.7, initiative: 0.7 },
   },
   realist: {
-    name: 'Basil',
-    handle: 'basil_realist',
+    name: 'Sage',
+    handle: 'sage_easy',
     avatar: 'atlas:13',
-    role: 'Kitchen realist',
-    description:
-      'Catches timing, equipment, dietary, and beginner-friendliness problems before dinner.',
+    role: 'Keeper of the easy option',
+    description: 'Catches avoidable effort and overlooked guest preferences.',
     instructions:
-      'Add only useful corrections or alternatives. Check that the plan works without an oven, protects vegan food, gives beginners a safe job, and does not leave the host cooking all evening. Do not repeat the host or invent local prices.',
+      'Add only a concrete correction or useful simplification. Respect stated sensory preferences and the two-hour window. Never call a film medically safe or invent current prices. Do not repeat the host. Use at most 120 words for normal replies.',
     speakWhen:
-      'Speak when a meal plan has a hidden timing, equipment, dietary, workload, or shopping problem. Stay quiet once those issues are resolved.',
+      'Speak when a plan overlooks the guest preferences, time limit, or low-effort goal. Otherwise stay quiet.',
     personality: { preset: 'concise', warmth: 0.56, brevity: 0.82, initiative: 0.48 },
   },
   reset: {
@@ -134,7 +151,7 @@ const PERSONAS = {
     description:
       'Makes an overwhelming room feel finite without turning it into a lifestyle project.',
     instructions:
-      'Be warm, practical, and specific. Reduce scope when the user says a plan is too much. Prefer visible relief, temporary holding places, timers, and a clean stopping point over perfect organization. Never imply the user completed a step or diagnose their mood.',
+      'Be warm, practical, and specific. Reduce scope when the user says a plan is too much. Prefer visible relief, temporary holding places, timers, and a clean stopping point over perfect organization. Keep ordinary replies around 150 words; expand only when a final checklist needs it. Never imply the user completed a step or diagnose their mood.',
     speakWhen:
       'Speak whenever the user asks for a smaller, calmer household plan or revises a constraint.',
     personality: { preset: 'warm', warmth: 0.78, brevity: 0.72, initiative: 0.5 },
@@ -147,7 +164,7 @@ const PERSONAS = {
     description:
       'Finds a small visual game in ordinary streets, modest gear, and imperfect weather.',
     instructions:
-      'Offer concrete, achievable phone-photography prompts. Respect privacy around strangers, adapt to weather and energy, and explain visual ideas in everyday language. Keep the tone curious and lightly playful. Do not claim a place or photo was observed.',
+      'Offer concrete, achievable phone-photography prompts. Respect privacy around strangers, adapt to weather and energy, and explain visual ideas in everyday language. Keep the tone curious and lightly playful. Do not claim a place or photo was observed. Keep each reply under 220 words. One small useful idea is better than a long lesson.',
     speakWhen:
       'Speak when a creative outing needs a theme, a smaller route, or a useful constraint.',
     personality: { preset: 'warm', warmth: 0.7, brevity: 0.62, initiative: 0.58 },
@@ -168,7 +185,7 @@ const PERSONAS = {
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
   process.stdout.write(
-    `Usage:\n  node scripts/create-owner-everyday-showcase.mjs --self-test\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase hosted --execute REAL_PROVIDER_CALLS\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase local --execute REAL_LOCAL_INFERENCE --gpu-marker "C:/.../gpu use.txt"\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase verify\n\nThe packaged app must already be running against ${OWNER_PROFILE}. Hosted creation uses Groq and Cohere for the dinner group, then prefers already-connected generous routes for direct chats. It never connects providers or reads keys.\n`,
+    `Usage:\n  node scripts/create-owner-everyday-showcase.mjs --self-test\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase hosted --execute REAL_PROVIDER_CALLS\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase local --execute REAL_LOCAL_INFERENCE --gpu-marker "C:/.../gpu use.txt"\n  node scripts/create-owner-everyday-showcase.mjs --port <cdp-port> --phase verify\n\nThe packaged app must already be running against ${OWNER_PROFILE}. Hosted creation uses Groq and Cohere for the movie group, then prefers already-connected generous routes for direct chats. It never connects providers or reads keys.\n`,
   );
   process.exit(0);
 }
@@ -244,8 +261,10 @@ try {
     if (!groq || !cohere) {
       throw new Error('The dinner group requires connected, ready Groq and Cohere routes');
     }
-    const dinner = await runDinnerGroup(page, groq, cohere, output);
-    recordResult(evidence, dinner);
+    if (!args.includes('--skip-dinner')) {
+      const dinner = await runDinnerGroup(page, groq, cohere, cohere, output);
+      recordResult(evidence, dinner);
+    }
     for (const scenarioId of ['reset', 'photoWalk']) {
       const scenario = DIRECT_SCENARIOS[scenarioId];
       const model = chooseReadyModel(models, scenario.providerChoices);
@@ -340,7 +359,7 @@ try {
   );
 }
 
-async function runDinnerGroup(page, groq, cohere, outputDirectory) {
+async function runDinnerGroup(page, groq, cohere, nim, outputDirectory) {
   const project = await ensureProject(page, PROJECTS.littleThings);
   const conversation = await ensureConversation(page, project.id, DINNER.title);
   if (conversation.status === 'archived') {
@@ -348,39 +367,58 @@ async function runDinnerGroup(page, groq, cohere, outputDirectory) {
   }
   const host = await ensurePersona(page, { ...PERSONAS.host, modelId: groq.id });
   const realist = await ensurePersona(page, { ...PERSONAS.realist, modelId: cohere.id });
-  const roster = await ensureDinnerRoster(page, conversation.id, host, realist);
+  const reviewer = await ensurePersona(page, { ...PERSONAS.reviewer, modelId: nim.id });
+  const roster = await ensureDinnerRoster(page, conversation.id, host, realist, reviewer);
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await openConversation(page, DINNER.title);
 
   const first = await ensureGroupTurn(page, conversation, DINNER.prompts.first, {
     mode: 'smart',
-    expectedParticipants: [roster.host, roster.realist],
+    expectedParticipants: [roster.host, roster.realist, roster.reviewer],
     minReplies: 1,
     maxReplies: 2,
   });
+  if (!(await existingGroupTurn(page, conversation.branchId, DINNER.prompts.correction)))
+    await delay(65_000);
   const correction = await ensureGroupTurn(page, conversation, DINNER.prompts.correction, {
     mode: 'smart',
-    expectedParticipants: [roster.host, roster.realist],
+    expectedParticipants: [roster.host, roster.realist, roster.reviewer],
     minReplies: 1,
     maxReplies: 2,
   });
-  const mentionPrompt = `@${PERSONAS.host.handle}${DINNER.prompts.mentionSuffix}`;
+  const mentionPrompt = `@${PERSONAS.reviewer.handle}${DINNER.prompts.mentionSuffix}`;
   const finalChoice = await ensureGroupTurn(page, conversation, mentionPrompt, {
     mode: 'mentions',
-    mentionParticipant: roster.host,
+    mentionParticipant: roster.reviewer,
     mentionSuffix: DINNER.prompts.mentionSuffix,
-    expectedParticipants: [roster.host],
+    expectedParticipants: [roster.reviewer],
     minReplies: 1,
     maxReplies: 1,
   });
+  const reviewed = await ensureGroupTurn(
+    page,
+    conversation,
+    `@${PERSONAS.reviewer.handle}${DINNER.prompts.finalSuffix}`,
+    {
+      mode: 'mentions',
+      mentionParticipant: roster.reviewer,
+      mentionSuffix: DINNER.prompts.finalSuffix,
+      expectedParticipants: [roster.reviewer],
+      minReplies: 1,
+      maxReplies: 1,
+    },
+  );
+  if (!(await existingGroupTurn(page, conversation.branchId, DINNER.prompts.quiet)))
+    await delay(65_000);
   const quiet = await ensureGroupTurn(page, conversation, DINNER.prompts.quiet, {
     mode: 'smart',
-    expectedParticipants: [roster.host, roster.realist],
+    expectedParticipants: [roster.host, roster.realist, roster.reviewer],
     minReplies: 0,
     maxReplies: 0,
     disclosureMaxReplies: 2,
     acceptedStatuses: ['waiting_for_you'],
   });
-  const finalMessage = finalChoice.messages.at(-1);
+  const finalMessage = reviewed.messages.at(-1);
   if (!finalMessage) throw new Error('The dinner plan has no final group response');
   const artifact = await ensureArtifact(
     page,
@@ -397,14 +435,17 @@ async function runDinnerGroup(page, groq, cohere, outputDirectory) {
     artifact,
     screenshot,
     group: {
-      personas: [safePersona(host), safePersona(realist)],
+      personas: [safePersona(host), safePersona(realist), safePersona(reviewer)],
       strategy: 'smart-selective',
       maxReplies: 2,
-      turns: [first, correction, finalChoice, quiet].map(groupTurnEvidence),
+      turns: [first, correction, finalChoice, reviewed, quiet].map(groupTurnEvidence),
     },
     route: 'Groq + Cohere group',
     assistantTurns:
-      first.messages.length + correction.messages.length + finalChoice.messages.length,
+      first.messages.length +
+      correction.messages.length +
+      finalChoice.messages.length +
+      reviewed.messages.length,
   };
 }
 
@@ -414,17 +455,50 @@ async function runSoloScenario(page, scenarioId, scenario, model, routeType) {
   if (conversation.status === 'archived') {
     throw new Error(`The owner archived ${scenario.title}; refusing to revive it`);
   }
-  const persona = await ensurePersona(page, { ...PERSONAS[scenarioId], modelId: model.id });
-  const participant = await ensureSoloRoster(page, conversation.id, persona);
+  const persona = PERSONAS[scenarioId];
   const assistants = [];
   for (const prompt of scenario.prompts) {
-    const turn = await ensureGroupTurn(page, conversation, prompt, {
-      mode: 'smart',
-      expectedParticipants: [participant],
-      minReplies: 1,
-      maxReplies: 1,
-    });
-    assistants.push(turn.messages[0]);
+    const history = await runtimeRequest(page, 'chat.history', { branchId: conversation.branchId });
+    const existing = assistantAfterPrompt(history, prompt);
+    if (existing) {
+      assistants.push(existing);
+      continue;
+    }
+    if (history.some((message) => message.role === 'user' && message.content === prompt)) {
+      throw new Error('Incomplete existing direct turn; refusing resend');
+    }
+    if (assistants.length && model.metadata?.provider_preset === 'groq') await delay(65_000);
+    const params = {
+      content: prompt,
+      modelId: model.id,
+      projectId: project.id,
+      conversationId: conversation.id,
+      branchId: conversation.branchId,
+      personalityPreset: 'warm',
+      personalityInstructions: persona.instructions,
+      reasoningEffort: 'none',
+      offline: routeType === 'local',
+      enabledToolIds: [],
+      memoryIds: [],
+      toolIds: [],
+      attachments: [],
+      attachmentHandles: [],
+      references: [],
+      referenceIds: [],
+      maxOutputTokens: routeType === 'local' ? 1600 : 4096,
+    };
+    if (routeType === 'hosted') {
+      const preflight = await runtimeRequest(page, 'chat.preflight', params);
+      if (!preflight.confirmationToken || !preflight.outboundIntent)
+        throw new Error('Bound cloud preflight absent');
+      params.outboundConfirmationToken = preflight.confirmationToken;
+      params.outboundIntent = preflight.outboundIntent;
+    }
+    const result = await runtimeRequest(page, 'chat.send', params, 600000);
+    assertCompleteAssistant(result.message);
+    assertExpectedRoute(result.message, model, routeType);
+    assistants.push(result.message);
+    conversation.branchId = result.branchId;
   }
   const finalAssistant = assistants.at(-1);
   const artifact = await ensureArtifact(
@@ -441,12 +515,13 @@ async function runSoloScenario(page, scenarioId, scenario, model, routeType) {
     artifact,
     route: routeType === 'local' ? 'Cupcake Local · NVIDIA CUDA' : hostedRouteLabel(model),
     assistantTurns: assistants.length,
+    responses: assistants.map((message) => ({
+      id: message.id,
+      provider: message.provider_id,
+      model: message.model_id,
+      contentSha256: sha256(message.content),
+    })),
     finalContentSha256: sha256(finalAssistant.content),
-    group: {
-      personas: [safePersona(persona)],
-      strategy: 'smart-selective',
-      maxReplies: 1,
-    },
   };
 }
 
@@ -466,7 +541,8 @@ async function ensureGroupTurn(page, conversation, prompt, expectation) {
       .getByRole('option')
       .filter({ hasText: expectation.mentionParticipant.persona.name });
     if ((await choice.count()) !== 1) throw new Error('Exact dinner host mention is unavailable');
-    await choice.click();
+    await choice.focus();
+    await choice.press('Enter');
     await composer.press('End');
     if ((await composer.inputValue()).endsWith(' ')) await composer.press('Backspace');
     await page.keyboard.insertText(expectation.mentionSuffix);
@@ -521,6 +597,15 @@ function verifyGroupTurn(existing, expectation) {
   }
   assert.equal(existing.turn.mode, expectation.mode);
   const members = Array.isArray(existing.turn.members) ? existing.turn.members : [];
+  if (
+    existing.turn.status === 'member_failed' &&
+    members.some(
+      (member) =>
+        member.status === 'failed' && !expectation.allowedMemberErrors?.includes(member.errorCode),
+    )
+  ) {
+    throw new Error('Unexpected member failure in preserved partial turn');
+  }
   const completed = members.filter((member) => member.status === 'completed');
   if (completed.length < expectation.minReplies || completed.length > expectation.maxReplies) {
     throw new Error('Group reply count is outside the guarded range');
@@ -578,49 +663,15 @@ async function assertGroupDisclosure(dialog, expectation) {
   }
 }
 
-async function ensureSoloRoster(page, conversationId, persona) {
+async function ensureDinnerRoster(page, conversationId, host, realist, reviewer) {
   let participants = await runtimeRequest(page, 'conversations.participants.list', {
     conversationId,
   });
-  if (participants.some((item) => item.enabled && item.personaId !== persona.id)) {
-    throw new Error('Solo showcase chat has an unrelated enabled Cupcake; refusing to change it');
-  }
-  let participant = participants.find((item) => item.personaId === persona.id);
-  if (!participant) {
-    await runtimeRequest(page, 'conversations.participants.add', {
-      conversationId,
-      personaId: persona.id,
-      enabled: true,
-    });
-    participants = await runtimeRequest(page, 'conversations.participants.list', {
-      conversationId,
-    });
-    participant = participants.find((item) => item.personaId === persona.id);
-  }
-  if (!participant?.enabled || participant.availability?.status !== 'ready') {
-    throw new Error(`${persona.name} is not ready on the exact selected route`);
-  }
-  const settings = await runtimeRequest(page, 'conversations.group.settings.set', {
-    conversationId,
-    strategy: 'smart-selective',
-    maxReplies: 1,
-    leadParticipantId: participant.id,
-  });
-  assert.equal(settings.strategy, 'smart-selective');
-  assert.equal(settings.maxReplies, 1);
-  assert.equal(settings.leadParticipantId, participant.id);
-  return participant;
-}
-
-async function ensureDinnerRoster(page, conversationId, host, realist) {
-  let participants = await runtimeRequest(page, 'conversations.participants.list', {
-    conversationId,
-  });
-  const allowed = new Set([host.id, realist.id]);
+  const allowed = new Set([host.id, realist.id, reviewer.id]);
   if (participants.some((item) => item.enabled && !allowed.has(item.personaId))) {
     throw new Error('Dinner chat has an unrelated enabled Cupcake; refusing to change it');
   }
-  for (const persona of [host, realist]) {
+  for (const persona of [host, realist, reviewer]) {
     if (!participants.some((item) => item.personaId === persona.id)) {
       await runtimeRequest(page, 'conversations.participants.add', {
         conversationId,
@@ -634,12 +685,13 @@ async function ensureDinnerRoster(page, conversationId, host, realist) {
   });
   const hostParticipant = participants.find((item) => item.personaId === host.id);
   const realistParticipant = participants.find((item) => item.personaId === realist.id);
-  for (const item of [hostParticipant, realistParticipant]) {
+  const reviewerParticipant = participants.find((item) => item.personaId === reviewer.id);
+  for (const item of [hostParticipant, realistParticipant, reviewerParticipant]) {
     if (!item?.enabled || item?.availability?.status !== 'ready') {
       throw new Error(`${item?.persona?.name ?? 'A dinner Cupcake'} is not ready`);
     }
   }
-  const ordered = [hostParticipant.id, realistParticipant.id];
+  const ordered = [hostParticipant.id, realistParticipant.id, reviewerParticipant.id];
   const remainder = participants
     .filter((item) => !ordered.includes(item.id))
     .sort((left, right) => left.position - right.position)
@@ -657,7 +709,7 @@ async function ensureDinnerRoster(page, conversationId, host, realist) {
   assert.equal(settings.strategy, 'smart-selective');
   assert.equal(settings.maxReplies, 2);
   assert.equal(settings.leadParticipantId, hostParticipant.id);
-  return { host: hostParticipant, realist: realistParticipant };
+  return { host: hostParticipant, realist: realistParticipant, reviewer: reviewerParticipant };
 }
 
 async function ensurePersona(page, desired) {
@@ -679,7 +731,7 @@ async function ensurePersona(page, desired) {
   ];
   if (
     expected.some((key) => current[key] !== desired[key]) ||
-    JSON.stringify(current.personality) !== JSON.stringify(desired.personality)
+    Object.entries(desired.personality).some(([key, value]) => current.personality?.[key] !== value)
   ) {
     throw new Error(`Cupcake handle collision or drift: @${desired.handle}`);
   }
@@ -723,23 +775,36 @@ async function ensureArtifact(page, projectId, conversationId, title, kind, assi
   const matches = artifacts.filter((item) => (item.title ?? item.name) === title);
   if (matches.length > 1) throw new Error(`Duplicate everyday artifact: ${title}`);
   if (matches.length) {
-    const history = await runtimeRequest(page, 'artifacts.history', {
+    const current = await runtimeRequest(page, 'artifacts.get', {
       projectId,
       artifactId: matches[0].id,
     });
-    const source = history.find(
-      (revision) =>
-        (revision.source_message_id ?? revision.sourceMessageId) === assistant.id &&
-        sha256(revision.content ?? '') === sha256(assistant.content),
-    );
-    if (!source) throw new Error(`Existing artifact has different provenance: ${title}`);
-    return runtimeRequest(page, 'artifacts.get', {
+    if (sha256(current.content) === sha256(assistant.content))
+      return { ...current, sourceMessageId: assistant.id };
+    const state = await runtimeRequest(page, 'conversations.get', { conversationId });
+    const history = await runtimeRequest(page, 'chat.history', {
+      branchId: state.activeBranchId ?? state.branches[0].id,
+    });
+    if (
+      !history.some(
+        (message) =>
+          message.role === 'assistant' && sha256(message.content) === sha256(current.content),
+      )
+    ) {
+      throw new Error(`Existing artifact is not sourced from this conversation: ${title}`);
+    }
+    const revised = await runtimeRequest(page, 'artifacts.revise', {
       projectId,
       artifactId: matches[0].id,
-      revisionId: source.id,
+      expectedRevisionId: current.revision.id,
+      sourceMessageId: assistant.id,
+      content: assistant.content,
+      authorKind: 'assistant',
+      changeSummary: 'Save the revised plan from the real conversation',
     });
+    return { ...revised, sourceMessageId: assistant.id };
   }
-  return runtimeRequest(page, 'artifacts.create', {
+  const created = await runtimeRequest(page, 'artifacts.create', {
     projectId,
     conversationId,
     sourceMessageId: assistant.id,
@@ -749,6 +814,7 @@ async function ensureArtifact(page, projectId, conversationId, title, kind, assi
     content: assistant.content,
     authorKind: 'assistant',
   });
+  return { ...created, sourceMessageId: assistant.id };
 }
 
 async function verifyPersistedShowcase(page, target, outputDirectory) {
@@ -792,23 +858,13 @@ async function verifyPersistedShowcase(page, target, outputDirectory) {
 
 async function verifySoloScenario(page, project, scenario) {
   const conversation = await exactConversation(page, project.id, scenario.title);
-  const participants = await runtimeRequest(page, 'conversations.participants.list', {
-    conversationId: conversation.id,
+  const history = await runtimeRequest(page, 'chat.history', { branchId: conversation.branchId });
+  const assistants = scenario.prompts.map((prompt) => {
+    const message = assistantAfterPrompt(history, prompt);
+    assertCompleteAssistant(message);
+    if (!message.model_id || !message.provider_id) throw new Error('Persisted route is absent');
+    return message;
   });
-  const enabled = participants.filter((item) => item.enabled);
-  if (enabled.length !== 1) throw new Error(`Expected one enabled Cupcake in ${scenario.title}`);
-  const assistants = [];
-  for (const prompt of scenario.prompts) {
-    const existing = await existingGroupTurn(page, conversation.branchId, prompt);
-    if (!existing) throw new Error(`Missing group turn in ${scenario.title}`);
-    const verified = verifyGroupTurn(existing, {
-      mode: 'smart',
-      expectedParticipants: enabled,
-      minReplies: 1,
-      maxReplies: 1,
-    });
-    assistants.push(verified.messages[0]);
-  }
   const artifact = await exactArtifactWithSource(
     page,
     project.id,
@@ -820,6 +876,12 @@ async function verifySoloScenario(page, project, scenario) {
       id: conversation.id,
       title: conversation.title,
       assistantTurns: assistants.length,
+      responses: assistants.map((message) => ({
+        id: message.id,
+        provider: message.provider_id,
+        model: message.model_id,
+        contentSha256: sha256(message.content),
+      })),
       route: safeToken(assistants.at(-1).provider_id || assistants.at(-1).model_id),
     },
     artifact,
@@ -831,7 +893,8 @@ async function verifyDinnerScenario(page, project) {
   const expectations = [
     [DINNER.prompts.first, 'smart', 1, 2],
     [DINNER.prompts.correction, 'smart', 1, 2],
-    [`@${PERSONAS.host.handle}${DINNER.prompts.mentionSuffix}`, 'mentions', 1, 1],
+    [`@${PERSONAS.reviewer.handle}${DINNER.prompts.mentionSuffix}`, 'mentions', 1, 1],
+    [`@${PERSONAS.reviewer.handle}${DINNER.prompts.finalSuffix}`, 'mentions', 1, 1],
     [DINNER.prompts.quiet, 'smart', 0, 0],
   ];
   const allMessages = [];
@@ -902,18 +965,22 @@ async function exactArtifactWithSource(page, projectId, title, assistant) {
     projectId,
     artifactId: matches[0].id,
   });
-  const source = history.find(
-    (revision) =>
-      (revision.source_message_id ?? revision.sourceMessageId) === assistant.id &&
-      sha256(revision.content ?? '') === sha256(assistant.content),
+  const head = await runtimeRequest(page, 'artifacts.get', {
+    projectId,
+    artifactId: matches[0].id,
+  });
+  const revision = history.find(
+    (item) => item.id === head.revision.id && item.author_kind === 'assistant',
   );
-  if (!source) throw new Error(`Artifact provenance mismatch: ${title}`);
+  if (!revision || sha256(head.content) !== sha256(assistant.content))
+    throw new Error(`Artifact provenance mismatch: ${title}`);
   return {
     id: matches[0].id,
     title,
-    revisionId: source.id,
+    revisionId: revision.id,
     sourceMessageId: assistant.id,
-    contentSha256: sha256(source.content),
+    sourceMatchedBy: 'persisted-content-sha256-and-assistant-revision',
+    contentSha256: sha256(head.content),
   };
 }
 
@@ -927,14 +994,14 @@ function recordResult(target, result) {
     route: result.route,
     assistantTurns: result.assistantTurns,
     finalContentSha256: result.finalContentSha256 ?? null,
+    responses: result.responses ?? null,
   });
   target.artifacts.push({
     id: result.artifact.artifact.id,
     title: result.artifact.artifact.title ?? result.artifact.artifact.name,
     revisionId: result.artifact.revision.id,
-    sourceMessageId:
-      result.artifact.revision.sourceMessageId ?? result.artifact.revision.source_message_id,
-    contentSha256: sha256(result.artifact.revision.content),
+    sourceMessageId: result.artifact.sourceMessageId,
+    contentSha256: sha256(result.artifact.content),
   });
   if (result.group) target.group = result.group;
   if (result.screenshot) target.screenshots.push(result.screenshot);
@@ -1065,7 +1132,9 @@ function modelArray(value) {
 
 function selectExactReadyModel(models, provider, nativeModelId) {
   const candidates = models.filter((model) => {
-    const observedProvider = normalizeProvider(model.provider ?? String(model.id).split(':')[0]);
+    const observedProvider = normalizeProvider(
+      model.metadata?.provider_preset ?? model.provider ?? String(model.id).split(':')[0],
+    );
     const observedModel = String(
       model.model ??
         (String(model.id).includes(':')
@@ -1110,6 +1179,7 @@ function modelReady(model) {
 
 function localRoute(model) {
   return (
+    model?.metadata?.endpoint_id === 'cupcake-local' ||
     /cupcake local/iu.test(String(model?.provider ?? '')) ||
     ['local', 'cupcake_local', 'cupcake_llama_cpp'].includes(
       String(model?.route ?? model?.providerId ?? '').toLowerCase(),
@@ -1187,7 +1257,7 @@ function safePersona(persona) {
 }
 
 function hostedRouteLabel(model) {
-  return `${sanitize(model.provider)} · ${sanitize(model.model ?? model.id)}`;
+  return `${sanitize(model.metadata?.provider_preset ?? model.provider)} · ${sanitize(model.model ?? model.id)}`;
 }
 
 function normalizeProvider(value) {
