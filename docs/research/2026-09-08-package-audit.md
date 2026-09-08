@@ -4,7 +4,7 @@
 
 **Scope:** Current-Windows, headless runtime and package association for the September 8 UI pass.
 
-**Product source freeze:** `6d594d2f436deaab9c3171439fa9f55796c559fb`
+**Product source freeze:** `c0e08ac07f34f4f0466242a37dad4e6fa2c73529`
 
 **Runtime source freeze:** `8a25eb7`
 
@@ -42,18 +42,19 @@ promoted into the active Tauri input directories while the old owner package was
 
 ## Final package association
 
-The final source freeze is `6d594d2f436deaab9c3171439fa9f55796c559fb`. It includes the final
-friendly model and route labels, group transcript-layer correction, memory theme states, and empty
-memory copy. The source archive was created from that exact commit before the final build began.
+The final source freeze is `c0e08ac07f34f4f0466242a37dad4e6fa2c73529`. It includes the final
+friendly model and route labels, group transcript-layer correction, memory theme states, empty
+memory copy, and the project-scoped memory refresh fix. The source archive was created from that
+exact commit before the final build began.
 
 | Artifact                                                                                 |      Bytes | SHA-256                                                            |
 | ---------------------------------------------------------------------------------------- | ---------: | ------------------------------------------------------------------ |
-| `apps/desktop/src-tauri/target/release/CupcakeAI.exe`                                    | 12,780,032 | `8652E83FCB4C34599519E489439519E45E218D82A89F239D6A7E87ED87159E8A` |
-| `apps/desktop/src-tauri/target/release/bundle/nsis/CupcakeAI 2_2.0.0-rc.1_x64-setup.exe` | 82,460,986 | `8CB4036FD66A614A596E43F0E484643F57BA24DCF7724A2480A7D95BE16186B3` |
+| `apps/desktop/src-tauri/target/release/CupcakeAI.exe`                                    | 12,780,544 | `FFBA90EE8A8E38DFCEA37C4C4521D691AD947FF5D405E293C60DC0D5749A3B45` |
+| `apps/desktop/src-tauri/target/release/bundle/nsis/CupcakeAI 2_2.0.0-rc.1_x64-setup.exe` | 82,461,735 | `6E29B974A8FE8AD58DF7FC4F7F26FD54AB1E735AC2AB4E6BF98417CD2466D5B3` |
 | Packaged `sidecars/cupcake-runtime.exe`                                                  | 28,674,610 | `C1A095EFA90BBF6F5B793C2B8E750FE001A442C3BFB1658C0E7FA64E0EA27694` |
 | Packaged `sidecars/cupcake-tool-broker.exe`                                              | 10,749,440 | `6AE4A22F42B5D7B2AD5DB2670C31091E15273F05EF9BA6128E5C3B298E9E9CAC` |
 | Packaged `sidecars/sidecars.manifest.json`                                               |    161,448 | `2608A4343F19C0839AF5B33B218C999CE304A57D1E2FB87B6D76A1C535288541` |
-| `E:\temp\cupcake-overhaul-20260905\final-source-6d594d2-20260908.zip`                    |  7,013,603 | `D520F65802630A762B57CF6114D41058ED933469508C42233A438E11C9A6576D` |
+| `E:\temp\cupcake-overhaul-20260905\final-source-c0e08ac-20260908.zip`                    |  7,017,069 | `DD76703F6B3F827415083FB985A252BB69716390281FC16D5555FBB6BAF744F7` |
 
 The packaged runtime, broker, and manifest hashes exactly match the verified staging set. The
 manifest has schema 1, protocol 1, target `win32-x64`, 820 runtime support records, and the verified
@@ -71,7 +72,7 @@ The following completed successfully against the final package:
 - `node scripts/smoke-package.mjs --platform win32 --mode bundle`;
 - `node scripts/release-candidate-audit.mjs --require-artifacts`.
 
-The final release host linked in 6 minutes 33 seconds, and NSIS produced one unsigned installer. No
+The final release host linked in 6 minutes 26 seconds, and NSIS produced one unsigned installer. No
 provider request, local-model load, GPU work, visible window, publish, or push was performed in this
 lane. Per the owner's September 8 direction, UI checks remained headless. Installer lifecycle was
 not repeated because this pass changed renderer and runtime content rather than installer behavior;
