@@ -2031,8 +2031,41 @@ function MessageActions({
           <Icon name="play" />
         </button>
       )}
-      {groupMessage && <span className="group-route-locked">Roster route</span>}
     </div>
+  );
+}
+
+function MessageModelLabel({
+  message,
+  models,
+  selectedModel,
+}: {
+  message: MessageRecord;
+  models: ModelDescriptor[];
+  selectedModel: ModelDescriptor | null;
+}) {
+  const rawModelId = message.speaker?.modelId ?? message.modelId ?? null;
+  const persistedRoute = message.speaker
+    ? {
+        modelId: message.speaker.modelId,
+        providerId: message.speaker.providerId,
+        modelFamily: message.modelFamily,
+      }
+    : message;
+  const model =
+    resolvePersistedMessageModel(models, persistedRoute) ??
+    (rawModelId ? models.find((candidate) => candidate.id === rawModelId) : selectedModel) ??
+    null;
+
+  return (
+    <span className="model-label" title={rawModelId ?? undefined}>
+      {message.speaker?.role && <b>{message.speaker.role} · </b>}
+      {model
+        ? `${model.name} · ${model.route}`
+        : rawModelId
+          ? 'Model unavailable'
+          : 'No model selected'}
+    </span>
   );
 }
 
@@ -2478,13 +2511,11 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     : (message.speaker?.name ?? 'Cupcake')}
               </strong>
               {message.role === 'assistant' && (
-                <span className="model-label">
-                  {message.speaker?.role && <b>{message.speaker.role} · </b>}
-                  {message.speaker?.modelId ??
-                    message.modelId ??
-                    selectedModel?.name ??
-                    'No model selected'}
-                </span>
+                <MessageModelLabel
+                  message={message}
+                  models={workspace.models}
+                  selectedModel={selectedModel}
+                />
               )}
               <time>
                 {message.createdAt

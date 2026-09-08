@@ -913,6 +913,18 @@ test('mention routing preserves duplicate-name identity, keyboard focus, order, 
   await expect(assistantTurns.nth(1).locator('.message-meta')).toContainText(
     'Adversarial reviewer',
   );
+  for (const turn of [assistantTurns.nth(0), assistantTurns.nth(1)]) {
+    const modelLabel = turn.locator('.model-label');
+    await expect(modelLabel).toContainText('Qwen3 4B · Local');
+    await expect(modelLabel).toHaveAttribute(
+      'title',
+      'openai-compatible:cupcake-local/qwen3-4b-q4-k-m',
+    );
+  }
+  await expect(page.getByText('Roster route', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.conversation')).not.toContainText(
+    'openai-compatible:cupcake-local/qwen3-4b-q4-k-m',
+  );
   await expect(page.getByTestId('group-turn-rail')).toHaveCount(0);
 
   const calls = await page.evaluate(
