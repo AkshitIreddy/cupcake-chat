@@ -747,6 +747,47 @@ test('solo chats offer Cupcakes without claiming a group route', async ({ page }
   ).toBeVisible();
 });
 
+test('mention choices stay clickable above jump to latest in a long chat', async ({ page }) => {
+  await installGroupBridge(page, 'complete');
+  await openGroupChat(page);
+  await page.evaluate(
+    ({ ids }) => {
+      localStorage.setItem(
+        'cupcake-group-history',
+        JSON.stringify([
+          {
+            id: 'long-answer',
+            conversation_id: ids.conversation,
+            branch_id: ids.branch,
+            role: 'assistant',
+            state: 'complete',
+            created_at: new Date().toISOString(),
+            content: Array.from(
+              { length: 35 },
+              (_, index) =>
+                `Paragraph ${index + 1}: a long saved discussion that leaves earlier messages to revisit.`,
+            ).join('\n\n'),
+            metadata: {},
+          },
+        ]),
+      );
+    },
+    { ids },
+  );
+  await page.reload();
+  await page.locator('.chat-list__main').filter({ hasText: 'Group QA table' }).click();
+  await page.locator('.conversation-scroll').evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(page.getByRole('button', { name: 'Jump to latest', exact: true })).toBeVisible();
+  await page.getByLabel('Message Cupcake').fill('@mi');
+  await page
+    .getByRole('option')
+    .filter({ has: page.getByText('@mira-review', { exact: true }) })
+    .click();
+  await expect(page.getByLabel('Message Cupcake')).toHaveValue(/^@mira-review\s/);
+});
+
 test('wallpaper group settings use an opaque surface and honor scrollbar preferences', async ({
   page,
 }, testInfo) => {

@@ -1055,6 +1055,7 @@
 }
 .chat-composer-wrap {
   position: relative;
+  z-index: 15;
   flex: 0 0 auto;
   width: min(1120px, calc(100% - 64px));
   margin: 0 auto;
