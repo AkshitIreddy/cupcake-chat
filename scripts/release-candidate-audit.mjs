@@ -135,6 +135,7 @@ async function auditAutomationPolicy() {
     'utf8',
   );
   const updaterPolicy =
+    typeof mainConfig.plugins?.updater?.pubkey === 'string' &&
     mainConfig.bundle?.createUpdaterArtifacts !== true &&
     mainConfig.plugins?.updater?.dangerousInsecureTransportProtocol !== true &&
     testConfig.plugins?.updater?.dangerousInsecureTransportProtocol === true &&

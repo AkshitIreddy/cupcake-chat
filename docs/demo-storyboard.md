@@ -81,7 +81,7 @@ The recorder uses screencast capture because it attaches to a real running app a
 provider. Gifsmith's deterministic mode freezes the attached page clock and requires extra
 compositor launch arguments, so it is a poor fit for this network-backed owner-profile take. JPEG
 capture at quality 96 keeps the large temporary frame set on `E:\temp`; the final MP4 is 1440 pixels
-wide, 16 fps, H.264 CRF 16, and `yuv420p`.
+wide, 30 fps, H.264 CRF 18, and `yuv420p`.
 
 ## Safe operating sequence
 

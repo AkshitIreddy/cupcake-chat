@@ -107,7 +107,7 @@ const scene = {
   props: [props.cursor({ start: { x: 1160, y: 118 } })],
   timeline,
   capture: { mode: 'screencast', format: 'jpeg', quality: 96 },
-  encode: { width: 1440, fps: 16, speed: 1.12, mp4Crf: 16, targetMB: 90 },
+  encode: { width: 1440, fps: 30, speed: 1.12, mp4Crf: 18, targetMB: 90 },
   loop: { strategy: 'anchor', minCycleSeconds: 90 },
   review: { dir: join(output, 'review'), maxFindings: 12, controls: 3 },
   workDir: join(output, 'work'),
@@ -207,7 +207,7 @@ function buildTimeline() {
     markAndClick(t, '.shelf__nav button', 'Chats', 'nav-chats-life', false);
     markAndClick(t, '.chat-list__main', selections.landlordChat, 'chat-landlord', false);
     t.hold(3.5);
-    t.scroll('.conversation-scroll', 620, 3.5, 'easeInOut');
+    t.scroll('.conversation-scroll', -620, 3.5, 'easeInOut');
     t.hold(2);
 
     markAndClick(t, '.shelf__nav button', 'Memory', 'nav-memory', false);
@@ -232,6 +232,7 @@ function buildTimeline() {
       glideSeconds: 0.45,
     });
     t.hold(1.5);
+    t.call(clearModelSearch, { name: 'clear model search', seconds: 0.2 });
     t.type('.model-picker input[placeholder*="Search model"]', 'Cohere', { delayMs: 85 });
     t.hold(1.2);
     t.call(
@@ -240,12 +241,14 @@ function buildTimeline() {
       { name: 'mark Cohere model', seconds: 0.1 },
     );
     t.click('[data-demo-target="cohere"]', { via: 'cursor', glideSeconds: 0.5 });
+    t.call(waitForModelPickerClose, { name: 'wait for Cohere selection', seconds: 0.1 });
     t.hold(1.4);
     t.click('button.model-chip:not(.group-model-chip)', {
       via: 'cursor',
       glideSeconds: 0.45,
     });
     t.hold(1.1);
+    t.call(clearModelSearch, { name: 'clear model search', seconds: 0.2 });
     t.type('.model-picker input[placeholder*="Search model"]', 'Groq', { delayMs: 85 });
     t.hold(1.2);
     t.call(
@@ -254,6 +257,7 @@ function buildTimeline() {
       { name: 'mark Groq model', seconds: 0.1 },
     );
     t.click('[data-demo-target="groq"]', { via: 'cursor', glideSeconds: 0.5 });
+    t.call(waitForModelPickerClose, { name: 'wait for Groq selection', seconds: 0.1 });
     t.hold(1.2);
     t.call(
       (page) =>
@@ -275,7 +279,7 @@ function buildTimeline() {
       seconds: 0.1,
     });
     t.hold(4.5);
-    t.scroll('.conversation-scroll', 520, 3, 'easeInOut');
+    t.scroll('.conversation-scroll', -520, 3, 'easeInOut');
     t.hold(2);
 
     markAndClick(t, '.shelf__nav button', 'Artifacts', 'nav-artifacts', false);
@@ -286,7 +290,7 @@ function buildTimeline() {
     );
     t.click('[data-demo-target="odm-artifact"]', { via: 'cursor', glideSeconds: 0.5 });
     t.hold(4);
-    t.scroll('.artifact-preview, .artifact-editor, .markdown-body', 650, 4, 'easeInOut');
+    t.scroll('.document-preview', 650, 4, 'easeInOut');
     t.hold(2);
 
     markAndClick(t, '.shelf__nav button', 'Tasks', 'nav-tasks', false);
@@ -309,7 +313,7 @@ function buildTimeline() {
     );
     t.click('[data-demo-target="group-chat"]', { via: 'cursor', glideSeconds: 0.5 });
     t.hold(4);
-    t.scroll('.conversation-scroll', 760, 4, 'easeInOut');
+    t.scroll('.conversation-scroll', -760, 4, 'easeInOut');
     t.hold(2);
 
     markAndClick(t, '.shelf__nav button', 'Settings', 'nav-settings', false);
@@ -360,12 +364,39 @@ function buildTimeline() {
   });
 }
 
+async function clearModelSearch(page) {
+  await page.focus('.model-picker input[placeholder*="Search model"]');
+  await page.keyboard.down('Control');
+  await page.keyboard.press('A');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+}
+
+async function waitForModelPickerClose(page) {
+  await page.waitForSelector('.model-picker', { hidden: true, timeout: 30000 });
+}
+
 function markAndClick(t, selector, text, key, exact = true) {
   t.call((page) => markText(page, selector, text, key, exact), {
     name: `mark ${key}`,
     seconds: 0.1,
   });
   t.click(`[data-demo-target="${key}"]`, { via: 'cursor', glideSeconds: 0.45 });
+  if (selector === '.project-card__select') {
+    t.call(
+      (page) =>
+        page.waitForFunction(
+          (key) =>
+            globalThis.document
+              .querySelector(`[data-demo-target="${key}"]`)
+              ?.closest('.project-card')
+              ?.classList.contains('is-active'),
+          { timeout: 30000 },
+          key,
+        ),
+      { name: `wait for ${key}`, seconds: 0.1 },
+    );
+  }
   t.hold(0.8);
 }
 
