@@ -1,0 +1,345 @@
+{
+  "scenarios": [
+    {
+      "id": "grant-report-audit",
+      "project": "Community Pantry",
+      "projectDescription": "Reports, volunteer coordination, and practical plans for a fictional neighborhood pantry.",
+      "title": "Grant report due at five",
+      "provider": "groq",
+      "artifactTitle": "June grant report.md",
+      "artifactKind": "document",
+      "inputName": "June pantry reporting bundle.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nFunder requires: distribution visits, unique households, kilograms distributed, eligible spend, confirmed volunteer hours, and a plain disclosure of missing location data.\n\nDISTRIBUTIONS (distribution_id,household_id,zip,kg)\nD-101,H-01,500032,12\nD-102,H-02,500032,8\nD-103,H-01,500081,10\nD-104,H-03,500032,15\nD-105,H-04,500084,6\nD-106,H-05,500081,9\nD-107,H-06,500032,11\nD-108,H-07,500084,7\nD-108,H-07,500084,7\nD-109,H-08,,13\n\nRECEIPT REGISTER (receipt_id,amount_inr)\nR-041,1240\nR-044,3840\nR-052,925\nPaper invoice R-044 shows INR 3480.\n\nVOLUNTEER SHIFTS (shift_id,start,end)\nS-021,09:00,13:00\nS-024,10:30,14:00\nS-031,15:00,13:00\n\nCoordinator's paper check: D-108 is an accidental duplicate; R-044 must use the paper invoice amount of INR 3480; S-031's true end time is unknown and cannot count toward confirmed hours.",
+      "prompts": [
+        "I promised our pantry's June report by five and I don't trust this bundle anymore. Work out the raw totals first, then show me exactly which records make them questionable. Please don't smooth over missing data.",
+        "Before writing anything for the funder, make a small audit table with the record ID, the problem, which total it affects, and whether a human decision is still needed.",
+        "I checked the paper copies. D-108 really is an accidental duplicate, R-044 should be INR 3,480 like the invoice, and S-031's end time is still unknown. Apply the first two corrections and leave S-031 out of confirmed hours.",
+        "Recalculate visits, unique households, kilograms, eligible spend, confirmed volunteer hours, and missing-ZIP count. Put the rule beside each number so I can defend it if someone asks.",
+        "Turn that into a short funder narrative. One visit is not the same thing as one household, so please don't make us sound bigger than we are. Mention the location-data gap plainly.",
+        "Give me the final copy-ready report with a three-metric summary, reconciliation table, 120-word narrative, limitations, and follow-up checklist. No pep talk; I need something I can use."
+      ],
+      "revisionAt": 4,
+      "feature": "project source reference + deterministic data audit + artifact revision",
+      "expectedFacts": [
+        "Raw distribution rows: 10; corrected visits after removing duplicate D-108: 9.",
+        "Unique households: 8.",
+        "Raw kilograms: 98; corrected kilograms: 91.",
+        "Receipt register total: INR 6005; corrected eligible spend: INR 5645.",
+        "Confirmed volunteer hours: 7.5; S-031 remains unresolved and excluded.",
+        "One corrected distribution record, D-109, lacks a ZIP code."
+      ]
+    },
+    {
+      "id": "client-scope-creep",
+      "project": "Small Business, Less Panic",
+      "projectDescription": "Concrete decisions, drafts, and numbers for a fictional one-person design studio.",
+      "title": "One tiny change, again",
+      "provider": "cohere",
+      "artifactTitle": "Scope change decision and email.md",
+      "artifactKind": "document",
+      "inputName": "Orchid Bakery scope bundle.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nSigned scope: five-page marketing website; existing booking service linked, not rebuilt; English only; two revision rounds; delivery 18 October; fixed fee EUR 3600. Extra work rate: EUR 75/hour, agreed in writing before work.\n\nCLIENT REQUESTS SINCE SIGN-OFF\n1. Build a custom booking flow with deposits and cancellation rules — estimated 14 hours.\n2. Add Spanish versions of all five pages; client supplies final translation — estimated 5 hours for implementation and QA.\n3. A third visual revision round — estimated 2 hours.\n\nTIME LOG\nIn-scope work completed: 42 hours. Booking exploration already performed but not approved: 3 hours. No extra invoice has been sent.\n\nRelationship constraint: the bakery supplies the studio's monthly team lunch and the owner wants to stay warm, but cannot absorb another week of unpaid work.",
+      "prompts": [
+        "I like this client, but their latest 'tiny change' sounds like a second project. Read the scope and requests and tell me, in normal language, what is included, what is new, and where I have already donated time.",
+        "Put numbers on the extra work at my stated rate. Separate time already spent from work that has only been estimated, and don't treat an estimate like an invoice.",
+        "I don't want to embarrass them or sound like a contract robot. Give me three ways to handle this, from most generous to firmest, with the money, schedule, and relationship trade-off for each.",
+        "Let's choose the middle option: keep the third revision as goodwill, charge for booking and Spanish implementation, and move delivery by one week. Draft the email in a friendly voice.",
+        "Shorten it. Mention the original booking link assumption, show one clear add-on total, and end with a simple yes-or-no choice so this doesn't become six more emails.",
+        "Make a final decision note for my files with the scope comparison, calculation, chosen compromise, email, and what needs written approval before I continue."
+      ],
+      "revisionAt": 3,
+      "feature": "document comparison + arithmetic + artifact revision",
+      "expectedFacts": [
+        "Booking build is 14 estimated hours and Spanish implementation is 5 estimated hours.",
+        "The chosen charged add-on is 19 hours at EUR 75/hour, totaling EUR 1425.",
+        "The third revision is 2 estimated hours accepted as goodwill.",
+        "Three booking-exploration hours were already worked without approval and must remain distinct from the add-on estimate.",
+        "Chosen delivery date moves one week later than 18 October."
+      ]
+    },
+    {
+      "id": "semester-grade-rescue",
+      "project": "Study Rescue",
+      "projectDescription": "Evidence-based study decisions for a fictional student who wants the smallest plan that still works.",
+      "title": "Can I still pass this semester?",
+      "provider": "groq",
+      "artifactTitle": "Two-week semester rescue.md",
+      "artifactKind": "document",
+      "inputName": "Semester grades and deadlines.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nPass mark for every course: 60%.\n\nSTATISTICS: quizzes 20% at 76; midterm 30% at 64; project 20% currently missing from portal; final 30% pending. Project paper grade slip says 80%. Final is 22 September.\nWRITING: essay 1 is 25% at 82; essay 2 is 25% at 68; participation 20% at 90; final 30% pending. Final is 19 September.\nECONOMICS: assignments 25% at 72; midterm 25% at 58; presentation 20% pending; final 30% pending. Presentation is 17 September; final is 24 September.\n\nAVAILABLE STUDY TIME\nWeekdays: 90 minutes each evening except Thursday. Saturday: 4 hours. Sunday: 3 hours. Student works mornings and says long schedules get ignored.",
+      "prompts": [
+        "I have been avoiding this portal because I think I've ruined the semester. Can you do the maths and tell me what I actually need in each course to reach 60? Show assumptions instead of scaring me with a giant plan.",
+        "The Statistics project is not really missing; I have the paper grade slip and it says 80. Recalculate with that included, but flag that I still need the portal fixed.",
+        "Which course is genuinely at risk now? Rank the next two weeks by deadline and payoff, using only the hours I actually have.",
+        "That is still too much for weekday evenings. Give me one 45-minute must-do block and one optional 30-minute block per available weekday, then use the weekend for the heavier work.",
+        "Draft a short email asking the Statistics lecturer to add the project grade. It should include the useful facts and not sound dramatic.",
+        "Put the final grade maths, priority order, two-week plan, and lecturer email into one clean rescue sheet I can follow without rereading this chat."
+      ],
+      "revisionAt": 2,
+      "feature": "spreadsheet-style reasoning + correction + concise artifact",
+      "expectedFacts": [
+        "Statistics current weighted score becomes 50.4 after adding the 80% project grade; 32% on the final reaches 60 overall.",
+        "Writing current weighted score is 55.5; 15% on the final reaches 60 overall.",
+        "Economics current weighted score is 32.5; an average of 55% across the remaining presentation and final reaches 60 overall.",
+        "Economics is the highest-risk course because half its grade remains and its completed weighted score is lowest.",
+        "Thursday has no available study time."
+      ]
+    },
+    {
+      "id": "private-subscription-cleanup",
+      "project": "Private Money Reset",
+      "projectDescription": "A local-only workspace for fictional personal budgets and recurring-cost cleanup.",
+      "title": "Where did my salary go?",
+      "provider": "local",
+      "artifactTitle": "Private monthly reset.md",
+      "artifactKind": "document",
+      "inputName": "Monthly budget snapshot.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nMonthly take-home income: INR 72,000.\nCore monthly costs: rent 25,000; internet 1,000; transport 4,500; groceries 9,000; family contribution 6,000; utilities 2,500.\nRecurring subscriptions: music 119; video service A 649; gym 1,800; design app 2,100; cloud storage 650; meal kit 4,200; newspaper 499; language app 899; video service B 499.\nRecent use: gym 1 visit in 8 weeks; design app used weekly for paid work; cloud storage is 92% full and holds work backups; meal kit used twice last month; newspaper read most days; language app has not been opened in 11 weeks; both video services used this month.\nGoal: free at least INR 6,000 per month without risking work files or cancelling the family contribution.",
+      "prompts": [
+        "This is embarrassing, but I keep reaching the last week of the month with nothing left. Please add this up locally and show me where it is going. I want the truth without a lecture.",
+        "I need to free at least INR 6,000 a month. Don't touch rent, family money, the design app, or the work backups. Give me the least painful cut first.",
+        "Keep the newspaper; I really do read it. I can cancel the gym, meal kit, and language app. What does that save, and what is still left after all listed costs?",
+        "Both video services are staying for now. Make a ten-minute cancellation checklist and a reminder list of what I should verify before pressing cancel.",
+        "I know this file is synthetic, but treat the pattern as private: when we discuss budgets in this project, show totals first and keep the tone matter-of-fact. Summarize that as a project preference I can save.",
+        "Make me a one-page monthly reset with current totals, chosen cuts, new monthly breathing room, and a tiny end-of-month check."
+      ],
+      "revisionAt": null,
+      "feature": "Cupcake Local + offline privacy + project memory",
+      "expectedFacts": [
+        "Core monthly costs total INR 48,000.",
+        "Subscriptions total INR 11,415.",
+        "All listed costs total INR 59,415, leaving INR 12,585 before unlisted spending.",
+        "Cancelling gym, meal kit, and language app saves INR 6,899 monthly.",
+        "After those cuts, listed monthly costs are INR 52,516 and the listed-cost remainder is INR 19,484."
+      ]
+    },
+    {
+      "id": "repair-cafe-group",
+      "project": "Neighborhood Repair Cafe",
+      "projectDescription": "A fictional volunteer event planned by Cupcakes with distinct operations and accessibility roles.",
+      "title": "Thirty-six broken things, one Saturday",
+      "provider": "group",
+      "artifactTitle": "Repair cafe run sheet.md",
+      "artifactKind": "document",
+      "inputName": "Repair cafe planning sheet.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nEvent: Saturday 10:00-14:00 at Cedar Hall. Setup access 09:00; building must be empty by 14:30. Capacity: 28 seated, one step-free entrance, two power circuits, six worktables.\nSign-ups: 12 lamps, 8 small appliances, 6 clothing repairs, 5 bicycles, 3 laptops, 2 items with no description.\nVolunteers: Asha and Ben — electrical; Noor — clothing; Ivo and Mei — bicycles; Lina — laptops and intake; Dev — refreshments and floating help. Asha must leave at 12:00. Mei arrives at 11:00.\nRules: no microwaves, lithium battery packs, mains work beyond a plug/fuse check, or repairs whose parts are unavailable. Owners stay with items. Aim for a clear decision within 25 minutes, not a guaranteed fix.\nBudget: INR 5,000. Hall 2,000; tea/snacks 1,200; printing 300; contingency 1,500.\nOrganizer is worried about queues, unsafe expectations, and making the event welcoming to people who use the step-free entrance.",
+      "prompts": [
+        "I somehow have 36 sign-ups and seven volunteers for Saturday. Can the two of you look at this from your own angles and tell me the three things most likely to make the day fall apart?",
+        "I don't need a perfect festival plan. Give me an intake system that one tired volunteer can actually run, including what to say when an item is out of scope.",
+        "Please stress-test the table layout and schedule. Asha leaves early and Mei arrives late, and I don't want the step-free entrance treated like spare storage.",
+        "Now agree on one timetable with volunteer assignments, queue caps by repair type, a 25-minute decision rule, and a safe overflow plan. Keep it inside the stated budget.",
+        "Turn the safety rules into friendly signs instead of scary warnings, and give Dev a two-sentence welcome script for the door.",
+        "Make one final run sheet: setup, floor plan in words, shifts, intake questions, queue rules, signs, budget, and closing checklist. Then we're done; nobody needs to add anything else."
+      ],
+      "revisionAt": 4,
+      "feature": "Smart group routing + distinct roles + quiet closing turn",
+      "expectedFacts": [
+        "There are 36 sign-ups across six item categories.",
+        "Asha leaves at 12:00 and Mei arrives at 11:00.",
+        "The event budget is fully allocated: INR 5000 total.",
+        "The venue must be empty 30 minutes after the event ends.",
+        "The step-free entrance must remain clear and owners must stay with their items.",
+        "The service promises a decision within 25 minutes, not a successful repair."
+      ]
+    },
+    {
+      "id": "truthful-cv-branches",
+      "project": "Next Job, Honestly",
+      "projectDescription": "Truthful applications built from one fictional work history without inflated claims.",
+      "title": "One CV, two very different jobs",
+      "provider": "cohere",
+      "artifactTitle": "Truthful role-fit pack.md",
+      "artifactKind": "document",
+      "inputName": "CV and two job descriptions.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nMASTER CV — Riya Sen\nOperations coordinator, Fern & Field Foods, 2022-present: schedules 18 weekly supplier deliveries; maintains inventory sheets for 240 SKUs; introduced a reorder reminder that reduced emergency purchases from about 14 per month to 5 over six months; trains four weekend staff; handles customer escalations.\nCafe supervisor, Little Kite, 2019-2022: led shifts of up to 7; prepared weekly rota; reconciled tills; no formal hiring responsibility.\nSkills: Excel formulas and pivot tables; Google Workspace; basic Canva; Hindi and English. No SQL, Salesforce, coding, or formal project-management certification.\n\nROLE A — Operations Associate: supplier coordination, spreadsheet reporting, inventory accuracy, cross-team follow-up; SQL helpful but not required.\nROLE B — Customer Success Coordinator: customer onboarding, issue ownership, written communication, CRM updates; Salesforce preferred; no direct sales quota.\n\nConstraint: never invent software, revenue, team size, ownership, or percentages beyond the CV.",
+      "prompts": [
+        "I keep sending the same CV everywhere and getting nowhere. Read my real experience and these two ads. Tell me honestly where I fit each role and where the gaps are.",
+        "Start with the operations role. Rewrite my summary and four bullets so the relevant evidence is easy to see, but don't suddenly make me a data engineer.",
+        "The emergency-purchase number is approximate, so keep 'about' in the bullet. Also make the supplier work sound active without saying I negotiated contracts, because I didn't.",
+        "Now take the same original CV in a different direction for customer success. Focus on escalations, training, and follow-through. Do not claim Salesforce or sales experience.",
+        "Compare the two versions in a table: what changed, which original fact supports it, and which gaps I should answer honestly in an interview.",
+        "Make the final pack with both tailored summaries, four bullets per role, a truthful gap note, and a short cover-email opening for each."
+      ],
+      "revisionAt": 3,
+      "feature": "conversation branch + source-grounded writing + artifact",
+      "expectedFacts": [
+        "Riya coordinates 18 weekly supplier deliveries and maintains 240 SKUs.",
+        "Emergency purchases fell from about 14 per month to 5 over six months.",
+        "She trains four weekend staff and previously led shifts of up to seven.",
+        "She has no SQL, Salesforce, coding, hiring, direct sales, or formal project-management credential.",
+        "The two role versions must remain traceable to the same master CV facts."
+      ]
+    },
+    {
+      "id": "support-inbox-triage",
+      "project": "Small Business, Less Panic",
+      "projectDescription": "Concrete decisions, drafts, and numbers for a fictional one-person design studio.",
+      "title": "The support inbox is on fire",
+      "provider": "groq",
+      "artifactTitle": "Monday support triage.md",
+      "artifactKind": "document",
+      "inputName": "Support queue snapshot.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nSLA: P1 acknowledge within 1 hour; P2 within 4 business hours; P3 within 1 business day. Refunds above INR 5000 require manager review. Never request a password or full card number.\nCurrent time: Monday 10:00.\nT-201 09:42 — all staff locked out after domain change — 14 users — P1.\nT-202 Friday 16:20 — invoice has wrong company address — P3.\nT-203 08:10 — payment captured twice, INR 6800 duplicate — P2, manager review required.\nT-204 Friday 15:50 — asks how to export monthly report — P3.\nT-205 09:05 — checkout returns error for every order — P1.\nT-206 09:15 — wants button colour changed — P3.\nT-207 Friday 17:10 — cannot invite one teammate; screenshot attached — P2.\nT-208 07:45 — data import stuck at 92% for 40 minutes — P2.\nT-209 09:55 — says 'urgent' but only asks for a font suggestion — unclassified.\nT-210 Friday 14:00 — cancellation request, next renewal tomorrow, INR 2400 — P2.\nT-211 08:30 — suspicious login notification — P1.\nT-212 Friday 16:45 — praise for support agent — no response deadline.\nAvailable agents: Kavya handles billing; Omar handles access/security; Jules handles product issues. Each can actively own two tickets at once.",
+      "prompts": [
+        "I opened the support inbox and immediately wanted to close it again. Sort these by actual urgency, not by who wrote 'urgent', and tell me what needs a human in the next hour.",
+        "Assign the first wave to Kavya, Omar, and Jules without giving anyone more than two active tickets. Show me what waits and why.",
+        "Draft acknowledgements for the three P1 tickets. They should be calm, specific about the next check, and never ask for passwords or card details.",
+        "Now handle the awkward cases: the duplicate charge needs manager review, the cancellation renews tomorrow, and the font request is not an emergency. Give me the next action and a short reply for each.",
+        "Make a handoff sheet with priority order, owner, SLA deadline, status, escalation rule, and the six messages worth copying first."
+      ],
+      "revisionAt": null,
+      "feature": "structured triage + policy grounding + reusable response artifact",
+      "expectedFacts": [
+        "T-201, T-205, and T-211 are the three P1 tickets.",
+        "T-203 is a duplicate INR 6800 charge and requires manager review.",
+        "T-210 renews Tuesday and should not wait behind ordinary P3 work.",
+        "T-209's use of the word urgent does not change its low-impact content.",
+        "No agent may receive more than two active tickets in the first wave."
+      ]
+    },
+    {
+      "id": "donor-csv-validator",
+      "project": "Data Cleanup Workshop",
+      "projectDescription": "Small, testable tools that make recurring fictional office data less fragile.",
+      "title": "The donor CSV that lies",
+      "provider": "groq",
+      "artifactTitle": "validate_donors.py",
+      "artifactKind": "code",
+      "inputName": "Donor import rules and sample.csv.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nBuild a Python 3 standard-library-only CSV validator. Required columns: donor_id,email,amount,currency,received_on,campaign. Rules: trim surrounding whitespace; donor_id and campaign must be non-empty; email must contain one @ with text on both sides; amount must parse as Decimal and be greater than zero; currency must be INR or USD; received_on must be a real ISO YYYY-MM-DD date; an exact duplicate key is donor_id + received_on + normalized amount and must be rejected after the first occurrence. Preserve input row numbers. Return valid rows plus errors shaped as row, field, code, message. Do not log full donor rows. Include unittest tests that exercise every rule and a valid row.\n\nSAMPLE\ndonor_id,email,amount,currency,received_on,campaign\nD01,ana@example.org,1250.00,INR,2026-06-04,Monsoon\nD02,bad-email,40,USD,2026-06-05,Books\nD03,lee@example.org,-5,USD,2026-06-31,Books\nD01,ana@example.org,1250,INR,2026-06-04,Monsoon\nD04,mina@example.org,75,EUR,2026-06-06,\nD05, jo@example.org , 22.50 ,USD,2026-06-07,Library",
+      "prompts": [
+        "This donor import sometimes accepts nonsense and I only find out after upload. Read the rules and sample, then list the exact errors you expect by row before writing code.",
+        "Design the validator in a boring, maintainable way: standard library only, no network, no clever framework. Tell me the functions and return shape you would use.",
+        "Make sure duplicate amounts normalize properly, so 1250 and 1250.00 count as the same amount. Dates must be real calendar dates, not just match a pattern.",
+        "The tests need to exercise every validation rule, whitespace trimming, normalized duplicate detection, the valid D05 row, and the guarantee that error output does not contain a full donor row.",
+        "Now return the complete runnable file. Your entire response must be exactly one Python code fence with the implementation and embedded unittest tests; no explanation before or after it."
+      ],
+      "revisionAt": null,
+      "feature": "code artifact + embedded unit tests + real sandbox task",
+      "expectedFacts": [
+        "The implementation must use only Python's standard library.",
+        "D02 has an invalid email.",
+        "D03 has both a non-positive amount and an impossible date.",
+        "The second D01 is a duplicate because Decimal normalization equates 1250 and 1250.00.",
+        "D04 has an unsupported currency and empty campaign.",
+        "D05 becomes a valid trimmed row.",
+        "Embedded unittest tests must exercise every stated rule rather than merely mirror one happy path."
+      ]
+    },
+    {
+      "id": "rainy-weekend-plan",
+      "project": "Plans That Survive Reality",
+      "projectDescription": "Low-effort fictional outings built from supplied constraints rather than invented live information.",
+      "title": "A rainy Saturday in Mosswick",
+      "provider": "cohere",
+      "artifactTitle": "Mosswick rainy-day plan.md",
+      "artifactKind": "document",
+      "inputName": "Mosswick weekend logistics.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE — FICTIONAL TOWN LOGISTICS, NOT LIVE WEB INFORMATION\nSaturday forecast supplied for the scenario: steady rain 09:00-13:00, lighter showers 13:00-16:00.\nTravelers: two adults, one 8-year-old, and grandmother who can walk about 400 metres at a time and avoids stairs. Start and finish at Mosswick Central Station. Total activity budget GBP 55, excluding lunch.\nTown Library: 10:00-16:00, free, step-free, children's print studio 10:30-11:15, booking already confirmed, 250 m from station.\nGlasshouse Museum: 10:00-17:00, family ticket GBP 24, step-free, cafe, 300 m from library via covered arcade.\nRiver Ferry: cancelled in steady rain; if operating, quay has 28 steps and no lift.\nClocktower: GBP 8 each, 146 stairs, no lift.\nMarket Hall: 09:00-15:00, free entry, covered, seating, 180 m from museum.\nCommunity Cinema: relaxed screening 14:15-15:45, family ticket GBP 26, step-free, 220 m from Market Hall; doors close 14:20.\nBuses: route M1 links Market Hall to station every 20 minutes, GBP 2 per adult, children free, grandmother's pass valid.\nFamily preference: one booked child activity, one thing grandmother enjoys, no rushing, and an easy escape after lunch.",
+      "prompts": [
+        "We're in fictional Mosswick on a wet Saturday and I can't face juggling all these times. Build us a gentle day around the booked print studio. Please use only this sheet, not pretend you checked live opening hours.",
+        "The clocktower and ferry are obviously wrong for us. Remove them completely and show walking distance one leg at a time so I can spot anything silly.",
+        "Give me two versions after lunch: museum plus an early finish, or market plus the cinema. Compare cost, walking, rain exposure, and how trapped we are by the schedule.",
+        "Choose the calmer version. Grandmother likes museums, the child will already have done the print studio, and being back near the station by 15:00 matters more than filling every minute.",
+        "Add a tiny bad-morning fallback in case we arrive at 10:40 and miss most of the print session. Don't rebuild the whole day.",
+        "Make the final phone-friendly plan with times, each walking leg, costs, one lunch window, the fallback, and the supplied-information note."
+      ],
+      "revisionAt": 4,
+      "feature": "constraint planning + supplied-source grounding + alternative comparison",
+      "expectedFacts": [
+        "The print studio is already booked for 10:30-11:15 at the step-free library.",
+        "The clocktower and ferry are unsuitable and must not appear in the chosen plan.",
+        "Library to museum is 300 metres through a covered arcade.",
+        "The museum family ticket costs GBP 24, within the GBP 55 activity budget.",
+        "The chosen calmer route should favor the museum and an early return toward the station.",
+        "All logistics are supplied fictional data, not live research."
+      ]
+    },
+    {
+      "id": "spreadsheet-formula-coach",
+      "project": "Data Cleanup Workshop",
+      "projectDescription": "Small, testable tools that make recurring fictional office data less fragile.",
+      "title": "Teach me the orders sheet without making me feel stupid",
+      "provider": "groq",
+      "artifactTitle": "Orders spreadsheet formula guide.md",
+      "artifactKind": "document",
+      "inputName": "Messy orders worksheet.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nWorksheet name: Orders. Columns: A Order ID, B Customer, C Qty, D Unit Price, E Discount, F Status, G Total, H Age Days, I Follow-up. Discount cells contain decimals such as 0.10 for 10%. Current date for this exercise: 2026-09-14.\nRows:\n2 O-101,Arun,3,450,0.10,Paid,blank,0,blank\n3 O-102,Bee Studio,12,80,0,Overdue,blank,18,blank\n4 O-103,Cedar Club,2,1200,0.15,Sent,blank,6,blank\n5 O-104,Dee,5,300,0.05,Overdue,blank,2,blank\n6 O-105,Elm School,10,95,0.10,Paid,blank,0,blank\nRules: Total = Qty × Unit Price × (1 − Discount). Follow-up is REVIEW only when Status is Overdue and Age Days is greater than 7; otherwise blank. Summary cells should show total booked value, overdue booked value, and count needing review. User has Excel 365 but is new to formulas and wants formulas that can be filled down.",
+      "prompts": [
+        "I inherited this orders sheet and the blank columns are making me nervous. Teach me one formula at a time, starting with Total, and explain the cell references like I'm new to this.",
+        "Now give me the Follow-up formula. I only want REVIEW when both overdue conditions are true, not whenever a row merely says Overdue.",
+        "Show the expected Total and Follow-up result for every sample row so I can catch a bad fill-down before it spreads.",
+        "Add three summary formulas: total booked value, overdue booked value, and number needing review. Use formulas that work in Excel 365 and tell me where to place them.",
+        "I turned the range into an Excel table named OrdersTable. Give me the cleaner structured-reference versions too, but keep the ordinary cell formulas because those finally make sense to me.",
+        "Make a one-page formula guide with both versions, the expected numbers, three common mistakes, and a 60-second self-check."
+      ],
+      "revisionAt": 4,
+      "feature": "teaching dialogue + deterministic arithmetic + reference artifact",
+      "expectedFacts": [
+        "Row totals are INR 1215, 960, 2040, 1425, and 855 respectively.",
+        "Total booked value is INR 6495.",
+        "Overdue booked value is INR 2385.",
+        "Only O-102 is marked REVIEW because O-105 is paid and O-104 is only 2 days old.",
+        "The ordinary Total formula for row 2 is =C2*D2*(1-E2).",
+        "The ordinary Follow-up formula for row 2 is =IF(AND(F2=\"Overdue\",H2>7),\"REVIEW\",\"\")."
+      ]
+    },
+    {
+      "id": "meeting-decision-brief",
+      "project": "Private Team Notebook",
+      "projectDescription": "Local-only synthesis of fictional internal notes, decisions, and follow-through.",
+      "title": "What did we actually decide?",
+      "provider": "local",
+      "artifactTitle": "Packaging decision brief.md",
+      "artifactKind": "document",
+      "inputName": "Packaging meeting notes.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nMeeting: 11 September, 42 minutes. Attendees: Priya (operations), Marco (design), Tessa (finance), Jin (supplier contact).\nNotes: Current mailer costs INR 31 each with 500-unit minimum. Recycled option costs INR 36 each at 500, or INR 34 each at 1000. Storage safely fits 700. Average use is 210/month. Supplier sample can arrive 18 September if Jin confirms by 12 September noon. Marco needs 2 working days after sample arrival for print check. Tessa approved up to INR 18,000 for a pilot, not a full 1000-unit order. Priya said the current stock of 160 lasts less than a month; at average use it lasts about 23 days. Group agreed to test 500 recycled mailers if the sample passes print and drop tests. No one defined who owns the drop test. Launch target mentioned: 1 October, described as desirable rather than committed.\nAfter meeting message from Priya: assign the drop test to Priya and Marco together; pass means no opening or product damage in ten waist-height drops with the normal packed item.",
+      "prompts": [
+        "I was in this meeting and still can't tell what we decided. Pull out decisions, open questions, owners, dates, and numbers. If the notes don't name an owner, say that instead of choosing one.",
+        "Check whether the 500-unit pilot fits the approved budget and whether 1000 units fit our storage. Show the quick maths.",
+        "Priya's follow-up message settles the drop-test owner and pass rule. Update the action list, but keep the 1 October date labelled as a target, not a promise.",
+        "Turn this into a decision brief someone can read in two minutes: decision, why, evidence, conditions, actions, risks, and the next go/no-go moment.",
+        "For future chats in this project, remember that tentative dates must stay tentative and unnamed owners must stay unassigned. Phrase that as a short memory entry I can review before saving.",
+        "Give me the final brief plus a tiny Friday check-in agenda that asks only for evidence needed to unblock the pilot."
+      ],
+      "revisionAt": 3,
+      "feature": "Cupcake Local + meeting synthesis + project memory",
+      "expectedFacts": [
+        "A 500-unit recycled pilot costs INR 18000 and exactly fits the approved pilot budget.",
+        "A 1000-unit order exceeds the safe storage capacity of 700.",
+        "Current stock of 160 lasts about 0.76 months or roughly 23 days at 210 units per month.",
+        "Jin must confirm the sample by 12 September noon for 18 September arrival.",
+        "Priya and Marco jointly own ten waist-height drop tests with zero opening or product damage.",
+        "1 October is a desirable target, not a committed launch date."
+      ]
+    },
+    {
+      "id": "shop-stock-reorder",
+      "project": "Small Shop Control Room",
+      "projectDescription": "Simple, auditable stock decisions for a fictional neighborhood coffee shop.",
+      "title": "What do I reorder before Monday?",
+      "provider": "cohere",
+      "artifactTitle": "Monday reorder worksheet.md",
+      "artifactKind": "document",
+      "inputName": "Stock and supplier sheet.txt",
+      "inputText": "SYNTHETIC FIXTURE SOURCE\nReorder rule: target stock = average daily use × lead time days + safety stock. Available stock = on hand + confirmed incoming. Suggested quantity = target minus available, never below zero, rounded up to a full supplier pack.\nSKU,On hand,Daily use,Lead days,Safety,Incoming,Pack size,Unit cost INR\nMUG,30,4,7,8,0,6,250\nBEANS,18,3,5,10,12,5,620\nFILTER,14,6,4,8,0,10,45\nSYRUP,9,1.8,10,6,0,3,180\nCUP,120,22,3,40,100,50,4\nCash available for this order: INR 4200. Supplier accepts only full packs. Incoming quantities are confirmed and should not be ordered twice.",
+      "prompts": [
+        "I need to order before Monday and I always panic-buy the wrong thing. Apply the rule to every SKU and show target, available, gap, pack rounding, and suggested quantity.",
+        "Check the cost of buying every suggested quantity. I only have INR 4,200, so tell me plainly if the full list fits.",
+        "Prioritize what is most likely to run out before its lead time. Don't reorder incoming stock twice, and don't quietly split supplier packs.",
+        "Give me the best order inside INR 4,200, with the spend and cash left. Put anything deferred in a separate watch list with the reason.",
+        "Add a simple spreadsheet formula for suggested quantity if the columns stay in this order. Explain ROUNDUP or CEILING in one sentence, not a lesson.",
+        "Make the final reorder worksheet with calculations, placed order, watch list, formula, and a three-minute Monday stock check."
+      ],
+      "revisionAt": 4,
+      "feature": "deterministic stock arithmetic + budget constraint + table artifact",
+      "expectedFacts": [
+        "Suggested quantities are MUG 6, BEANS 0, FILTER 20, SYRUP 15, CUP 0.",
+        "Buying every suggestion costs INR 5100 and exceeds the INR 4200 budget by INR 900.",
+        "FILTER costs INR 900 for 20 and SYRUP costs INR 2700 for 15; together they cost INR 3600 and leave INR 600.",
+        "MUG's suggested pack costs INR 1500 and cannot fit after the higher-risk FILTER and SYRUP order.",
+        "BEANS and CUP require no order because confirmed incoming stock already covers their targets."
+      ]
+    }
+  ]
+}
