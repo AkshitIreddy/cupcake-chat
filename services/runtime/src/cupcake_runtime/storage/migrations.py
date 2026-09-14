@@ -353,6 +353,15 @@ MIGRATIONS: tuple[Migration, ...] = (
             ON personas(catalog_key) WHERE catalog_key IS NOT NULL;
         """,
     ),
+    Migration(
+        7,
+        "track default-model ownership for catalog personas",
+        """
+        ALTER TABLE personas ADD COLUMN catalog_model_managed INTEGER NOT NULL DEFAULT 0
+            CHECK(catalog_model_managed IN (0, 1));
+        UPDATE personas SET catalog_model_managed=1 WHERE catalog_key IS NOT NULL;
+        """,
+    ),
 )
 
 

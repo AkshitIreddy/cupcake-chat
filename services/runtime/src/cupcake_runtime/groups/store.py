@@ -154,13 +154,14 @@ class GroupStore:
                     created_at=now,
                     updated_at=now,
                     catalog_key=default.key,
+                    catalog_model_managed=True,
                 )
                 connection.execute(
                     """INSERT INTO personas(
                         id,name,handle,avatar,role,description,instructions,speak_when,
                         personality_json,model_id,created_at,updated_at,archived_at,
-                        catalog_key,catalog_position
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?)""",
+                        catalog_key,catalog_position,catalog_model_managed
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,1)""",
                     (
                         persona.id,
                         persona.name,
@@ -181,6 +182,21 @@ class GroupStore:
                 used_handles.add(handle.casefold())
                 inserted.append(persona)
         return tuple(inserted)
+
+    def rebind_default_persona_models(self, model_id: str) -> int:
+        """Point untouched catalog personas at the newly selected default model."""
+
+        if not 1 <= len(model_id) <= 500:
+            raise ValueError("persona model id must contain 1..500 characters")
+        now = _stamp(_now())
+        with self.database.transaction() as connection:
+            changed = connection.execute(
+                """UPDATE personas SET model_id=?,updated_at=?
+                   WHERE catalog_key IS NOT NULL AND catalog_model_managed=1
+                     AND model_id<>?""",
+                (model_id, now, model_id),
+            ).rowcount
+        return int(changed)
 
     def get_persona(self, persona_id: str) -> PersonaProfile:
         row = self.database.connection.execute(
@@ -212,13 +228,17 @@ class GroupStore:
             created_at=current.created_at,
             updated_at=_now(),
             archived_at=current.archived_at,
+            catalog_key=current.catalog_key,
+            catalog_model_managed=(
+                current.catalog_model_managed if "modelId" not in changes else False
+            ),
         )
         try:
             with self.database.transaction() as connection:
                 connection.execute(
                     """UPDATE personas SET name=?,handle=?,avatar=?,role=?,description=?,
-                       instructions=?,speak_when=?,personality_json=?,model_id=?,updated_at=?
-                       WHERE id=?""",
+                       instructions=?,speak_when=?,personality_json=?,model_id=?,updated_at=?,
+                       catalog_model_managed=? WHERE id=?""",
                     (
                         updated.name,
                         updated.handle,
@@ -230,6 +250,7 @@ class GroupStore:
                         _json(updated.personality.public()),
                         updated.model_id,
                         _stamp(updated.updated_at),
+                        int(updated.catalog_model_managed),
                         updated.id,
                     ),
                 )
@@ -804,6 +825,7 @@ class GroupStore:
                 if row[f"{prefix}catalog_key"] is not None
                 else None
             ),
+            catalog_model_managed=bool(row[f"{prefix}catalog_model_managed"]),
         )
 
     def _participant(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -873,6 +895,7 @@ _PERSONA_COLUMNS = ",".join(
         "updated_at",
         "archived_at",
         "catalog_key",
+        "catalog_model_managed",
     )
 )
 

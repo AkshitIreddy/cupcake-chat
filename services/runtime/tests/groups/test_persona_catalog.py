@@ -131,3 +131,67 @@ def test_user_edits_and_archives_catalog_persona_without_startup_reverting_it(
         )
     finally:
         reopened.close()
+
+
+def test_untouched_advisors_follow_real_default_but_explicit_model_choice_sticks(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime(tmp_path)
+    first = runtime.providers.register_openai_compatible_endpoint(
+        "first-real",
+        model="useful-one",
+        display_name="Useful One",
+        base_url="http://127.0.0.1:44001/v1",
+    )
+    second = runtime.providers.register_openai_compatible_endpoint(
+        "second-real",
+        model="useful-two",
+        display_name="Useful Two",
+        base_url="http://127.0.0.1:44002/v1",
+    )
+    third = runtime.providers.register_openai_compatible_endpoint(
+        "third-real",
+        model="useful-three",
+        display_name="Useful Three",
+        base_url="http://127.0.0.1:44003/v1",
+    )
+    runtime.handle("models.select", {"modelId": first.id})
+    personas, _ = runtime.handle("personas.list", {})
+    assert all(item["modelId"] == first.id for item in personas)
+
+    pip = next(item for item in personas if item["name"] == "Pip")
+    sage = next(item for item in personas if item["name"] == "Sage")
+    runtime.handle(
+        "personas.update",
+        {
+            "personaId": pip["id"],
+            "name": "My Pip",
+            "instructions": "Keep my planning preferences.",
+            "modelId": first.id,
+        },
+    )
+    runtime.handle(
+        "personas.update",
+        {
+            "personaId": sage["id"],
+            "name": "My Study Coach",
+            "instructions": "Use examples from my course notes.",
+        },
+    )
+    runtime.handle("models.select", {"modelId": second.id})
+    after_select, _ = runtime.handle("personas.list", {})
+    customized = next(item for item in after_select if item["id"] == pip["id"])
+    assert customized["name"] == "My Pip"
+    assert customized["instructions"] == "Keep my planning preferences."
+    assert customized["modelId"] == first.id
+    edited_but_managed = next(item for item in after_select if item["id"] == sage["id"])
+    assert edited_but_managed["name"] == "My Study Coach"
+    assert edited_but_managed["instructions"] == "Use examples from my course notes."
+    assert edited_but_managed["modelId"] == second.id
+    assert all(item["modelId"] == second.id for item in after_select if item["id"] != pip["id"])
+
+    runtime.handle("settings.set", {"key": "models.default", "value": third.id})
+    after_setting, _ = runtime.handle("personas.list", {})
+    assert next(item for item in after_setting if item["id"] == pip["id"])["modelId"] == first.id
+    assert all(item["modelId"] == third.id for item in after_setting if item["id"] != pip["id"])
+    runtime.close()

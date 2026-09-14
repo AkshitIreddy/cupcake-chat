@@ -129,7 +129,8 @@ def test_v5_custom_persona_upgrade_preserves_profile_owned_fields(tmp_path: Path
     upgraded = Database(DatabaseConfig(path=path, require_sqlcipher=False))
     try:
         row = upgraded.connection.execute(
-            "SELECT name,handle,instructions,catalog_key,catalog_position "
+            "SELECT name,handle,instructions,catalog_key,catalog_position,"
+            "catalog_model_managed "
             "FROM personas WHERE id='custom-persona'"
         ).fetchone()
         assert tuple(row) == (
@@ -138,6 +139,7 @@ def test_v5_custom_persona_upgrade_preserves_profile_owned_fields(tmp_path: Path
             "Personal instructions",
             None,
             None,
+            0,
         )
         assert upgraded.schema_version == LATEST_SCHEMA_VERSION
     finally:

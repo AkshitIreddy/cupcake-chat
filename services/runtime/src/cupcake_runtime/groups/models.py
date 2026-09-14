@@ -71,6 +71,7 @@ class PersonaProfile:
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     archived_at: datetime | None = None
     catalog_key: str | None = None
+    catalog_model_managed: bool = False
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.name.strip()) <= 40:
