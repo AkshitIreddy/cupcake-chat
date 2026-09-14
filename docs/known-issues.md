@@ -3,7 +3,41 @@
 CupcakeAI 2.0 is a local owner-test candidate. Owner acceptance and distribution approval remain
 outstanding; nothing has been pushed or published.
 
-## September 8 owner revision
+## September 14 owner video collection
+
+The owner requested a complete replacement of the old showcase. The active profile now contains 10
+projects, 12 featured conversations, 103 complete unique assistant replies across their branch
+histories, 26 artifacts, two active project memories, and two saved-code Tasks. Three failed setup
+conversations are archived. Earlier collection descriptions below are historical and no longer
+describe the active profile. See `docs/OWNER_TEST_GUIDE.md` and
+`docs/worklogs/2026-09-14-video-showcase-acceptance.md` for the current collection and receipts.
+
+Groq, Cohere, Cloudflare group selection, and app-managed Qwen3 8B CUDA calls produced real replies.
+Source inputs are fictional, and reviewed deliverables include explicit user/editor revisions; the
+immutable original model messages remain. The reviewed donor validator passed 18 real tests in the
+packaged AppContainer worker after an earlier unsupported-import rejection.
+
+One two-reply Smart group selection succeeded, but quiet-closing selection is unreliable in this
+collection. Failed selector trials returned `GROUP_SELECTOR_INVALID` or provider errors. Do not
+present automatic silence as verified. Google returned provider-unavailable and Mistral returned
+rate-limit in the attempted code setup; those are not successful provider demonstrations.
+
+Product commits `5c58e60` and `276be8d` address saved replies displaying “Model unavailable”. The
+first fixes the app-managed catalog ID for records with explicit local endpoint provenance. The
+actual showcase replies lack that endpoint metadata, so the second shows their saved model identity
+without claiming a serving route. Continuation does not infer a route from those old records; choose
+a model explicitly for a new reply. Separate execution receipts prove the local CUDA runs. Immutable
+history is preserved.
+
+The optional startup `developer.events` missing-run-ID error remains. It did not block the verified
+collection, Tasks, Memory, artifact or restart flows. Final package evidence is in the September 14
+acceptance ledger.
+
+Commit `9f5a571` fixes non-selected project cards falsely showing zero chats. The gallery now uses a
+separate metadata-only inventory, with all 10 project counts verified in the final packaged app. If
+that inventory reaches the runtime limit, the UI offers Open Chats instead of an inexact total.
+
+## September 8 owner revision (historical collection)
 
 The compact chat header, wider readable responses, consistent Task/Memory scene surfaces, and final
 four wallpaper selections are corrected. The owner test profile also contains three additional
