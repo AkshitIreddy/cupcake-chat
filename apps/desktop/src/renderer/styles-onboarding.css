@@ -1,4 +1,31 @@
 /* Interactive workbench onboarding. Imported after the shared panel styles. */
+.onboarding-local-steps {
+  padding-left: 22px;
+  margin: 0 0 18px;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--cocoa);
+}
+
+.setup-resume-button {
+  position: fixed;
+  z-index: 40;
+  right: 24px;
+  top: calc(var(--titlebar-height, 36px) + 12px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--cocoa);
+  background: var(--paper);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--cocoa) 10%, transparent);
+  cursor: pointer;
+}
+
 .onboarding-layer {
   position: fixed;
   z-index: 160;

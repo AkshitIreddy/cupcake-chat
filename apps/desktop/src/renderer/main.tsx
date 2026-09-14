@@ -11,6 +11,7 @@ import './styles.css';
 import './styles-workspace.css';
 import './styles-panels.css';
 import './styles-wallpaper.css';
+import './styles-wallpaper-gallery.css';
 import './styles-responsive.css';
 import './styles-artifacts.css';
 import './styles-interactions.css';
@@ -19,6 +20,7 @@ import './styles-onboarding.css';
 import './styles-studio.css';
 import './styles-group-chat.css';
 import './styles-chat-refresh.css';
+import './styles-living-motion.css';
 
 installTauriDesktopApi();
 

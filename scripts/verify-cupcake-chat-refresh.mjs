@@ -24,7 +24,7 @@ const plannedChecks = [
   'normal and rapid artifact project switches never show a blank or mixed-project frame',
   'Models typography minimums and uncluttered header geometry',
   'the custom title bar contains no app icon or app-name label',
-  'all seven wallpapers after Copper workshop activate and persist',
+  'all seventeen wallpapers after Copper workshop activate and persist',
   'user and assistant turns use distinct colors with matching avatar/name geometry',
 ];
 
@@ -472,6 +472,16 @@ async function checkWallpapers() {
     ['lavender-cloud-parlour', 'Lavender cloud parlour'],
     ['ember-rain-cafe', 'Ember rain café'],
     ['citrus-solar-studio', 'Citrus solar studio'],
+    ['rosewood-reading-room', 'Rosewood reading room'],
+    ['cherry-lacquer-atelier', 'Cherry lacquer atelier'],
+    ['burgundy-cinema-lounge', 'Burgundy cinema lounge'],
+    ['peach-blossom-loft', 'Peach blossom loft'],
+    ['jade-paper-conservatory', 'Jade paper conservatory'],
+    ['cobalt-night-train', 'Cobalt night train'],
+    ['amethyst-mineral-gallery', 'Amethyst mineral gallery'],
+    ['amber-desert-observatory', 'Amber desert observatory'],
+    ['ice-blue-nordic-atrium', 'Ice blue Nordic atrium'],
+    ['obsidian-aurora-workshop', 'Obsidian aurora workshop'],
   ];
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();

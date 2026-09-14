@@ -318,7 +318,17 @@ export interface WorkspaceSettings {
     | 'saffron-paper-city'
     | 'lavender-cloud-parlour'
     | 'ember-rain-cafe'
-    | 'citrus-solar-studio';
+    | 'citrus-solar-studio'
+    | 'rosewood-reading-room'
+    | 'cherry-lacquer-atelier'
+    | 'burgundy-cinema-lounge'
+    | 'peach-blossom-loft'
+    | 'jade-paper-conservatory'
+    | 'cobalt-night-train'
+    | 'amethyst-mineral-gallery'
+    | 'amber-desert-observatory'
+    | 'ice-blue-nordic-atrium'
+    | 'obsidian-aurora-workshop';
   offline: boolean;
   proactiveEnabled: boolean;
   developerMode: boolean;
@@ -740,7 +750,17 @@ export function applyRuntimeStartupSettings(
       wallpaper === 'aquamarine-tidepool-library' ||
       wallpaper === 'ink-snow-garden' ||
       wallpaper === 'raspberry-circuit-conservatory' ||
-      wallpaper === 'saffron-paper-city'
+      wallpaper === 'saffron-paper-city' ||
+      wallpaper === 'rosewood-reading-room' ||
+      wallpaper === 'cherry-lacquer-atelier' ||
+      wallpaper === 'burgundy-cinema-lounge' ||
+      wallpaper === 'peach-blossom-loft' ||
+      wallpaper === 'jade-paper-conservatory' ||
+      wallpaper === 'cobalt-night-train' ||
+      wallpaper === 'amethyst-mineral-gallery' ||
+      wallpaper === 'amber-desert-observatory' ||
+      wallpaper === 'ice-blue-nordic-atrium' ||
+      wallpaper === 'obsidian-aurora-workshop'
         ? wallpaper
         : 'none',
     reducedMotion: runtimeSettings['accessibility.reduced_motion'] === true,
@@ -2201,7 +2221,7 @@ function fixtureProjects(): ProjectRecord[] {
   return [
     {
       id: 'fixture-cupcake',
-      name: 'Cupcake 2.0',
+      name: 'Cupcake Chat',
       description: 'Deterministic preview project',
       archived: false,
     },
@@ -2224,7 +2244,7 @@ const fallbackSettings: WorkspaceSettings = {
   scrollbarMode: 'slim',
   onboardingCompleted: false,
   profile: {
-    displayName: 'Akshit',
+    displayName: 'You',
     role: '',
     bio: '',
     avatar: 'atlas:16',

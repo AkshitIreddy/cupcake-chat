@@ -20,3 +20,17 @@ Prompt:
 > generous corner radius, surrounding canvas genuinely transparent (preserve alpha), square 1024px
 > asset. Balanced upright composition. Deliver exactly one finished icon, not a contact sheet or
 > presentation mockup.
+
+# Theme foreground for 1.8
+
+The generated foreground `apps/desktop/public/brand/cupcake-foreground.png` removes the cocoa tile
+so the app can draw a matching tile from the current wallpaper palette. The installed shortcut
+retains the full standalone icon.
+
+Generated edit source:
+`C:\Users\akshi\.codex\generated_images\01a06fb2-a83b-7512-8195-0f0ceeab42a6\exec-322df168-c8d8-4db4-9fcf-881d72c25f0f.png`.
+
+Prompt: remove only the brown rounded-square backdrop, preserve the vanilla/coral cupcake, its
+silhouette and speech tail, and return a transparent alpha foreground at the same position. The
+generated result was viewed and resized to 512 × 512 with FFmpeg for delivery; theme coloring is CSS
+applied behind the alpha image.

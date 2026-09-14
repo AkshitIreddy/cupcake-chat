@@ -22,6 +22,8 @@ import { FormDialog } from './FormDialog';
 import { RichMarkdown } from './RichMarkdown';
 import { ContentProtectionSettings } from './ContentProtectionSettings';
 import { BackupRecoverySettings } from './BackupRecoverySettings';
+import { ReleaseUpdates } from './ReleaseUpdates';
+import { useAutomaticReleaseCheck } from './useAutomaticReleaseCheck';
 import { summarizeArtifactTestEvidence } from './artifact-test-result';
 import {
   MODEL_SIZE_OPTIONS,
@@ -243,6 +245,16 @@ const WORKSPACE_WALLPAPERS = [
   ['lavender-cloud-parlour', 'Lavender cloud parlour', 'Violet dawn'],
   ['ember-rain-cafe', 'Ember rain café', 'Rain & lamplight'],
   ['citrus-solar-studio', 'Citrus solar studio', 'Lemon & cobalt'],
+  ['rosewood-reading-room', 'Rosewood reading room', 'Rose & walnut'],
+  ['cherry-lacquer-atelier', 'Cherry lacquer atelier', 'Cherry & ink'],
+  ['burgundy-cinema-lounge', 'Burgundy cinema lounge', 'Oxblood velvet'],
+  ['peach-blossom-loft', 'Peach blossom loft', 'Peach sunrise'],
+  ['jade-paper-conservatory', 'Jade paper conservatory', 'Jade & celadon'],
+  ['cobalt-night-train', 'Cobalt night train', 'Midnight & brass'],
+  ['amethyst-mineral-gallery', 'Amethyst mineral gallery', 'Amethyst & silver'],
+  ['amber-desert-observatory', 'Amber desert observatory', 'Amber & turquoise'],
+  ['ice-blue-nordic-atrium', 'Ice blue Nordic atrium', 'Glacier & ash'],
+  ['obsidian-aurora-workshop', 'Obsidian aurora workshop', 'Obsidian & emerald'],
 ] as const satisfies ReadonlyArray<readonly [WorkspaceSettings['wallpaper'], string, string]>;
 
 function atlasStyle(index: number, columns: number, rows: number, image: string): CSSProperties {
@@ -308,12 +320,12 @@ function Dreamscape({ scene, className }: { scene: number; className?: string })
 function Brand({ large = false }: { large?: boolean }) {
   return (
     <div className={cx('brand', large && 'brand--large')}>
-      <img src="/brand/cupcake-mark.png" alt="" className="brand__mark" />
+      <img src="/brand/cupcake-foreground.png" alt="" className="brand__mark theme-cupcake-icon" />
       <div>
         <strong>CUPCAKE</strong>
         <span>Chat</span>
       </div>
-      {large && <small>2.0 preview</small>}
+      {large && <small>1.8</small>}
     </div>
   );
 }
@@ -763,7 +775,8 @@ function Greeting() {
   const name = workspace.settings.profile.displayName.trim() || 'there';
   return (
     <>
-      {hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, {name}.
+      {hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}
+      {name === 'You' ? '.' : `, ${name}.`}
     </>
   );
 }
@@ -1322,7 +1335,7 @@ function Composer({
   const referenceOptions: ReferenceRecord[] = workspace.fixtureMode
     ? [
         { id: 'fixture-file', type: 'artifact', label: 'architecture.md' },
-        { id: 'fixture-cupcake', type: 'project', label: 'Cupcake 2.0' },
+        { id: 'fixture-cupcake', type: 'project', label: 'Cupcake Chat' },
         { id: 'fixture-task', type: 'task', label: 'Repository redesign' },
       ]
     : scopedReferenceOptions({
@@ -2081,7 +2094,7 @@ function ApprovalCard() {
         <span className="eyebrow">Your approval is needed</span>
         <strong>Read the project folder?</strong>
         <p>
-          Cupcake wants to read 34 files in <b>Cupcake 2.0</b>. Nothing will be changed.
+          Cupcake wants to read 34 files in <b>Cupcake Chat</b>. Nothing will be changed.
         </p>
         <div className="approval-resource">
           <Icon name="folder" />
@@ -3125,7 +3138,7 @@ function ChatView({
                     <p>
                       Project scope must be a hard filter during retrieval—not a ranking hint. That
                       keeps a question inside <em>Atlas research</em> from quietly pulling details
-                      out of <em>Cupcake 2.0</em>.<sup className="citation">1</sup>
+                      out of <em>Cupcake Chat</em>.<sup className="citation">1</sup>
                     </p>
                     <ArtifactInline openArtifacts={openArtifacts} />
                     <div className="citations">
@@ -7796,7 +7809,7 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
         {
           title: 'Architecture review',
           text: 'The cleanest boundary is to keep product truth separate from framework state…',
-          meta: 'Cupcake 2.0 · 8 min ago',
+          meta: 'Cupcake Chat · 8 min ago',
         },
       ],
     },
@@ -7818,7 +7831,7 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
         {
           title: 'Model selection',
           text: 'Model choice stays explicit. Automatic model routing is out of scope.',
-          meta: 'Decision · Cupcake 2.0',
+          meta: 'Decision · Cupcake Chat',
         },
       ],
     },
@@ -8430,7 +8443,7 @@ function SettingsView({
               )}
             </section>
             <section className="personality-preview">
-              <img src="/brand/cupcake-mark.png" alt="" />
+              <img src="/brand/cupcake-foreground.png" alt="" className="theme-cupcake-icon" />
               <div>
                 <span className="eyebrow">Preview</span>
                 <p>
@@ -8641,6 +8654,7 @@ function SettingsView({
         )}
         {tab === 'General' && (
           <section className="settings-section">
+            <ReleaseUpdates offline={offline} />
             <div className="setting-row">
               <span>
                 <strong>Offline mode</strong>
@@ -9817,11 +9831,11 @@ function AboutView() {
           </h1>
           <p>
             The first Cupcake experimented with persistent memory, emotions, thoughts, dreams,
-            multimodal input, tools, and asynchronous tasks. Version 2.0 revisits that curiosity as
+            multimodal input, tools, and asynchronous tasks. Version 1.8 revisits that curiosity as
             a calm, modern text-first workbench.
           </p>
           <div className="about-version">
-            <strong>Cupcake Chat 2.0</strong>
+            <strong>Cupcake Chat 1.8</strong>
             <span>Local release candidate</span>
             <span>Unlicense</span>
           </div>
@@ -11814,11 +11828,13 @@ function OnboardingTour({
   close,
   navigate,
   openProvider,
+  pause,
 }: {
   open: boolean;
   close: (completed: boolean) => void;
   navigate: (view: View) => void;
   openProvider: (provider: string) => void;
+  pause: () => void;
 }) {
   const workspace = useWorkspace();
   const [step, setStep] = useState(0);
@@ -11843,7 +11859,7 @@ function OnboardingTour({
   );
   const profileCustomized =
     profileReady &&
-    (workspace.settings.profile.displayName !== 'Akshit' ||
+    (workspace.settings.profile.displayName !== 'You' ||
       workspace.settings.profile.avatar !== 'atlas:16' ||
       workspace.settings.assistantAvatar !== 'atlas:0');
   const appearanceCustomized =
@@ -11918,9 +11934,9 @@ function OnboardingTour({
       },
       {
         key: 'runtime',
-        eyebrow: 'Local CUDA and safety',
-        title: 'Let the device fit the model before it loads',
-        body: 'Cupcake Local checks usable VRAM and RAM, keeps reserves for Windows, and only starts a model when you explicitly ask. Opening the app never warms the GPU.',
+        eyebrow: 'Optional · run models on this PC',
+        title: 'A local model, when you want one',
+        body: 'Cloud chat needs no local downloads. For offline use, install a compatible runtime, download a model that fits your computer, then load it. Cupcake checks your GPU and memory for you.',
         icon: 'local' as IconName,
         artFrame: 3,
         view: 'models' as View,
@@ -11994,10 +12010,12 @@ function OnboardingTour({
 
   useEffect(() => {
     if (open) {
-      setStep(0);
+      const savedStep = Number(sessionStorage.getItem('cupcake.setup.step') ?? '0');
+      setStep(Number.isInteger(savedStep) && savedStep >= 0 && savedStep < 8 ? savedStep : 0);
       setProfileName(workspace.settings.profile.displayName);
     }
-  }, [open, workspace.settings.profile.displayName]);
+    // Opening setup resumes its chapter; editing your name must not restart the tour.
+  }, [open]);
   const item = chapters[step]!;
   const last = step === chapters.length - 1;
 
@@ -12120,9 +12138,15 @@ function OnboardingTour({
   };
   const move = (direction: -1 | 1) => {
     if (item.key === 'identity') saveProfileName();
-    setStep((value) => Math.max(0, Math.min(chapters.length - 1, value + direction)));
+    setStep((value) => {
+      const next = Math.max(0, Math.min(chapters.length - 1, value + direction));
+      sessionStorage.setItem('cupcake.setup.step', String(next));
+      return next;
+    });
   };
   const leaveFor = (view: View, target?: string) => {
+    sessionStorage.setItem('cupcake.setup.step', String(step));
+    pause();
     close(false);
     navigate(view);
     if (target)
@@ -12377,17 +12401,20 @@ function OnboardingTour({
           {item.key === 'providers' && (
             <div className="onboarding-provider-guide">
               <p>
-                <strong>Choose a provider</strong>
-                <small>Connect, test, and save in one focused panel.</small>
+                <strong>Start with a free option</strong>
+                <small>
+                  Get a key, paste it, test the connection, and choose a model. Each provider sets
+                  its own free quota.
+                </small>
               </p>
               <div>
                 {(
                   [
-                    ['openai', 'OpenAI'],
-                    ['anthropic', 'Anthropic'],
-                    ['google', 'Google'],
-                    ['cohere', 'Cohere'],
-                    ['nvidia-nim', 'NVIDIA NIM'],
+                    ['groq', 'Groq'],
+                    ['google', 'Google Gemini'],
+                    ['mistral', 'Mistral'],
+                    ['openrouter', 'OpenRouter'],
+                    ['cloudflare', 'Cloudflare'],
                     ['choose', 'More providers'],
                   ] as const
                 ).map(([id, label]) => {
@@ -12397,6 +12424,8 @@ function OnboardingTour({
                       type="button"
                       className={connected ? 'is-connected' : ''}
                       onClick={() => {
+                        sessionStorage.setItem('cupcake.setup.step', String(step));
+                        pause();
                         close(false);
                         openProvider(id);
                       }}
@@ -12418,6 +12447,20 @@ function OnboardingTour({
 
           {item.key === 'runtime' && (
             <div className="onboarding-runtime-panel">
+              <ol className="onboarding-local-steps">
+                <li>
+                  <strong>Install an engine.</strong> Open Local system & acceleration below Models.
+                  Pick the recommended compatible runtime.
+                </li>
+                <li>
+                  <strong>Choose a model.</strong> Filter for local models, check the download size
+                  and device fit, then download the weights.
+                </li>
+                <li>
+                  <strong>Load and chat.</strong> Select the downloaded model. You can unload it
+                  later to give memory back to other apps.
+                </li>
+              </ol>
               <div className="onboarding-fact-grid">
                 <span>
                   <Icon name="database" />
@@ -12467,7 +12510,7 @@ function OnboardingTour({
                 </span>
               </button>
               <button className="text-button" onClick={() => leaveFor('models')}>
-                Browse local models and runtimes <Icon name="chevron" size={13} />
+                Set up local models and runtimes <Icon name="chevron" size={13} />
               </button>
             </div>
           )}
@@ -12597,11 +12640,18 @@ function OnboardingTour({
                 Back
               </button>
             )}
+            {!last && (
+              <button className="text-button" onClick={() => move(1)}>
+                Skip this step
+              </button>
+            )}
             <button
               className="button button--primary"
               onClick={() => {
-                if (last) close(true);
-                else move(1);
+                if (last) {
+                  sessionStorage.removeItem('cupcake.setup.step');
+                  close(true);
+                } else move(1);
               }}
             >
               {last ? 'Finish tour' : 'Continue'}
@@ -12615,6 +12665,10 @@ function OnboardingTour({
 
 function LiveApp() {
   const workspace = useWorkspace();
+  useAutomaticReleaseCheck({
+    offline: workspace.settings.offline,
+    ready: workspace.ready && workspace.configurationReady,
+  });
   const onboardingRequested = new URLSearchParams(window.location.search).get('onboarding') === '1';
   const [view, setView] = useState<View>(initialView);
   const [allChats, setAllChats] = useState(false);
@@ -12626,6 +12680,7 @@ function LiveApp() {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [onboardingOpen, setOnboardingOpen] = useState(onboardingRequested);
+  const [onboardingPaused, setOnboardingPaused] = useState(false);
   const onboardingAutoShown = useRef(onboardingRequested);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
   const [memoryRecords, setMemoryRecords] = useState(workspace.memories);
@@ -12919,7 +12974,11 @@ function LiveApp() {
         openProvider={setProviderDialog}
         proactiveEnabled={workspace.settings.proactiveEnabled}
         setProactiveEnabled={(value) => void workspace.updateSettings({ proactiveEnabled: value })}
-        onReplayOnboarding={() => setOnboardingOpen(true)}
+        onReplayOnboarding={() => {
+          sessionStorage.removeItem('cupcake.setup.step');
+          setOnboardingPaused(false);
+          setOnboardingOpen(true);
+        }}
       />
     );
   else if (view === 'developer' && workspace.settings.developerMode)
@@ -13034,12 +13093,33 @@ function LiveApp() {
         select={(id, options) => workspace.selectModel(id, options)}
         manageModels={() => navigate('models')}
       />
-      <ProviderDialog provider={providerDialog} close={() => setProviderDialog(null)} />
+      <ProviderDialog
+        provider={providerDialog}
+        close={() => {
+          setProviderDialog(null);
+          if (onboardingPaused) {
+            setOnboardingPaused(false);
+            setOnboardingOpen(true);
+          }
+        }}
+      />
+      {onboardingPaused && !onboardingOpen && !providerDialog && (
+        <button
+          className="setup-resume-button"
+          onClick={() => {
+            setOnboardingPaused(false);
+            setOnboardingOpen(true);
+          }}
+        >
+          <Icon name="sparkle" size={16} /> Continue setup
+        </button>
+      )}
       <LegacyMigrationDialog />
       <OnboardingTour
         open={onboardingOpen && workspace.ready}
         navigate={navigate}
         openProvider={setProviderDialog}
+        pause={() => setOnboardingPaused(true)}
         close={(completed) => {
           setOnboardingOpen(false);
           if (completed && !workspace.settings.onboardingCompleted)
