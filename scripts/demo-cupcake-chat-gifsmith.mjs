@@ -9,8 +9,9 @@
  * exist as real persisted work.
  */
 import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -95,6 +96,12 @@ const selections = {
   groupChat: option('--group-chat', defaults.groupChat),
 };
 
+// gifsmith 0.3.5 does not set windowsHide on its FFmpeg children. Keep this
+// process's helpers hidden without changing the installed package or the app.
+const originalSpawn = childProcess.spawn;
+childProcess.spawn = (command, args, options = {}) =>
+  originalSpawn(command, args, { ...options, windowsHide: true });
+syncBuiltinESMExports();
 const gifsmith = await import(pathToFileURL(join(gifsmithRoot, 'dist/index.js')).href);
 const props = await import(pathToFileURL(join(gifsmithRoot, 'dist/props/index.js')).href);
 const target = gifsmith.tauri({ port });
@@ -259,6 +266,17 @@ function buildTimeline() {
     t.click('[data-demo-target="groq"]', { via: 'cursor', glideSeconds: 0.5 });
     t.call(waitForModelPickerClose, { name: 'wait for Groq selection', seconds: 0.1 });
     t.hold(1.2);
+    t.call(
+      async (page) => {
+        const bootstrap = await runtimeRequest(page, 'app.bootstrap');
+        assert.equal(
+          bootstrap.selectedModelId,
+          GROQ_MODEL_ID,
+          'The visible provider switch did not select Groq',
+        );
+      },
+      { name: 'verify selected Groq route', seconds: 0.1 },
+    );
     t.call(
       (page) =>
         page.evaluate(() => {
@@ -559,8 +577,8 @@ async function inspectPreparedApp() {
       originalThemeLabel: themeLabels[appearanceTheme],
       originalWallpaper: wallpaper,
       originalWallpaperLabel: wallpaperLabels[wallpaper],
-      demoModelName: demoModel.name,
-      cohereModelName: cohereModel.name,
+      demoModelName: demoModel.display_name ?? demoModel.name,
+      cohereModelName: cohereModel.display_name ?? cohereModel.name,
       prepared: {
         everydayProjectId: everydayProject.id,
         landlordConversationId: landlordChat.id,
@@ -591,7 +609,7 @@ async function inspectPersistedMadaraReply() {
       match.assistant.provider_id && match.assistant.model_id,
       'Real route provenance missing',
     );
-    assert.equal(normalizeProvider(match.assistant.provider_id), 'groq');
+    assert.equal(normalizeProvider(match.assistant.provider_id), 'openai-compatible');
     assert.match(match.assistant.model_id, /gpt-oss-120b$/u);
     return {
       projectId: project.id,
@@ -747,7 +765,10 @@ async function withAttachedPage(fn) {
   const puppeteerPath = requireFromInstall.resolve('puppeteer-core');
   const puppeteerModule = await import(pathToFileURL(puppeteerPath).href);
   const puppeteer = puppeteerModule.default ?? puppeteerModule;
-  const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}` });
+  const browser = await puppeteer.connect({
+    browserURL: `http://127.0.0.1:${port}`,
+    defaultViewport: null,
+  });
   try {
     const pages = await browser.pages();
     const page = pages.find((item) => /tauri\.localhost/iu.test(item.url()));

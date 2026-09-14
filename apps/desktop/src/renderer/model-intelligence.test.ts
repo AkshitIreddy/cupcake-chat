@@ -104,10 +104,10 @@ describe('model intelligence', () => {
 
   it('shows a connected provider route in the catalog without promoting it as curated', () => {
     const groq = model({
-      id: 'openai-compatible:groq/llama-3.3-70b-versatile',
-      runtimeModelId: 'groq/llama-3.3-70b-versatile',
+      id: 'openai-compatible:groq/openai/gpt-oss-120b',
+      runtimeModelId: 'openai-compatible:groq/openai/gpt-oss-120b',
       provider: 'Groq',
-      name: 'Llama 3.3 70B Versatile',
+      name: 'GPT-OSS 120B',
       status: 'ready',
       description: 'Discovered from the connected Groq account',
     });

@@ -235,7 +235,9 @@ async function checkDefaultAdvisors() {
   const personas = await runtime('personas.list', { includeArchived: true });
   assert(Array.isArray(personas), 'personas.list did not return an array');
   const advisors = DEFAULT_ADVISORS.map((name) => {
-    const matches = personas.filter((item) => item?.name === name && !item?.archivedAt);
+    const matches = personas.filter(
+      (item) => item?.name === name && item.handle === name.toLowerCase() && !item?.archivedAt,
+    );
     assert.equal(matches.length, 1, `Expected one active default advisor named ${name}`);
     const persona = matches[0];
     return {
@@ -449,6 +451,8 @@ async function checkRuntimeRecovery() {
 
   await page.getByRole('button', { name: 'Models', exact: true }).click();
   await page.locator('.models-page').waitFor({ state: 'visible' });
+  const clearFilters = page.getByRole('button', { name: 'Clear filters', exact: true });
+  if (await clearFilters.isVisible()) await clearFilters.click();
   const search = page.getByRole('textbox', { name: 'Find a model', exact: true });
   await search.fill('Groq');
   await waitFor(
@@ -723,8 +727,9 @@ async function stopExactOwnedBroker({ brokerPid, expectedHostPid, expectedBroker
 }
 
 function groqModels(value) {
-  return (Array.isArray(value) ? value : []).filter(
-    (item) => String(item?.provider ?? item?.metadata?.provider ?? '').toLowerCase() === 'groq',
+  return (Array.isArray(value) ? value : (value?.models ?? [])).filter(
+    (item) =>
+      item?.id?.startsWith('openai-compatible:groq/') && item?.metadata?.endpoint_id === 'groq',
   );
 }
 
