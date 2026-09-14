@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CupcakeAI 2",
+  "productName": "Cupcake Chat",
   "mainBinaryName": "CupcakeAI",
   "version": "2.0.0-rc.1",
   "identifier": "com.cupcakeagi.desktop",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CupcakeAI",
+        "title": "Cupcake Chat",
         "width": 1440,
         "height": 920,
         "minWidth": 360,
@@ -40,12 +40,17 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "CupcakeAI contributors",
-    "copyright": "CupcakeAI contributors",
+    "publisher": "Cupcake Chat contributors",
+    "copyright": "Cupcake Chat contributors",
     "category": "Productivity",
     "shortDescription": "A local, text-first AI workspace.",
-    "longDescription": "CupcakeAI is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
-    "icon": ["../public/brand/cupcake.ico"],
+    "longDescription": "Cupcake Chat is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
     "resources": {
       "resources/sidecars/": "sidecars/"
     },

@@ -126,7 +126,7 @@ pub fn run() {
         })
         .on_window_event(lifecycle::handle_window_event)
         .build(tauri::generate_context!())
-        .expect("failed to build the CupcakeAI desktop host");
+        .expect("failed to build the Cupcake Chat desktop host");
 
     app.run(|app, event| lifecycle::handle_run_event(app, &event));
 }

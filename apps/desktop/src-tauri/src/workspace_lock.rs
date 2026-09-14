@@ -140,7 +140,7 @@ impl WorkspaceLock {
             inner.retry_at = Some(Instant::now() + Duration::from_millis(delay_ms));
             return Err(HostError::new(
                 "WORKSPACE_PASSWORD_INCORRECT",
-                "That CupcakeAI password is not correct",
+                "That Cupcake Chat password is not correct",
                 true,
             ));
         }
@@ -194,7 +194,7 @@ impl WorkspaceLock {
         if !verify_password(&current_password, &verifier) {
             return Err(HostError::new(
                 "WORKSPACE_PASSWORD_INCORRECT",
-                "The current CupcakeAI password is not correct",
+                "The current Cupcake Chat password is not correct",
                 true,
             ));
         }
@@ -232,7 +232,7 @@ impl WorkspaceLock {
         if !windows_protected && !verify_password(&current_password, &verifier) {
             return Err(HostError::new(
                 "WORKSPACE_PASSWORD_INCORRECT",
-                "The current CupcakeAI password is not correct",
+                "The current Cupcake Chat password is not correct",
                 true,
             ));
         }
@@ -302,7 +302,7 @@ fn validate_password(password: &str) -> HostResult<()> {
         || password.contains('\0')
     {
         return Err(HostError::invalid(format!(
-            "Use {PASSWORD_MIN_CHARACTERS} to {PASSWORD_MAX_CHARACTERS} characters for the CupcakeAI password"
+            "Use {PASSWORD_MIN_CHARACTERS} to {PASSWORD_MAX_CHARACTERS} characters for the Cupcake Chat password"
         )));
     }
     Ok(())

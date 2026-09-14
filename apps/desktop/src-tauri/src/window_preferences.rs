@@ -109,7 +109,7 @@ impl WindowPreferencesStore {
 pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::{null, null_mut};
-    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegSetValueExW, HKEY_CURRENT_USER,
         KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
@@ -120,7 +120,8 @@ pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
     }
 
     let subkey = wide(r"Software\Microsoft\Windows\CurrentVersion\Run");
-    let name = wide("CupcakeAI");
+    let name = wide("Cupcake Chat");
+    let legacy_name = wide("CupcakeAI");
     let mut key = null_mut();
     let result = unsafe {
         RegCreateKeyExW(
@@ -143,7 +144,7 @@ pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
     let operation = if enabled {
         let executable = std::env::current_exe().map_err(preferences_io)?;
         let command = wide(format!("\"{}\"", executable.display()));
-        unsafe {
+        let result = unsafe {
             RegSetValueExW(
                 key,
                 name.as_ptr(),
@@ -152,12 +153,24 @@ pub fn set_launch_at_login(enabled: bool) -> HostResult<()> {
                 command.as_ptr().cast(),
                 (command.len() * std::mem::size_of::<u16>()) as u32,
             )
+        };
+        if result == ERROR_SUCCESS {
+            unsafe { RegDeleteValueW(key, legacy_name.as_ptr()) };
         }
+        result
     } else {
-        unsafe { RegDeleteValueW(key, name.as_ptr()) }
+        let current_result = unsafe { RegDeleteValueW(key, name.as_ptr()) };
+        let legacy_result = unsafe { RegDeleteValueW(key, legacy_name.as_ptr()) };
+        if current_result != ERROR_SUCCESS && current_result != ERROR_FILE_NOT_FOUND {
+            current_result
+        } else if legacy_result != ERROR_SUCCESS && legacy_result != ERROR_FILE_NOT_FOUND {
+            legacy_result
+        } else {
+            ERROR_SUCCESS
+        }
     };
     unsafe { RegCloseKey(key) };
-    if operation != ERROR_SUCCESS && (operation != 2 || enabled) {
+    if operation != ERROR_SUCCESS {
         return Err(HostError::internal(
             "Windows startup registration could not be updated",
         ));
