@@ -71,6 +71,12 @@ describe('workspace bootstrap isolation', () => {
   });
 
   it.each([
+    'history-roman-camp',
+    'history-greek-harbor',
+    'history-egyptian-nile',
+    'history-viking-fjord',
+    'history-mongol-steppe',
+    'history-medieval-garden',
     'strawberry-cupcake-patisserie',
     'lavender-cloud-parlour',
     'ember-rain-cafe',

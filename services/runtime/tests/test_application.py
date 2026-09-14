@@ -806,6 +806,12 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
         "lavender-cloud-parlour",
         "ember-rain-cafe",
         "citrus-solar-studio",
+        "history-roman-camp",
+        "history-greek-harbor",
+        "history-egyptian-nile",
+        "history-viking-fjord",
+        "history-mongol-steppe",
+        "history-medieval-garden",
         "strawberry-cupcake-patisserie",
         "rosewood-reading-room",
         "cherry-lacquer-atelier",
@@ -838,7 +844,7 @@ def test_fresh_workspace_starts_in_strawberry_without_overwriting_saved_appearan
     runtime = service(tmp_path)
     listed, _ = runtime.handle("settings.list")
     assert listed["appearance.theme"] == "cupcake-light"
-    assert listed["appearance.wallpaper"] == "strawberry-cupcake-patisserie"
+    assert listed["appearance.wallpaper"] == "history-roman-camp"
     runtime.handle("settings.set", {"key": "appearance.wallpaper", "value": "none"})
     runtime.close()
     reopened = service(tmp_path)

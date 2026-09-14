@@ -1,0 +1,71 @@
+/* Light, illustration-matched history palettes override every inherited surface. */
+.app-shell--wallpaper[data-wallpaper^='history-'] {
+  color-scheme: light;
+  --history-cream: #fff2e5;
+  --history-ink: #492b2d;
+  --history-accent: #9f3b48;
+  --history-muted: #775959;
+  --cocoa: var(--history-ink);
+  --ink: var(--history-ink);
+  --muted: var(--history-muted);
+  --line: color-mix(in srgb, var(--history-accent) 24%, transparent);
+  --paper: var(--history-cream);
+  --paper-raised: color-mix(in srgb, var(--history-cream) 65%, white);
+  --crumb: color-mix(in srgb, var(--history-cream) 88%, var(--history-accent));
+  --soft: var(--crumb);
+  --berry: var(--history-accent);
+  --berry-dark: color-mix(in srgb, var(--history-accent) 80%, #261b22);
+  --berry-soft: color-mix(in srgb, var(--history-cream) 84%, var(--history-accent));
+  --blueberry: #536e88;
+  --blueberry-soft: #e3ebf1;
+  --pistachio: #587756;
+  --pistachio-ink: #365b38;
+  --pistachio-soft: #e5ecd9;
+  --gold: #ad752e;
+  --gold-ink: #754611;
+  --danger: #a22c40;
+  --wallpaper-surface: var(--history-cream);
+  --wallpaper-chrome: color-mix(in srgb, var(--history-cream) 97%, transparent);
+  --wallpaper-panel: color-mix(in srgb, var(--history-cream) 93%, transparent);
+  --wallpaper-panel-strong: color-mix(in srgb, var(--paper-raised) 98%, transparent);
+  --wallpaper-shadow: 0 12px 38px color-mix(in srgb, var(--history-ink) 13%, transparent);
+  background: var(--history-cream);
+}
+.app-shell--wallpaper[data-wallpaper='history-greek-harbor'] {
+  --history-cream: #f5f4e8;
+  --history-ink: #24494c;
+  --history-accent: #226f73;
+  --history-muted: #536b69;
+}
+.app-shell--wallpaper[data-wallpaper='history-egyptian-nile'] {
+  --history-cream: #fff3da;
+  --history-ink: #343d60;
+  --history-accent: #366ba0;
+  --history-muted: #666379;
+}
+.app-shell--wallpaper[data-wallpaper='history-viking-fjord'] {
+  --history-cream: #edf3f1;
+  --history-ink: #24464d;
+  --history-accent: #2f727a;
+  --history-muted: #536b70;
+}
+.app-shell--wallpaper[data-wallpaper='history-mongol-steppe'] {
+  --history-cream: #f1f0dc;
+  --history-ink: #304b3c;
+  --history-accent: #3f7553;
+  --history-muted: #5c6b57;
+}
+.app-shell--wallpaper[data-wallpaper='history-medieval-garden'] {
+  --history-cream: #fff0f3;
+  --history-ink: #4f304b;
+  --history-accent: #a83e70;
+  --history-muted: #7a5970;
+}
+.app-shell--wallpaper[data-wallpaper^='history-'] .theme-cupcake-icon {
+  background: var(--berry-soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.app-shell--wallpaper[data-wallpaper^='history-'] .home-hero,
+.app-shell--wallpaper[data-wallpaper^='history-'] .home-hero :is(h1, p, span) {
+  text-shadow: none;
+}

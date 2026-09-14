@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CupcakePersona, ModelDescriptor } from '../types';
 import { modelAvailabilityDetail } from '../model-intelligence';
 import { PersonaPortrait } from './PersonaPortrait';
+import { HISTORY_PORTRAITS } from '../history-eras';
 import {
   modelCanBackPersona,
   normalizePersonaHandle,
@@ -218,13 +219,19 @@ export function PersonaEditor({
               <fieldset className="persona-avatar-picker">
                 <legend>Avatar</legend>
                 <div>
-                  {Array.from({ length: 20 }, (_, index) => `atlas:${index}`).map((avatar) => (
+                  {[
+                    ...Array.from({ length: 20 }, (_, index) => ({
+                      value: `atlas:${index}`,
+                      label: `Cupcake portrait ${index + 1}`,
+                    })),
+                    ...HISTORY_PORTRAITS,
+                  ].map(({ value: avatar, label }) => (
                     <button
                       key={avatar}
                       type="button"
                       className={draft.avatar === avatar ? 'is-selected' : ''}
                       onClick={() => update('avatar', avatar)}
-                      aria-label={`Choose Cupcake portrait ${Number(avatar.split(':')[1]) + 1}`}
+                      aria-label={`Choose ${label}`}
                     >
                       <PersonaPortrait value={avatar} name="Cupcake" />
                       {draft.avatar === avatar && <Check size={12} />}

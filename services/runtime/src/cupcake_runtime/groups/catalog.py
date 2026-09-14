@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .history_catalog import HISTORY_PERSONA_CATALOG
 from .models import DefaultPersonaSpec, PersonaPersonality
 
 
@@ -25,7 +26,7 @@ def _speak_when(domain_rule: str) -> str:
     )
 
 
-DEFAULT_PERSONA_CATALOG: tuple[DefaultPersonaSpec, ...] = (
+GENERAL_PERSONA_CATALOG: tuple[DefaultPersonaSpec, ...] = (
     DefaultPersonaSpec(
         key="everyday-planner",
         name="Pip",
@@ -425,3 +426,5 @@ DEFAULT_PERSONA_CATALOG: tuple[DefaultPersonaSpec, ...] = (
         personality=_personality("warm", warmth=0.82, brevity=0.58, initiative=0.78),
     ),
 )
+
+DEFAULT_PERSONA_CATALOG = GENERAL_PERSONA_CATALOG + HISTORY_PERSONA_CATALOG

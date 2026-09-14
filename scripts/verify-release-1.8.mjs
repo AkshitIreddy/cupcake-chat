@@ -55,7 +55,7 @@ const ODM_TASK_PROMPT = 'Verify final 1.8 simulation';
 const plannedChecks = [
   'attach to the existing packaged Windows renderer; never launch or close the app',
   `app.getInfo reports packaged win32 version ${VERSION}`,
-  'personas.list contains all 15 named default advisors with substantive prompts',
+  'personas.list contains 15 everyday and 24 historical advisors with substantive prompts',
   'Settings > General replays onboarding and truthfully shows unsigned updates unavailable',
   'provider setup leaves and resumes the provider chapter without saving or testing a key',
   'local setup leaves for Models, resumes, advances, and can be skipped cleanly',
@@ -269,6 +269,19 @@ async function checkDefaultAdvisors() {
   };
   requireCheck('fifteen-default-advisors', advisors.length === 15, receipt.advisors, true);
   requireCheck('default-advisor-prompt-depth', promptQuality, { advisors }, true);
+  const history = personas.filter(
+    (item) => !item.archivedAt && item.avatar?.startsWith('product:art/history/'),
+  );
+  requireCheck(
+    '24-historical-advisors',
+    history.length === 24 &&
+      new Set(history.map((item) => item.avatar)).size === 24 &&
+      history.every(
+        (item) => item.instructions.length >= 700 && item.speakWhen.includes('Stay quiet'),
+      ),
+    { count: history.length, names: history.map((item) => item.name) },
+    true,
+  );
 }
 
 async function checkSettingsOnboardingAndUpdater() {

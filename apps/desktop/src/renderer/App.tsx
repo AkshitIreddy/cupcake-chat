@@ -23,6 +23,8 @@ import { RichMarkdown } from './RichMarkdown';
 import { ContentProtectionSettings } from './ContentProtectionSettings';
 import { BackupRecoverySettings } from './BackupRecoverySettings';
 import { ReleaseUpdates } from './ReleaseUpdates';
+import { HISTORY_PORTRAITS, historyPortraitSource } from './history-eras';
+import { HistoryLab } from './HistoryLab';
 import { useAutomaticReleaseCheck } from './useAutomaticReleaseCheck';
 import { summarizeArtifactTestEvidence } from './artifact-test-result';
 import {
@@ -208,34 +210,43 @@ function initialTheme(): Theme {
   return stored === 'dark' || stored === 'minimal' || stored === 'classic' ? stored : 'light';
 }
 
-const CUPCAKE_AVATARS = Array.from({ length: 20 }, (_, index) => ({
-  value: `atlas:${index}`,
-  label: [
-    'Astronomer',
-    'Garden keeper',
-    'Pixel explorer',
-    'Paper librarian',
-    'Folk musician',
-    'Glass alchemist',
-    'Pastry engineer',
-    'Ink detective',
-    'Comic pilot',
-    'Enamel botanist',
-    'Pastel dreamer',
-    'Woodblock navigator',
-    'Plush baker',
-    'Mosaic oceanographer',
-    'Pencil architect',
-    'Synthwave DJ',
-    'Art nouveau naturalist',
-    'Storybook wizard',
-    'Low-poly helper',
-    'Gouache historian',
-  ][index]!,
-}));
+const CUPCAKE_AVATARS = [
+  ...Array.from({ length: 20 }, (_, index) => ({
+    value: `atlas:${index}`,
+    label: [
+      'Astronomer',
+      'Garden keeper',
+      'Pixel explorer',
+      'Paper librarian',
+      'Folk musician',
+      'Glass alchemist',
+      'Pastry engineer',
+      'Ink detective',
+      'Comic pilot',
+      'Enamel botanist',
+      'Pastel dreamer',
+      'Woodblock navigator',
+      'Plush baker',
+      'Mosaic oceanographer',
+      'Pencil architect',
+      'Synthwave DJ',
+      'Art nouveau naturalist',
+      'Storybook wizard',
+      'Low-poly helper',
+      'Gouache historian',
+    ][index]!,
+  })),
+  ...HISTORY_PORTRAITS,
+];
 
 const WORKSPACE_WALLPAPERS = [
-  ['strawberry-cupcake-patisserie', 'Strawberry cupcakes', 'Strawberry & cream · Default'],
+  ['history-roman-camp', 'Roman cupcake camp', 'Roman rose · Default'],
+  ['history-greek-harbor', 'Aegean cupcake harbor', 'History companions'],
+  ['history-egyptian-nile', 'Nile cupcake landing', 'History companions'],
+  ['history-viking-fjord', 'Viking cupcake fjord', 'History companions'],
+  ['history-mongol-steppe', 'Steppe cupcake camp', 'History companions'],
+  ['history-medieval-garden', 'Rose castle garden', 'History companions'],
+  ['strawberry-cupcake-patisserie', 'Strawberry cupcakes', 'Strawberry & cream'],
   ['none', 'Quiet paper', 'No artwork'],
   ['moonlit-archive', 'Moonlit archive', 'Midnight blue'],
   ['pistachio-atelier', 'Pistachio atelier', 'Garden light'],
@@ -294,7 +305,7 @@ function CupcakePortrait({
   return (
     <img
       className={cx('cupcake-portrait', className)}
-      src={value || '/brand/cupcake-mark.png'}
+      src={historyPortraitSource(value) ?? (value || '/brand/cupcake-mark.png')}
       alt={label}
     />
   );
@@ -7579,6 +7590,7 @@ function ToolsView({
           Connect MCP server
         </button>
       </div>
+      <HistoryLab />
       {toolNotice && (
         <div
           className={cx('interaction-notice', `is-${toolNotice.tone}`)}

@@ -154,7 +154,7 @@ EventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 SETTING_DEFAULTS: dict[str, Any] = {
     "appearance.theme": "cupcake-light",
-    "appearance.wallpaper": "strawberry-cupcake-patisserie",
+    "appearance.wallpaper": "history-roman-camp",
     "models.default": "mock:cupcake-deterministic",
     "models.fallback": {"enabled": False, "modelId": None},
     "models.reasoning_effort": "none",
@@ -6424,6 +6424,12 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
             "lavender-cloud-parlour",
             "ember-rain-cafe",
             "citrus-solar-studio",
+            "history-roman-camp",
+            "history-greek-harbor",
+            "history-egyptian-nile",
+            "history-viking-fjord",
+            "history-mongol-steppe",
+            "history-medieval-garden",
             "strawberry-cupcake-patisserie",
             "rosewood-reading-room",
             "cherry-lacquer-atelier",

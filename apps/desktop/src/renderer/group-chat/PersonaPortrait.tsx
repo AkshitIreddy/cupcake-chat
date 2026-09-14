@@ -1,3 +1,5 @@
+import { historyPortraitSource } from '../history-eras';
+
 export function PersonaPortrait({
   value,
   name,
@@ -29,9 +31,10 @@ export function PersonaPortrait({
     <img
       className={`group-persona-portrait ${className}`.trim()}
       src={
-        value?.startsWith('/brand/') || value?.startsWith('/art/')
+        historyPortraitSource(value) ??
+        (value?.startsWith('/brand/') || value?.startsWith('/art/')
           ? value
-          : '/brand/cupcake-mark.png'
+          : '/brand/cupcake-mark.png')
       }
       alt={`${name}'s portrait`}
     />

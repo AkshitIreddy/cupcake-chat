@@ -18,7 +18,7 @@ def test_fresh_profile_receives_broad_ordered_persona_catalog(tmp_path: Path) ->
     runtime = _runtime(tmp_path)
     try:
         personas, _ = runtime.handle("personas.list", {})
-        assert [item["handle"] for item in personas] == [
+        assert [item["handle"] for item in personas[:15]] == [
             "pip",
             "sage",
             "quill",
@@ -35,7 +35,12 @@ def test_fresh_profile_receives_broad_ordered_persona_catalog(tmp_path: Path) ->
             "launch",
             "gather",
         ]
-        assert len(personas) == len(DEFAULT_PERSONA_CATALOG) == 15
+        assert len(personas) == len(DEFAULT_PERSONA_CATALOG) == 39
+        history = [item for item in personas if item["avatar"].startswith("product:art/history/")]
+        assert len(history) == 24
+        assert len({item["avatar"] for item in history}) == 24
+        for era in ("egyptian", "greek", "roman", "viking", "mongol", "medieval"):
+            assert sum(item["handle"].startswith(era + "_") for item in history) == 4
         assert all(item["modelId"] == "mock:cupcake-deterministic" for item in personas)
         assert all("Stay quiet" in item["speakWhen"] for item in personas)
         assert all(len(item["instructions"]) >= 400 for item in personas)

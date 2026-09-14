@@ -22,6 +22,8 @@ import './styles-group-chat.css';
 import './styles-chat-refresh.css';
 import './styles-living-motion.css';
 import './styles-strawberry.css';
+import './styles-history.css';
+import './styles-history-themes.css';
 
 installTauriDesktopApi();
 

@@ -22,6 +22,7 @@ import type {
 import { PersonaPortrait } from './PersonaPortrait';
 import { participantRouteSummary, personaModelId, personaModelReady } from './persona-utils';
 import { useDialogFocus } from './useDialogFocus';
+import { HISTORY_ERAS, personaEra } from '../history-eras';
 
 export function ParticipantTray({
   participants,
@@ -321,11 +322,17 @@ export function AddCupcakeDialog({
   onEdit: (persona: CupcakePersona) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [era, setEra] = useState('all');
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(open, dialogRef, onClose, Boolean(pendingId));
   const rosterIds = new Set(participants.map((item) => item.personaId));
   const candidates = personas
-    .filter((persona) => !persona.archivedAt && !rosterIds.has(persona.id))
+    .filter(
+      (persona) =>
+        !persona.archivedAt &&
+        !rosterIds.has(persona.id) &&
+        (era === 'all' || personaEra(persona.avatar) === era),
+    )
     .map((persona) => {
       const model = models.find((item) => personaModelId(item) === persona.modelId);
       return { persona, model, ready: Boolean(model && personaModelReady(model)) };
@@ -373,6 +380,19 @@ export function AddCupcakeDialog({
           </button>
         </header>
         <div className="add-cupcake-dialog__toolbar">
+          <select
+            aria-label="Advisor era"
+            value={era}
+            onChange={(event) => setEra(event.target.value)}
+          >
+            <option value="all">All companions</option>
+            <option value="general">Everyday companions</option>
+            {HISTORY_ERAS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
           <label>
             <Search size={15} />
             <input

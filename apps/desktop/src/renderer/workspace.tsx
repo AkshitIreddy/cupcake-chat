@@ -308,6 +308,12 @@ export interface LegacyMigrationState {
 export interface WorkspaceSettings {
   theme: 'light' | 'dark' | 'minimal' | 'classic';
   wallpaper:
+    | 'history-roman-camp'
+    | 'history-greek-harbor'
+    | 'history-egyptian-nile'
+    | 'history-viking-fjord'
+    | 'history-mongol-steppe'
+    | 'history-medieval-garden'
     | 'none'
     | 'moonlit-archive'
     | 'pistachio-atelier'
@@ -742,6 +748,12 @@ export function applyRuntimeStartupSettings(
             ? 'classic'
             : 'light',
     wallpaper:
+      wallpaper === 'history-roman-camp' ||
+      wallpaper === 'history-greek-harbor' ||
+      wallpaper === 'history-egyptian-nile' ||
+      wallpaper === 'history-viking-fjord' ||
+      wallpaper === 'history-mongol-steppe' ||
+      wallpaper === 'history-medieval-garden' ||
       wallpaper === 'strawberry-cupcake-patisserie' ||
       wallpaper === 'moonlit-archive' ||
       wallpaper === 'pistachio-atelier' ||
@@ -2239,7 +2251,7 @@ function fixtureProjects(): ProjectRecord[] {
 
 const fallbackSettings: WorkspaceSettings = {
   theme: 'light',
-  wallpaper: 'strawberry-cupcake-patisserie',
+  wallpaper: 'history-roman-camp',
   offline: false,
   proactiveEnabled: false,
   developerMode: false,
