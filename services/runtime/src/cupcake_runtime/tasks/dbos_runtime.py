@@ -212,7 +212,7 @@ def _load_dbos() -> tuple[Any, Any, Any]:
         installed = DBOS_PACKAGE_VERSION
     if installed != DBOS_PACKAGE_VERSION:
         raise DbosUnavailableError(
-            f"CupcakeAI requires DBOS {DBOS_PACKAGE_VERSION}, found {installed}"
+            f"Cupcake Chat requires DBOS {DBOS_PACKAGE_VERSION}, found {installed}"
         )
     return DBOS, DBOSConfig, SetWorkflowID
 

@@ -58,7 +58,7 @@ def search_huggingface_gguf(
         f"{HUGGING_FACE_API}?{urlencode(parameters)}",
         headers={
             "Accept": "application/json",
-            "User-Agent": "CupcakeAI-Desktop/2 community-model-discovery",
+            "User-Agent": "CupcakeChat-Desktop/2 community-model-discovery",
         },
     )
     with opener(request, timeout=12) as response:

@@ -151,7 +151,7 @@ class CupcakeAgentEngine:
             model,
             output_type=[str, DeferredToolRequests],
             name="cupcake_agent",
-            description="CupcakeAI provider-neutral text agent",
+            description="Cupcake Chat provider-neutral text agent",
             toolsets=toolsets,
             retries={"tools": 0, "output": 0 if bounded_group_call else 1},
         )

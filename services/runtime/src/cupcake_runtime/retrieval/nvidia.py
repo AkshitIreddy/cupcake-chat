@@ -102,7 +102,7 @@ class NvidiaRerankModelSpec:
         if self.truncate not in {NvidiaTruncate.NONE, NvidiaTruncate.END}:
             raise ValueError("NVIDIA reranking supports only NONE or END truncation")
         if self.interface_version != NVIDIA_RERANK_INTERFACE_VERSION:
-            raise ValueError("unsupported CupcakeAI rerank interface version")
+            raise ValueError("unsupported Cupcake Chat rerank interface version")
         _validate_rerank_endpoint(self.endpoint_url)
 
     @property
