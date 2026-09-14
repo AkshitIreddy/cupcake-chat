@@ -458,6 +458,85 @@ def test_smart_pass_is_durable_and_selector_never_receives_private_instructions(
     runtime.close()
 
 
+def _markdown_selector(payload: str) -> str:
+    return f"```json\n{payload}\n```"
+
+
+def _reasoning_tag_selector(payload: str) -> str:
+    return (
+        "<think>The latest message closes the discussion, so another response would add "
+        f"noise.</think>\n```JSON\n{payload}\n```"
+    )
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        _markdown_selector,
+        _reasoning_tag_selector,
+    ],
+    ids=("markdown-json-fence", "reasoning-tag-and-fence"),
+)
+def test_smart_selector_accepts_known_provider_wrappers_without_relaxing_decision_schema(
+    tmp_path: Path, wrap: Callable[[str], str]
+) -> None:
+    runtime = service(tmp_path)
+    group = configured_group(runtime)
+    decision = json.dumps(
+        {
+            "decision": "pass",
+            "participantId": None,
+            "reasonCode": "acknowledgement",
+            "reason": "The user has closed the discussion.",
+        }
+    )
+    engine = ScriptedGroupEngine(lambda _payload, _index: wrap(decision))
+    runtime.agent_engine = engine  # type: ignore[assignment]
+    base: dict[str, Any] = {
+        "conversationId": group["conversationId"],
+        "branchId": group["branchId"],
+        "content": "That answers it, thanks.",
+        "mentions": [],
+    }
+    preflight, _ = runtime.handle("groups.turn.preflight", base)
+    result, _ = asyncio.run(send(runtime, send_params(base, preflight)))
+
+    assert result["status"] == "waiting_for_you"
+    assert result["selectorCalls"] == 1
+    assert result["responderCalls"] == 0
+    assert result["selectorUsage"][0]["selection"]["reasonCode"] == "acknowledgement"
+    runtime.close()
+
+
+def test_smart_selector_still_rejects_prose_around_json(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    group = configured_group(runtime)
+    decision = json.dumps(
+        {
+            "decision": "speak",
+            "participantId": group["participants"][0]["id"],
+            "reasonCode": "best_fit",
+            "reason": "Best fit.",
+        }
+    )
+    runtime.agent_engine = ScriptedGroupEngine(  # type: ignore[assignment]
+        lambda _payload, _index: f"I chose this response: {decision}"
+    )
+    base: dict[str, Any] = {
+        "conversationId": group["conversationId"],
+        "branchId": group["branchId"],
+        "content": "Who should answer?",
+        "mentions": [],
+    }
+    preflight, _ = runtime.handle("groups.turn.preflight", base)
+    result, _ = asyncio.run(send(runtime, send_params(base, preflight)))
+
+    assert result["status"] == "selection_failed"
+    assert result["selectorCalls"] == 1
+    assert result["responderCalls"] == 0
+    runtime.close()
+
+
 def test_reasoning_selector_discloses_and_uses_a_reasoning_aware_budget(
     tmp_path: Path,
 ) -> None:

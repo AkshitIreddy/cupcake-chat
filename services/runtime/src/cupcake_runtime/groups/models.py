@@ -70,6 +70,7 @@ class PersonaProfile:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     archived_at: datetime | None = None
+    catalog_key: str | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.name.strip()) <= 40:
@@ -82,6 +83,8 @@ class PersonaProfile:
             raise ValueError("persona model id must contain 1..500 characters")
         if AVATAR_PATTERN.fullmatch(self.avatar) is None:
             raise ValueError("persona avatar must be a bundled atlas or product asset")
+        if self.catalog_key is not None and not 1 <= len(self.catalog_key) <= 80:
+            raise ValueError("persona catalog key must contain 1..80 characters")
         for label, value, maximum in (
             ("avatar", self.avatar, 200),
             ("role", self.role, 120),
@@ -108,3 +111,35 @@ class PersonaProfile:
             "updatedAt": self.updated_at.isoformat(),
             "archivedAt": self.archived_at.isoformat() if self.archived_at else None,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class DefaultPersonaSpec:
+    """Product-owned persona template inserted once into each profile."""
+
+    key: str
+    name: str
+    handle: str
+    role: str
+    description: str
+    instructions: str
+    speak_when: str
+    personality: PersonaPersonality
+    avatar: str = ""
+
+    def __post_init__(self) -> None:
+        # Reuse the public persona validation rules so catalog copy cannot drift
+        # outside the same constraints as a persona created in the app.
+        PersonaProfile(
+            id="catalog-validation",
+            name=self.name,
+            handle=self.handle,
+            avatar=self.avatar,
+            role=self.role,
+            description=self.description,
+            instructions=self.instructions,
+            speak_when=self.speak_when,
+            personality=self.personality,
+            model_id="catalog-validation",
+            catalog_key=self.key,
+        )

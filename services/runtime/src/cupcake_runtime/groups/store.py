@@ -9,7 +9,13 @@ from typing import Any, cast
 from cupcake_runtime.domain.ids import new_id
 from cupcake_runtime.storage.database import Database
 
-from .models import GroupStrategy, GroupTurnStatus, PersonaPersonality, PersonaProfile
+from .models import (
+    DefaultPersonaSpec,
+    GroupStrategy,
+    GroupTurnStatus,
+    PersonaPersonality,
+    PersonaProfile,
+)
 
 
 def _now() -> datetime:
@@ -97,9 +103,84 @@ class GroupStore:
     def list_personas(self, *, include_archived: bool = False) -> tuple[PersonaProfile, ...]:
         where = "" if include_archived else "WHERE archived_at IS NULL"
         rows = self.database.connection.execute(
-            f"SELECT * FROM personas {where} ORDER BY updated_at DESC, id DESC"
+            f"""SELECT * FROM personas {where}
+                ORDER BY CASE WHEN catalog_key IS NULL THEN 0 ELSE 1 END,
+                         CASE WHEN catalog_key IS NOT NULL THEN catalog_position END,
+                         updated_at DESC,id DESC"""
         ).fetchall()
         return tuple(self._persona(row) for row in rows)
+
+    def ensure_default_personas(
+        self,
+        defaults: Sequence[DefaultPersonaSpec],
+        *,
+        model_id: str,
+    ) -> tuple[PersonaProfile, ...]:
+        """Insert each product persona once without modifying profile-owned rows.
+
+        ``catalog_key`` is the durable identity. Handles stay friendly on a fresh
+        profile, while a pre-existing custom handle wins and the catalog entry gets
+        a deterministic free suffix. Existing catalog personas, including archived
+        or user-edited ones, are left byte-for-byte alone on later starts.
+        """
+
+        if not 1 <= len(model_id) <= 500:
+            raise ValueError("persona model id must contain 1..500 characters")
+        inserted: list[PersonaProfile] = []
+        now = _now()
+        with self.database.transaction() as connection:
+            used_handles = {
+                str(row["handle"]).casefold()
+                for row in connection.execute("SELECT handle FROM personas").fetchall()
+            }
+            for position, default in enumerate(defaults):
+                existing = connection.execute(
+                    "SELECT 1 FROM personas WHERE catalog_key=?", (default.key,)
+                ).fetchone()
+                if existing is not None:
+                    continue
+                handle = _available_catalog_handle(default.handle, used_handles)
+                persona = PersonaProfile(
+                    id=new_id(),
+                    name=default.name,
+                    handle=handle,
+                    avatar=default.avatar,
+                    role=default.role,
+                    description=default.description,
+                    instructions=default.instructions,
+                    speak_when=default.speak_when,
+                    personality=default.personality,
+                    model_id=model_id,
+                    created_at=now,
+                    updated_at=now,
+                    catalog_key=default.key,
+                )
+                connection.execute(
+                    """INSERT INTO personas(
+                        id,name,handle,avatar,role,description,instructions,speak_when,
+                        personality_json,model_id,created_at,updated_at,archived_at,
+                        catalog_key,catalog_position
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?)""",
+                    (
+                        persona.id,
+                        persona.name,
+                        persona.handle,
+                        persona.avatar,
+                        persona.role,
+                        persona.description,
+                        persona.instructions,
+                        persona.speak_when,
+                        _json(persona.personality.public()),
+                        persona.model_id,
+                        _stamp(now),
+                        _stamp(now),
+                        default.key,
+                        position,
+                    ),
+                )
+                used_handles.add(handle.casefold())
+                inserted.append(persona)
+        return tuple(inserted)
 
     def get_persona(self, persona_id: str) -> PersonaProfile:
         row = self.database.connection.execute(
@@ -718,6 +799,11 @@ class GroupStore:
             created_at=cast(datetime, _parse_stamp(str(row[f"{prefix}created_at"]))),
             updated_at=cast(datetime, _parse_stamp(str(row[f"{prefix}updated_at"]))),
             archived_at=_parse_stamp(row[f"{prefix}archived_at"]),
+            catalog_key=(
+                str(row[f"{prefix}catalog_key"])
+                if row[f"{prefix}catalog_key"] is not None
+                else None
+            ),
         )
 
     def _participant(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -786,5 +872,17 @@ _PERSONA_COLUMNS = ",".join(
         "created_at",
         "updated_at",
         "archived_at",
+        "catalog_key",
     )
 )
+
+
+def _available_catalog_handle(preferred: str, used: set[str]) -> str:
+    if preferred.casefold() not in used:
+        return preferred
+    base = preferred[:24].rstrip("_-")
+    for suffix in ("-helper", *(f"-{index}" for index in range(2, 10_000))):
+        candidate = f"{base}{suffix}"[:32]
+        if candidate.casefold() not in used:
+            return candidate
+    raise RuntimeError("could not allocate a persona catalog handle")

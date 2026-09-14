@@ -87,3 +87,58 @@ def test_v2_pending_legacy_tasks_upgrade_to_paused(tmp_path: Path) -> None:
         )
     finally:
         upgraded.close()
+
+
+def test_v5_custom_persona_upgrade_preserves_profile_owned_fields(tmp_path: Path) -> None:
+    path = tmp_path / "v5.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE schema_migrations ("
+        "version INTEGER PRIMARY KEY, description TEXT NOT NULL, applied_at TEXT NOT NULL"
+        ") STRICT"
+    )
+    for migration in MIGRATIONS[:5]:
+        connection.executescript(migration.sql)
+        connection.execute(
+            "INSERT INTO schema_migrations VALUES (?, ?, '2026-09-05T00:00:00Z')",
+            (migration.version, migration.description),
+        )
+    connection.execute(
+        """INSERT INTO personas(
+            id,name,handle,avatar,role,description,instructions,speak_when,
+            personality_json,model_id,created_at,updated_at,archived_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)""",
+        (
+            "custom-persona",
+            "My helper",
+            "helper",
+            "atlas:1",
+            "Personal role",
+            "Personal description",
+            "Personal instructions",
+            "Only when I ask",
+            '{"preset":"balanced","warmth":0.5,"brevity":0.5,"initiative":0.5}',
+            "mock:cupcake-deterministic",
+            "2026-09-05T00:00:00Z",
+            "2026-09-05T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    upgraded = Database(DatabaseConfig(path=path, require_sqlcipher=False))
+    try:
+        row = upgraded.connection.execute(
+            "SELECT name,handle,instructions,catalog_key,catalog_position "
+            "FROM personas WHERE id='custom-persona'"
+        ).fetchone()
+        assert tuple(row) == (
+            "My helper",
+            "helper",
+            "Personal instructions",
+            None,
+            None,
+        )
+        assert upgraded.schema_version == LATEST_SCHEMA_VERSION
+    finally:
+        upgraded.close()

@@ -340,6 +340,19 @@ MIGRATIONS: tuple[Migration, ...] = (
             WHERE status = 'running';
         """,
     ),
+    Migration(
+        6,
+        "product persona catalog identity and display order",
+        """
+        ALTER TABLE personas ADD COLUMN catalog_key TEXT
+            CHECK(catalog_key IS NULL OR length(catalog_key) BETWEEN 1 AND 80);
+        ALTER TABLE personas ADD COLUMN catalog_position INTEGER
+            CHECK(catalog_position IS NULL OR catalog_position >= 0);
+
+        CREATE UNIQUE INDEX personas_catalog_key
+            ON personas(catalog_key) WHERE catalog_key IS NOT NULL;
+        """,
+    ),
 )
 
 
