@@ -806,6 +806,16 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
         "lavender-cloud-parlour",
         "ember-rain-cafe",
         "citrus-solar-studio",
+        "rosewood-reading-room",
+        "cherry-lacquer-atelier",
+        "burgundy-cinema-lounge",
+        "peach-blossom-loft",
+        "jade-paper-conservatory",
+        "cobalt-night-train",
+        "amethyst-mineral-gallery",
+        "amber-desert-observatory",
+        "ice-blue-nordic-atrium",
+        "obsidian-aurora-workshop",
     ],
 )
 def test_every_extended_wallpaper_persists_through_restart(tmp_path: Path, wallpaper: str) -> None:
