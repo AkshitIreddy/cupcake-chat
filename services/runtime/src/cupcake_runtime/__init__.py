@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from cupcake_runtime.storage.repositories import ProductRepository
 
 __all__ = ["Database", "DatabaseConfig", "ProductRepository", "new_id", "uuid7"]
-__version__ = "2.0.0rc1"
+__version__ = "1.8.0"
 
 
 def __getattr__(name: str) -> Any:

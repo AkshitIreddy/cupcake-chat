@@ -881,7 +881,7 @@ mod tests {
     fn identity() -> BackupIdentity {
         BackupIdentity {
             backup_id: Uuid::parse_str("018f47bc-7f0c-7a3d-8b9f-1234567890ab").unwrap(),
-            product_version: "2.0.0-rc.1".into(),
+            product_version: "1.8.0".into(),
         }
     }
 
@@ -947,7 +947,7 @@ mod tests {
         assert_eq!(envelope.kdf.version, 19);
         assert_eq!(
             hex::encode(authenticated_metadata(&identity())),
-            "43555043414b4541474900706f727461626c652d6261636b75702d6b65792d656e76656c6f706500763100018f47bc7f0c7a3d8b9f1234567890ab0000000a322e302e302d72632e31"
+            "43555043414b4541474900706f727461626c652d6261636b75702d6b65792d656e76656c6f706500763100018f47bc7f0c7a3d8b9f1234567890ab00000005312e382e30"
         );
     }
 

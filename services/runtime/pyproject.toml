@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cupcake-runtime"
-version = "2.0.0rc1"
-description = "Local CupcakeAI runtime, product contracts, and authoritative storage"
+version = "1.8.0"
+description = "Local Cupcake Chat runtime, product contracts, and authoritative storage"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Unlicense" }

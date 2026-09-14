@@ -21,7 +21,7 @@ from cupcake_runtime.backup.portable import (
 from cupcake_runtime.domain.errors import IntegrityViolation
 
 BACKUP_ID = UUID("018f47bc-7f0c-7a3d-8b9f-1234567890ab")
-PRODUCT_VERSION = "2.0.0-rc.1"
+PRODUCT_VERSION = "1.8.0"
 
 
 def _entry(path: str, role: str, body: bytes, *, object_id: str | None = None) -> dict[str, object]:
@@ -117,7 +117,7 @@ def test_accepts_rust_shaped_portable_manifest_and_binary_aad() -> None:
     assert isinstance(manifest.protection, PortablePassphraseProtection)
     assert authenticated_metadata(BACKUP_ID, PRODUCT_VERSION).hex() == (
         "43555043414b4541474900706f727461626c652d6261636b75702d6b65792d656e76656c6f7065"
-        "00763100018f47bc7f0c7a3d8b9f1234567890ab0000000a322e302e302d72632e31"
+        "00763100018f47bc7f0c7a3d8b9f1234567890ab00000005312e382e30"
     )
 
 

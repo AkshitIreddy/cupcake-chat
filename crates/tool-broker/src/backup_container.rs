@@ -1096,7 +1096,7 @@ mod tests {
     fn identity() -> BackupIdentity {
         BackupIdentity {
             backup_id: Uuid::parse_str("018f47bc-7f0c-7a3d-8b9f-1234567890ab").unwrap(),
-            product_version: "2.0.0-rc.1".into(),
+            product_version: "1.8.0".into(),
         }
     }
 
@@ -1131,7 +1131,7 @@ mod tests {
     fn runtime_manifest(object_id: &str) -> Value {
         json!({
             "format_version": 1,
-            "product_version": "2.0.0-rc.1",
+            "product_version": "1.8.0",
             "created_at": "2026-08-28T12:00:00Z",
             "schema_version": 1,
             "entries": [
@@ -1149,7 +1149,7 @@ mod tests {
             envelope(),
             portable_entries_from_runtime_manifest(
                 &runtime_manifest(&"d".repeat(64)),
-                "2.0.0-rc.1",
+                "1.8.0",
                 security,
             )
             .unwrap(),
@@ -1417,8 +1417,7 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .retain(|entry| entry["path"] != "database/dbos.sqlite");
-        let entries =
-            portable_entries_from_runtime_manifest(&missing, "2.0.0-rc.1", &security).unwrap();
+        let entries = portable_entries_from_runtime_manifest(&missing, "1.8.0", &security).unwrap();
         assert!(
             PortableBackupManifest::new_portable(identity(), Utc::now(), envelope(), entries)
                 .is_err()
@@ -1427,8 +1426,6 @@ mod tests {
         let malformed = runtime_manifest(&"a".repeat(64));
         let mut malformed = malformed;
         malformed["entries"][2]["path"] = Value::String("objects/aa/bb/wrong.cupobj".into());
-        assert!(
-            portable_entries_from_runtime_manifest(&malformed, "2.0.0-rc.1", &security).is_err()
-        );
+        assert!(portable_entries_from_runtime_manifest(&malformed, "1.8.0", &security).is_err());
     }
 }

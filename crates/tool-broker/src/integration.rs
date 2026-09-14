@@ -3347,7 +3347,7 @@ mod tests {
         std::fs::write(prepared.runtime_archive(), b"trusted runtime archive").unwrap();
         let manifest = json!({
             "format_version": 1,
-            "product_version": "2.0.0-rc.1",
+            "product_version": "1.8.0",
             "created_at": "2026-09-05T00:00:00Z",
             "schema_version": 1,
             "entries": [

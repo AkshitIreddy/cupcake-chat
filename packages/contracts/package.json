@@ -1,6 +1,6 @@
 {
   "name": "@cupcakeagi/contracts",
-  "version": "2.0.0-rc.1",
+  "version": "1.8.0",
   "private": true,
   "type": "module",
   "sideEffects": false,

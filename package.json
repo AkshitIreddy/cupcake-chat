@@ -1,8 +1,8 @@
 {
   "name": "cupcakeagi",
-  "version": "2.0.0-rc.1",
+  "version": "1.8.0",
   "private": true,
-  "description": "CupcakeAI 2.0 local desktop workspace",
+  "description": "Cupcake Chat local desktop workspace",
   "license": "Unlicense",
   "packageManager": "pnpm@10.15.1",
   "engines": {
