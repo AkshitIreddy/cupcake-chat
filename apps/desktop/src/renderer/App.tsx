@@ -235,6 +235,7 @@ const CUPCAKE_AVATARS = Array.from({ length: 20 }, (_, index) => ({
 }));
 
 const WORKSPACE_WALLPAPERS = [
+  ['strawberry-cupcake-patisserie', 'Strawberry cupcakes', 'Strawberry & cream · Default'],
   ['none', 'Quiet paper', 'No artwork'],
   ['moonlit-archive', 'Moonlit archive', 'Midnight blue'],
   ['pistachio-atelier', 'Pistachio atelier', 'Garden light'],

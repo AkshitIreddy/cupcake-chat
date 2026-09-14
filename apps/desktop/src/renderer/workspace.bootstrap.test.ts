@@ -70,21 +70,23 @@ describe('workspace bootstrap isolation', () => {
     });
   });
 
-  it.each(['lavender-cloud-parlour', 'ember-rain-cafe', 'citrus-solar-studio'] as const)(
-    'hydrates the %s scene without falling back to none',
-    (wallpaper) => {
-      const current = {
-        theme: 'light',
-        wallpaper: 'none',
-        profile: { displayName: 'Owner', role: '', bio: '', avatar: 'atlas:0' },
-        assistantAvatar: 'atlas:1',
-      } as WorkspaceSettings;
+  it.each([
+    'strawberry-cupcake-patisserie',
+    'lavender-cloud-parlour',
+    'ember-rain-cafe',
+    'citrus-solar-studio',
+  ] as const)('hydrates the %s scene without falling back to none', (wallpaper) => {
+    const current = {
+      theme: 'light',
+      wallpaper: 'none',
+      profile: { displayName: 'Owner', role: '', bio: '', avatar: 'atlas:0' },
+      assistantAvatar: 'atlas:1',
+    } as WorkspaceSettings;
 
-      expect(
-        applyRuntimeStartupSettings(current, { 'appearance.wallpaper': wallpaper }).wallpaper,
-      ).toBe(wallpaper);
-    },
-  );
+    expect(
+      applyRuntimeStartupSettings(current, { 'appearance.wallpaper': wallpaper }).wallpaper,
+    ).toBe(wallpaper);
+  });
 
   it('keeps authoritative counts for every project and rejects malformed totals', () => {
     expect(

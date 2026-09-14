@@ -806,6 +806,7 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
         "lavender-cloud-parlour",
         "ember-rain-cafe",
         "citrus-solar-studio",
+        "strawberry-cupcake-patisserie",
         "rosewood-reading-room",
         "cherry-lacquer-atelier",
         "burgundy-cinema-lounge",
@@ -828,6 +829,21 @@ def test_every_extended_wallpaper_persists_through_restart(tmp_path: Path, wallp
     reopened = service(tmp_path)
     listed, _ = reopened.handle("settings.list")
     assert listed["appearance.wallpaper"] == wallpaper
+    reopened.close()
+
+
+def test_fresh_workspace_starts_in_strawberry_without_overwriting_saved_appearance(
+    tmp_path: Path,
+) -> None:
+    runtime = service(tmp_path)
+    listed, _ = runtime.handle("settings.list")
+    assert listed["appearance.theme"] == "cupcake-light"
+    assert listed["appearance.wallpaper"] == "strawberry-cupcake-patisserie"
+    runtime.handle("settings.set", {"key": "appearance.wallpaper", "value": "none"})
+    runtime.close()
+    reopened = service(tmp_path)
+    listed, _ = reopened.handle("settings.list")
+    assert listed["appearance.wallpaper"] == "none"
     reopened.close()
 
 

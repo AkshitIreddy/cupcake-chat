@@ -1,0 +1,42 @@
+/* Strawberry cream is a light wallpaper world, including its chrome and overlays. */
+.app-shell--wallpaper[data-wallpaper='strawberry-cupcake-patisserie'] {
+  color-scheme: light;
+  --wallpaper-surface: #fff2f4;
+  --cocoa: #49232f;
+  --ink: #49232f;
+  --muted: #78505e;
+  --line: rgba(153, 61, 91, 0.22);
+  --paper: #fff5f6;
+  --paper-raised: #fffafb;
+  --crumb: #f8e2e7;
+  --soft: #f6dce4;
+  --berry: #ac365e;
+  --berry-dark: #872547;
+  --berry-soft: #f7d9e4;
+  --blueberry: #79528b;
+  --blueberry-soft: #eee1f2;
+  --pistachio: #557d55;
+  --pistachio-ink: #355c3b;
+  --pistachio-soft: #e5efdf;
+  --gold: #9c642b;
+  --gold-ink: #764511;
+  --danger: #a22c40;
+  --wallpaper-chrome: rgba(255, 234, 240, 0.96);
+  --wallpaper-panel: rgba(255, 245, 247, 0.89);
+  --wallpaper-panel-strong: rgba(255, 249, 250, 0.97);
+  --wallpaper-shadow: 0 12px 38px rgba(130, 48, 75, 0.11);
+  background: #f9dfe5;
+}
+.app-shell--wallpaper[data-wallpaper='strawberry-cupcake-patisserie'] .app-content--wallpaper {
+  background-color: #f9dfe5;
+}
+.app-shell--wallpaper[data-wallpaper='strawberry-cupcake-patisserie'] .theme-cupcake-icon {
+  background: #f3bfd1;
+  box-shadow: inset 0 0 0 1px rgba(142, 53, 83, 0.18);
+}
+.app-shell--wallpaper[data-wallpaper='strawberry-cupcake-patisserie'] .home-hero {
+  text-shadow: none;
+}
+.app-shell--wallpaper[data-wallpaper='strawberry-cupcake-patisserie'] .home-hero :is(h1, p, span) {
+  text-shadow: none;
+}

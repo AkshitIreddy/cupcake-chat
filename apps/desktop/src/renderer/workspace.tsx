@@ -320,6 +320,7 @@ export interface WorkspaceSettings {
     | 'lavender-cloud-parlour'
     | 'ember-rain-cafe'
     | 'citrus-solar-studio'
+    | 'strawberry-cupcake-patisserie'
     | 'rosewood-reading-room'
     | 'cherry-lacquer-atelier'
     | 'burgundy-cinema-lounge'
@@ -741,6 +742,7 @@ export function applyRuntimeStartupSettings(
             ? 'classic'
             : 'light',
     wallpaper:
+      wallpaper === 'strawberry-cupcake-patisserie' ||
       wallpaper === 'moonlit-archive' ||
       wallpaper === 'pistachio-atelier' ||
       wallpaper === 'blueberry-observatory' ||
@@ -2237,7 +2239,7 @@ function fixtureProjects(): ProjectRecord[] {
 
 const fallbackSettings: WorkspaceSettings = {
   theme: 'light',
-  wallpaper: 'none',
+  wallpaper: 'strawberry-cupcake-patisserie',
   offline: false,
   proactiveEnabled: false,
   developerMode: false,
