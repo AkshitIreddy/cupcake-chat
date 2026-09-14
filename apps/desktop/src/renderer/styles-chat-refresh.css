@@ -67,7 +67,8 @@
   max-width: 92%;
   padding: 18px 24px;
   border: 1px solid color-mix(in srgb, var(--berry) 60%, #fff4e4);
-  border-left: 4px solid var(--berry);
+  border-left: 1px solid var(--berry);
+  box-shadow: inset 3px 0 var(--berry);
   background: color-mix(in srgb, var(--berry) 26%, #fff4e4);
   color: #312820;
   border-radius: 18px;
