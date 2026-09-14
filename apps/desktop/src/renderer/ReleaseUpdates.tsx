@@ -8,6 +8,11 @@ import type {
   Unsubscribe,
 } from '../shared/desktop-api';
 import { Icon } from './icons';
+import {
+  automaticReleaseCheckStarted,
+  checkForReleaseOnce,
+  resetAutomaticReleaseCheckForTests,
+} from './useAutomaticReleaseCheck';
 import './styles-release-updates.css';
 
 export type ReleaseUpdatePhase =
@@ -38,8 +43,6 @@ export interface ReleaseUpdateState {
 export type ReleaseUpdateApi = CupcakeDesktopApi['app']['updates'];
 
 type StateListener = (state: ReleaseUpdateState) => void;
-
-let automaticCheckClaimed = false;
 
 export class ReleaseUpdateController {
   private readonly listeners = new Set<StateListener>();
@@ -317,11 +320,14 @@ export function ReleaseUpdates({
     void controller.initialize().then((next) => {
       if (
         active &&
+        hostApi &&
         !next.offline &&
         controller.readyForAutomaticCheck &&
-        claimAutomaticReleaseCheckForSession()
+        !automaticReleaseCheckStarted()
       ) {
-        void controller.check();
+        void checkForReleaseOnce(hostApi).then((result) => {
+          if (result.kind === 'checked') void controller.initialize();
+        });
       }
     });
     return () => {
@@ -329,14 +335,21 @@ export function ReleaseUpdates({
       releaseProgress();
       releaseState();
     };
-  }, [controller]);
+  }, [controller, hostApi]);
 
   useEffect(() => {
     controller.setOffline(offline);
-    if (!offline && controller.readyForAutomaticCheck && claimAutomaticReleaseCheckForSession()) {
-      void controller.check();
+    if (
+      hostApi &&
+      !offline &&
+      controller.readyForAutomaticCheck &&
+      !automaticReleaseCheckStarted()
+    ) {
+      void checkForReleaseOnce(hostApi).then((result) => {
+        if (result.kind === 'checked') void controller.initialize();
+      });
     }
-  }, [controller, offline]);
+  }, [controller, hostApi, offline]);
 
   const progress = downloadProgress(state);
   const action = updateAction(state, controller);
@@ -560,15 +573,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function claimAutomaticReleaseCheckForSession(): boolean {
-  if (automaticCheckClaimed) return false;
-  automaticCheckClaimed = true;
-  return true;
-}
-
-export function resetAutomaticReleaseCheckForTests(): void {
-  automaticCheckClaimed = false;
-}
+export { resetAutomaticReleaseCheckForTests };
 
 function errorMessage(reason: unknown, fallback: string): string {
   if (reason instanceof Error && reason.message.trim()) return reason.message;

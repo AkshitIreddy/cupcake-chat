@@ -6,12 +6,12 @@ import type {
   AppUpdateStatus,
 } from '../shared/desktop-api';
 import {
-  claimAutomaticReleaseCheckForSession,
   ReleaseUpdateController,
   resetAutomaticReleaseCheckForTests,
   type ReleaseUpdateApi,
   type ReleaseUpdateState,
 } from './ReleaseUpdates';
+import { checkForReleaseOnce } from './useAutomaticReleaseCheck';
 
 const release: AppUpdateMetadata = {
   currentVersion: '1.8.0',
@@ -177,8 +177,29 @@ describe('ReleaseUpdateController', () => {
   });
 
   it('claims the quiet automatic check once per renderer session', () => {
-    expect(claimAutomaticReleaseCheckForSession()).toBe(true);
-    expect(claimAutomaticReleaseCheckForSession()).toBe(false);
+    const mock = updaterMock({ check: { available: false } });
+    const first = checkForReleaseOnce(mock.api);
+    const second = checkForReleaseOnce(mock.api);
+
+    return Promise.all([first, second]).then(([firstResult, secondResult]) => {
+      expect(firstResult.kind).toBe('checked');
+      expect(secondResult.kind).toBe('alreadyStarted');
+      expect(mock.status).toHaveBeenCalledOnce();
+      expect(mock.check).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('keeps an update already found by the native host without checking again', async () => {
+    const mock = updaterMock({
+      status: { ...idleStatus, availableVersion: '1.9.0' },
+      check: { available: false },
+    });
+
+    const result = await checkForReleaseOnce(mock.api);
+
+    expect(result.kind).toBe('alreadyPending');
+    expect(mock.status).toHaveBeenCalledOnce();
+    expect(mock.check).not.toHaveBeenCalled();
   });
 });
 
