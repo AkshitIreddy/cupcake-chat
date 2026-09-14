@@ -1,0 +1,105 @@
+{
+  "projects": [
+    {
+      "id": "life-admin",
+      "name": "Life, Admin, Done",
+      "description": "The meals, messages, errands, and packing lists that are small until they eat the whole day."
+    },
+    {
+      "id": "make-it-click",
+      "name": "Make It Click",
+      "description": "Patient explanations, tiny practice rounds, and notes that make the next attempt less intimidating."
+    },
+    {
+      "id": "friends-money",
+      "name": "Friends & Money",
+      "description": "Fair splits and copyable answers for the slightly awkward arithmetic after a good time."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "fridge-dinner",
+      "project": "life-admin",
+      "title": "what can i make without going shopping?",
+      "route": "groq",
+      "artifact": "Tonight's no-shopping dinner.md",
+      "prompts": [
+        "i have eggs, about two cups of cooked rice, half a cabbage, two carrots, frozen peas, one onion, garlic, yogurt, lemon and soy sauce. what can i make without going shopping?",
+        "fried rice sounds good. it is for two people and i want enough left for one lunch tomorrow. i have one pan and maybe 25 minutes.",
+        "my flatmate just reminded me they do not eat eggs. also the rice is already a little salty, so go easy on the soy sauce.",
+        "great. give me the final version with rough amounts, the order things go in the pan, and what to pack for lunch. keep it easy to glance at while i cook.",
+        "one correction before i save it: skip the yogurt and that water-and-soy 'binding' thing. just give me the actual egg-free fried rice in under 180 words, no table or emoji. tell me to get the lunch portion into the fridge promptly once it stops steaming, not to leave it sitting around."
+      ]
+    },
+    {
+      "id": "landlord-leak",
+      "project": "life-admin",
+      "title": "help me text my landlord about this leak",
+      "route": "cohere",
+      "artifact": "Leak messages to landlord.md",
+      "prompts": [
+        "can you help me text my landlord? water started dripping from the kitchen ceiling around 7:40 tonight and the paint is starting to bubble.",
+        "i moved everything away, put a bucket under it and took two photos. the drip is slow but it has not stopped. i want the message to sound calm, not like i am blaming them.",
+        "make it shorter and ask when someone can inspect it. they already know my flat number, so i do not need a formal email.",
+        "they replied 'i will try to look next week'. i am worried that is too vague while it is still dripping. write one polite but firmer follow-up i can send now, plus one line for tomorrow if it gets worse.",
+        "the tomorrow line is written to me instead of to my landlord. fix that. give me exactly two copyable texts: one for now, and one that starts 'Hi, the kitchen ceiling leak has worsened' if i need it tomorrow. no extra advice or placeholders.",
+        "do not invent pooling or claim i know what repairs are needed. use only what i told you. give me the two texts again, each no more than two sentences, with the second asking for an inspection today because the leak is worse and still active."
+      ]
+    },
+    {
+      "id": "saturday-rescue",
+      "project": "life-admin",
+      "title": "my saturday is already getting away from me",
+      "route": "cohere",
+      "artifact": "Saturday rescue plan.md",
+      "prompts": [
+        "it is 2 pm and my saturday is already getting away from me. i need groceries, laundry, to return a parcel, call my grandma, clean the bathroom, change my sheets and fill in a form due monday. where do i even start?",
+        "the parcel place closes at 4 and the supermarket is beside it. laundry can run while i am out. i have low energy and i still want an actual evening.",
+        "that plan is a bit too packed. the bathroom can wait and changing the sheets would be nice but is not urgent. i mostly need monday not to become a disaster.",
+        "yes. give me the final version as a short timeline from now until i stop, with a tiny list for tomorrow. please include the call with grandma without turning it into another task to optimise.",
+        "you still put my call with grandma on a timer, which is exactly what i meant not to do. final pass: start laundry, do parcel and groceries before 4, spend 15 minutes on the form, then stop. i will call grandma in the evening when i can actually chat. bathroom and sheets go on tomorrow's list. under 150 words and no pep talk."
+      ]
+    },
+    {
+      "id": "percentages",
+      "project": "make-it-click",
+      "title": "percentages have never made sense to me",
+      "route": "cohere",
+      "artifact": "Percentages cheat sheet.md",
+      "prompts": [
+        "percentages have never really made sense to me. can you explain 15% of 80 without assuming i remember school maths?",
+        "so 10% is 8 and 5% is 4, which makes 12. i think i get that bit. can i try 20% of 45 next? do not tell me the answer straight away.",
+        "i got 9. the part that still confuses me is a shop saying 20% off and then adding 5% tax. is that just 15% off in the end?",
+        "okay, that finally clicked. make me a tiny cheat sheet with the two methods we used and three practice questions. put the answers at the bottom so i do not see them immediately."
+      ]
+    },
+    {
+      "id": "packing",
+      "project": "life-admin",
+      "title": "what do i actually need to pack?",
+      "route": "cohere",
+      "artifact": "Three-day packing list.md",
+      "prompts": [
+        "i am going to my parents for three nights and i always pack like i am moving house. what do i actually need?",
+        "i am taking the train. it will be around 18 to 28 degrees with some rain, there is one slightly dressy family dinner, and i need to work on my laptop for half a day.",
+        "i have a backpack and a small duffel. i can do one load of laundry there. please remember daily medication, charger, headphones and a small gift, because those are exactly what i forget.",
+        "give me one final checklist split by which bag it goes in, plus a five-minute check before i leave. keep the clothes minimal and do not add just-in-case outfits.",
+        "that is still too much, and the laptop should not be buried in the duffel. final correction: i will wear one outfit on the train, so pack only two everyday tops, one spare pair of trousers, one dinner top that works with those trousers and the same shoes, and four total pairs of underwear and socks. backpack gets laptop, medication, chargers, headphones, wallet and gift. skip the towel, mouse, notebook, water bottle and snacks. make the leaving check keys, phone, wallet, ticket and medication.",
+        "you still added a washcloth and dress shoes, and you told me to pack my keys. i am wearing trainers to everything. give me exactly three sections: backpack, duffel, and leaving check. no optional extras, no claims that i am all set, and keep keys, phone and ticket in the check instead of the packing list."
+      ]
+    },
+    {
+      "id": "dinner-split",
+      "project": "friends-money",
+      "title": "who owes what after dinner?",
+      "route": "cohere",
+      "artifact": "Dinner split — simplest transfers.md",
+      "prompts": [
+        "can you help me split last night without making a horrible group-chat spreadsheet? asha paid the ₹2,430 dinner bill. my food was ₹520, asha's was ₹610, dev's was ₹480 and noor's was ₹580. the shared starter was ₹240 for all four of us.",
+        "i also paid ₹720 for the cab home. noor left earlier and did not take it, so that should only be split between me, asha and dev.",
+        "can you check the arithmetic out loud and then reduce it to the fewest transfers? i would rather not have everyone sending money in two directions.",
+        "perfect. give me a friendly message for the group with each final transfer and one short line showing how the shared starter and cab were split."
+      ]
+    }
+  ]
+}
