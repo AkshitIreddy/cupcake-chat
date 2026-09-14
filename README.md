@@ -10,8 +10,8 @@ a Tauri 2 host, with product behavior behind narrow versioned contracts.
 > are saved in the owner workspace, alongside a working two-provider group conversation. Local
 > installer lifecycle and retained-data reopening have observed evidence. Exact package versions,
 > final verification, and testing limits are recorded in the
-> [acceptance ledger](docs/worklogs/2026-09-14-cupcake-chat-refresh.md). Owner acceptance and
-> distribution approval remain separate decisions.
+> [acceptance ledger](docs/worklogs/2026-09-15-sidebar-polish.md). Owner acceptance and distribution
+> approval remain separate decisions.
 
 For this machine, double-click `Launch Cupcake Chat Test.vbs` to open the existing owner workspace
 without a terminal. The [owner guide](docs/OWNER_TEST_GUIDE.md) covers everyday chats, a reviewed

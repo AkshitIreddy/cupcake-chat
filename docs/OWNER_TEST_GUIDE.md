@@ -6,10 +6,10 @@ app with the existing owner profile and no terminal. The previous launcher still
 ## A workspace that feels used
 
 The demo collection has **10 chats across 6 projects**, with **16 useful artifacts**. Your own chats
-appear alongside these. Six new
-everyday conversations contain 30 real Groq/Cohere replies, including normal corrections and
-follow-ups. Their final artifacts come directly from real responses. The user prompts are scripted
-demo scenarios; these are not recordings of real customers, and no external messages were sent.
+appear alongside these. Six new everyday conversations contain 30 real Groq/Cohere replies,
+including normal corrections and follow-ups. Their final artifacts come directly from real
+responses. The user prompts are scripted demo scenarios; these are not recordings of real customers,
+and no external messages were sent.
 
 | Project                  | Chat                                                    | Useful result                                                                              |
 | ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -58,8 +58,8 @@ revisions; those are visibly distinct from model-authored output.
 
 ## Evidence and recovery
 
-- Current UI/package evidence: `E:\temp\cupcake-chat-rebrand-20260914`.
-- Current verification: [Cupcake Chat acceptance](worklogs/2026-09-14-cupcake-chat-refresh.md).
+- Current UI/package evidence: `E:\temp\cupcake-sidebar-polish-20260914`.
+- Current verification: [Cupcake Chat acceptance](worklogs/2026-09-15-sidebar-polish.md).
 - Everyday chat provenance and cleanup: `E:\temp\cupcake-chat-everyday-v2-20260914`.
 - Verified closed-profile snapshot: `E:\temp\cupcake-owner-backups\cupcake-chat-verified-20260914`.
 - Previous collection: `E:\temp\cupcake-owner-backups\video-showcase-20260914-complete`.
