@@ -7480,7 +7480,7 @@ function ToolsView({
   setTools: (t: ToolDescriptor[]) => void;
 }) {
   const workspace = useWorkspace();
-  const [tab, setTab] = useState<'all' | 'native' | 'mcp' | 'custom'>('all');
+  const [tab, setTab] = useState<'all' | 'native' | 'mcp' | 'custom' | 'history'>('all');
   const [mcpOpen, setMcpOpen] = useState(false);
   const [mcpName, setMcpName] = useState('');
   const [mcpTransport, setMcpTransport] = useState<'stdio' | 'streamable-http'>('streamable-http');
@@ -7590,7 +7590,6 @@ function ToolsView({
           Connect MCP server
         </button>
       </div>
-      <HistoryLab />
       {toolNotice && (
         <div
           className={cx('interaction-notice', `is-${toolNotice.tone}`)}
@@ -7607,23 +7606,37 @@ function ToolsView({
       )}
       <div className="toolbar">
         <div className="segmented">
-          {(['all', 'native', 'mcp', 'custom'] as const).map((t) => (
-            <button className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)} key={t}>
-              {t === 'all' ? 'All tools' : t === 'mcp' ? 'MCP connections' : cap(t)}
+          {(['all', 'native', 'mcp', 'custom', 'history'] as const).map((t) => (
+            <button
+              className={tab === t ? 'is-active' : ''}
+              aria-pressed={tab === t}
+              onClick={() => setTab(t)}
+              key={t}
+            >
+              {t === 'all'
+                ? 'All tools'
+                : t === 'mcp'
+                  ? 'MCP connections'
+                  : t === 'history'
+                    ? 'History workshop'
+                    : cap(t)}
             </button>
           ))}
         </div>
-        <div className="search-field">
-          <Icon name="search" />
-          <input
-            aria-label="Find a tool"
-            placeholder="Find a tool"
-            value={toolQuery}
-            onChange={(event) => setToolQuery(event.target.value)}
-          />
-        </div>
+        {tab !== 'history' && (
+          <div className="search-field">
+            <Icon name="search" />
+            <input
+              aria-label="Find a tool"
+              placeholder="Find a tool"
+              value={toolQuery}
+              onChange={(event) => setToolQuery(event.target.value)}
+            />
+          </div>
+        )}
       </div>
-      <div className="tool-grid">
+      {tab === 'history' && <HistoryLab />}
+      <div className="tool-grid" hidden={tab === 'history'}>
         {shown.map((tool) => (
           <article
             className={cx('registry-card', !tool.enabled && 'is-disabled')}
@@ -7681,7 +7694,7 @@ function ToolsView({
           </article>
         ))}
       </div>
-      {tools.length > 0 && shown.length === 0 && (
+      {tab !== 'history' && tools.length > 0 && shown.length === 0 && (
         <EmptyState
           icon="search"
           title="No matching tools"
@@ -7693,7 +7706,7 @@ function ToolsView({
           }}
         />
       )}
-      {workspace.toolActivity.length > 0 && (
+      {tab !== 'history' && workspace.toolActivity.length > 0 && (
         <section className="settings-section">
           <header>
             <h2>Broker audit activity</h2>

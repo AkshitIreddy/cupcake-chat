@@ -109,7 +109,7 @@ function Slider({
 
 export function HistoryLab() {
   const workspace = useWorkspace();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [era, setEra] = useState<HistoryEra>('roman');
   const [tab, setTab] = useState<'map' | 'stores' | 'horses'>('map');
   const [destination, setDestination] = useState(1);

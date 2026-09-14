@@ -19,7 +19,16 @@ const receipt = { native, eras: [], screens: [] };
 try {
   if (!native) await page.goto('http://127.0.0.1:42619');
   await page.locator('.shelf').getByRole('button', { name: 'Tools', exact: true }).click();
-  const launch = page.getByRole('button', { name: /History workshop/ });
+  const search = page.getByRole('textbox', { name: 'Find a tool', exact: true });
+  assert((await search.boundingBox()).y < 450, 'Tool search stays near the top');
+  assert.equal(await page.locator('.history-lab').count(), 0, 'Workshop has its own tab');
+  await page.screenshot({ path: output + '/tool-browser.png', animations: 'disabled' });
+  await page
+    .locator('.toolbar')
+    .getByRole('button', { name: 'History workshop', exact: true })
+    .click();
+  const launch = page.locator('.history-lab__launch');
+  assert.equal(await search.count(), 0, 'Native search is not shown below the workshop');
   if ((await launch.getAttribute('aria-expanded')) !== 'true') await launch.click();
   await page.locator('.history-map__land path').first().waitFor();
   for (const name of [
