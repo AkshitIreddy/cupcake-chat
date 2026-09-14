@@ -5,9 +5,11 @@ import {
   modelAvailabilityDetail,
   modelIsAvailableInChat,
   modelIsCurated,
+  modelIsVisibleInCatalog,
   modelRouteDescription,
   modelSize,
   modelTasks,
+  modelsForPicker,
   publisherForModel,
   publisherLogoAsset,
   recommendModels,
@@ -98,6 +100,24 @@ describe('model intelligence', () => {
     expect(modelIsAvailableInChat(model())).toBe(true);
     expect(modelIsAvailableInChat(model({ status: 'setup' }))).toBe(false);
     expect(modelIsAvailableInChat(model({ chatCompatibility: 'non_chat' }))).toBe(false);
+  });
+
+  it('shows a connected provider route in the catalog without promoting it as curated', () => {
+    const groq = model({
+      id: 'openai-compatible:groq/llama-3.3-70b-versatile',
+      runtimeModelId: 'groq/llama-3.3-70b-versatile',
+      provider: 'Groq',
+      name: 'Llama 3.3 70B Versatile',
+      status: 'ready',
+      description: 'Discovered from the connected Groq account',
+    });
+
+    expect(modelIsCurated(groq)).toBe(false);
+    expect(modelIsVisibleInCatalog(groq)).toBe(true);
+    expect(modelIsVisibleInCatalog({ ...groq, status: 'setup' })).toBe(false);
+    expect(modelIsVisibleInCatalog({ ...groq, chatCompatibility: 'non_chat' })).toBe(false);
+    expect(modelsForPicker([groq])).toEqual([groq]);
+    expect(recommendModels([groq])).toEqual([]);
   });
 
   it('builds a ready-first recommendation shelf and diversifies publishers', () => {

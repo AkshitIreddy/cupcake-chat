@@ -430,6 +430,22 @@ export function modelIsCurated(model: ModelDescriptor): boolean {
   return model.provider !== 'NVIDIA NIM' || OPERATIONALLY_TESTED_NIM.has(nativeModelName(model));
 }
 
+/**
+ * Keep the browsable catalog focused while still showing real routes the user
+ * connected. Dynamic provider catalogs cannot all have a bundled editorial
+ * profile, but a ready chat route must remain discoverable and selectable.
+ * Recommendations intentionally keep their stricter curated-only boundary.
+ */
+export function modelIsVisibleInCatalog(model: ModelDescriptor): boolean {
+  return (
+    model.status === 'community' ||
+    modelIsCurated(model) ||
+    (model.route === 'Cloud' &&
+      model.chatCompatibility !== 'non_chat' &&
+      modelIsAvailableInChat(model))
+  );
+}
+
 export function modelWasOperationallyTested(model: ModelDescriptor): boolean {
   return model.provider === 'NVIDIA NIM' && OPERATIONALLY_TESTED_NIM.has(nativeModelName(model));
 }
@@ -494,6 +510,18 @@ export function recommendModels(
     pool.forEach(take);
   }
   return chosen;
+}
+
+/** A complete picker inventory without the recommendation shelf's editorial limit. */
+export function modelsForPicker(
+  models: readonly ModelDescriptor[],
+  task?: ModelTask,
+): ModelDescriptor[] {
+  return models
+    .filter(modelIsVisibleInCatalog)
+    .map(completeModelDescriptor)
+    .filter((model) => !task || modelTasks(model).includes(task))
+    .sort((a, b) => recommendationScore(b) - recommendationScore(a));
 }
 
 function recommendationScore(model: ModelDescriptor): number {

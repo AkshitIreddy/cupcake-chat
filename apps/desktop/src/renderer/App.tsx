@@ -33,10 +33,12 @@ import {
   modelAvailabilityDetail,
   modelIsAvailableInChat,
   modelIsCurated,
+  modelIsVisibleInCatalog,
   modelPriority,
   modelRouteDescription,
   modelSize,
   modelTasks,
+  modelsForPicker,
   modelWasOperationallyTested,
   publisherForModel,
   publisherLogoAsset,
@@ -990,7 +992,11 @@ function HomeView({
                   <strong>{project.name}</strong>
                   <small>
                     {workspace.conversations.filter((item) => item.project === project.name).length}{' '}
-                    chats · {workspace.artifactCounts[project.id] ?? 0}{' '}
+                    {workspace.conversations.filter((item) => item.project === project.name)
+                      .length === 1
+                      ? 'chat'
+                      : 'chats'}{' '}
+                    · {workspace.artifactCounts[project.id] ?? 0}{' '}
                     {(workspace.artifactCounts[project.id] ?? 0) === 1 ? 'artifact' : 'artifacts'}
                   </small>
                 </span>
@@ -6273,7 +6279,7 @@ function ModelsView({
   const rankedModels = useMemo(
     () =>
       [...catalogModels, ...communityModels]
-        .filter((model) => model.status === 'community' || modelIsCurated(model))
+        .filter(modelIsVisibleInCatalog)
         .map((model) => {
           const complete = completeModelDescriptor(model);
           return {
@@ -9949,14 +9955,12 @@ function ModelPicker({
   useModalFocusTrap(open, pickerRef, close);
   if (!open) return null;
   const search = query.trim().toLowerCase();
-  const searched = recommendModels(pickerModels, intent, Number.MAX_SAFE_INTEGER).filter(
-    (model) => {
-      const publisher = publisherForModel(model);
-      return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')} ${model.description}`
-        .toLowerCase()
-        .includes(search);
-    },
-  );
+  const searched = modelsForPicker(pickerModels, intent).filter((model) => {
+    const publisher = publisherForModel(model);
+    return `${model.name} ${model.provider} ${publisher} ${model.tags.join(' ')} ${model.description}`
+      .toLowerCase()
+      .includes(search);
+  });
   const shown = searched.filter((model) => showUnavailable || modelIsAvailableInChat(model));
   const grouped = new Map<string, ModelDescriptor[]>();
   shown.forEach((model) => {
