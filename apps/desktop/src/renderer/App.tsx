@@ -1221,11 +1221,13 @@ function Composer({
             branchId: workspace.activeBranchId,
             projectId: conversationProjectId,
           }
-        : {
-            conversationId: undefined,
-            branchId: undefined,
-            projectId: workspace.activeProjectId,
-          };
+        : references.length > 0
+          ? await workspace.createConversation(clean.slice(0, 64) || 'Attached context')
+          : {
+              conversationId: undefined,
+              branchId: undefined,
+              projectId: workspace.activeProjectId,
+            };
     if (!context) {
       setDisclosureError('A conversation could not be created. Your draft is still here.');
       setSending(false);
