@@ -27,7 +27,8 @@ export function resolvePersistedMessageModel(
   const matchesProviderRoute = (model: ModelDescriptor) => {
     if (providerId === 'openai-compatible') {
       return compatibleEndpoint
-        ? model.id.startsWith(`openai-compatible:${compatibleEndpoint}/`)
+        ? model.id.startsWith(`openai-compatible:${compatibleEndpoint}/`) ||
+            (compatibleEndpoint === 'cupcake-local' && model.id.startsWith('cupcake-local:'))
         : model.id.startsWith('openai-compatible:');
     }
     return (
@@ -42,6 +43,9 @@ export function resolvePersistedMessageModel(
   if (providerId === 'openai-compatible') {
     if (compatibleEndpoint) {
       canonicalCandidates.add(`openai-compatible:${compatibleEndpoint}/${nativeModelId}`);
+      if (compatibleEndpoint === 'cupcake-local') {
+        canonicalCandidates.add(`cupcake-local:${nativeModelId}`);
+      }
     }
   } else {
     canonicalCandidates.add(`${providerId}:${nativeModelId}`);

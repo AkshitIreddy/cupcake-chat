@@ -112,6 +112,40 @@ describe('model selection hardening', () => {
     ).toBeNull();
   });
 
+  it('resolves unloaded Cupcake Local history through its exact compatible endpoint identity', () => {
+    const unloadedLocal = model('cupcake-local:qwen3-8b-q4-k-m', {
+      provider: 'Cupcake Local',
+      runtimeModelId: 'qwen3-8b-q4-k-m',
+      route: 'Local',
+      status: 'catalog',
+    });
+    const cloudLookalike = model('openai-compatible:private/qwen3-8b-q4-k-m', {
+      provider: 'Private endpoint',
+      runtimeModelId: 'qwen3-8b-q4-k-m',
+    });
+
+    expect(
+      resolvePersistedMessageModel([unloadedLocal, cloudLookalike], {
+        modelId: 'qwen3-8b-q4-k-m',
+        providerId: 'openai-compatible',
+        modelFamily: 'openai-compatible:cupcake-local:qwen3-8b-q4-k-m',
+      }),
+    ).toBe(unloadedLocal);
+    expect(
+      resolvePersistedMessageModel([unloadedLocal], {
+        modelId: 'qwen3-8b-q4-k-m',
+        providerId: 'openai-compatible',
+      }),
+    ).toBeNull();
+    expect(
+      resolvePersistedMessageModel([unloadedLocal], {
+        modelId: 'qwen3-8b-q4-k-m',
+        providerId: 'openai-compatible',
+        modelFamily: 'openai-compatible:private:qwen3-8b-q4-k-m',
+      }),
+    ).toBeNull();
+  });
+
   it('coalesces duplicate selection requests and permits retry after failure', async () => {
     const coalesce = createKeyedRequestCoalescer();
     let rejectFirst: ((reason: Error) => void) | undefined;
