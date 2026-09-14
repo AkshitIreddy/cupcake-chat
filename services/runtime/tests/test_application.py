@@ -803,6 +803,9 @@ def test_project_conversation_branch_artifact_and_settings_surface(tmp_path: Pat
         "ink-snow-garden",
         "raspberry-circuit-conservatory",
         "saffron-paper-city",
+        "lavender-cloud-parlour",
+        "ember-rain-cafe",
+        "citrus-solar-studio",
     ],
 )
 def test_every_extended_wallpaper_persists_through_restart(tmp_path: Path, wallpaper: str) -> None:

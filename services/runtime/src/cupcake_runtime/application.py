@@ -6406,6 +6406,9 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
             "ink-snow-garden",
             "raspberry-circuit-conservatory",
             "saffron-paper-city",
+            "lavender-cloud-parlour",
+            "ember-rain-cafe",
+            "citrus-solar-studio",
         }:
             raise RuntimeCommandError("INVALID_SETTING", "Unknown wallpaper")
         return value

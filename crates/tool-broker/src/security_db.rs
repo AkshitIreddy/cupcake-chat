@@ -22,6 +22,10 @@ const APPLICATION_ID: i64 = 0x4355_5043; // "CUPC"
 const SCHEMA_VERSION: i64 = 1;
 const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const MAX_TEXT_BYTES: usize = 16 * 1024 * 1024;
+const PERMISSION_MODE_KEY: &str = "permission_mode";
+const PERMISSION_MODE_POLICY_VERSION_KEY: &str = "permission_mode_policy_version";
+const CURRENT_PERMISSION_MODE_POLICY_VERSION: &str = "2";
+const DEFAULT_PERMISSION_MODE: &str = "full-freedom";
 
 pub type SecurityDbResult<T> = std::result::Result<T, SecurityDbError>;
 
@@ -257,9 +261,32 @@ impl SecurityDatabase {
 
     pub fn permission_mode(&self) -> SecurityDbResult<String> {
         let connection = self.connection()?;
-        Ok(get_meta(&connection, "permission_mode")?
+        Ok(get_meta(&connection, PERMISSION_MODE_KEY)?
             .filter(|value| value == "guarded" || value == "full-freedom")
-            .unwrap_or_else(|| "guarded".into()))
+            .unwrap_or_else(|| DEFAULT_PERMISSION_MODE.into()))
+    }
+
+    /// Applies the product's current permission-mode default once per profile.
+    ///
+    /// Profiles created before policy version 2 either had no mode row or
+    /// stored `guarded` as the old default. Both migrate to `full-freedom`.
+    /// The version marker keeps a later explicit compatibility override from
+    /// being overwritten every time the broker starts.
+    pub fn migrate_permission_mode_default(&self) -> SecurityDbResult<()> {
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if get_meta(&tx, PERMISSION_MODE_POLICY_VERSION_KEY)?.as_deref()
+            != Some(CURRENT_PERMISSION_MODE_POLICY_VERSION)
+        {
+            set_meta(&tx, PERMISSION_MODE_KEY, DEFAULT_PERMISSION_MODE)?;
+            set_meta(
+                &tx,
+                PERMISSION_MODE_POLICY_VERSION_KEY,
+                CURRENT_PERMISSION_MODE_POLICY_VERSION,
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn set_permission_mode(&self, mode: &str) -> SecurityDbResult<()> {
@@ -269,7 +296,7 @@ impl SecurityDatabase {
             ));
         }
         let connection = self.connection()?;
-        set_meta(&connection, "permission_mode", mode)
+        set_meta(&connection, PERMISSION_MODE_KEY, mode)
     }
 
     pub fn issue_grant(&self, grant: &SecurityGrant) -> SecurityDbResult<()> {
@@ -1629,6 +1656,25 @@ mod tests {
         );
         drop(connection);
         assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn missing_permission_mode_defaults_to_full_freedom() {
+        let (_dir, database) = database();
+        assert_eq!(database.permission_mode().unwrap(), "full-freedom");
+    }
+
+    #[test]
+    fn legacy_guarded_mode_migrates_once_without_erasing_later_overrides() {
+        let (_dir, database) = database();
+        database.set_permission_mode("guarded").unwrap();
+
+        database.migrate_permission_mode_default().unwrap();
+        assert_eq!(database.permission_mode().unwrap(), "full-freedom");
+
+        database.set_permission_mode("guarded").unwrap();
+        database.migrate_permission_mode_default().unwrap();
+        assert_eq!(database.permission_mode().unwrap(), "guarded");
     }
 
     #[test]

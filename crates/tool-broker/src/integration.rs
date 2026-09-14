@@ -338,6 +338,9 @@ impl BrokerIntegration {
         let security = SecurityDatabase::open(data_dir.join("security").join("security.sqlite"))
             .map_err(security_error)?;
         security.verify_integrity().map_err(security_error)?;
+        security
+            .migrate_permission_mode_default()
+            .map_err(security_error)?;
         let security_session_id = Uuid::now_v7().to_string();
         let stored_policies = security
             .active_policies(
@@ -2966,16 +2969,16 @@ mod tests {
     }
 
     #[test]
-    fn permission_mode_is_persisted_in_the_security_store() {
+    fn permission_mode_defaults_to_full_freedom_and_explicit_override_is_persisted() {
         let data = tempdir().unwrap();
         {
             let mut broker = BrokerIntegration::open(data.path()).unwrap();
-            assert_eq!(broker.permission_mode(), "guarded");
-            broker.set_permission_mode("full-freedom").unwrap();
             assert_eq!(broker.permission_mode(), "full-freedom");
+            broker.set_permission_mode("guarded").unwrap();
+            assert_eq!(broker.permission_mode(), "guarded");
         }
         let reopened = BrokerIntegration::open(data.path()).unwrap();
-        assert_eq!(reopened.permission_mode(), "full-freedom");
+        assert_eq!(reopened.permission_mode(), "guarded");
     }
 
     #[test]
@@ -3075,6 +3078,7 @@ mod tests {
         let runtime = data.path().join("cupcake-runtime.exe");
         std::fs::write(&runtime, b"test packaged runtime").unwrap();
         let mut broker = BrokerIntegration::open(data.path()).unwrap();
+        broker.set_permission_mode("guarded").unwrap();
         let sandbox = Arc::new(RecordingPythonSandbox::default());
         broker.native = NativeToolExecutorService::open(
             data.path(),

@@ -2687,7 +2687,7 @@ mod tests {
     }
 
     #[test]
-    fn task_tool_continuation_returns_digest_bound_approval_without_source() {
+    fn task_tool_continuation_defaults_to_ready_and_guarded_mode_still_requires_approval() {
         let data = tempdir().unwrap();
         let mut integration = BrokerIntegration::open(data.path()).unwrap();
         let invocation_id = "018f1e2d-3c4b-7a69-8def-0123456789ab";
@@ -2749,8 +2749,20 @@ mod tests {
             }
         }));
 
-        let ready_runtime = runtime.clone();
-        let response = complete_task_tool_response(&desktop, runtime, None, &mut integration);
+        let guarded_runtime = runtime.clone();
+        let ready = complete_task_tool_response(&desktop, runtime, None, &mut integration);
+
+        assert_eq!(ready["ok"], true);
+        assert_eq!(ready["result"]["execution"]["status"], "ready");
+        assert_eq!(ready["result"]["execution"]["invocationId"], invocation_id);
+        assert!(ready["result"].get("continuation").is_none());
+        assert!(!Value::Object(ready).to_string().contains("private source"));
+
+        let guarded_data = tempdir().unwrap();
+        let mut guarded_integration = BrokerIntegration::open(guarded_data.path()).unwrap();
+        guarded_integration.set_permission_mode("guarded").unwrap();
+        let response =
+            complete_task_tool_response(&desktop, guarded_runtime, None, &mut guarded_integration);
 
         assert_eq!(response["ok"], true, "{response:?}");
         assert_eq!(
@@ -2769,13 +2781,5 @@ mod tests {
         assert!(!Value::Object(response)
             .to_string()
             .contains("private source"));
-
-        integration.set_permission_mode("full-freedom").unwrap();
-        let ready = complete_task_tool_response(&desktop, ready_runtime, None, &mut integration);
-        assert_eq!(ready["ok"], true);
-        assert_eq!(ready["result"]["execution"]["status"], "ready");
-        assert_eq!(ready["result"]["execution"]["invocationId"], invocation_id);
-        assert!(ready["result"].get("continuation").is_none());
-        assert!(!Value::Object(ready).to_string().contains("private source"));
     }
 }
