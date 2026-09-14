@@ -6,7 +6,7 @@ export const conversations: Conversation[] = [
     title: 'Architecture review',
     preview: 'The boundary between the desktop shell and runtime is now…',
     updated: '8 min',
-    project: 'Cupcake 2.0',
+    project: 'Cupcake Chat',
     pinned: true,
   },
   {
@@ -36,7 +36,7 @@ export const conversations: Conversation[] = [
     title: 'Release checklist',
     preview: 'Keep this local until the installer has been tested.',
     updated: 'Aug 20',
-    project: 'Cupcake 2.0',
+    project: 'Cupcake Chat',
   },
 ];
 
@@ -47,7 +47,7 @@ export const tasks: Task[] = [
     detail: 'Reading the desktop architecture and preparing an evidence-backed redesign.',
     status: 'working',
     progress: 68,
-    project: 'Cupcake 2.0',
+    project: 'Cupcake Chat',
     elapsed: '12m 41s',
     steps: [
       { label: 'Map application boundaries', state: 'complete' },
@@ -118,7 +118,7 @@ export const memories: MemoryRecord[] = [
     type: 'Instruction',
     title: 'Release boundary',
     body: 'Do not push or publish Cupcake Chat until the local release candidate is reviewed.',
-    scope: 'Cupcake 2.0',
+    scope: 'Cupcake Chat',
     source: 'Explicit instruction · Aug 28',
     confidence: 1,
     enabled: true,
@@ -129,7 +129,7 @@ export const memories: MemoryRecord[] = [
     type: 'Decision',
     title: 'Model selection',
     body: 'Model choice stays explicit. Automatic model routing is out of scope.',
-    scope: 'Cupcake 2.0',
+    scope: 'Cupcake Chat',
     source: 'Architecture review',
     confidence: 1,
     enabled: true,
@@ -419,7 +419,7 @@ export const artifacts = [
     type: 'Document',
     updated: '2 min ago',
     revisions: 4,
-    project: 'Cupcake 2.0',
+    project: 'Cupcake Chat',
     size: '18.4 KB',
   },
   {
@@ -446,7 +446,7 @@ export const artifacts = [
     type: 'Webpage',
     updated: 'Aug 24',
     revisions: 1,
-    project: 'Cupcake 2.0',
+    project: 'Cupcake Chat',
     size: '42.7 KB',
   },
 ];
