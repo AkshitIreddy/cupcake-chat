@@ -5,7 +5,8 @@ app with the existing owner profile and no terminal. The previous launcher still
 
 ## A workspace that feels used
 
-The active collection has **10 chats across 6 projects**, with **16 useful artifacts**. Six new
+The demo collection has **10 chats across 6 projects**, with **16 useful artifacts**. Your own chats
+appear alongside these. Six new
 everyday conversations contain 30 real Groq/Cohere replies, including normal corrections and
 follow-ups. Their final artifacts come directly from real responses. The user prompts are scripted
 demo scenarios; these are not recordings of real customers, and no external messages were sent.
@@ -29,9 +30,10 @@ revisions; those are visibly distinct from model-authored output.
 
 ## Suggested video path
 
-1. Use **Recent → All chats** and open the landlord or Saturday chat. Human messages have a lighter
-   surface; Cupcake replies use the selected scene's darker surface. Avatar and name placement
-   match.
+1. Toggle **All chats** beside Recent to expand every project's chats inside the sidebar, then open
+   the landlord or Saturday chat. Human messages use compact bubbles tinted from the current theme;
+   Cupcake replies use its raised surface. Toggle All chats off to return to the current project's
+   recent chats.
 2. Open the recipe or packing artifact to show a useful result that survives the chat.
 3. Open the percentages chat to show teaching that responds to the user's actual attempt.
 4. Show the repair-cafe group's named Cupcakes and **Event run sheet** branch. Use the successful
@@ -43,6 +45,8 @@ revisions; those are visibly distinct from model-authored output.
 
 - Cupcake Chat name and new cupcake/chat icon; a title strip without duplicate branding.
 - Slimmer New chat button, rounded Recent highlights, and All chats beside Recent.
+- All chats expands the sidebar itself. Tooltips appear after 150 ms, or immediately on keyboard
+  focus; Escape dismisses them. The new icon was made with the image-generation tool.
 - New chat stays a draft until a message is sent. Dismissing Add Cupcake also creates no chat.
 - Send, retry, edit, and continue no longer ask for a second cloud confirmation. Model selection
   remains explicit. Enabled tools use Full freedom by default; the permission-policy screen is gone.

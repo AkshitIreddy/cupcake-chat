@@ -1,6 +1,7 @@
 /* A conversation has two clearly different voices, with one consistent reading rhythm. */
 .cupcake-tooltip {
   position: fixed;
+  pointer-events: none;
   z-index: 10000;
   max-width: min(280px, calc(100vw - 16px));
   padding: 7px 10px;
@@ -33,6 +34,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cocoa) 32%, transparent) transparent;
   padding-right: 2px;
 }
 .shelf__recent-heading button[aria-pressed='true'] {

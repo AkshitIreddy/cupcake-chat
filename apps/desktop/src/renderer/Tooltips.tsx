@@ -38,10 +38,24 @@ export function Tooltips() {
         }
       }, delay);
     };
+    const overBubble = (event: PointerEvent) => {
+      const rect = bubble.current?.getBoundingClientRect();
+      return (
+        rect &&
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      );
+    };
+    const keepOpen = () => {
+      clearTimeout(closing);
+      closing = undefined;
+    };
     const over = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return;
-      if (event.target instanceof Node && bubble.current?.contains(event.target)) {
-        clearTimeout(closing);
+      if (overBubble(event)) {
+        keepOpen();
         return;
       }
       show(event.target, 150);
@@ -56,11 +70,21 @@ export function Tooltips() {
       closing = setTimeout(dismiss, 90);
     };
     const focus = (event: FocusEvent) => show(event.target, 0);
+    // A non-interactive tooltip must never intercept a click on nearby controls.
+    // Keep its text hoverable through geometry while pointer events pass through.
+    const move = (event: PointerEvent) => {
+      if (!shown) return;
+      if (overBubble(event)) keepOpen();
+      else if (event.target instanceof Node && !active?.contains(event.target) && !closing) {
+        closing = setTimeout(dismiss, 90);
+      }
+    };
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') dismiss();
     };
     document.addEventListener('pointerover', over);
     document.addEventListener('pointerout', out);
+    document.addEventListener('pointermove', move);
     document.addEventListener('focusin', focus);
     document.addEventListener('focusout', dismiss);
     document.addEventListener('pointerdown', dismiss);
@@ -71,6 +95,7 @@ export function Tooltips() {
       clear();
       document.removeEventListener('pointerover', over);
       document.removeEventListener('pointerout', out);
+      document.removeEventListener('pointermove', move);
       document.removeEventListener('focusin', focus);
       document.removeEventListener('focusout', dismiss);
       document.removeEventListener('pointerdown', dismiss);
@@ -86,16 +111,21 @@ export function Tooltips() {
     const rect = anchor.getBoundingClientRect();
     const bounds = bubble.current.getBoundingClientRect();
     const theme = getComputedStyle(anchor);
+    const shelf = anchor.closest('.shelf')?.getBoundingClientRect();
+    const besideShelf = shelf && shelf.right + bounds.width + 16 <= window.innerWidth;
     setPosition({
-      left: Math.max(
-        8,
-        Math.min(
-          rect.left + rect.width / 2 - bounds.width / 2,
-          window.innerWidth - bounds.width - 8,
-        ),
-      ),
-      top:
-        rect.bottom + bounds.height + 16 <= window.innerHeight
+      left: besideShelf
+        ? shelf.right + 8
+        : Math.max(
+            8,
+            Math.min(
+              rect.left + rect.width / 2 - bounds.width / 2,
+              window.innerWidth - bounds.width - 8,
+            ),
+          ),
+      top: besideShelf
+        ? Math.max(8, Math.min(rect.top, window.innerHeight - bounds.height - 8))
+        : rect.bottom + bounds.height + 16 <= window.innerHeight
           ? rect.bottom + 8
           : Math.max(8, rect.top - bounds.height - 8),
       background: theme.getPropertyValue('--paper'),
