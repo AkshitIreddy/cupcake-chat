@@ -1,8 +1,8 @@
-# CupcakeAI 2.0
+# Cupcake Chat
 
-![CupcakeAI mark](apps/desktop/public/brand/cupcake-mark.svg)
+![Cupcake Chat mark](apps/desktop/public/brand/cupcake-mark.svg)
 
-CupcakeAI is a Windows-first, text-first AI workbench for conversations, files, tools, tasks,
+Cupcake Chat is a Windows-first, text-first AI workspace for conversations, files, tools, tasks,
 citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside
 a Tauri 2 host, with product behavior behind narrow versioned contracts.
 
@@ -10,13 +10,13 @@ a Tauri 2 host, with product behavior behind narrow versioned contracts.
 > are saved in the owner workspace, alongside a working two-provider group conversation. Local
 > installer lifecycle and retained-data reopening have observed evidence. Exact package versions,
 > final verification, and testing limits are recorded in the
-> [acceptance ledger](docs/worklogs/2026-09-05-independent-overhaul.md). Owner acceptance and
+> [acceptance ledger](docs/worklogs/2026-09-14-cupcake-chat-refresh.md). Owner acceptance and
 > distribution approval remain separate decisions.
 
-For this machine, double-click `Launch CupcakeAI Test.vbs` to open the existing owner workspace
-without a terminal. The [owner guide](docs/OWNER_TEST_GUIDE.md) explains the four real projects,
-reviewed Python artifact, named Cupcakes, direct mentions, Smart selection, and local-model use.
-Ordinary fresh profiles receive no fabricated demo content.
+For this machine, double-click `Launch Cupcake Chat Test.vbs` to open the existing owner workspace
+without a terminal. The [owner guide](docs/OWNER_TEST_GUIDE.md) covers everyday chats, a reviewed
+Python artifact, named Cupcakes, direct mentions, Smart selection, and local-model use. Ordinary
+fresh profiles receive no fabricated demo content.
 
 ## Product contract
 
@@ -26,8 +26,8 @@ Ordinary fresh profiles receive no fabricated demo content.
   Structured `@mentions` call only the selected members. Smart mode chooses useful contributions
   within a disclosed roster, can keep the entire turn quiet, and defaults to at most two replies. It
   never invents a model route, silently falls back, or continues without a new user turn.
-- Provider setup stays inside CupcakeAI: key entry, privacy/cost disclosure, connection testing,
-  supported-model discovery, saved masked identity, reconnect, and removal.
+- Provider setup stays inside Cupcake Chat: key entry, connection testing, supported-model
+  discovery, saved masked identity, reconnect, and removal.
 - Cupcake Local is the only installed local-model manager. It owns a pinned llama.cpp runtime and
   optional downloaded GGUF weights; users do not need Node, Python, Conda, or a separate model
   server.
@@ -39,7 +39,10 @@ Ordinary fresh profiles receive no fabricated demo content.
 - Saved Python artifacts can run their exact revision in the contained Windows sandbox. Results
   distinguish passing tests, failing tests, infrastructure errors, and cancellation, and remain
   available after restart. Group conversations do not run tools in their first version.
-- Cupcake Light, Cupcake Dark, Minimal, and Classic remain the four themes.
+- Cupcake Light, Cupcake Dark, Minimal, and Classic can be combined with eleven illustrated scenes.
+- Send starts the selected model directly. Enabled tools use Full freedom by default, and empty
+  new-chat drafts do not clutter saved history. Recent → All chats opens conversations across
+  projects without mixing their context.
 
 The corrective Models-screen target is useful before installation: detect the current device, load
 verified catalog metadata, rank compatible choices, explain RAM/VRAM/disk/context tradeoffs, and
