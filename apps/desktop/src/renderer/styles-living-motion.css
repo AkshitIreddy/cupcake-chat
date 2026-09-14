@@ -1,0 +1,356 @@
+/*
+ * Cupcake Chat motion language
+ *
+ * Quick controls respond in 90-180ms, surfaces settle in 220-320ms, and only
+ * live work may repeat. Reading text stays still after its short arrival.
+ */
+:root {
+  --living-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --living-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --living-quick: 120ms;
+  --living-settle: 260ms;
+}
+
+/* A new view arrives as one surface rather than animating every line of text. */
+.app-content > :is(main, .chat-layout) {
+  animation: living-view-arrive 280ms var(--living-spring) both;
+}
+
+/* The latest turn gets one quiet arrival. Earlier history remains motionless. */
+.live-conversation .turn:last-of-type {
+  transform-origin: 24% 0;
+  animation: living-turn-arrive 320ms var(--living-spring) both;
+}
+
+/* A Cupcake is visibly awake only while a response is streaming. */
+.live-conversation .turn:has(.streaming-message) > .thread-node {
+  position: relative;
+  isolation: isolate;
+}
+.live-conversation .turn:has(.streaming-message) > .thread-node::after {
+  position: absolute;
+  z-index: -1;
+  inset: -4px;
+  border: 1px solid color-mix(in srgb, var(--berry) 62%, transparent);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+  animation: living-cupcake-thinking 1.5s ease-in-out infinite;
+}
+.live-conversation .turn:has(.streaming-message) > .thread-node .cupcake-portrait {
+  animation: living-cupcake-nod 1.5s ease-in-out infinite;
+}
+
+.group-turn-rail:is(.is-preparing, .is-choosing, .is-responding) .group-turn-rail__icon {
+  animation: living-active-glow 1.6s ease-in-out infinite;
+}
+
+/* Sheets and lightweight menus share the same small lift and settle. */
+:is(.popover-layer, .group-dialog-layer, .onboarding-layer) {
+  animation: living-backdrop-in 160ms ease-out both;
+}
+:is(.popover-layer, .group-dialog-layer, .onboarding-layer)
+  > :is([role='dialog'], .model-picker, .command-palette, .provider-setup) {
+  transform-origin: 50% 18%;
+  animation: living-sheet-in 260ms var(--living-spring) both;
+}
+:is(.reference-popover, .group-mention-menu, .group-settings-popover) {
+  transform-origin: 50% 100%;
+  animation: living-menu-in 190ms var(--living-spring) both;
+}
+
+/* Controls feel tactile without delaying the action or moving their labels. */
+:is(
+  .button,
+  .icon-button,
+  .nav-item,
+  .new-chat,
+  .context-toggle,
+  .text-button,
+  .command-trigger,
+  .window-control,
+  .chat-list__main,
+  .artifact-list__item,
+  .theme-card,
+  .wallpaper-grid > button
+) {
+  transition:
+    transform var(--living-quick) var(--living-snap),
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+:is(
+    .button,
+    .icon-button,
+    .nav-item,
+    .new-chat,
+    .context-toggle,
+    .text-button,
+    .command-trigger,
+    .window-control,
+    .chat-list__main,
+    .artifact-list__item,
+    .theme-card,
+    .wallpaper-grid > button
+  ):active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 70ms;
+}
+
+:is(.chat-list__row, .model-card, .memory-card, .task-row, .artifact-list__item) {
+  transition:
+    transform 180ms var(--living-snap),
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  :is(.chat-list__row, .model-card, .memory-card, .task-row):hover {
+    transform: translateY(-2px);
+  }
+  .artifact-list__item:hover {
+    transform: translateX(2px);
+  }
+  .brand:hover .brand__mark {
+    animation: living-cupcake-hello 430ms var(--living-spring) both;
+  }
+}
+
+/* Selection is acknowledged once; the chosen theme itself does not pulse. */
+:is(.theme-card, .wallpaper-grid > button).is-active > svg {
+  transform-origin: center;
+  animation: living-check-arrive 320ms var(--living-spring) both;
+}
+.theme-card.is-active .theme-sample,
+.wallpaper-grid > button.is-active .wallpaper-sample {
+  animation: living-choice-settle 360ms var(--living-spring) both;
+}
+
+.toggle > span {
+  transition:
+    transform 210ms var(--living-spring),
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.toggle.is-on > span {
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--berry-dark) 28%, transparent);
+}
+
+.empty-state__illustration,
+.artifact-empty-folio__mark,
+.cupcake-empty-library > span {
+  animation: living-illustration-settle 420ms var(--living-spring) both;
+}
+
+@keyframes living-view-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes living-turn-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes living-cupcake-thinking {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes living-cupcake-nod {
+  0%,
+  74%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  82% {
+    transform: translateY(1px) rotate(-1.2deg);
+  }
+  90% {
+    transform: translateY(0) rotate(0.8deg);
+  }
+}
+
+@keyframes living-active-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--berry) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--berry) 14%, transparent);
+  }
+}
+
+@keyframes living-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes living-sheet-in {
+  0% {
+    opacity: 0;
+    transform: translateY(9px) scale(0.985);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes living-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes living-cupcake-hello {
+  0%,
+  100% {
+    transform: rotate(0) translateY(0);
+  }
+  36% {
+    transform: rotate(-5deg) translateY(-1px);
+  }
+  68% {
+    transform: rotate(3deg) translateY(0);
+  }
+}
+
+@keyframes living-check-arrive {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-12deg);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.12) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes living-choice-settle {
+  0% {
+    filter: saturate(0.82);
+    transform: scale(0.975);
+  }
+  64% {
+    filter: saturate(1.08);
+    transform: scale(1.012);
+  }
+  100% {
+    filter: saturate(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes living-illustration-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92) rotate(-2deg);
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.02) rotate(0.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-content > :is(main, .chat-layout),
+  .live-conversation .turn:last-of-type,
+  .live-conversation .turn:has(.streaming-message) > .thread-node::after,
+  .live-conversation .turn:has(.streaming-message) > .thread-node .cupcake-portrait,
+  .group-turn-rail:is(.is-preparing, .is-choosing, .is-responding) .group-turn-rail__icon,
+  :is(.popover-layer, .group-dialog-layer, .onboarding-layer),
+  :is(.popover-layer, .group-dialog-layer, .onboarding-layer)
+    > :is([role='dialog'], .model-picker, .command-palette, .provider-setup),
+  :is(.reference-popover, .group-mention-menu, .group-settings-popover),
+  :is(.theme-card, .wallpaper-grid > button).is-active > svg,
+  .theme-card.is-active .theme-sample,
+  .wallpaper-grid > button.is-active .wallpaper-sample,
+  .empty-state__illustration,
+  .artifact-empty-folio__mark,
+  .cupcake-empty-library > span,
+  .brand:hover .brand__mark {
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
+html[data-reduced-motion='true']
+  :is(
+    .app-content > main,
+    .app-content > .chat-layout,
+    .live-conversation .turn:last-of-type,
+    .live-conversation .thread-node::after,
+    .live-conversation .thread-node .cupcake-portrait,
+    .group-turn-rail__icon,
+    .popover-layer,
+    .group-dialog-layer,
+    .onboarding-layer,
+    .reference-popover,
+    .group-mention-menu,
+    .group-settings-popover,
+    .theme-card .theme-sample,
+    .wallpaper-sample,
+    .empty-state__illustration,
+    .artifact-empty-folio__mark,
+    .cupcake-empty-library > span,
+    .brand__mark
+  ) {
+  animation: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+@media (forced-colors: active) {
+  .live-conversation .turn:has(.streaming-message) > .thread-node::after {
+    border-color: Highlight;
+  }
+}
