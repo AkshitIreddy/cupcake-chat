@@ -43,6 +43,18 @@
   --wallpaper-surface: #342b3b;
 }
 
+.app-shell--wallpaper[data-wallpaper='lavender-cloud-parlour'] {
+  --wallpaper-surface: #332b49;
+}
+
+.app-shell--wallpaper[data-wallpaper='ember-rain-cafe'] {
+  --wallpaper-surface: #0a3439;
+}
+
+.app-shell--wallpaper[data-wallpaper='citrus-solar-studio'] {
+  --wallpaper-surface: #13376f;
+}
+
 .app-shell--wallpaper .app-content--wallpaper {
   background-color: #172033;
   background-image: var(--workspace-wallpaper);

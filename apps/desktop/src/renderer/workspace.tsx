@@ -315,7 +315,10 @@ export interface WorkspaceSettings {
     | 'aquamarine-tidepool-library'
     | 'ink-snow-garden'
     | 'raspberry-circuit-conservatory'
-    | 'saffron-paper-city';
+    | 'saffron-paper-city'
+    | 'lavender-cloud-parlour'
+    | 'ember-rain-cafe'
+    | 'citrus-solar-studio';
   offline: boolean;
   proactiveEnabled: boolean;
   developerMode: boolean;
@@ -525,6 +528,8 @@ interface WorkspaceContextValue {
   runtimeEvents: RuntimeEvent[];
   projects: ProjectRecord[];
   conversations: Conversation[];
+  /** Metadata-only inventory used for cross-project navigation. Never use it as model context. */
+  allConversations: Conversation[];
   branches: BranchRecord[];
   messages: MessageRecord[];
   tasks: Task[];
@@ -557,6 +562,7 @@ interface WorkspaceContextValue {
   createConversation(
     title?: string,
   ): Promise<{ conversationId: string; branchId: string; projectId: string | null } | null>;
+  startConversationDraft(): void;
   selectConversation(conversationId: string): Promise<void>;
   selectBranch(branchId: string): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
@@ -728,6 +734,9 @@ export function applyRuntimeStartupSettings(
       wallpaper === 'pistachio-atelier' ||
       wallpaper === 'blueberry-observatory' ||
       wallpaper === 'copper-workshop' ||
+      wallpaper === 'lavender-cloud-parlour' ||
+      wallpaper === 'ember-rain-cafe' ||
+      wallpaper === 'citrus-solar-studio' ||
       wallpaper === 'aquamarine-tidepool-library' ||
       wallpaper === 'ink-snow-garden' ||
       wallpaper === 'raspberry-circuit-conservatory' ||
@@ -890,6 +899,13 @@ export function projectConversationCountsFromInventory(
   limit = PROJECT_CONVERSATION_INVENTORY_LIMIT,
 ): Record<string, number> | null {
   return conversations.length >= limit ? null : countActiveConversationsByProject(conversations);
+}
+
+export function conversationsForProject(
+  conversations: readonly Conversation[],
+  projectId: string | null,
+): Conversation[] {
+  return conversations.filter((conversation) => (conversation.projectId ?? null) === projectId);
 }
 
 function stringValues(value: unknown): string[] {
@@ -2220,7 +2236,7 @@ const fallbackSettings: WorkspaceSettings = {
   personality: { warmth: 0.55, brevity: 0.45, initiative: 0.3 },
   personalityInstructions: '',
   semanticEnrichment: { enabled: false, provider: null, modelId: null },
-  permissionMode: 'guarded',
+  permissionMode: 'full-freedom',
   allowRamFallback: true,
   ramLimitMode: 'auto',
   maxRamGb: 24,
@@ -2254,6 +2270,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>(
     fixtureMode ? fixtureConversations : [],
   );
+  const [allConversations, setAllConversations] = useState<Conversation[]>(
+    fixtureMode ? fixtureConversations.filter((item) => !item.archived) : [],
+  );
   const [branches, setBranches] = useState<BranchRecord[]>([]);
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [tasks, setTasks] = useState<Task[]>(fixtureMode ? fixtureTasks : []);
@@ -2278,7 +2297,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   ? '<main><h1>Provider readiness</h1><p>A safe, sandboxed artifact preview.</p></main>'
                   : item.type === 'Diagram'
                     ? 'flowchart LR\n  Sources --> Findings\n  Findings --> Decisions'
-                    : '# CupcakeAI architecture\n\nArtifacts keep useful work connected to its project.\n\n## Boundaries\n\n- Project context stays scoped\n- Every save creates a revision\n- Local work remains on this computer',
+                    : '# Cupcake Chat architecture\n\nArtifacts keep useful work connected to its project.\n\n## Boundaries\n\n- Project context stays scoped\n- Every save creates a revision\n- Local work remains on this computer',
             revisionId: `fixture-${item.id}-revision-${item.revisions}`,
             revisionNumber: Number(item.revisions) || 1,
             updatedAt: `2026-09-0${Math.max(1, 5 - index)}T${String(11 - index).padStart(2, '0')}:20:00.000Z`,
@@ -2548,7 +2567,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             { providers: [] },
           ),
           recover('Permission policy', request<{ mode?: string }>('broker.permission_mode.get'), {
-            mode: 'guarded',
+            mode: 'full-freedom',
           }),
           recover('Migration', request<LegacyMigrationState>('migration.detect'), {
             available: false,
@@ -2565,9 +2584,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setTasks(taskResult.map((run) => mapTask(run, projectRecords)));
         if (conversationSummaryResult.failure) {
           auxiliaryFailures.push(conversationSummaryResult.failure);
+          setAllConversations(
+            (bootstrap.conversations ?? []).map((item) => mapConversation(item, projectRecords)),
+          );
         } else {
           setConversationCounts(
             projectConversationCountsFromInventory(conversationSummaryResult.value),
+          );
+          setAllConversations(
+            conversationSummaryResult.value.map((item) => mapConversation(item, projectRecords)),
           );
         }
         if (contextGeneration === conversationSelectionGeneration.current)
@@ -2965,34 +2990,90 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (projectId: string | null) => {
       const generation = ++projectSelectionGeneration.current;
       ++conversationSelectionGeneration.current;
-      setActiveProjectId(projectId);
-      activeConversationIdRef.current = null;
-      setActiveConversationId(null);
-      setActiveBranchId(null);
-      setMessages([]);
-      if (!fixtureMode)
-        await guard(async () => {
-          const [conversationItems, memoryItems, artifactItems] = await Promise.all([
-            request<RuntimeConversation[]>('conversations.list', {
-              projectId,
-              includeArchived: true,
-            }),
-            request<RuntimeMemory[]>('memory.list', {
-              projectId,
-              includeGlobal: true,
-              states: ['active', 'candidate', 'superseded', 'expired'],
-            }),
-            projectId
-              ? request<RuntimeArtifact[]>('artifacts.list', { projectId })
-              : Promise.resolve([]),
-          ]);
-          if (generation !== projectSelectionGeneration.current) return;
-          setConversations(conversationItems.map((item) => mapConversation(item, projects)));
-          setMemories(memoryItems.map((item) => mapMemory(item, projects)));
-          setArtifacts(artifactItems.map((item) => mapRuntimeArtifact(item)));
-        });
+      setError(null);
+      if (fixtureMode) {
+        activeProjectIdRef.current = projectId;
+        setActiveProjectId(projectId);
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
+        setActiveBranchId(null);
+        setBranches([]);
+        setMessages([]);
+        setParticipants([]);
+        setGroupSettings(null);
+        setActiveGroupTurn(null);
+        return;
+      }
+      try {
+        const [conversationItems, memoryItems, artifactItems] = await Promise.all([
+          request<RuntimeConversation[]>('conversations.list', {
+            projectId,
+            includeArchived: true,
+          }),
+          request<RuntimeMemory[]>('memory.list', {
+            projectId,
+            includeGlobal: true,
+            states: ['active', 'candidate', 'superseded', 'expired'],
+          }),
+          projectId
+            ? request<RuntimeArtifact[]>('artifacts.list', { projectId })
+            : Promise.resolve([]),
+        ]);
+        if (generation !== projectSelectionGeneration.current) return;
+        const projectArtifacts = artifactItems.map((item) => mapRuntimeArtifact(item));
+        let artifactPreviewFailure: unknown = null;
+        const firstArtifact = artifactItems[0];
+        if (firstArtifact) {
+          try {
+            const snapshot = await request<RuntimeArtifactSnapshot>(
+              'artifacts.get',
+              {
+                artifactId: firstArtifact.id,
+                projectId: firstArtifact.project_id,
+                revisionId: firstArtifact.head_revision_id,
+              },
+              20_000,
+            );
+            if (generation !== projectSelectionGeneration.current) return;
+            projectArtifacts[0] = mapRuntimeArtifact(
+              snapshot.artifact,
+              snapshot.revision,
+              snapshot.content,
+              snapshot.revisionCount ?? snapshot.revisionNumber,
+            );
+          } catch (reason) {
+            artifactPreviewFailure = reason;
+          }
+        }
+        if (generation !== projectSelectionGeneration.current) return;
+        // Commit the project identity and its dependent collections together. Keeping the
+        // previous project coherent while these reads are in flight avoids an empty artifact
+        // frame and prevents old project data from ever appearing under the new heading.
+        activeProjectIdRef.current = projectId;
+        setActiveProjectId(projectId);
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
+        setActiveBranchId(null);
+        setBranches([]);
+        setMessages([]);
+        setParticipants([]);
+        setGroupSettings(null);
+        setActiveGroupTurn(null);
+        setConversations(conversationItems.map((item) => mapConversation(item, projects)));
+        setMemories(memoryItems.map((item) => mapMemory(item, projects)));
+        setArtifacts(projectArtifacts);
+        if (artifactPreviewFailure)
+          setError(
+            artifactPreviewFailure instanceof Error
+              ? `The project opened, but its first artifact preview could not be loaded: ${artifactPreviewFailure.message}`
+              : 'The project opened, but its first artifact preview could not be loaded.',
+          );
+      } catch (reason) {
+        if (generation !== projectSelectionGeneration.current) return;
+        setError(reason instanceof Error ? reason.message : 'The project could not be opened.');
+      }
     },
-    [fixtureMode, guard, projects, request],
+    [fixtureMode, projects, request],
   );
 
   const createProject = useCallback(
@@ -3113,6 +3194,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [fixtureMode, request, setActiveProject],
   );
 
+  const startConversationDraft = useCallback(() => {
+    ++conversationSelectionGeneration.current;
+    ++projectSelectionGeneration.current;
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    setActiveBranchId(null);
+    setBranches([]);
+    setMessages([]);
+    setParticipants([]);
+    setGroupSettings(null);
+    setActiveGroupTurn(null);
+    setError(null);
+  }, []);
+
   const createConversation = useCallback(
     async (title = 'New conversation') => {
       const generation = ++conversationSelectionGeneration.current;
@@ -3121,6 +3216,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const branchId = `fixture-branch-${Date.now()}`;
         const projectId = activeProjectId;
         setConversations((items) => [
+          { id, title, preview: 'Deterministic fixture', updated: 'now', projectId },
+          ...items,
+        ]);
+        setAllConversations((items) => [
           { id, title, preview: 'Deterministic fixture', updated: 'now', projectId },
           ...items,
         ]);
@@ -3148,7 +3247,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
         );
         if (generation !== conversationSelectionGeneration.current) return;
-        setConversations((items) => [mapConversation(result.conversation, projects), ...items]);
+        const conversation = mapConversation(result.conversation, projects);
+        setConversations((items) => [conversation, ...items]);
+        setAllConversations((items) => [conversation, ...items]);
         if (result.conversation.project_id)
           setConversationCounts((counts) =>
             counts
@@ -3190,11 +3291,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (conversationId: string) => {
       const generation = ++conversationSelectionGeneration.current;
       ++projectSelectionGeneration.current;
-      const selectedConversation = conversations.find((item) => item.id === conversationId);
+      const selectedConversation =
+        conversations.find((item) => item.id === conversationId) ??
+        allConversations.find((item) => item.id === conversationId);
       const projectId = selectedConversation
         ? (selectedConversation.projectId ?? null)
         : activeProjectIdRef.current;
+      activeProjectIdRef.current = projectId;
       setActiveProjectId(projectId);
+      setConversations(conversationsForProject(allConversations, projectId));
       activeConversationIdRef.current = conversationId;
       setActiveConversationId(conversationId);
       setActiveBranchId(null);
@@ -3213,6 +3318,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setMemories([]);
       setArtifacts([]);
       await guard(async () => {
+        const conversationRequest = request<RuntimeConversation[]>('conversations.list', {
+          projectId,
+          includeArchived: true,
+        });
         const memoryRequest = request<RuntimeMemory[]>('memory.list', {
           projectId,
           includeGlobal: true,
@@ -3221,7 +3330,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const artifactRequest = projectId
           ? request<RuntimeArtifact[]>('artifacts.list', { projectId })
           : Promise.resolve([]);
-        const contextRequest = Promise.allSettled([memoryRequest, artifactRequest] as const);
+        const contextRequest = Promise.allSettled([
+          conversationRequest,
+          memoryRequest,
+          artifactRequest,
+        ] as const);
         const result = await request<{ branches: RuntimeBranch[]; activeBranchId?: string }>(
           'conversations.get',
           { conversationId },
@@ -3270,18 +3383,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const persistedGroupTurn =
           turnResult.status === 'fulfilled' ? normalizePersistedGroupTurn(turnResult.value) : null;
         setActiveGroupTurn(persistedGroupTurn ? mapPersistedGroupTurn(persistedGroupTurn) : null);
-        const [memoryResult, artifactResult] = await contextRequest;
+        const [conversationResult, memoryResult, artifactResult] = await contextRequest;
         if (generation !== conversationSelectionGeneration.current) return;
+        if (conversationResult.status === 'fulfilled')
+          setConversations(conversationResult.value.map((item) => mapConversation(item, projects)));
         if (memoryResult.status === 'fulfilled')
           setMemories(memoryResult.value.map((item) => mapMemory(item, projects)));
         if (artifactResult.status === 'fulfilled')
           setArtifacts(artifactResult.value.map((item) => mapRuntimeArtifact(item)));
         const contextFailure: unknown =
-          memoryResult.status === 'rejected'
-            ? memoryResult.reason
-            : artifactResult.status === 'rejected'
-              ? artifactResult.reason
-              : null;
+          conversationResult.status === 'rejected'
+            ? conversationResult.reason
+            : memoryResult.status === 'rejected'
+              ? memoryResult.reason
+              : artifactResult.status === 'rejected'
+                ? artifactResult.reason
+                : null;
         if (contextFailure)
           setError(
             contextFailure instanceof Error
@@ -3290,7 +3407,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
       });
     },
-    [conversations, fixtureMode, guard, projects, request],
+    [allConversations, conversations, fixtureMode, guard, projects, request],
   );
 
   const selectBranch = useCallback(
@@ -3325,6 +3442,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setConversations((items) =>
         items.map((item) => (item.id === conversationId ? { ...item, title } : item)),
       );
+      setAllConversations((items) =>
+        items.map((item) => (item.id === conversationId ? { ...item, title } : item)),
+      );
     },
     [fixtureMode, request],
   );
@@ -3332,10 +3452,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const archiveConversation = useCallback(
     async (conversationId: string, archived: boolean) => {
       if (!fixtureMode) await request('conversations.archive', { conversationId, archived });
-      const existing = conversations.find((item) => item.id === conversationId);
+      const existing =
+        conversations.find((item) => item.id === conversationId) ??
+        allConversations.find((item) => item.id === conversationId);
       setConversations((items) =>
         items.map((item) => (item.id === conversationId ? { ...item, archived } : item)),
       );
+      setAllConversations((items) => {
+        if (archived) return items.filter((item) => item.id !== conversationId);
+        if (items.some((item) => item.id === conversationId) || !existing) return items;
+        return [{ ...existing, archived: false }, ...items];
+      });
       if (existing?.projectId && Boolean(existing.archived) !== archived) {
         setConversationCounts((counts) =>
           counts
@@ -3350,7 +3477,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [conversations, fixtureMode, request],
+    [allConversations, conversations, fixtureMode, request],
   );
 
   const branchConversation = useCallback(
@@ -3467,7 +3594,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const addConversationParticipant = useCallback(
     async (personaId: string) => {
-      if (!activeConversationId) throw new Error('Open a conversation before adding a Cupcake.');
+      const conversationId = activeConversationIdRef.current;
+      if (!conversationId) throw new Error('Open a conversation before adding a Cupcake.');
       if (participants.length >= 8)
         throw new Error('This conversation already has the maximum of eight Cupcakes.');
       if (fixtureMode) {
@@ -3479,7 +3607,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const modelReady = Boolean(model && modelIsAvailableInChat(model));
         const participant: ConversationParticipant = {
           id: `fixture-participant-${Date.now()}`,
-          conversationId: activeConversationId,
+          conversationId: conversationId,
           personaId,
           position: participants.length,
           enabled: true,
@@ -3499,7 +3627,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
         setParticipants((items) => [...items, participant]);
         setGroupSettings((current) => ({
-          conversationId: activeConversationId,
+          conversationId: conversationId,
           strategy: current?.strategy ?? 'smart-selective',
           maxReplies: current?.maxReplies ?? 2,
           leadParticipantId: current?.leadParticipantId ?? participant.id,
@@ -3509,12 +3637,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return;
       }
       await request('conversations.participants.add', {
-        conversationId: activeConversationId,
+        conversationId: conversationId,
         personaId,
       });
-      await refreshGroupRoster(activeConversationId);
+      await refreshGroupRoster(conversationId);
     },
-    [activeConversationId, fixtureMode, models, participants.length, refreshGroupRoster, request],
+    [fixtureMode, models, participants.length, refreshGroupRoster, request],
   );
 
   const removeConversationParticipant = useCallback(
@@ -3623,6 +3751,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
       }
       if (fixtureMode) {
+        if (!activeConversationId) {
+          const createdAt = Date.now();
+          const conversationId = `fixture-conversation-${createdAt}`;
+          const branchId = `fixture-branch-${createdAt}`;
+          const conversation: Conversation = {
+            id: conversationId,
+            title: input.content.trim().slice(0, 64) || 'New conversation',
+            preview: input.content.trim().slice(0, 96) || 'Attached file',
+            updated: 'now',
+            projectId: activeProjectId,
+          };
+          setConversations((items) => [conversation, ...items]);
+          setAllConversations((items) => [conversation, ...items]);
+          if (activeProjectId)
+            setConversationCounts((counts) =>
+              counts
+                ? { ...counts, [activeProjectId]: (counts[activeProjectId] ?? 0) + 1 }
+                : counts,
+            );
+          activeConversationIdRef.current = conversationId;
+          setActiveConversationId(conversationId);
+          setActiveBranchId(branchId);
+          setBranches([{ id: branchId, conversationId, name: 'Main' }]);
+        }
         setMessages((items) => [
           ...items,
           {
@@ -3720,7 +3872,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } catch (reason) {
           refreshErrors.push(reason instanceof Error ? reason.message : 'history refresh failed');
         }
-        const [conversationList, conversationState] = await Promise.all([
+        const [conversationList, conversationState, conversationInventory] = await Promise.all([
           recoverWorkspaceSupportRequest(
             'Conversation list refresh',
             request<RuntimeConversation[]>('conversations.list', {
@@ -3735,6 +3887,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               conversationId: result.conversationId,
             }),
             { branches: [] as RuntimeBranch[] },
+          ),
+          recoverWorkspaceSupportRequest(
+            'Conversation inventory refresh',
+            request<RuntimeConversation[]>('conversations.list', {
+              includeArchived: false,
+              limit: PROJECT_CONVERSATION_INVENTORY_LIMIT,
+            }),
+            [] as RuntimeConversation[],
           ),
         ]);
         if (!conversationList.failure) {
@@ -3751,6 +3911,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             })),
           );
         } else refreshErrors.push(conversationState.failure);
+        if (!conversationInventory.failure) {
+          setAllConversations(
+            conversationInventory.value.map((item) => mapConversation(item, projects)),
+          );
+          setConversationCounts(
+            projectConversationCountsFromInventory(conversationInventory.value),
+          );
+        } else refreshErrors.push(conversationInventory.failure);
         if (refreshErrors.length) {
           setError(
             `Message sent, but the conversation refresh failed: ${refreshErrors.join('; ')}`,
@@ -3791,15 +3959,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   const projectId =
                     stableIntent?.projectId ??
                     (input.projectId !== undefined ? input.projectId : activeProjectId);
-                  const [conversationList, conversationState] = await Promise.allSettled([
-                    request<RuntimeConversation[]>('conversations.list', {
-                      projectId,
-                      includeArchived: true,
-                    }),
-                    request<{ branches: RuntimeBranch[] }>('conversations.get', {
-                      conversationId,
-                    }),
-                  ]);
+                  const [conversationList, conversationState, conversationInventory] =
+                    await Promise.allSettled([
+                      request<RuntimeConversation[]>('conversations.list', {
+                        projectId,
+                        includeArchived: true,
+                      }),
+                      request<{ branches: RuntimeBranch[] }>('conversations.get', {
+                        conversationId,
+                      }),
+                      request<RuntimeConversation[]>('conversations.list', {
+                        includeArchived: false,
+                        limit: PROJECT_CONVERSATION_INVENTORY_LIMIT,
+                      }),
+                    ]);
                   if (conversationList.status === 'fulfilled')
                     setConversations(
                       conversationList.value.map((item) => mapConversation(item, projects)),
@@ -3814,6 +3987,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                         parentMessageId: item.parent_message_id,
                       })),
                     );
+                  if (conversationInventory.status === 'fulfilled') {
+                    setAllConversations(
+                      conversationInventory.value.map((item) => mapConversation(item, projects)),
+                    );
+                    setConversationCounts(
+                      projectConversationCountsFromInventory(conversationInventory.value),
+                    );
+                  }
                 }
                 setError(null);
                 return true;
@@ -5020,9 +5201,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [request]);
   const verifyBackupForRecovery = useCallback(async () => {
     const sources = await window.cupcake?.dialog.openFiles({
-      title: 'Choose a CupcakeAI backup to verify',
+      title: 'Choose a Cupcake Chat backup to verify',
       multiple: false,
-      filters: [{ name: 'CupcakeAI backup', extensions: ['cupcakebak'] }],
+      filters: [{ name: 'Cupcake Chat backup', extensions: ['cupcakebak'] }],
     });
     const source = sources?.[0];
     if (!source) return null;
@@ -5089,6 +5270,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runtimeEvents,
       projects,
       conversations,
+      allConversations,
       branches,
       messages,
       tasks,
@@ -5119,6 +5301,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       updateProject,
       archiveProject,
       createConversation,
+      startConversationDraft,
       selectConversation,
       selectBranch,
       renameConversation,
@@ -5186,6 +5369,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runtimeEvents,
       projects,
       conversations,
+      allConversations,
       branches,
       messages,
       tasks,
@@ -5216,6 +5400,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       updateProject,
       archiveProject,
       createConversation,
+      startConversationDraft,
       selectConversation,
       selectBranch,
       renameConversation,

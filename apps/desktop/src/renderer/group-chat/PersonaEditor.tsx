@@ -347,7 +347,7 @@ export function PersonaEditor({
                 <span>4</span>
                 <div>
                   <strong>Model</strong>
-                  <small>One exact route; CupcakeAI never substitutes another</small>
+                  <small>One exact route; Cupcake Chat never substitutes another</small>
                 </div>
               </div>
               <button

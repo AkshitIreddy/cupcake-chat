@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyRuntimeStartupSettings,
+  conversationsForProject,
   countActiveConversationsByProject,
   normalizeArtifactCounts,
   projectConversationCountsFromInventory,
@@ -69,6 +70,22 @@ describe('workspace bootstrap isolation', () => {
     });
   });
 
+  it.each(['lavender-cloud-parlour', 'ember-rain-cafe', 'citrus-solar-studio'] as const)(
+    'hydrates the %s scene without falling back to none',
+    (wallpaper) => {
+      const current = {
+        theme: 'light',
+        wallpaper: 'none',
+        profile: { displayName: 'Owner', role: '', bio: '', avatar: 'atlas:0' },
+        assistantAvatar: 'atlas:1',
+      } as WorkspaceSettings;
+
+      expect(
+        applyRuntimeStartupSettings(current, { 'appearance.wallpaper': wallpaper }).wallpaper,
+      ).toBe(wallpaper);
+    },
+  );
+
   it('keeps authoritative counts for every project and rejects malformed totals', () => {
     expect(
       normalizeArtifactCounts({
@@ -100,5 +117,36 @@ describe('workspace bootstrap isolation', () => {
         2,
       ),
     ).toBeNull();
+  });
+
+  it('derives cross-project navigation lists from metadata without mixing project context', () => {
+    const inventory = [
+      {
+        id: 'pantry-chat',
+        title: 'Pantry',
+        preview: '',
+        updated: 'today',
+        projectId: 'pantry',
+      },
+      {
+        id: 'studio-chat',
+        title: 'Studio',
+        preview: '',
+        updated: 'today',
+        projectId: 'studio',
+      },
+      {
+        id: 'loose-chat',
+        title: 'Loose',
+        preview: '',
+        updated: 'today',
+        projectId: null,
+      },
+    ];
+
+    expect(conversationsForProject(inventory, 'pantry').map((item) => item.id)).toEqual([
+      'pantry-chat',
+    ]);
+    expect(conversationsForProject(inventory, null).map((item) => item.id)).toEqual(['loose-chat']);
   });
 });

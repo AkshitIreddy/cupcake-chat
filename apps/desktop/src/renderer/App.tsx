@@ -240,6 +240,9 @@ const WORKSPACE_WALLPAPERS = [
   ['ink-snow-garden', 'Ink snow garden', 'Monochrome'],
   ['raspberry-circuit-conservatory', 'Circuit conservatory', 'Raspberry night'],
   ['saffron-paper-city', 'Saffron paper city', 'Golden paper'],
+  ['lavender-cloud-parlour', 'Lavender cloud parlour', 'Violet dawn'],
+  ['ember-rain-cafe', 'Ember rain café', 'Rain & lamplight'],
+  ['citrus-solar-studio', 'Citrus solar studio', 'Lemon & cobalt'],
 ] as const satisfies ReadonlyArray<readonly [WorkspaceSettings['wallpaper'], string, string]>;
 
 function atlasStyle(index: number, columns: number, rows: number, image: string): CSSProperties {
@@ -308,7 +311,7 @@ function Brand({ large = false }: { large?: boolean }) {
       <img src="/brand/cupcake-mark.svg" alt="" className="brand__mark" />
       <div>
         <strong>CUPCAKE</strong>
-        <span>AI</span>
+        <span>Chat</span>
       </div>
       {large && <small>2.0 preview</small>}
     </div>
@@ -391,10 +394,7 @@ function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
   };
   return (
     <header className="cupcake-titlebar" aria-label="Application window controls">
-      <div className="cupcake-titlebar__identity" data-tauri-drag-region aria-hidden="true">
-        <img src="/brand/cupcake-mark.svg" alt="" />
-        <span>CUPCAKEAI</span>
-      </div>
+      <div className="cupcake-titlebar__identity" data-tauri-drag-region aria-hidden="true" />
       <div className="cupcake-titlebar__center">
         <span
           className="cupcake-titlebar__drag"
@@ -404,7 +404,7 @@ function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
         />
         <button
           className="cupcake-titlebar__search"
-          aria-label="Search CupcakeAI"
+          aria-label="Search Cupcake Chat"
           type="button"
           onClick={onSearch}
           title="Search your workspace (Ctrl+F)"
@@ -563,6 +563,7 @@ function Shelf({
   activeTaskCount,
   onNewChat,
   onSelectConversation,
+  onAllChats,
   profile,
 }: {
   view: View;
@@ -574,6 +575,7 @@ function Shelf({
   activeTaskCount: number;
   onNewChat?: () => void;
   onSelectConversation?: (id: string) => void;
+  onAllChats?: () => void;
   profile?: WorkspaceSettings['profile'];
 }) {
   const navigate = (v: View) => {
@@ -632,7 +634,16 @@ function Shelf({
         ))}
       </nav>
       <div className="shelf__recent">
-        <div className="shelf-label">Recent</div>
+        <div className="shelf__recent-heading">
+          <div className="shelf-label">Recent</div>
+          <button
+            type="button"
+            onClick={() => (onAllChats ? onAllChats() : navigate('chats'))}
+            aria-label="See all chats across projects"
+          >
+            All chats <Icon name="chevron" size={12} />
+          </button>
+        </div>
         {conversations
           .filter((chat) => !chat.archived)
           .slice(0, 3)
@@ -770,7 +781,7 @@ function HomeView({
           <div className="home-hero__mascot">
             <CupcakePortrait
               value={workspace.settings.assistantAvatar}
-              label="Selected CupcakeAI assistant"
+              label="Selected Cupcake Chat assistant"
             />
             <span className="home-hero__halo" aria-hidden="true" />
           </div>
@@ -915,7 +926,7 @@ function HomeView({
               <Icon name="sparkle" />
               <div>
                 <strong>Memories ready for review</strong>
-                <p>Review saved candidates and choose what CupcakeAI should keep using.</p>
+                <p>Review saved candidates and choose what Cupcake Chat should keep using.</p>
               </div>
               <button aria-label="Review memories" onClick={() => setView('memory')}>
                 <Icon name="chevron" size={14} />
@@ -1017,26 +1028,6 @@ function Composer({
   const [pendingGroupDisclosure, setPendingGroupDisclosure] = useState<PreparedGroupTurn | null>(
     null,
   );
-  const [pendingDisclosure, setPendingDisclosure] = useState<null | {
-    input: {
-      content: string;
-      modelId: string;
-      attachments: StagedAttachmentRecord[];
-      references: ReferenceRecord[];
-      reasoningEffort: ReasoningEffort;
-      enabledToolIds: string[];
-      conversationId?: string;
-      branchId?: string;
-      projectId?: string | null;
-    };
-    confirmationToken: string;
-    outboundIntent: OutboundIntent;
-    disclosure: { privacyRoute?: string; costClass?: string };
-    modelName: string;
-    providerName: string;
-    memoryLabels: string[];
-    toolLabels: string[];
-  }>(null);
   const [disclosureError, setDisclosureError] = useState('');
   const [attachments, setAttachments] = useState<StagedAttachmentRecord[]>([]);
   const [sending, setSending] = useState(false);
@@ -1048,6 +1039,13 @@ function Composer({
     attachments: attachments.map((item) => item.handleId),
     references: references.map((item) => `${item.type}:${item.id}`),
     mentions,
+  });
+  useEffect(() => {
+    const reset = () => {
+      void clearSuccessfulDraft(attachments);
+    };
+    window.addEventListener('cupcake:new-draft', reset);
+    return () => window.removeEventListener('cupcake:new-draft', reset);
   });
   useEffect(() => {
     const draft = (event: Event) => {
@@ -1153,7 +1151,7 @@ function Composer({
           attachments,
           references,
         });
-        if (!prepared.preflight.sendable || prepared.preflight.confirmationRequired) {
+        if (!prepared.preflight.sendable) {
           setPendingGroupDisclosure(prepared);
           return;
         }
@@ -1191,13 +1189,11 @@ function Composer({
             branchId: workspace.activeBranchId,
             projectId: conversationProjectId,
           }
-        : attachments.length > 0
-          ? await workspace.createConversation('New conversation')
-          : {
-              conversationId: undefined,
-              branchId: undefined,
-              projectId: workspace.activeProjectId,
-            };
+        : {
+            conversationId: undefined,
+            branchId: undefined,
+            projectId: workspace.activeProjectId,
+          };
     if (!context) {
       setDisclosureError('A conversation could not be created. Your draft is still here.');
       setSending(false);
@@ -1228,23 +1224,14 @@ function Composer({
           branchId: input.branchId,
           projectId: input.projectId,
         })
-        .then((result) => {
+        .then(async (result) => {
           if (!result.confirmationToken) {
             throw new Error('The provider did not return a cloud confirmation token.');
           }
-          setPendingDisclosure({
-            input,
-            confirmationToken: result.confirmationToken,
+          await submit({
+            ...input,
+            outboundConfirmationToken: result.confirmationToken,
             outboundIntent: result.outboundIntent,
-            disclosure: result.disclosure,
-            modelName: selectedModel.name,
-            providerName: selectedModel.provider,
-            memoryLabels: workspace.memories
-              .filter((item) => result.outboundIntent.memoryIds.includes(item.id))
-              .map((item) => item.title),
-            toolLabels: workspace.tools
-              .filter((item) => result.outboundIntent.toolIds.includes(item.id))
-              .map((item) => item.name),
           });
         })
         .catch((reason) =>
@@ -1683,87 +1670,6 @@ function Composer({
           {disclosureError}
         </p>
       )}
-      {pendingDisclosure && (
-        <div className="popover-layer">
-          <section
-            className="provider-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Confirm cloud destination"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Point-of-use confirmation</span>
-                <h2>Send this context to {pendingDisclosure.providerName}?</h2>
-              </div>
-            </header>
-            <div className="security-note">
-              <Icon name="cloud" />
-              <div>
-                <strong>
-                  {pendingDisclosure.modelName} ·{' '}
-                  {pendingDisclosure.disclosure.privacyRoute ?? 'Cloud privacy route'} ·{' '}
-                  {pendingDisclosure.disclosure.costClass ??
-                    selectedModel?.cost ??
-                    'Cost unavailable'}
-                </strong>
-                <p>
-                  This one-use confirmation is bound to the exact provider, model, files,
-                  references, memories, and tools below. Changing them requires another
-                  confirmation.
-                </p>
-              </div>
-            </div>
-            <dl className="permission-list">
-              <div>
-                <dt>Files</dt>
-                <dd>
-                  {pendingDisclosure.input.attachments.length
-                    ? pendingDisclosure.input.attachments.map((item) => item.name).join(', ')
-                    : 'None'}
-                </dd>
-              </div>
-              <div>
-                <dt>References</dt>
-                <dd>
-                  {pendingDisclosure.input.references.length
-                    ? pendingDisclosure.input.references
-                        .map((item) => `${item.type}: ${item.label}`)
-                        .join(', ')
-                    : 'None'}
-                </dd>
-              </div>
-              <div>
-                <dt>Memories</dt>
-                <dd>{pendingDisclosure.memoryLabels.join(', ') || 'None'}</dd>
-              </div>
-              <div>
-                <dt>Tools</dt>
-                <dd>{pendingDisclosure.toolLabels.join(', ') || 'None'}</dd>
-              </div>
-            </dl>
-            <footer>
-              <button className="button" onClick={() => setPendingDisclosure(null)}>
-                Cancel
-              </button>
-              <span />
-              <button
-                className="button button--primary"
-                onClick={() => {
-                  setPendingDisclosure(null);
-                  void submit({
-                    ...pendingDisclosure.input,
-                    outboundConfirmationToken: pendingDisclosure.confirmationToken,
-                    outboundIntent: pendingDisclosure.outboundIntent,
-                  });
-                }}
-              >
-                Confirm one send
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
       {pendingGroupDisclosure && (
         <GroupTurnDisclosureDialog
           preflight={pendingGroupDisclosure.preflight}
@@ -1789,12 +1695,16 @@ function ChatsView({
   onRename,
   onArchive,
   conversations,
+  allProjects = false,
+  onScopeChange,
 }: {
   onOpen: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string, title: string) => void | Promise<void>;
   onArchive: (id: string, archived: boolean) => void | Promise<void>;
   conversations: Conversation[];
+  allProjects?: boolean;
+  onScopeChange?: (all: boolean) => void;
 }) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'all' | 'pinned' | 'archived'>('all');
@@ -1813,7 +1723,7 @@ function ChatsView({
       <div className="page-intro">
         <div>
           <p className="eyebrow">Every conversation, still connected</p>
-          <h2>Your chats</h2>
+          <h2>{allProjects ? 'All your chats' : 'Your chats'}</h2>
           <p>Pick up where you left off, or branch in a new direction.</p>
         </div>
         <button className="button button--primary" onClick={onCreate}>
@@ -1822,6 +1732,19 @@ function ChatsView({
         </button>
       </div>
       <div className="toolbar">
+        {onScopeChange && (
+          <label className="chat-project-filter">
+            <span className="sr-only">Conversation project filter</span>
+            <select
+              aria-label="Conversation project filter"
+              value={allProjects ? 'all' : 'current'}
+              onChange={(event) => onScopeChange(event.target.value === 'all')}
+            >
+              <option value="current">Current project</option>
+              <option value="all">All projects</option>
+            </select>
+          </label>
+        )}
         <div className="search-field">
           <Icon name="search" />
           <input
@@ -2142,7 +2065,7 @@ function ApprovalCard() {
         <div className="approval-resource">
           <Icon name="folder" />
           <span>
-            <strong>Desktop / Code Palace / CupcakeAI</strong>
+            <strong>Desktop / Code Palace / Cupcake Chat</strong>
             <small>Local · read only · this task</small>
           </span>
         </div>
@@ -2171,7 +2094,7 @@ function ArtifactInline({ openArtifacts }: { openArtifacts: () => void }) {
       </span>
       <span>
         <span className="eyebrow">Artifact · Document</span>
-        <strong>CupcakeAI architecture.md</strong>
+        <strong>Cupcake Chat architecture.md</strong>
         <small>18.4 KB · 4 revisions · just now</small>
       </span>
       <span className="artifact-inline__open">
@@ -2260,13 +2183,6 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
   const workspace = useWorkspace();
   const [windowEnd, setWindowEnd] = useState(workspace.messages.length);
   const [streamAnnouncement, setStreamAnnouncement] = useState('');
-  const [pendingAction, setPendingAction] = useState<null | {
-    message: MessageRecord;
-    mode: 'retry' | 'edit' | 'regenerate' | 'continue';
-    content: string;
-    confirmationToken: string;
-    outboundIntent: OutboundIntent;
-  }>(null);
   const [actionError, setActionError] = useState('');
   const [actionNotice, setActionNotice] = useState<null | {
     tone: 'pending' | 'success' | 'error';
@@ -2276,7 +2192,6 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
   const [editContent, setEditContent] = useState('');
   const [editPending, setEditPending] = useState(false);
   const [editError, setEditError] = useState('');
-  const [confirmingAction, setConfirmingAction] = useState(false);
   const [continuingMessageId, setContinuingMessageId] = useState<string | null>(null);
   const windowSize = 80;
   useEffect(() => setWindowEnd(workspace.messages.length), [workspace.messages.length]);
@@ -2330,7 +2245,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
       outboundIntent: confirmation?.outboundIntent,
     });
     if (!sent) {
-      const text = workspace.error || 'CupcakeAI could not complete that message action.';
+      const text = workspace.error || 'Cupcake Chat could not complete that message action.';
       setActionError(text);
       setActionNotice({ tone: 'error', text });
       return false;
@@ -2386,15 +2301,10 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
         messageId: message.id,
       });
       if (!result.confirmationToken) throw new Error('Cloud confirmation is unavailable.');
-      setPendingAction({
-        message,
-        mode,
-        content,
+      return await executeAction(message, mode, content, {
         confirmationToken: result.confirmationToken,
         outboundIntent: result.outboundIntent,
       });
-      setActionNotice(null);
-      return true;
     } catch (reason) {
       const text = reason instanceof Error ? reason.message : 'Action preflight failed.';
       setActionError(text);
@@ -2408,7 +2318,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
         <EmptyState
           icon="chat"
           title="Start a new thread"
-          body="This conversation is empty. Your first message creates its immutable main branch."
+          body="What would make today a little easier?"
         />
       </div>
     );
@@ -2745,87 +2655,11 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
           ))}
         </aside>
       )}
-      {pendingAction && (
-        <div className="popover-layer">
-          <section
-            className="provider-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Confirm message action"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Point-of-use confirmation</span>
-                <h2>
-                  {cap(pendingAction.mode)} with {pendingAction.outboundIntent.provider}?
-                </h2>
-              </div>
-            </header>
-            <div className="security-note">
-              <Icon name="cloud" />
-              <div>
-                <strong>{pendingAction.outboundIntent.modelId} · Cloud</strong>
-                <p>
-                  This action sends the selected message and its visible conversation context to the
-                  provider. No file grant is reused.
-                </p>
-              </div>
-            </div>
-            {actionError && (
-              <p className="form-dialog__error" role="alert">
-                {actionError}
-              </p>
-            )}
-            <footer>
-              <button
-                className="button"
-                onClick={() => setPendingAction(null)}
-                disabled={confirmingAction}
-              >
-                Cancel
-              </button>
-              <span />
-              <button
-                className="button button--primary"
-                disabled={confirmingAction}
-                onClick={() => {
-                  void (async () => {
-                    setConfirmingAction(true);
-                    try {
-                      const sent = await executeAction(
-                        pendingAction.message,
-                        pendingAction.mode,
-                        pendingAction.content,
-                        {
-                          confirmationToken: pendingAction.confirmationToken,
-                          outboundIntent: pendingAction.outboundIntent,
-                        },
-                      );
-                      if (sent) setPendingAction(null);
-                    } catch (reason) {
-                      const text =
-                        reason instanceof Error
-                          ? reason.message
-                          : 'The message action could not be sent.';
-                      setActionError(text);
-                      setActionNotice({ tone: 'error', text });
-                    } finally {
-                      setConfirmingAction(false);
-                    }
-                  })();
-                }}
-              >
-                {confirmingAction ? 'Sending…' : `Confirm ${pendingAction.mode}`}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
       <FormDialog
         open={Boolean(editTarget)}
         eyebrow="Immutable conversation branch"
         title="Edit your message"
-        description="CupcakeAI keeps the original thread intact and creates a sibling branch from this revised message."
+        description="Cupcake Chat keeps the original thread intact and creates a sibling branch from this revised message."
         submitLabel="Create edited branch"
         pendingLabel="Preparing branch…"
         pending={editPending}
@@ -2930,16 +2764,18 @@ function ChatView({
     )
       setStopped(false);
   }, [workspace.activeConversationId, workspace.activeRunConversationId, workspace.activeRunId]);
-  const openAddCupcake = async () => {
+  const openAddCupcake = () => {
     setGroupUiError('');
+    setAddCupcakeOpen(true);
+  };
+  const addPersonaToChat = async (personaId: string) => {
     if (!workspace.activeConversationId) {
       const created = await workspace.createConversation('Group conversation');
       if (!created) {
-        setGroupUiError('A conversation could not be created for this group.');
-        return;
+        throw new Error('A conversation could not be created for this group.');
       }
     }
-    setAddCupcakeOpen(true);
+    await workspace.addConversationParticipant(personaId);
   };
   const openPersonaEditor = (persona?: CupcakePersona | null, shouldAdd = false) => {
     setAddCupcakeOpen(false);
@@ -2956,7 +2792,7 @@ function ChatView({
         await workspace.updatePersona(editingPersona.id, draft);
       } else {
         const created = await workspace.createPersona(draft);
-        if (addAfterCreate) await workspace.addConversationParticipant(created.id);
+        if (addAfterCreate) await addPersonaToChat(created.id);
       }
       setPersonaEditorOpen(false);
       setEditingPersona(null);
@@ -3136,7 +2972,7 @@ function ChatView({
                     <div className="file-attachment">
                       <span className="file-icon">ZIP</span>
                       <span>
-                        <strong>CupcakeAI repository</strong>
+                        <strong>Cupcake Chat repository</strong>
                         <small>34 files · 286 KB · indexed</small>
                       </span>
                       <RouteBadge route="Local" />
@@ -3479,7 +3315,7 @@ function ChatView({
           setGroupPendingId(persona.id);
           setGroupUiError('');
           try {
-            await workspace.addConversationParticipant(persona.id);
+            await addPersonaToChat(persona.id);
           } catch (reason) {
             setGroupUiError(
               reason instanceof Error ? reason.message : 'The Cupcake could not be added.',
@@ -4517,7 +4353,7 @@ function TaskDetail({
         onSubmit={async () => {
           const prompt = followupPrompt.trim();
           if (!prompt) {
-            setFollowupError('Describe what CupcakeAI should do next.');
+            setFollowupError('Describe what Cupcake Chat should do next.');
             return;
           }
           setFollowupPending(true);
@@ -4668,7 +4504,12 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
   const selected =
     projectArtifacts.find((item) => item.id === selectedId) ??
     (requestedArtifactId.current ? undefined : projectArtifacts[0]);
-  const [content, setContent] = useState(selected?.content ?? '');
+  const [contentDraft, setContentDraft] = useState({
+    id: selected?.id,
+    text: selected?.content ?? '',
+  });
+  const content = contentDraft.id === selected?.id ? contentDraft.text : (selected?.content ?? '');
+  const setContent = (text: string) => setContentDraft({ id: selected?.id, text });
   const isPythonArtifact = Boolean(
     selected &&
     selected.kind.toLowerCase().includes('code') &&
@@ -4784,6 +4625,14 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
       return;
     }
     let current = true;
+    if (selected.content !== undefined) {
+      setContent(selected.content);
+      setLoadingArtifact(false);
+      setLoadError('');
+      setSaveState('clean');
+      setSaveMessage('');
+      return;
+    }
     setLoadingArtifact(true);
     setLoadError('');
     void workspace
@@ -5453,7 +5302,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
         )}
         {tab === 'preview' && !loadError && (
           <article className="document-preview">
-            {loadingArtifact ? (
+            {loadingArtifact && selected.content === undefined ? (
               <div className="artifact-loading">
                 <span />
                 <p>Opening the latest immutable revision…</p>
@@ -5880,7 +5729,7 @@ function MemoryView({
                   <strong>{selected.enabled ? 'Available' : 'Needs review'}</strong>
                   <small>
                     {selected.enabled
-                      ? 'CupcakeAI can include this memory when relevant'
+                      ? 'Cupcake Chat can include this memory when relevant'
                       : 'This candidate is not used until you approve it'}
                   </small>
                 </span>
@@ -6090,7 +5939,7 @@ function MemoryView({
             return;
           }
           if (!body) {
-            setCreateError('Enter what CupcakeAI should remember.');
+            setCreateError('Enter what Cupcake Chat should remember.');
             return;
           }
           if (looksLikeCredential(`${key}\n${body}`)) {
@@ -6153,11 +6002,11 @@ function MemoryView({
           </select>
         </label>
         <label>
-          What should CupcakeAI remember?
+          What should Cupcake Chat remember?
           <textarea
             value={createBody}
             onChange={(event) => setCreateBody(event.target.value)}
-            placeholder="Write the exact detail CupcakeAI should carry forward"
+            placeholder="Write the exact detail Cupcake Chat should carry forward"
             rows={6}
           />
           <small>Provider keys and other credential-shaped text are blocked here.</small>
@@ -6637,26 +6486,12 @@ function ModelsView({
     <main className="page models-page">
       <section className="model-atlas-hero" aria-labelledby="model-atlas-title">
         <div className="model-atlas-hero__copy">
-          <p className="eyebrow">Model atlas · your routes, mapped clearly</p>
+          <p className="eyebrow">A model for every kind of day</p>
           <h2 id="model-atlas-title">Models</h2>
-          <p>
-            Start with the work. Cupcake compares privacy, provider access, device fit, and cost,
-            while keeping the wider model world close when you want it.
-          </p>
-          <div className="model-atlas-legend" aria-label="Model route legend">
-            <span>
-              <i className="model-atlas-legend__local" /> On this computer
-            </span>
-            <span>
-              <i className="model-atlas-legend__cloud" /> Hosted provider
-            </span>
-            <span>
-              <Icon name="check" size={12} /> Ready now
-            </span>
-          </div>
+          <p>Use a connected provider or run a model on your computer.</p>
         </div>
         <div className="model-atlas-current">
-          <span className="eyebrow">Current default</span>
+          <span className="eyebrow">Your chat model</span>
           {selectedModel ? (
             <>
               <div>
@@ -6669,7 +6504,7 @@ function ModelsView({
               <p>{modelAvailabilityDetail(selectedModel)}</p>
             </>
           ) : (
-            <p>Choose a ready model below. Cupcake will never switch routes silently.</p>
+            <p>Pick a ready model below to start chatting.</p>
           )}
         </div>
         <div className="model-atlas-hero__actions">
@@ -7599,10 +7434,6 @@ function ToolsView({
   const [mcpError, setMcpError] = useState('');
   const [mcpPending, setMcpPending] = useState(false);
   const [toolQuery, setToolQuery] = useState('');
-  const [policyOpen, setPolicyOpen] = useState(false);
-  const [freedomPhrase, setFreedomPhrase] = useState('');
-  const [policyPending, setPolicyPending] = useState(false);
-  const [policyError, setPolicyError] = useState('');
   const [pendingToolAction, setPendingToolAction] = useState<string | null>(null);
   const [toolNotice, setToolNotice] = useState<{
     tone: 'pending' | 'success' | 'error';
@@ -7670,25 +7501,6 @@ function ToolsView({
       setMcpPending(false);
     }
   };
-  const inspectTool = async (tool: ToolDescriptor) => {
-    setPendingToolAction(`inspect:${tool.id}`);
-    setToolNotice({ tone: 'pending', text: `Inspecting ${tool.name} access…` });
-    try {
-      await workspace.preflightTool(tool);
-      setToolNotice({
-        tone: 'success',
-        text: `${tool.name} access details were added to broker audit activity.`,
-      });
-    } catch (reason) {
-      setToolNotice({
-        tone: 'error',
-        text:
-          reason instanceof Error ? reason.message : `${tool.name} access could not be inspected.`,
-      });
-    } finally {
-      setPendingToolAction(null);
-    }
-  };
   const disconnectTool = async (tool: ToolDescriptor) => {
     setPendingToolAction(`disconnect:${tool.id}`);
     setToolNotice({ tone: 'pending', text: `Disconnecting ${tool.name}…` });
@@ -7703,29 +7515,6 @@ function ToolsView({
       });
     } finally {
       setPendingToolAction(null);
-    }
-  };
-  const changePolicy = async (mode: 'guarded' | 'full-freedom') => {
-    if (mode === 'full-freedom' && freedomPhrase !== 'FULL FREEDOM') {
-      setPolicyError('Type FULL FREEDOM exactly to enable this policy.');
-      return;
-    }
-    setPolicyPending(true);
-    setPolicyError('');
-    try {
-      await workspace.updateSettings({ permissionMode: mode });
-      setFreedomPhrase('');
-      setToolNotice({
-        tone: 'success',
-        text:
-          mode === 'guarded' ? 'Guarded permission policy is active.' : 'Full freedom is active.',
-      });
-    } catch (reason) {
-      setPolicyError(
-        reason instanceof Error ? reason.message : 'The permission policy could not be updated.',
-      );
-    } finally {
-      setPolicyPending(false);
     }
   };
   return (
@@ -7745,36 +7534,6 @@ function ToolsView({
         >
           <Icon name="plus" />
           Connect MCP server
-        </button>
-      </div>
-      <div
-        className={cx(
-          'security-note',
-          workspace.settings.permissionMode === 'full-freedom' && 'is-danger',
-        )}
-      >
-        <Icon name="shield" />
-        <div>
-          <strong>
-            {workspace.settings.permissionMode === 'full-freedom'
-              ? 'Full freedom is active.'
-              : 'High-impact actions always ask.'}
-          </strong>
-          <p>
-            {workspace.settings.permissionMode === 'full-freedom'
-              ? 'CupcakeAI can run tools without approval prompts. Tool activity remains audited.'
-              : 'Deletion, external communication, purchases, installation, system changes, and unsandboxed execution require a fresh approval.'}
-          </p>
-        </div>
-        <button
-          className="text-button"
-          onClick={() => {
-            setPolicyError('');
-            setFreedomPhrase('');
-            setPolicyOpen(true);
-          }}
-        >
-          Permission policy <Icon name="chevron" />
         </button>
       </div>
       {toolNotice && (
@@ -7850,25 +7609,8 @@ function ToolsView({
               <RouteBadge route={tool.route} />
               <span className="kind-label">{tool.kind === 'mcp' ? 'MCP' : tool.kind}</span>
             </div>
-            <div className="permission-list">
-              {tool.permissions.map((p) => (
-                <span key={p}>
-                  <Icon name={p.includes('Ask') ? 'shield' : p.includes('Not') ? 'x' : 'check'} />
-                  {p}
-                </span>
-              ))}
-            </div>
             <footer>
               <span>Last used {tool.lastUsed}</span>
-              <button
-                disabled={pendingToolAction !== null}
-                onClick={() => {
-                  void inspectTool(tool);
-                }}
-              >
-                {pendingToolAction === `inspect:${tool.id}` ? 'Inspecting…' : 'Inspect access'}{' '}
-                <Icon name="chevron" />
-              </button>
               {tool.kind === 'mcp' && (
                 <button
                   className="text-button"
@@ -7911,94 +7653,10 @@ function ToolsView({
         </section>
       )}
       <FormDialog
-        open={policyOpen}
-        eyebrow="Tool authority"
-        title="Permission policy"
-        description="Choose how CupcakeAI handles tool actions with external or system effects."
-        submitLabel="Done"
-        pendingLabel="Saving policy…"
-        pending={policyPending}
-        error={policyError}
-        onClose={() => setPolicyOpen(false)}
-        onSubmit={() => setPolicyOpen(false)}
-      >
-        <div className="permission-mode-list">
-          <button
-            type="button"
-            disabled={policyPending}
-            className={cx(workspace.settings.permissionMode === 'guarded' && 'is-active')}
-            onClick={() => {
-              void changePolicy('guarded');
-            }}
-          >
-            <Icon name="shield" />
-            <span>
-              <strong>Guarded</strong>
-              <small>Ask before high-impact actions. Recommended.</small>
-            </span>
-            {workspace.settings.permissionMode === 'guarded' && <Icon name="check" />}
-          </button>
-          <div
-            className={cx(
-              'permission-mode-danger',
-              workspace.settings.permissionMode === 'full-freedom' && 'is-active',
-            )}
-          >
-            <div>
-              <Icon name="info" />
-              <span>
-                <strong>Full freedom</strong>
-                <small>
-                  No permission prompts, including deletion, external communication, installs,
-                  system changes, and unsandboxed execution.
-                </small>
-              </span>
-            </div>
-            {workspace.settings.permissionMode === 'full-freedom' ? (
-              <button
-                type="button"
-                className="button"
-                disabled={policyPending}
-                onClick={() => {
-                  void changePolicy('guarded');
-                }}
-              >
-                {policyPending ? 'Saving…' : 'Return to guarded'}
-              </button>
-            ) : (
-              <>
-                <label>
-                  <span>Type FULL FREEDOM to enable</span>
-                  <input
-                    value={freedomPhrase}
-                    onChange={(event) => setFreedomPhrase(event.target.value)}
-                    autoComplete="off"
-                    disabled={policyPending}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="button button--danger"
-                  disabled={freedomPhrase !== 'FULL FREEDOM' || policyPending}
-                  onClick={() => {
-                    void changePolicy('full-freedom');
-                  }}
-                >
-                  {policyPending ? 'Saving…' : 'Enable full freedom'}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-        <p className="field-hint">
-          Changes apply at the local Rust tool broker and are recorded in its security store.
-        </p>
-      </FormDialog>
-      <FormDialog
         open={mcpOpen}
         eyebrow="Isolated MCP session"
         title="Connect MCP server"
-        description="Review the destination before CupcakeAI asks the broker to create an isolated connection."
+        description="Review the destination before Cupcake Chat asks the broker to create an isolated connection."
         submitLabel="Review and connect"
         pendingLabel="Connecting…"
         pending={mcpPending}
@@ -8126,7 +7784,7 @@ function SearchView({ setView }: { setView: (v: View) => void }) {
       icon: 'artifact' as IconName,
       items: [
         {
-          title: 'CupcakeAI architecture.md',
+          title: 'Cupcake Chat architecture.md',
           text: 'Runtime boundaries · Storage · Project isolation',
           meta: 'Document · revision 4',
         },
@@ -8499,9 +8157,9 @@ function SettingsView({
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') void updateProfile({ avatar: reader.result });
-      else setProfileUploadError('CupcakeAI could not read that image.');
+      else setProfileUploadError('Cupcake Chat could not read that image.');
     };
-    reader.onerror = () => setProfileUploadError('CupcakeAI could not read that image.');
+    reader.onerror = () => setProfileUploadError('Cupcake Chat could not read that image.');
     reader.readAsDataURL(file);
   };
   useEffect(() => {
@@ -8931,13 +8589,13 @@ function SettingsView({
             </section>
             <section className="settings-section assistant-identity-editor">
               <header>
-                <h2>Your CupcakeAI assistant</h2>
+                <h2>Your Cupcake Chat assistant</h2>
                 <p>Choose the Cupcake who appears on Home and beside assistant messages.</p>
               </header>
               <div className="assistant-identity-preview">
                 <CupcakePortrait
                   value={workspace.settings.assistantAvatar}
-                  label="Selected CupcakeAI assistant"
+                  label="Selected Cupcake Chat assistant"
                 />
                 <span>
                   <strong>This is your Cupcake</strong>
@@ -9197,24 +8855,26 @@ function SettingsView({
             <section className="settings-section">
               <header>
                 <h2>Startup and Windows</h2>
-                <p>Choose where CupcakeAI appears and how it behaves with the Windows session.</p>
+                <p>
+                  Choose where Cupcake Chat appears and how it behaves with the Windows session.
+                </p>
               </header>
               <div className="setting-row">
                 <span>
                   <strong>Open at sign-in</strong>
-                  <small>Register CupcakeAI for the current Windows user.</small>
+                  <small>Register Cupcake Chat for the current Windows user.</small>
                 </span>
                 <Toggle
                   checked={windowPreferences.launchAtLogin}
                   onChange={() =>
                     updateWindowPreferences({ launchAtLogin: !windowPreferences.launchAtLogin })
                   }
-                  label="Open CupcakeAI at sign-in"
+                  label="Open Cupcake Chat at sign-in"
                 />
               </div>
               <div className="setting-row">
                 <span>
-                  <strong>When CupcakeAI starts</strong>
+                  <strong>When Cupcake Chat starts</strong>
                   <small>Open the window, minimize it, or remain quietly in the tray.</small>
                 </span>
                 <div className="segmented-control" aria-label="Startup behavior">
@@ -9249,7 +8909,7 @@ function SettingsView({
               <div className="setting-row">
                 <span>
                   <strong>Always on top</strong>
-                  <small>Keep the CupcakeAI window above ordinary desktop windows.</small>
+                  <small>Keep the Cupcake Chat window above ordinary desktop windows.</small>
                 </span>
                 <Toggle
                   checked={windowPreferences.alwaysOnTop}
@@ -9286,7 +8946,8 @@ function SettingsView({
                 <span>
                   <strong>Close button</strong>
                   <small>
-                    Quit immediately by default, or explicitly keep CupcakeAI running in the tray.
+                    Quit immediately by default, or explicitly keep Cupcake Chat running in the
+                    tray.
                   </small>
                 </span>
                 <div className="segmented-control" aria-label="Close behavior">
@@ -9320,7 +8981,7 @@ function SettingsView({
               <header>
                 <h2>Optional workspace lock</h2>
                 <p>
-                  CupcakeAI opens normally without a password. Turn this on only if you want one.
+                  Cupcake Chat opens normally without a password. Turn this on only if you want one.
                 </p>
               </header>
               <div className={cx('workspace-lock-status', workspaceLockEnabled && 'is-enabled')}>
@@ -9333,7 +8994,7 @@ function SettingsView({
                   </strong>
                   <small>
                     {workspaceLockEnabled
-                      ? 'CupcakeAI will ask for this password the next time the app starts.'
+                      ? 'Cupcake Chat will ask for this password the next time the app starts.'
                       : 'The app opens directly. No password or security setup is required.'}
                   </small>
                 </span>
@@ -9449,7 +9110,7 @@ function SettingsView({
                               setNewWorkspacePassword('');
                               setConfirmWorkspacePassword('');
                               setWorkspacePasswordMessage(
-                                'Workspace lock disabled. CupcakeAI will open directly.',
+                                'Workspace lock disabled. Cupcake Chat will open directly.',
                               );
                             })
                             .catch((error: unknown) =>
@@ -9476,7 +9137,7 @@ function SettingsView({
                 <div>
                   <strong>The password prompt and content encryption are separate choices</strong>
                   <p>
-                    Turning off the prompt returns CupcakeAI to direct opening. Manage stored
+                    Turning off the prompt returns Cupcake Chat to direct opening. Manage stored
                     content using the encryption controls below. Provider keys stay protected by
                     Windows.
                   </p>
@@ -9654,7 +9315,7 @@ function SettingsView({
             />
             <div className="setting-row">
               <span>
-                <strong>Import your original CupcakeAI workspace</strong>
+                <strong>Import your original Cupcake Chat workspace</strong>
                 <small>
                   Review conversations, memories and paused tasks before importing. Provider keys
                   and executable code are excluded.
@@ -10139,7 +9800,7 @@ function AboutView() {
             a calm, modern text-first workbench.
           </p>
           <div className="about-version">
-            <strong>CupcakeAI 2.0</strong>
+            <strong>Cupcake Chat 2.0</strong>
             <span>Local release candidate</span>
             <span>Unlicense</span>
           </div>
@@ -11283,7 +10944,11 @@ function CommandPalette({
       label: 'New chat',
       detail: 'Start a clean conversation',
       icon: 'edit',
-      action: () => void workspace.createConversation().then(() => setView('chat')),
+      action: () => {
+        workspace.startConversationDraft();
+        window.dispatchEvent(new Event('cupcake:new-draft'));
+        setView('chat');
+      },
       key: 'Ctrl N',
     },
     {
@@ -12018,7 +11683,7 @@ function LegacyMigrationDialog() {
 
 const onboardingSteps = [
   {
-    eyebrow: 'Welcome to CupcakeAI',
+    eyebrow: 'Welcome to Cupcake Chat',
     title: 'One calm place for serious work',
     body: 'Chat with cloud or local models, let durable tasks continue in the background, and keep the resulting files, decisions, and memories organized.',
     icon: 'sparkle' as IconName,
@@ -12032,7 +11697,7 @@ const onboardingSteps = [
   },
   {
     eyebrow: 'Your profile',
-    title: 'Choose how CupcakeAI greets you',
+    title: 'Choose how Cupcake Chat greets you',
     body: 'Your display name and cupcake portrait stay in this local profile. You can change either now or any time from Settings.',
     icon: 'user' as IconName,
     points: [
@@ -12072,7 +11737,7 @@ const onboardingSteps = [
   {
     eyebrow: 'Models and providers',
     title: 'Choose local privacy or connected capability',
-    body: 'CupcakeAI can use app-managed local models or providers you connect. Local model cards explain fit, runtime, download state, and whether weights can spill from VRAM into RAM.',
+    body: 'Cupcake Chat can use app-managed local models or providers you connect. Local model cards explain fit, runtime, download state, and whether weights can spill from VRAM into RAM.',
     icon: 'model' as IconName,
     points: [
       'Local means content stays on this PC',
@@ -12083,9 +11748,9 @@ const onboardingSteps = [
     target: 'models',
   },
   {
-    eyebrow: 'Permission policy',
-    title: 'You decide how much autonomy to grant',
-    body: 'Guarded mode asks before sensitive effects. Full freedom skips consent prompts after you choose it; operating-system boundaries, explicit denies and destination checks still apply.',
+    eyebrow: 'Get things done',
+    title: 'Let Cupcake take care of the next step',
+    body: 'Cupcake can use your enabled tools directly. See what ran in Tasks and keep useful results in Artifacts.',
     icon: 'shield' as IconName,
     points: [
       'Review tool effects in context',
@@ -12098,7 +11763,7 @@ const onboardingSteps = [
   {
     eyebrow: 'Appearance',
     title: 'Set the atmosphere for your workspace',
-    body: 'Choose a theme, wallpaper, motion level, scrollbar style, startup behavior, and whether closing the window quits or sends CupcakeAI to the tray.',
+    body: 'Choose a theme, wallpaper, motion level, scrollbar style, startup behavior, and whether closing the window quits or sends Cupcake Chat to the tray.',
     icon: 'sparkle' as IconName,
     points: [
       'Readable themes and wallpapers',
@@ -12110,7 +11775,7 @@ const onboardingSteps = [
   },
   {
     eyebrow: 'Ready when you are',
-    title: 'Make CupcakeAI feel like yours',
+    title: 'Make Cupcake Chat feel like yours',
     body: 'Set your profile, communication style, theme, window behavior, model memory policy, and scrollbars in Settings. You can replay this tour there at any time.',
     icon: 'check' as IconName,
     points: [
@@ -12187,7 +11852,7 @@ function OnboardingTour({
         key: 'identity',
         eyebrow: 'You and your assistant',
         title: 'Give both sides of the conversation a face',
-        body: 'Your local profile controls how CupcakeAI greets you. Your chosen assistant portrait follows replies across chats and projects.',
+        body: 'Your local profile controls how Cupcake Chat greets you. Your chosen assistant portrait follows replies across chats and projects.',
         icon: 'user' as IconName,
         artFrame: 5,
         view: 'home' as View,
@@ -12219,7 +11884,7 @@ function OnboardingTour({
         key: 'providers',
         eyebrow: 'Cloud providers',
         title: 'Connect only the routes you plan to use',
-        body: 'CupcakeAI always names the service receiving your message. A provider key stays in the Windows credential vault and can be tested before saving.',
+        body: 'Cupcake Chat always names the service receiving your message. A provider key stays in the Windows credential vault and can be tested before saving.',
         icon: 'cloud' as IconName,
         artFrame: 1,
         view: 'models' as View,
@@ -12253,7 +11918,7 @@ function OnboardingTour({
         key: 'projects',
         eyebrow: 'Projects and tasks',
         title: 'Give durable work its own room',
-        body: 'Projects keep chats, tasks, references, and artifacts together. They are also the boundary CupcakeAI uses when retrieving context.',
+        body: 'Projects keep chats, tasks, references, and artifacts together. They are also the boundary Cupcake Chat uses when retrieving context.',
         icon: 'project' as IconName,
         artFrame: 2,
         view: 'projects' as View,
@@ -12267,7 +11932,7 @@ function OnboardingTour({
       {
         key: 'tools-memory',
         eyebrow: 'Tools and memory',
-        title: 'Choose what CupcakeAI may do and remember',
+        title: 'Choose what Cupcake Chat may do and remember',
         body: 'Tools are explicit capabilities you can turn on or off. Memory is inspectable, editable, scoped to a project when needed, and never a hidden transcript.',
         icon: 'memory' as IconName,
         artFrame: 2,
@@ -12278,9 +11943,9 @@ function OnboardingTour({
       },
       {
         key: 'security',
-        eyebrow: 'Permissions, backup, and privacy',
+        eyebrow: 'Your workspace, ready',
         title: onboardingSteps[onboardingSteps.length - 1]!.title,
-        body: 'Opening stays prompt-free by default. Guarded permission mode asks before sensitive effects; workspace password protection and backups remain choices you can make in Privacy and Storage.',
+        body: 'You’re ready to chat. Workspace passwords and backups are optional settings you can revisit whenever you like.',
         icon: 'shield' as IconName,
         artFrame: lockEnabled ? 0 : 4,
         view: 'settings' as View,
@@ -12577,7 +12242,7 @@ function OnboardingTour({
           {item.key === 'identity' && (
             <div className="onboarding-profile-editor">
               <label>
-                What should CupcakeAI call you?
+                What should Cupcake Chat call you?
                 <input
                   value={profileName}
                   maxLength={60}
@@ -12614,7 +12279,7 @@ function OnboardingTour({
                   </div>
                 </fieldset>
                 <fieldset>
-                  <legend>CupcakeAI's portrait</legend>
+                  <legend>Cupcake Chat's portrait</legend>
                   <div className="onboarding-avatar-grid">
                     {CUPCAKE_AVATARS.slice(0, 6).map(({ value, label }) => (
                       <button
@@ -12622,7 +12287,7 @@ function OnboardingTour({
                         className={
                           workspace.settings.assistantAvatar === value ? 'is-selected' : ''
                         }
-                        aria-label={`Use ${label} for CupcakeAI`}
+                        aria-label={`Use ${label} for Cupcake Chat`}
                         aria-pressed={workspace.settings.assistantAvatar === value}
                         onClick={() => void workspace.updateSettings({ assistantAvatar: value })}
                         key={value}
@@ -12847,38 +12512,6 @@ function OnboardingTour({
 
           {last && (
             <div className="onboarding-finish-panel">
-              <div
-                className="onboarding-permission-choice"
-                role="group"
-                aria-label="Permission mode"
-              >
-                <button
-                  type="button"
-                  className={workspace.settings.permissionMode === 'guarded' ? 'is-selected' : ''}
-                  aria-pressed={workspace.settings.permissionMode === 'guarded'}
-                  onClick={() => void workspace.updateSettings({ permissionMode: 'guarded' })}
-                >
-                  <Icon name="shield" />
-                  <span>
-                    <strong>Guarded</strong>
-                    <small>Ask before sensitive effects</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    workspace.settings.permissionMode === 'full-freedom' ? 'is-selected' : ''
-                  }
-                  aria-pressed={workspace.settings.permissionMode === 'full-freedom'}
-                  onClick={() => void workspace.updateSettings({ permissionMode: 'full-freedom' })}
-                >
-                  <Icon name="sparkle" />
-                  <span>
-                    <strong>Full freedom</strong>
-                    <small>Fewer routine confirmations</small>
-                  </span>
-                </button>
-              </div>
               <div className="onboarding-security-status">
                 <span>
                   <Icon name={lockEnabled ? 'key' : 'window'} />
@@ -12907,7 +12540,7 @@ function OnboardingTour({
                   <Icon name="chat" />
                   <span>
                     <strong>Start chatting</strong>
-                    <small>Ask CupcakeAI anything</small>
+                    <small>Ask Cupcake Chat anything</small>
                   </span>
                 </button>
                 <button
@@ -12963,6 +12596,7 @@ function LiveApp() {
   const workspace = useWorkspace();
   const onboardingRequested = new URLSearchParams(window.location.search).get('onboarding') === '1';
   const [view, setView] = useState<View>(initialView);
+  const [allChats, setAllChats] = useState(false);
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -13066,10 +12700,9 @@ function LiveApp() {
     });
   };
   const startNewChat = () => {
-    const epoch = ++navigationEpoch.current;
-    void workspace.createConversation().then((created) => {
-      if (created && navigationEpoch.current === epoch) navigate('chat');
-    });
+    workspace.startConversationDraft();
+    window.dispatchEvent(new Event('cupcake:new-draft'));
+    navigate('chat');
   };
   const sendChat = (input: ComposerSendInput) => workspace.sendMessage(input);
   useEffect(() => {
@@ -13189,7 +12822,9 @@ function LiveApp() {
   else if (view === 'chats')
     content = (
       <ChatsView
-        conversations={workspace.conversations}
+        conversations={allChats ? workspace.allConversations : workspace.conversations}
+        allProjects={allChats}
+        onScopeChange={setAllChats}
         onCreate={startNewChat}
         onOpen={openConversation}
         onRename={(id, title) => workspace.renameConversation(id, title)}
@@ -13310,6 +12945,10 @@ function LiveApp() {
         }
         onNewChat={startNewChat}
         onSelectConversation={openConversation}
+        onAllChats={() => {
+          setAllChats(true);
+          navigate('chats');
+        }}
         profile={workspace.settings.profile}
       />
       <section
@@ -13449,7 +13088,7 @@ function hostErrorMessage(error: unknown): string {
     const message = (error as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim()) return message;
   }
-  return 'CupcakeAI could not complete that password request.';
+  return 'Cupcake Chat could not complete that password request.';
 }
 
 function WorkspaceUnlockGate({
@@ -13489,7 +13128,7 @@ function WorkspaceUnlockGate({
             <Icon name="shield" size={30} />
           </div>
           <span className="eyebrow">Optional workspace lock</span>
-          <h1>Unlock CupcakeAI</h1>
+          <h1>Unlock Cupcake Chat</h1>
           <p>
             {status === null
               ? 'Checking this local profile…'
@@ -13502,7 +13141,7 @@ function WorkspaceUnlockGate({
                 type="text"
                 name="username"
                 autoComplete="username"
-                value="CupcakeAI local workspace"
+                value="Cupcake Chat local workspace"
                 readOnly
                 tabIndex={-1}
                 aria-hidden="true"
@@ -13562,7 +13201,7 @@ function WorkspaceUnlockGate({
             <div className="workspace-unlock__details">
               <strong>This lock is optional and can be turned off after opening.</strong>
               <p>
-                CupcakeAI normally opens without a password. This screen appears only because
+                Cupcake Chat normally opens without a password. This screen appears only because
                 workspace lock was explicitly enabled in Privacy settings.
               </p>
             </div>

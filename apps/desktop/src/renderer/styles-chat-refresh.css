@@ -1,0 +1,269 @@
+/* A conversation has two clearly different voices, with one consistent reading rhythm. */
+.shelf .new-chat {
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.shelf__recent > button {
+  border-radius: 9px;
+}
+.shelf__recent-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.shelf__recent-heading .shelf-label {
+  margin: 0;
+}
+.shelf__recent-heading button {
+  width: auto;
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--berry-dark);
+}
+.brand > div {
+  gap: 4px;
+}
+.brand > div > span {
+  text-transform: none;
+}
+.project-card--workbench {
+  position: relative;
+}
+.project-card__select::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+.project-card--workbench:focus-within {
+  outline: 2px solid var(--berry);
+  outline-offset: 3px;
+}
+.project-card--workbench footer button {
+  position: relative;
+  z-index: 1;
+}
+.live-conversation .turn {
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.live-conversation .turn > .thread-node {
+  margin-top: 17px;
+}
+.live-conversation .turn > .message {
+  padding: 18px 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper-raised);
+  box-shadow: 0 3px 14px rgb(0 0 0 / 4%);
+}
+.live-conversation .turn--user > .message {
+  max-width: 92%;
+  padding: 18px 24px;
+  border: 1px solid color-mix(in srgb, var(--berry) 60%, #fff4e4);
+  border-left: 4px solid var(--berry);
+  background: color-mix(in srgb, var(--berry) 26%, #fff4e4);
+  color: #312820;
+  border-radius: 18px;
+}
+.live-conversation .turn--user .message-meta {
+  color: #62554a;
+}
+.live-conversation .turn--user .message-meta strong {
+  color: #312820;
+}
+.live-conversation .turn--user .user-slip {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+.live-conversation .message-meta {
+  margin-bottom: 12px;
+  min-height: 26px;
+}
+.live-conversation .message-meta strong {
+  font-size: 14px;
+}
+.live-conversation .message-meta time {
+  font-size: 12px;
+}
+.live-conversation .user-slip p {
+  max-width: none;
+}
+.live-conversation .rich-markdown {
+  font-size: 17px;
+  line-height: 1.7;
+}
+.live-conversation .turn--user .message-actions {
+  background: transparent;
+  border-color: #31282030;
+  box-shadow: none;
+}
+.live-conversation .turn--user .message-actions button {
+  color: #62554a;
+}
+.live-conversation
+  .turn--user
+  :is(
+    .message-references > span,
+    .message-references a,
+    .message-references small,
+    .file-attachment,
+    .file-attachment strong,
+    .file-attachment small,
+    .file-attachment .route-badge
+  ) {
+  color: #514337;
+  border-color: #51433740;
+  background: #fff9ed80;
+}
+.live-conversation .turn--user .message-references svg {
+  color: #514337;
+}
+.models-page {
+  font-size: 15px;
+}
+.models-page .model-atlas-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px 28px;
+  padding: 26px 28px;
+  background: var(--paper-raised);
+  box-shadow: none;
+}
+.model-atlas-hero::after {
+  display: none;
+}
+.models-page .model-atlas-hero__copy > p:last-of-type {
+  font-size: 15px;
+}
+.models-page .model-atlas-hero__copy h2 {
+  font-size: 32px;
+}
+.models-page .model-atlas-hero__actions {
+  grid-column: 2;
+  grid-row: 1;
+  flex-direction: row;
+  align-self: center;
+}
+.models-page .model-atlas-current {
+  grid-column: 1 / -1;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.models-page .model-atlas-current > div {
+  margin-top: 0;
+  flex: 1;
+  min-width: 180px;
+}
+.models-page .model-atlas-current strong {
+  font-size: 17px;
+  white-space: normal;
+}
+.models-page .model-atlas-current small,
+.models-page .model-atlas-current > p {
+  font-size: 13px;
+  margin: 0;
+}
+.models-page .model-goal-grid strong,
+.models-page .model-recommendation strong {
+  font-size: 15px;
+}
+.models-page .model-goal-grid small,
+.models-page .model-recommendation small,
+.models-page .model-recommendation p,
+.models-page .model-recommendation > div,
+.models-page .model-recommendations > header > p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.models-page .model-recommendation {
+  padding: 18px;
+}
+.models-page .model-goal-grid label {
+  padding: 14px 16px;
+}
+.models-page .eyebrow {
+  font-size: 11px;
+}
+.models-page .model-card h3 {
+  font-size: 18px;
+}
+.models-page .model-card > p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.models-page
+  :is(
+    .model-card > header > div > span,
+    .model-card dt,
+    .model-card dd,
+    .model-fit strong,
+    .model-fit span,
+    .model-tags span,
+    .model-evidence-row > span,
+    .model-verification,
+    .hardware-card p,
+    .hardware-tags span,
+    .hardware-meter small,
+    .runtime-packs > header p,
+    .model-system-details small,
+    .catalog-result-summary
+  ) {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.chat-project-filter select {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-raised);
+  color: var(--cocoa);
+  font: inherit;
+}
+.models-page :is(.model-table, .model-table-row, .model-catalog-row, .catalog-result) {
+  font-size: 14px;
+}
+@media (max-width: 900px) {
+  .models-page .model-atlas-hero {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+  .models-page .model-atlas-hero__actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .models-page .model-atlas-current {
+    gap: 12px;
+  }
+  .live-conversation .turn > .message {
+    padding: 14px 16px;
+  }
+  .live-conversation .turn--user > .message {
+    max-width: 100%;
+  }
+}
+@media (forced-colors: active) {
+  .live-conversation .turn--user > .message {
+    background: Canvas;
+    color: CanvasText;
+    border: 2px solid Highlight;
+  }
+  .live-conversation .turn--user .message-meta,
+  .live-conversation .turn--user .message-meta strong {
+    color: CanvasText;
+  }
+}

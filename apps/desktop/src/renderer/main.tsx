@@ -17,6 +17,7 @@ import './styles-model-catalog.css';
 import './styles-onboarding.css';
 import './styles-studio.css';
 import './styles-group-chat.css';
+import './styles-chat-refresh.css';
 
 installTauriDesktopApi();
 

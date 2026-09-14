@@ -84,8 +84,8 @@ export function ContentProtectionSettings({
       <header>
         <h2>Content encryption</h2>
         <p>
-          Choose how the main workspace database and CupcakeAI-managed file and artifact copies are
-          stored on this computer. This is separate from the optional password prompt.
+          Choose how the main workspace database and Cupcake Chat-managed file and artifact copies
+          are stored on this computer. This is separate from the optional password prompt.
         </p>
       </header>
       {fixtureMode ? (
@@ -127,7 +127,7 @@ export function ContentProtectionSettings({
               <strong>
                 {choice === 'plaintext'
                   ? 'Your content will be readable on disk'
-                  : 'CupcakeAI will migrate your content to an encrypted store'}
+                  : 'Cupcake Chat will migrate your content to an encrypted store'}
               </strong>
               <p>
                 {choice === 'plaintext'
@@ -135,7 +135,7 @@ export function ContentProtectionSettings({
                   : 'The app verifies a separate encrypted copy before switching stores. Existing exported files and backups keep their original protection; encryption does not erase earlier copies.'}
               </p>
               <p>
-                Finish active chats and tasks first. Keep CupcakeAI open while the change is
+                Finish active chats and tasks first. Keep Cupcake Chat open while the change is
                 applied.
               </p>
               <button
@@ -164,7 +164,7 @@ export function ContentProtectionSettings({
           )}
           {status?.mode === 'plaintext' && (status.retainedEncryptedRollbackCopies ?? 0) > 0 && (
             <p className="security-note">
-              CupcakeAI retained {status.retainedEncryptedRollbackCopies} encrypted rollback{' '}
+              Cupcake Chat retained {status.retainedEncryptedRollbackCopies} encrypted rollback{' '}
               {status.retainedEncryptedRollbackCopies === 1 ? 'copy' : 'copies'}. These copies are
               not active or readable without your Windows-protected profile key.
             </p>

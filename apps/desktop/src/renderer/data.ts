@@ -117,7 +117,7 @@ export const memories: MemoryRecord[] = [
     id: 'mem-2',
     type: 'Instruction',
     title: 'Release boundary',
-    body: 'Do not push or publish CupcakeAI until the local release candidate is reviewed.',
+    body: 'Do not push or publish Cupcake Chat until the local release candidate is reviewed.',
     scope: 'Cupcake 2.0',
     source: 'Explicit instruction · Aug 28',
     confidence: 1,
@@ -415,7 +415,7 @@ export const tools: ToolDescriptor[] = [
 export const artifacts = [
   {
     id: 'a1',
-    name: 'CupcakeAI architecture.md',
+    name: 'Cupcake Chat architecture.md',
     type: 'Document',
     updated: '2 min ago',
     revisions: 4,
