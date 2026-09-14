@@ -238,7 +238,7 @@ class ProviderOnboardingService:
         try:
             if normalized_provider not in SUPPORTED_ONBOARDING_PROVIDERS:
                 raise ProviderError(
-                    "This provider is not supported by CupcakeAI onboarding.",
+                    "This provider is not supported by Cupcake Chat onboarding.",
                     code="unsupported_provider",
                 )
             if not config.api_key:
@@ -862,7 +862,7 @@ def create_onboarding_client(provider: str, config: ProviderConfig) -> Any:
             timeout=config.timeout_seconds,
         )
     raise ProviderError(
-        "This provider is not supported by CupcakeAI onboarding.",
+        "This provider is not supported by Cupcake Chat onboarding.",
         code="unsupported_provider",
     )
 
