@@ -3723,7 +3723,7 @@ function ProjectsView({ navigate }: { navigate: (view: 'chat' | 'artifacts') => 
     workspace.projects[0];
 
   const projectCounts = (projectId: string, projectName: string) => ({
-    chats: workspace.conversations.filter((item) => item.project === projectName).length,
+    chats: workspace.conversationCounts ? (workspace.conversationCounts[projectId] ?? 0) : null,
     artifacts: workspace.artifactCounts[projectId] ?? 0,
     tasks: workspace.tasks.filter(
       (item) =>
@@ -3817,7 +3817,9 @@ function ProjectsView({ navigate }: { navigate: (view: 'chat' | 'artifacts') => 
                       <Icon name="chat" />
                     </span>
                     <strong>
-                      {counts.chats} {counts.chats === 1 ? 'chat' : 'chats'}
+                      {counts.chats === null
+                        ? 'Open chats'
+                        : `${counts.chats} ${counts.chats === 1 ? 'chat' : 'chats'}`}
                     </strong>
                     <small>Open the conversation room</small>
                     <Icon name="chevron" />
@@ -3914,7 +3916,7 @@ function ProjectsView({ navigate }: { navigate: (view: 'chat' | 'artifacts') => 
                   <div className="project-card__counts" aria-label="Project contents">
                     <span>
                       <Icon name="chat" size={14} />
-                      <strong>{counts.chats}</strong> Chats
+                      <strong>{counts.chats === null ? 'Open' : counts.chats}</strong> Chats
                     </span>
                     <span>
                       <Icon name="artifact" size={14} />

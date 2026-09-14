@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyRuntimeStartupSettings,
+  countActiveConversationsByProject,
   normalizeArtifactCounts,
+  projectConversationCountsFromInventory,
   recoverWorkspaceSupportRequest,
   type WorkspaceSettings,
 } from './workspace';
@@ -77,5 +79,26 @@ describe('workspace bootstrap isolation', () => {
         unknown: 'many',
       }),
     ).toEqual({ northstar: 2, atlas: 1 });
+  });
+
+  it('counts active conversation summaries by project without loading project content', () => {
+    expect(
+      countActiveConversationsByProject([
+        { project_id: 'studio', status: 'active' },
+        { project_id: 'studio', status: 'active' },
+        { project_id: 'pantry' },
+        { project_id: 'pantry', status: 'archived' },
+        { project_id: null, status: 'active' },
+      ]),
+    ).toEqual({ studio: 2, pantry: 1 });
+    expect(
+      projectConversationCountsFromInventory(
+        [
+          { project_id: 'studio', status: 'active' },
+          { project_id: 'pantry', status: 'active' },
+        ],
+        2,
+      ),
+    ).toBeNull();
   });
 });
