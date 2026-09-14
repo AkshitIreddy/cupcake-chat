@@ -19,7 +19,7 @@ const plannedChecks = [
   'packaged Windows bridge and standard, unzoomed viewport',
   'repeated New chat drafts do not persist',
   'opening and cancelling Add Cupcake does not persist a conversation',
-  'Recent > All chats lists every active conversation and opens cross-project chats coherently',
+  'Recent > All chats toggles every active conversation inside the sidebar without navigating',
   'the top of a project card selects that project',
   'normal and rapid artifact project switches never show a blank or mixed-project frame',
   'Models typography minimums and uncluttered header geometry',
@@ -223,9 +223,18 @@ async function checkAllChatsAndCrossProjectNavigation() {
   });
   if (projectIds.length < 2) throw new Error('Need active chats in at least two projects');
 
-  await page.getByRole('button', { name: 'See all chats across projects', exact: true }).click();
-  await page.getByRole('heading', { name: 'All your chats', exact: true }).waitFor();
-  const rows = page.locator('.chat-list__row');
+  const mainBeforeToggle = await page.locator('.app-content').innerText();
+  const sidebarToggle = page.getByRole('button', {
+    name: 'Show all chats in sidebar',
+    exact: true,
+  });
+  await sidebarToggle.click();
+  requireCheck(
+    'sidebar-toggle-does-not-navigate',
+    (await page.locator('.app-content').innerText()) === mainBeforeToggle &&
+      (await sidebarToggle.getAttribute('aria-pressed')) === 'true',
+  );
+  const rows = page.locator('.shelf__recent-list > button');
   await expectCount(rows, conversations.length, 30_000);
   requireCheck('all-chats-count-matches-runtime', (await rows.count()) === conversations.length, {
     runtimeCount: conversations.length,
@@ -238,11 +247,8 @@ async function checkAllChatsAndCrossProjectNavigation() {
     .map((projectId) => usable.find((conversation) => conversation.project_id === projectId));
   for (const target of targets) {
     const projectName = projectById.get(target.project_id);
-    const row = rows
-      .filter({ has: page.locator('strong', { hasText: target.title }) })
-      .filter({ has: page.locator('em', { hasText: projectName }) })
-      .first();
-    await row.locator('.chat-list__main').click();
+    const row = rows.filter({ hasText: target.title }).first();
+    await row.click();
     await page.locator('.chat-header h1').filter({ hasText: target.title }).waitFor();
     const evidence = {
       expectedTitle: target.title,
@@ -255,12 +261,12 @@ async function checkAllChatsAndCrossProjectNavigation() {
       evidence.renderedTitle === target.title && evidence.renderedProject.includes(projectName),
       evidence,
     );
-    if (target !== targets.at(-1)) {
-      await page.getByRole('button', { name: 'Chats', exact: true }).click();
-      await page.getByRole('combobox', { name: 'Conversation project filter' }).selectOption('all');
-      await page.getByRole('heading', { name: 'All your chats', exact: true }).waitFor();
-    }
   }
+  await sidebarToggle.click();
+  requireCheck(
+    'sidebar-toggle-returns-to-recent',
+    (await rows.count()) <= 3 && (await sidebarToggle.getAttribute('aria-pressed')) === 'false',
+  );
   return { conversation: targets.at(-1), projectName: projectById.get(targets.at(-1).project_id) };
 }
 
@@ -281,6 +287,7 @@ async function checkTurnGeometry(chatFixture) {
             nodeX: node.x,
             nodeWidth: node.width,
             messageX: message.x,
+            messageWidth: message.width,
             metaX: meta.x,
             nodeToMetaY: meta.y - node.y,
             background: messageStyle.backgroundColor,
@@ -305,6 +312,30 @@ async function checkTurnGeometry(chatFixture) {
     Boolean(user && assistant && user.background !== assistant.background),
     evidence,
   );
+  requireCheck(
+    'human-bubble-compact-width',
+    Boolean(user && assistant && user.messageWidth < assistant.messageWidth * 0.85),
+    evidence,
+  );
+  const attach = page.getByRole('button', { name: 'Attach file', exact: true });
+  await page.mouse.move(0, 0);
+  const started = Date.now();
+  await attach.hover();
+  await page.getByRole('tooltip').waitFor();
+  const elapsedMs = Date.now() - started;
+  requireCheck('tooltip-appears-promptly', elapsedMs < 500, {
+    elapsedMs,
+    text: await page.getByRole('tooltip').innerText(),
+  });
+  await page.keyboard.press('Escape');
+  await page.getByRole('tooltip').waitFor({ state: 'detached' });
+  await attach.focus();
+  await page.getByRole('tooltip').waitFor();
+  requireCheck(
+    'tooltip-keyboard-description',
+    (await attach.getAttribute('aria-describedby'))?.includes('cupcake-tooltip'),
+  );
+  await page.keyboard.press('Escape');
   await screenshot('04-chat-turn-geometry.png');
   return chatFixture;
 }

@@ -1,6 +1,6 @@
 # Cupcake Chat
 
-![Cupcake Chat mark](apps/desktop/public/brand/cupcake-mark.svg)
+![Cupcake Chat mark](apps/desktop/public/brand/cupcake-mark.png)
 
 Cupcake Chat is a Windows-first, text-first AI workspace for conversations, files, tools, tasks,
 citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside

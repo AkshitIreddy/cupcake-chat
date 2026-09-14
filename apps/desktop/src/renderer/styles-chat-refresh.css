@@ -1,12 +1,43 @@
 /* A conversation has two clearly different voices, with one consistent reading rhythm. */
+.cupcake-tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
+}
 .shelf .new-chat {
   min-height: 36px;
   padding: 8px 12px;
   border-radius: 12px;
   font-size: 14px;
 }
-.shelf__recent > button {
+.shelf__recent-list > button {
   border-radius: 9px;
+}
+.shelf__recent {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.shelf__recent-heading {
+  flex-shrink: 0;
+}
+.shelf__recent-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+.shelf__recent-heading button[aria-pressed='true'] {
+  background: var(--berry-soft);
+  color: var(--cocoa);
 }
 .shelf__recent-heading {
   display: flex;
@@ -54,30 +85,32 @@
   margin-bottom: 28px;
 }
 .live-conversation .turn > .thread-node {
-  margin-top: 17px;
+  margin-top: 12px;
 }
 .live-conversation .turn > .message {
-  padding: 18px 24px;
+  padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--paper-raised);
   box-shadow: 0 3px 14px rgb(0 0 0 / 4%);
 }
 .live-conversation .turn--user > .message {
-  max-width: 92%;
-  padding: 18px 24px;
-  border: 1px solid color-mix(in srgb, var(--berry) 60%, #fff4e4);
-  border-left: 1px solid var(--berry);
-  box-shadow: inset 3px 0 var(--berry);
-  background: color-mix(in srgb, var(--berry) 26%, #fff4e4);
-  color: #312820;
-  border-radius: 18px;
+  position: relative;
+  justify-self: start;
+  width: fit-content;
+  min-width: min(210px, 100%);
+  max-width: min(78%, 68ch);
+  border: 1px solid color-mix(in srgb, var(--berry) 40%, var(--line));
+  box-shadow: none;
+  background: color-mix(in srgb, var(--berry) 12%, var(--paper));
+  color: var(--cocoa);
+  border-radius: 6px 16px 16px 16px;
 }
 .live-conversation .turn--user .message-meta {
-  color: #62554a;
+  color: var(--muted);
 }
 .live-conversation .turn--user .message-meta strong {
-  color: #312820;
+  color: var(--cocoa);
 }
 .live-conversation .turn--user .user-slip {
   padding: 0;
@@ -87,8 +120,8 @@
   box-shadow: none;
 }
 .live-conversation .message-meta {
-  margin-bottom: 12px;
-  min-height: 26px;
+  margin-bottom: 6px;
+  min-height: 22px;
 }
 .live-conversation .message-meta strong {
   font-size: 14px;
@@ -104,12 +137,17 @@
   line-height: 1.7;
 }
 .live-conversation .turn--user .message-actions {
-  background: transparent;
-  border-color: #31282030;
+  position: absolute;
+  right: 0;
+  bottom: -27px;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  border-color: var(--line);
   box-shadow: none;
 }
 .live-conversation .turn--user .message-actions button {
-  color: #62554a;
+  color: var(--muted);
 }
 .live-conversation
   .turn--user
@@ -123,12 +161,12 @@
     .file-attachment small,
     .file-attachment .route-badge
   ) {
-  color: #514337;
-  border-color: #51433740;
-  background: #fff9ed80;
+  color: var(--cocoa);
+  border-color: var(--line);
+  background: var(--soft);
 }
 .live-conversation .turn--user .message-references svg {
-  color: #514337;
+  color: var(--muted);
 }
 .models-page {
   font-size: 15px;

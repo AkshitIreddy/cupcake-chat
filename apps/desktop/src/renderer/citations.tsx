@@ -86,7 +86,7 @@ export function CitationMarker({ id, children }: CitationMarkerProps) {
       className={`markdown-citation${citation ? '' : ' markdown-citation--missing'}`}
       data-citation-id={id}
       onClick={() => activate('marker')}
-      title={description}
+      data-tooltip={description}
       type="button"
     >
       <span aria-hidden="true">{visibleLabel}</span>

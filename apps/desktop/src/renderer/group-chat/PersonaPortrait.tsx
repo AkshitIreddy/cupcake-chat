@@ -31,7 +31,7 @@ export function PersonaPortrait({
       src={
         value?.startsWith('/brand/') || value?.startsWith('/art/')
           ? value
-          : '/brand/cupcake-mark.svg'
+          : '/brand/cupcake-mark.png'
       }
       alt={`${name}'s portrait`}
     />

@@ -279,7 +279,7 @@ function CupcakePortrait({
   return (
     <img
       className={cx('cupcake-portrait', className)}
-      src={value || '/brand/cupcake-mark.svg'}
+      src={value || '/brand/cupcake-mark.png'}
       alt={label}
     />
   );
@@ -308,7 +308,7 @@ function Dreamscape({ scene, className }: { scene: number; className?: string })
 function Brand({ large = false }: { large?: boolean }) {
   return (
     <div className={cx('brand', large && 'brand--large')}>
-      <img src="/brand/cupcake-mark.svg" alt="" className="brand__mark" />
+      <img src="/brand/cupcake-mark.png" alt="" className="brand__mark" />
       <div>
         <strong>CUPCAKE</strong>
         <span>Chat</span>
@@ -407,7 +407,7 @@ function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
           aria-label="Search Cupcake Chat"
           type="button"
           onClick={onSearch}
-          title="Search your workspace (Ctrl+F)"
+          data-tooltip="Search your workspace (Ctrl+F)"
         >
           <Icon name="search" size={13} />
           <span>Find a chat, a file, an idea…</span>
@@ -563,7 +563,7 @@ function Shelf({
   activeTaskCount,
   onNewChat,
   onSelectConversation,
-  onAllChats,
+  allConversations = conversations,
   profile,
 }: {
   view: View;
@@ -575,9 +575,13 @@ function Shelf({
   activeTaskCount: number;
   onNewChat?: () => void;
   onSelectConversation?: (id: string) => void;
-  onAllChats?: () => void;
+  allConversations?: Conversation[];
   profile?: WorkspaceSettings['profile'];
 }) {
+  const [showAllRecent, setShowAllRecent] = useState(false);
+  const sidebarChats = (showAllRecent ? allConversations : conversations).filter(
+    (chat) => !chat.archived,
+  );
   const navigate = (v: View) => {
     setView(v);
     closeMobile();
@@ -624,7 +628,7 @@ function Shelf({
             {item.id === 'tasks' && activeTaskCount > 0 && (
               <em
                 aria-label={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
-                title={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
+                data-tooltip={`${activeTaskCount} active ${activeTaskCount === 1 ? 'task' : 'tasks'}`}
               >
                 {activeTaskCount} active
               </em>
@@ -638,18 +642,26 @@ function Shelf({
           <div className="shelf-label">Recent</div>
           <button
             type="button"
-            onClick={() => (onAllChats ? onAllChats() : navigate('chats'))}
-            aria-label="See all chats across projects"
+            onClick={() => setShowAllRecent((current) => !current)}
+            aria-label="Show all chats in sidebar"
+            aria-pressed={showAllRecent}
+            data-tooltip={
+              showAllRecent
+                ? 'Show recent chats in this project'
+                : 'Show every project’s chats here'
+            }
           >
-            All chats <Icon name="chevron" size={12} />
+            All chats <Icon name={showAllRecent ? 'check' : 'chevron'} size={12} />
           </button>
         </div>
-        {conversations
-          .filter((chat) => !chat.archived)
-          .slice(0, 3)
-          .map((chat) => (
+        <div
+          className="shelf__recent-list"
+          aria-label={showAllRecent ? 'All sidebar chats' : 'Recent sidebar chats'}
+        >
+          {(showAllRecent ? sidebarChats : sidebarChats.slice(0, 3)).map((chat) => (
             <button
               key={chat.id}
+              data-tooltip={chat.title}
               onClick={() =>
                 onSelectConversation ? onSelectConversation(chat.id) : navigate('chat')
               }
@@ -662,6 +674,7 @@ function Shelf({
               )}
             </button>
           ))}
+        </div>
       </div>
       <div className="shelf__bottom">
         {developerMode && (
@@ -1541,7 +1554,7 @@ function Composer({
           <button
             className="icon-button"
             aria-label="Attach file"
-            title="Attach file"
+            data-tooltip="Attach file"
             onClick={() => void attach()}
           >
             <Icon name="paperclip" />
@@ -1549,17 +1562,20 @@ function Composer({
           {groupMode ? (
             <span
               className="composer-chip"
-              title="Group conversations are chat-only in this version"
+              data-tooltip="Group conversations are chat-only in this version"
             >
               <Icon name="chat" size={14} /> Chat only · no tools
             </span>
           ) : (
-            <span className="composer-chip" title={workspace.settings.enabledToolIds.join(', ')}>
+            <span
+              className="composer-chip"
+              data-tooltip={workspace.settings.enabledToolIds.join(', ')}
+            >
               <Icon name="tool" size={14} />
               {workspace.settings.enabledToolIds.length} tools
             </span>
           )}
-          <span className="composer-chip" title="Active privacy boundary">
+          <span className="composer-chip" data-tooltip="Active privacy boundary">
             <Icon name="project" size={14} />
             {workspace.projects.find((project) => project.id === workspace.activeProjectId)?.name ??
               'No project'}
@@ -1569,7 +1585,7 @@ function Composer({
           {groupMode ? (
             <span
               className="model-chip group-model-chip"
-              title="Each Cupcake keeps its exact saved route"
+              data-tooltip="Each Cupcake keeps its exact saved route"
             >
               <Icon name="chat" size={15} />
               <span>
@@ -1792,7 +1808,7 @@ function ChatsView({
               <button
                 className="icon-button"
                 aria-label={`Rename ${c.title}`}
-                title="Rename"
+                data-tooltip="Rename"
                 onClick={() => {
                   setRenameTarget(c);
                   setRenameTitle(c.title);
@@ -1805,7 +1821,7 @@ function ChatsView({
               <button
                 className="icon-button"
                 aria-label={`${c.archived ? 'Restore' : 'Archive'} ${c.title}`}
-                title={c.archived ? 'Restore' : 'Archive'}
+                data-tooltip={c.archived ? 'Restore' : 'Archive'}
                 onClick={() => {
                   void (async () => {
                     setPendingRow(c.id);
@@ -1926,32 +1942,37 @@ function MessageActions({
     <div className="message-actions" aria-label="Message actions">
       <button
         aria-label="Copy message"
-        title="Copy"
+        data-tooltip="Copy"
         onClick={onCopy}
         disabled={!message && !onCopy}
       >
         <Icon name="copy" />
       </button>
       {!user && !groupMessage && (
-        <button aria-label="Retry response" title="Retry" onClick={onRetry} disabled={!onRetry}>
+        <button
+          aria-label="Retry response"
+          data-tooltip="Retry"
+          onClick={onRetry}
+          disabled={!onRetry}
+        >
           <Icon name="retry" />
         </button>
       )}
       {user && !groupMessage && onEdit && (
-        <button aria-label="Edit message" title="Edit" onClick={onEdit}>
+        <button aria-label="Edit message" data-tooltip="Edit" onClick={onEdit}>
           <Icon name="edit" />
         </button>
       )}
       <button
         aria-label="Branch from message"
-        title="Branch"
+        data-tooltip="Branch"
         onClick={onBranch}
         disabled={!onBranch}
       >
         <Icon name="branch" />
       </button>
       {!user && !groupMessage && onContinue && (
-        <button aria-label="Continue response" title="Continue" onClick={onContinue}>
+        <button aria-label="Continue response" data-tooltip="Continue" onClick={onContinue}>
           <Icon name="play" />
         </button>
       )}
@@ -1983,7 +2004,7 @@ function MessageModelLabel({
   const savedModelLabel = rawModelId ? persistedMessageModelLabel(models, persistedRoute) : null;
 
   return (
-    <span className="model-label" title={rawModelId ?? undefined}>
+    <span className="model-label" data-tooltip={rawModelId ?? undefined}>
       {message.speaker?.role && <b>{message.speaker.role} · </b>}
       {model
         ? `${model.name} · ${model.route}`
@@ -2633,7 +2654,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
             <button
               key={message.id}
               className={`is-${message.role}`}
-              title={`${message.role}: ${message.content.slice(0, 80)}`}
+              data-tooltip={`${message.role}: ${message.content.slice(0, 80)}`}
               onClick={() => {
                 const sourceIndex = workspace.messages.findIndex((item) => item.id === message.id);
                 setWindowEnd(
@@ -2815,7 +2836,7 @@ function ChatView({
             <nav className="chat-header__navigation" aria-label="Conversation navigation">
               <button
                 className="icon-button"
-                title="Previous conversation (Alt+Up)"
+                data-tooltip="Previous conversation (Alt+Up)"
                 aria-label="Previous conversation"
                 onClick={() => {
                   const index = workspace.conversations.findIndex(
@@ -2829,7 +2850,7 @@ function ChatView({
               </button>
               <button
                 className="icon-button"
-                title="Next conversation (Alt+Down)"
+                data-tooltip="Next conversation (Alt+Down)"
                 aria-label="Next conversation"
                 onClick={() => {
                   const index = workspace.conversations.findIndex(
@@ -2876,7 +2897,7 @@ function ChatView({
             <button
               className="context-toggle"
               onClick={() => document.querySelector<HTMLElement>('.frosting-outline')?.focus()}
-              title="Long chat outline (Ctrl+J)"
+              data-tooltip="Long chat outline (Ctrl+J)"
             >
               <Icon name="history" />
               Outline
@@ -4986,7 +5007,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
                 key={project.id}
                 aria-label={`Show artifacts from ${project.name}`}
                 disabled={draftPending && project.id !== activeProject.id}
-                title={
+                data-tooltip={
                   draftPending && project.id !== activeProject.id
                     ? 'Save the current draft before switching projects'
                     : undefined
@@ -5014,7 +5035,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
             onClick={beginCreate}
             aria-label="Create artifact"
             disabled={draftPending}
-            title={
+            data-tooltip={
               draftPending ? 'Save the current draft before creating another artifact' : undefined
             }
           >
@@ -5048,7 +5069,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
             <button
               className={cx('artifact-list__item', selected.id === artifact.id && 'is-active')}
               disabled={draftPending && selected.id !== artifact.id}
-              title={
+              data-tooltip={
                 draftPending && selected.id !== artifact.id
                   ? 'Save the current draft before switching artifacts'
                   : undefined
@@ -5128,7 +5149,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
                   testState === 'running' ||
                   testState === 'approval'
                 }
-                title={
+                data-tooltip={
                   draftPending
                     ? 'Save this draft before running tests'
                     : selected.revisionNumber
@@ -5156,7 +5177,7 @@ function ArtifactsView({ openTask }: { openTask: (task: Task) => void }) {
                   saveState === 'saving' ||
                   saveState === 'error'
                 }
-                title={
+                data-tooltip={
                   saveState === 'dirty' || saveState === 'error'
                     ? 'Save this revision before exporting'
                     : undefined
@@ -6891,7 +6912,7 @@ function ModelsView({
             <fieldset>
               <legend>How large a model?</legend>
               {MODEL_SIZE_OPTIONS.map((option) => (
-                <label key={option.id} title={option.detail}>
+                <label key={option.id} data-tooltip={option.detail}>
                   <input
                     type="checkbox"
                     checked={selectedSizes.includes(option.id)}
@@ -8020,7 +8041,7 @@ function PublisherLogo({ publisher, className }: { publisher: string; className?
         (asset?.includes('/openai.') || asset?.includes('/xai.')) && 'provider-logo--dark-surface',
         className,
       )}
-      title={publisher}
+      data-tooltip={publisher}
     >
       {asset ? (
         <img src={asset} alt={`${publisher} logo`} />
@@ -8409,7 +8430,7 @@ function SettingsView({
               )}
             </section>
             <section className="personality-preview">
-              <img src="/brand/cupcake-mark.svg" alt="" />
+              <img src="/brand/cupcake-mark.png" alt="" />
               <div>
                 <span className="eyebrow">Preview</span>
                 <p>
@@ -8568,7 +8589,7 @@ function SettingsView({
                   <button
                     className={workspace.settings.profile.avatar === value ? 'is-active' : ''}
                     onClick={() => void updateProfile({ avatar: value })}
-                    title={label}
+                    data-tooltip={label}
                     key={value}
                   >
                     <CupcakePortrait value={value} label={label} />
@@ -8607,7 +8628,7 @@ function SettingsView({
                   <button
                     className={workspace.settings.assistantAvatar === value ? 'is-active' : ''}
                     onClick={() => void workspace.updateSettings({ assistantAvatar: value })}
-                    title={label}
+                    data-tooltip={label}
                     key={`assistant-${value}`}
                   >
                     <CupcakePortrait value={value} label={`${label} assistant`} />
@@ -9693,7 +9714,7 @@ function DeveloperView({ modelName }: { modelName: string }) {
           {!workspace.fixtureMode && workspace.activeRunId ? (
             <div className="run-node is-main">
               <span className="tree-avatar">
-                <img src="/brand/cupcake-mark.svg" />
+                <img src="/brand/cupcake-mark.png" />
               </span>
               <div>
                 <strong>Cupcake</strong>
@@ -12945,10 +12966,7 @@ function LiveApp() {
         }
         onNewChat={startNewChat}
         onSelectConversation={openConversation}
-        onAllChats={() => {
-          setAllChats(true);
-          navigate('chats');
-        }}
+        allConversations={workspace.allConversations}
         profile={workspace.settings.profile}
       />
       <section
