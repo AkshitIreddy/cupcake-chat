@@ -115,6 +115,7 @@
   :is(
     .message-references > span,
     .message-references a,
+    .message-references b,
     .message-references small,
     .file-attachment,
     .file-attachment strong,
