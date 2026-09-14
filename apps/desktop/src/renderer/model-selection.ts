@@ -24,6 +24,9 @@ export function resolvePersistedMessageModel(
   const compatibleEndpoint = compatibleFamily?.startsWith('openai-compatible:')
     ? compatibleFamily.slice('openai-compatible:'.length).split(':', 1)[0]
     : undefined;
+  // A native model ID does not identify which compatible endpoint served it.
+  // Keep action routing unavailable when older history lacks that endpoint.
+  if (providerId === 'openai-compatible' && !compatibleEndpoint) return null;
   const matchesProviderRoute = (model: ModelDescriptor) => {
     if (providerId === 'openai-compatible') {
       return compatibleEndpoint
@@ -63,6 +66,28 @@ export function resolvePersistedMessageModel(
     return matchesProviderRoute(model);
   });
   return routeMatches.length === 1 ? (routeMatches[0] ?? null) : null;
+}
+
+/**
+ * Describe saved compatible-provider history without inventing a runnable route.
+ * Older messages can retain the native model ID while lacking endpoint metadata.
+ */
+export function persistedMessageModelLabel(
+  models: readonly ModelDescriptor[],
+  message: { modelId?: string | null; providerId?: string | null; modelFamily?: string | null },
+): string | null {
+  const resolved = resolvePersistedMessageModel(models, message);
+  if (resolved) return `${resolved.name} · ${resolved.route}`;
+
+  const nativeModelId = message.modelId?.trim();
+  const providerId = message.providerId?.trim().toLowerCase();
+  if (!nativeModelId || providerId !== 'openai-compatible') return null;
+
+  const identityMatches = models.filter(
+    (model) => model.runtimeModelId === nativeModelId || model.id === nativeModelId,
+  );
+  const name = identityMatches.length === 1 ? identityMatches[0]?.name : nativeModelId;
+  return `${name ?? nativeModelId} · Saved response`;
 }
 
 export function modelSelectionParams(model: ModelDescriptor): {

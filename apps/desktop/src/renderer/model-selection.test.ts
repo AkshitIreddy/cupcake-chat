@@ -5,6 +5,7 @@ import {
   createKeyedRequestCoalescer,
   mergeModelDescriptors,
   modelSelectionParams,
+  persistedMessageModelLabel,
   resolvePersistedMessageModel,
 } from './model-selection';
 
@@ -144,6 +145,37 @@ describe('model selection hardening', () => {
         modelFamily: 'openai-compatible:private:qwen3-8b-q4-k-m',
       }),
     ).toBeNull();
+  });
+
+  it('labels observed endpoint-less history without turning its model identity into a route', () => {
+    const unloadedLocal = model('cupcake-local:qwen3-8b-q4-k-m', {
+      provider: 'Cupcake Local',
+      name: 'Qwen3 8B · Q4_K_M',
+      runtimeModelId: 'qwen3-8b-q4-k-m',
+      route: 'Local',
+      status: 'installed',
+    });
+    const observedHistory = {
+      modelId: 'qwen3-8b-q4-k-m',
+      providerId: 'openai-compatible',
+    };
+
+    expect(resolvePersistedMessageModel([unloadedLocal], observedHistory)).toBeNull();
+    expect(persistedMessageModelLabel([unloadedLocal], observedHistory)).toBe(
+      'Qwen3 8B · Q4_K_M · Saved response',
+    );
+
+    const cloudLookalike = model('openai-compatible:private/qwen3-8b-q4-k-m', {
+      provider: 'Private endpoint',
+      name: 'Private Qwen',
+      runtimeModelId: 'qwen3-8b-q4-k-m',
+    });
+    expect(
+      resolvePersistedMessageModel([unloadedLocal, cloudLookalike], observedHistory),
+    ).toBeNull();
+    expect(persistedMessageModelLabel([unloadedLocal, cloudLookalike], observedHistory)).toBe(
+      'qwen3-8b-q4-k-m · Saved response',
+    );
   });
 
   it('coalesces duplicate selection requests and permits retry after failure', async () => {

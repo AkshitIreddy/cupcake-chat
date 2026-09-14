@@ -48,6 +48,7 @@ import {
 import {
   canonicalModelId,
   modelSelectionParams,
+  persistedMessageModelLabel,
   resolvePersistedMessageModel,
 } from './model-selection';
 import type {
@@ -2056,15 +2057,18 @@ function MessageModelLabel({
     resolvePersistedMessageModel(models, persistedRoute) ??
     (rawModelId ? models.find((candidate) => candidate.id === rawModelId) : selectedModel) ??
     null;
+  const savedModelLabel = rawModelId ? persistedMessageModelLabel(models, persistedRoute) : null;
 
   return (
     <span className="model-label" title={rawModelId ?? undefined}>
       {message.speaker?.role && <b>{message.speaker.role} · </b>}
       {model
         ? `${model.name} · ${model.route}`
-        : rawModelId
-          ? 'Model unavailable'
-          : 'No model selected'}
+        : savedModelLabel
+          ? savedModelLabel
+          : rawModelId
+            ? 'Model unavailable'
+            : 'No model selected'}
     </span>
   );
 }
