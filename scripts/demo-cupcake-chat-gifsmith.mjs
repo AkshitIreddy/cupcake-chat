@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 /* global window, document */
 
 const MADARA_PROMPT =
-  'If Madara had to survive one completely normal week with no chakra, what ordinary job would he be weirdly good at—and how long before he tried to run the place? Give me a serious answer with a little humour.';
+  'Why didn’t Madara just have Nagato revive him with the Rinnegan much earlier? Is that a Naruto plot hole, or am I missing part of the plan? Spoilers are fine. Separate what the story actually tells us from fan theories, and keep it to the useful bits.';
 const GROQ_MODEL_ID = 'openai-compatible:groq/openai/gpt-oss-120b';
 const COHERE_MODEL_ID = 'cohere:command-a-plus-05-2026';
 const defaults = {

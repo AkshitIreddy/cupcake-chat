@@ -3,6 +3,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   DESKTOP_API_VERSION,
   type AppInfo,
+  type AppUpdateCheckResult,
+  type AppUpdateMetadata,
+  type AppUpdateProgress,
+  type AppUpdateStatus,
   type CupcakeDesktopApi,
   type DesktopCommand,
   type DialogOpenOptions,
@@ -48,6 +52,14 @@ export function installTauriDesktopApi(): boolean {
     app: {
       getInfo: () => invoke<AppInfo>('app_info'),
       openExternal: (url) => invoke<void>('open_external_url', { url }),
+      updates: {
+        status: () => invoke<AppUpdateStatus>('app_update_status'),
+        check: () => invoke<AppUpdateCheckResult>('app_update_check'),
+        download: () => invoke<AppUpdateMetadata>('app_update_download'),
+        install: () => invoke<void>('app_update_install'),
+        onProgress: (listener) =>
+          subscribe<AppUpdateProgress>('cupcake://update-progress', listener),
+      },
     },
     window: {
       minimize: () => invoke<void>('window_minimize'),

@@ -1,4 +1,5 @@
 mod allowlist;
+mod app_updates;
 mod commands;
 mod error;
 mod file_handles;
@@ -20,6 +21,9 @@ use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
+    let updater_plugin = tauri_plugin_updater::Builder::new()
+        .pubkey(app_updates::public_key())
+        .build();
     let app = tauri::Builder::default()
         // Single-instance must be the first plugin so a second process never
         // initializes its own credential or sidecar boundary.
@@ -34,7 +38,12 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(updater_plugin)
         .invoke_handler(tauri::generate_handler![
+            app_updates::app_update_check,
+            app_updates::app_update_download,
+            app_updates::app_update_install,
+            app_updates::app_update_status,
             app_info,
             app_quit,
             command_execute,
@@ -86,6 +95,7 @@ pub fn run() {
                 &data_directory,
             )?);
             let startup_preferences = window_preferences.get();
+            app.manage(app_updates::AppUpdateState::default());
             app.manage(HostState::new(
                 supervisor,
                 workspace_lock,

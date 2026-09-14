@@ -15,6 +15,8 @@ import {
 
 const args = process.argv.slice(2);
 const requireArtifacts = args.includes('--require-artifacts');
+const requireUpdaterArtifacts = args.includes('--require-updater-artifacts');
+const requireAuthenticode = args.includes('--require-authenticode');
 const jsonOutput = parseArgValue(args, '--json', null);
 const checks = [];
 const targetTriple = 'x86_64-pc-windows-msvc';
@@ -23,12 +25,8 @@ function record(name, ok, detail) {
   checks.push({ name, ok, detail });
 }
 
-function assertRcVersion(label, version) {
-  record(
-    `${label} version`,
-    typeof version === 'string' && /^2\.0\.0-rc\.\d+$/.test(version),
-    String(version ?? 'missing'),
-  );
+function assertReleaseVersion(label, version) {
+  record(`${label} version`, version === '1.8.0', String(version ?? 'missing'));
 }
 
 async function auditVersions() {
@@ -38,7 +36,7 @@ async function auditVersions() {
     'packages/contracts/package.json',
   ]) {
     const manifest = await readJson(join(repoRoot, path));
-    assertRcVersion(path, manifest.version);
+    assertReleaseVersion(path, manifest.version);
     record(
       `${path} private`,
       manifest.private === true,
@@ -47,14 +45,22 @@ async function auditVersions() {
   }
   for (const path of ['apps/desktop/src-tauri/Cargo.toml', 'crates/tool-broker/Cargo.toml']) {
     const cargo = await readFile(join(repoRoot, path), 'utf8');
-    assertRcVersion(path, cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]);
+    assertReleaseVersion(path, cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]);
   }
   const pyproject = await readFile(join(repoRoot, 'services/runtime/pyproject.toml'), 'utf8');
   const pythonVersion = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
   record(
     'services/runtime/pyproject.toml version',
-    typeof pythonVersion === 'string' && /^2\.0\.0rc\d+$/.test(pythonVersion),
+    pythonVersion === '1.8.0',
     String(pythonVersion ?? 'missing'),
+  );
+  const runtimeInit = await readFile(
+    join(repoRoot, 'services/runtime/src/cupcake_runtime/__init__.py'),
+    'utf8',
+  );
+  assertReleaseVersion(
+    'services/runtime/src/cupcake_runtime/__init__.py',
+    runtimeInit.match(/^__version__\s*=\s*"([^"]+)"/m)?.[1],
   );
 }
 
@@ -88,37 +94,61 @@ async function auditTrackedState() {
 }
 
 async function auditAutomationPolicy() {
-  const scanRoots = ['.github/workflows', 'scripts', 'packaging', 'apps/desktop/src-tauri'];
-  const extensions = new Set(['.yml', '.yaml', '.json', '.ts', '.js', '.mjs', '.py', '.toml']);
-  const forbiddenPatterns = [
-    { label: 'write-enabled GitHub contents permission', pattern: /contents\s*:\s*write/i },
-    {
-      label: 'release publishing command',
-      pattern:
-        /\b(?:npm\s+publish|gh\s+release\s+create|tauri\s+signer\s+sign|mkdocs\s+gh-deploy)\b/i,
-    },
-    {
-      label: 'live updater configuration',
-      pattern:
-        /(?:tauri-plugin-updater|createUpdaterArtifacts|pubkey\s*"?\s*:|endpoints\s*"?\s*:)/i,
-    },
-  ];
-  const violations = [];
-  for (const root of scanRoots) {
-    for (const file of await walkFiles(join(repoRoot, root))) {
-      if (file === join(repoRoot, 'scripts', 'release-candidate-audit.mjs')) continue;
-      if (!extensions.has(extname(file))) continue;
-      const source = await readFile(file, 'utf8');
-      for (const rule of forbiddenPatterns) {
-        if (rule.pattern.test(source))
-          violations.push(`${relative(repoRoot, file)}: ${rule.label}`);
-      }
+  const workflows = await walkFiles(join(repoRoot, '.github/workflows'));
+  const releasePath = join(repoRoot, '.github/workflows/release-windows.yml');
+  const release = await readFile(releasePath, 'utf8');
+  const unsafeWorkflows = [];
+  for (const file of workflows) {
+    if (file === releasePath) continue;
+    const source = await readFile(file, 'utf8');
+    if (/contents\s*:\s*write/i.test(source)) {
+      unsafeWorkflows.push(`${relative(repoRoot, file)} grants contents: write`);
     }
   }
+  const releaseIsGated =
+    /^\s*workflow_dispatch\s*:/m.test(release) &&
+    !/^\s*(?:push|pull_request|schedule)\s*:/m.test(release) &&
+    /^\s*environment\s*:\s*release\s*$/m.test(release) &&
+    /^\s*contents\s*:\s*write\s*$/m.test(release) &&
+    /^\s*releaseDraft\s*:\s*true\s*$/m.test(release) &&
+    /^\s*uploadUpdaterJson\s*:\s*true\s*$/m.test(release) &&
+    /^\s*updaterJsonPreferNsis\s*:\s*true\s*$/m.test(release) &&
+    /tauri-apps\/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa/.test(release) &&
+    /TAURI_UPDATER_PUBLIC_KEY/.test(release) &&
+    /TAURI_SIGNING_PRIVATE_KEY/.test(release) &&
+    /WINDOWS_CERTIFICATE/.test(release) &&
+    /AUTHENTICODE_ENABLED=false/.test(release);
   record(
-    'No publish/sign/update automation',
-    violations.length === 0,
-    violations.length ? violations.join('; ') : 'clean',
+    'Release automation is manual, environment-gated, updater-signed, and draft-only',
+    releaseIsGated && unsafeWorkflows.length === 0,
+    releaseIsGated && unsafeWorkflows.length === 0
+      ? 'workflow_dispatch -> protected release environment -> GitHub draft'
+      : ['release workflow policy drift', ...unsafeWorkflows].join('; '),
+  );
+
+  const mainConfig = await readJson(join(repoRoot, 'apps/desktop/src-tauri/tauri.conf.json'));
+  const testConfig = await readJson(
+    join(repoRoot, 'apps/desktop/src-tauri/tauri.updater-test.conf.json'),
+  );
+  const updaterSource = await readFile(
+    join(repoRoot, 'apps/desktop/src-tauri/src/app_updates.rs'),
+    'utf8',
+  );
+  const updaterPolicy =
+    mainConfig.bundle?.createUpdaterArtifacts !== true &&
+    mainConfig.plugins?.updater?.dangerousInsecureTransportProtocol !== true &&
+    testConfig.plugins?.updater?.dangerousInsecureTransportProtocol === true &&
+    updaterSource.includes('option_env!("CUPCAKE_UPDATER_PUBLIC_KEY")') &&
+    updaterSource.includes('releases/latest/download/latest.json') &&
+    updaterSource.includes('CUPCAKE_TEST_DATA_DIR') &&
+    updaterSource.includes('127.0.0.1') &&
+    updaterSource.includes('localhost');
+  record(
+    'Signed updater configuration is explicit and test transport is isolated',
+    updaterPolicy,
+    updaterPolicy
+      ? 'production HTTPS feed with compile-time verification key; HTTP limited to test config and loopback profile'
+      : 'updater configuration policy drift',
   );
 }
 
@@ -376,10 +406,44 @@ async function auditArtifacts() {
     installers.length === 1 &&
     (await fileSize(installers[0])) > 0;
   record(
-    'Tauri executable and unsigned NSIS installer',
+    'Tauri executable and NSIS installer',
     !requireArtifacts || packaged,
     requireArtifacts ? (packaged ? relative(repoRoot, installers[0]) : 'missing') : 'not required',
   );
+
+  if (requireUpdaterArtifacts || requireAuthenticode) {
+    const installer = installers[0];
+    const signature = installer ? `${installer}.sig` : '';
+    const hasUpdaterSignature =
+      Boolean(signature) && (await exists(signature)) && (await fileSize(signature)) > 0;
+    record(
+      'Release NSIS has a Tauri updater signature',
+      hasUpdaterSignature,
+      `updaterSignature=${String(hasUpdaterSignature)}`,
+    );
+    let authenticodeValid = !requireAuthenticode;
+    if (requireAuthenticode && process.platform === 'win32' && installer) {
+      const status = run(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-AuthenticodeSignature -LiteralPath $args[0]).Status.ToString()`,
+          installer,
+        ],
+        { capture: true },
+      ).stdout.trim();
+      authenticodeValid = status === 'Valid';
+    }
+    if (requireAuthenticode) {
+      record(
+        'Release NSIS has a valid optional Authenticode signature',
+        authenticodeValid,
+        `authenticode=${String(authenticodeValid)}`,
+      );
+    }
+  }
 }
 
 await auditVersions();

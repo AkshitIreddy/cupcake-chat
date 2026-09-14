@@ -36,6 +36,7 @@ import type {
   ToolDescriptor,
 } from './types';
 import { createKeyedRequestCoalescer, mergeModelDescriptors } from './model-selection';
+import { useRuntimeRecovery } from './runtime-recovery';
 import { modelAvailabilityDetail, modelIsAvailableInChat } from './model-intelligence';
 import type { GroupTurn as ContractGroupTurn } from '@cupcakeagi/contracts';
 
@@ -2823,6 +2824,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [activeProjectId, fixtureMode, guard, loadArtifacts, request],
   );
+
+  useRuntimeRecovery({
+    enabled: ready && !fixtureMode,
+    runtime: window.cupcake?.runtime,
+    refresh: async () => refresh(),
+    onRestartDetected: () => {
+      updateActiveRunId(null);
+      groupRunConversationRef.current.clear();
+      setActiveGroupTurn((current) =>
+        current && ['preparing', 'choosing', 'responding'].includes(current.status)
+          ? null
+          : current,
+      );
+      setMessages((items) =>
+        items.map((item) =>
+          item.streaming
+            ? { ...item, streaming: false, responseState: 'cancelled' as const }
+            : item,
+        ),
+      );
+    },
+  });
 
   useEffect(() => {
     if (bootstrapped.current) return;

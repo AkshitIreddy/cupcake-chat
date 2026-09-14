@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-update-download"
+description = "Enables the app_update_download command without any pre-configured scope."
+commands.allow = ["app_update_download"]
+
+[[permission]]
+identifier = "deny-app-update-download"
+description = "Denies the app_update_download command without any pre-configured scope."
+commands.deny = ["app_update_download"]

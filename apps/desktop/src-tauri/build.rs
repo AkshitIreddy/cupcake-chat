@@ -1,6 +1,10 @@
 const EXPOSED_COMMANDS: &[&str] = &[
     "app_info",
     "app_quit",
+    "app_update_check",
+    "app_update_download",
+    "app_update_install",
+    "app_update_status",
     "command_execute",
     "dialog_choose_save_target",
     "dialog_open_directory",

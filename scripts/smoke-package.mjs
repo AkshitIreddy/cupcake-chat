@@ -24,7 +24,7 @@ const descriptor = await readJson(join(repoRoot, 'packaging', 'sidecars.json'));
 if (!['build', 'bundle'].includes(mode)) throw new Error('--mode must be build or bundle');
 if (targetPlatform !== 'win32' || targetArch !== 'x64') {
   throw new Error(
-    `CupcakeAI 2.0 package smoke supports Windows x64 only (received ${targetPlatform}-${targetArch}).`,
+    `Cupcake Chat package smoke supports Windows x64 only (received ${targetPlatform}-${targetArch}).`,
   );
 }
 

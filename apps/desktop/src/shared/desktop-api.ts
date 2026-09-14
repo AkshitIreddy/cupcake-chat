@@ -24,6 +24,44 @@ export interface AppInfo {
   runtime: RuntimeState;
 }
 
+export interface AppUpdateStatus {
+  configured: boolean;
+  currentVersion: string;
+  endpoint: string;
+  busy: boolean;
+  availableVersion?: string;
+  downloaded: boolean;
+}
+
+export interface AppUpdateMetadata {
+  currentVersion: string;
+  version: string;
+  notes?: string;
+  publishedAt?: string;
+  target: string;
+  downloaded: boolean;
+}
+
+export interface AppUpdateCheckResult {
+  available: boolean;
+  update?: AppUpdateMetadata;
+}
+
+export interface AppUpdateProgress {
+  stage:
+    | 'checking'
+    | 'available'
+    | 'upToDate'
+    | 'downloadStarted'
+    | 'downloadProgress'
+    | 'downloadVerified'
+    | 'installing'
+    | 'failed';
+  version?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
 export interface WindowPreferences {
   startupBehavior: 'open' | 'minimized' | 'tray';
   closeBehavior: 'ask' | 'tray' | 'quit';
@@ -126,6 +164,13 @@ export interface CupcakeDesktopApi {
   app: {
     getInfo(): Promise<AppInfo>;
     openExternal(url: string): Promise<void>;
+    updates: {
+      status(): Promise<AppUpdateStatus>;
+      check(): Promise<AppUpdateCheckResult>;
+      download(): Promise<AppUpdateMetadata>;
+      install(): Promise<void>;
+      onProgress(listener: (progress: AppUpdateProgress) => void): Unsubscribe;
+    };
   };
   window: {
     minimize(): Promise<void>;

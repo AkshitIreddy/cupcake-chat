@@ -21,11 +21,11 @@ const installer = resolve(
       'release',
       'bundle',
       'nsis',
-      'CupcakeAI 2_2.0.0-rc.1_x64-setup.exe',
+      'Cupcake Chat_1.8.0_x64-setup.exe',
     ),
   ),
 );
-const productName = option('--product-name', 'CupcakeAI 2');
+const productName = option('--product-name', 'Cupcake Chat');
 const portableExecutable = resolve(
   option(
     '--portable-executable',
