@@ -8,6 +8,7 @@
   line-height: 1.72;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .rich-markdown > :is(p, ul, ol, blockquote) {
@@ -23,6 +24,7 @@
   margin-top: 0;
 }
 
+.rich-markdown > :has(+ .markdown-sr-only:last-child),
 .rich-markdown > :last-child,
 .rich-markdown > :last-child > :last-child {
   margin-bottom: 0;
@@ -470,19 +472,6 @@
   object-fit: contain;
 }
 
-.rich-markdown--streaming::after {
-  background: var(--berry);
-  border-radius: 99px;
-  content: '';
-  display: inline-block;
-  height: 0.72em;
-  margin-inline-start: 0.24em;
-  opacity: 0.68;
-  vertical-align: -0.05em;
-  width: 0.14em;
-  animation: markdown-cursor 1.05s steps(2, jump-none) infinite;
-}
-
 .markdown-sr-only {
   border: 0 !important;
   clip: rect(0 0 0 0) !important;
@@ -494,17 +483,6 @@
   position: absolute !important;
   white-space: nowrap !important;
   width: 1px !important;
-}
-
-@keyframes markdown-cursor {
-  0%,
-  45% {
-    opacity: 0.68;
-  }
-  55%,
-  100% {
-    opacity: 0;
-  }
 }
 
 @media (max-width: 640px) {
@@ -529,10 +507,6 @@
   .markdown-heading-link,
   .markdown-citation {
     transition: none;
-  }
-  .rich-markdown--streaming::after {
-    animation: none;
-    opacity: 0.62;
   }
 }
 
