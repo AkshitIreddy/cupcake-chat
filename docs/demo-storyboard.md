@@ -17,9 +17,10 @@ contains an animated GIF. A separate MP4 is supplied locally for owner review.
 | Optional setup             | Show provider connection and local-runtime onboarding, then return Home.                                                                                                           |
 
 The tour moves quickly; viewers can pause. It has no bottom-right captions, standalone Tools-page
-tour, or long reading holds. Projects is shown once; all three chat selections use Recent in the
-sidebar. Tool waiting time can be shortened in the edit, while retaining the actual click and its
-actual result. It is a feature demonstration, not a latency benchmark.
+tour, or long reading holds. Projects is shown once. Both typed exchanges start with New chat; the
+existing group discussion opens through Recent in the sidebar. Tool waiting time can be shortened in
+the edit, while retaining the actual click and its actual result. It is a feature demonstration, not
+a latency benchmark.
 
 ## Saved examples
 
@@ -40,17 +41,23 @@ runs remain available in their revision/audit history.
 ## Replay provenance
 
 `scripts/demo-cupcake-chat-replay.mjs` reads saved messages through the native runtime API and
-checks their provider, model, completion state, and history digests. Before opening each replay it
-hides the saved turns. The filmed Send click reveals the user message; genuine saved Markdown
-prefixes then pass through the production `RichMarkdown` component, including its streaming buffer.
-The recorder restores the original conversation before clicking its real Run tests action.
+checks their provider, model, completion state, and history digests. The recording-only
+`demo-chat-transport.mjs` adapter supplies those exact answers to the packaged app's normal Send,
+runtime-event, history-reconciliation, and Markdown streaming handlers.
 
-The helper checks for premature user messages and empty list items frame by frame, counts the
-intercepted replay Sends, and verifies that recording did not alter the saved histories. The check
-continues through the end-of-replay transition, keeping later saved questions hidden until the
-conversation is offscreen. No new model request is made while filming. This temporary replay adapter
-is not shipped in the app. Navigation, provider selection, avatars, theme changes, onboarding,
-artifact browsing, and Python test execution use the real app controls.
+Each filmed exchange begins through the real New chat button. The app owns the draft, optimistic
+user message, response rendering, and completion transition. The adapter creates a temporary
+conversation with one Main branch and current timestamps, following the runtime's prompt-based title
+rule. It never opens a saved conversation behind the cursor or imports old follow-ups, attachments,
+branches, or titles. Virtual chats live only in the webview and disappear on reload; the two
+original source exchanges are hash-checked after filming.
+
+The helper samples frames from the empty draft through departure from the conversation. It checks
+for titles or user bubbles before Send, unsent follow-ups, and empty list items or duplicate
+streaming cursors, and counts actual New chat, Recent, and Projects clicks. No new model request is
+made while filming. This adapter is not shipped in the app. Provider selection, avatars, themes,
+onboarding, artifact browsing, and the inline Python test execution use real app controls and native
+operations.
 
 ## Reproduce locally
 
@@ -65,14 +72,14 @@ Without `--execute`, the helper prints its plan. Start the prepared packaged pro
 CDP on port 10131, then run:
 
 ```powershell
-node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\recent-take
+node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\new-chat-final
 ```
 
-The reviewed take lasts 92.6 seconds. Its final edit removes original seconds 44–57, after the Run
-tests click and before its completed output. Both review MP4 and README GIF last 79.6 seconds:
+The reviewed take lasts 91.6 seconds. Its final edit removes original seconds 44–57, after the Run
+tests click and before its completed output. Both review MP4 and README GIF last 78.6 seconds:
 
 ```powershell
-node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\recent-take --cut-start 44 --cut-end 57 --review-output E:\temp\cupcake-chat-review-1.8-recent.mp4
+node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\new-chat-final --cut-start 44 --cut-end 57 --review-output E:\temp\cupcake-chat-review-1.8-new-chat.mp4
 ```
 
 Those boundaries were inspected in this take; inspect new recordings before choosing their cut

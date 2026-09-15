@@ -7,12 +7,20 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  installReplayTransport,
+  armReplay,
+  startReplay,
+  feedReplay,
+  completeReplay,
+  finishReplayAudit,
+} from './demo-chat-transport.mjs';
 
-/* global window, document, HTMLTextAreaElement, Event, requestAnimationFrame, cancelAnimationFrame, performance */
+/* global window, document */
 const args = process.argv.slice(2);
 const option = (key, fallback) => (args.includes(key) ? args[args.indexOf(key) + 1] : fallback);
 const execute = args.includes('--execute');
@@ -47,19 +55,21 @@ const preparedTypingSeconds = 2.3;
 const timeline = gifsmith.timeline((t) => {
   t.call(
     async (page) => {
-      await page.evaluate(await readFile(join(output, 'renderer/renderer.js'), 'utf8'));
-      assert(
-        await page.evaluate(() => Boolean(window.CupcakeDemoMarkdown)),
-        'Replay renderer did not initialize',
-      );
       await page.evaluate(() => {
         window.__cupcakeReplayReceipts = [];
         window.__cupcakeTourNavigation = [];
         window.__cupcakeTourClick = (event) => {
           const button = event.target.closest?.('button');
-          if (button?.matches('.shelf__nav button, .shelf__recent-list button')) {
+          if (
+            event.isTrusted &&
+            button?.matches('.shelf__nav button, .shelf__recent-list button, button.new-chat')
+          ) {
             window.__cupcakeTourNavigation.push({
-              area: button.closest('.shelf__recent-list') ? 'recent' : 'navigation',
+              area: button.matches('.new-chat')
+                ? 'new-chat'
+                : button.closest('.shelf__recent-list')
+                  ? 'recent'
+                  : 'navigation',
               label: button.textContent.trim(),
             });
           }
@@ -67,15 +77,14 @@ const timeline = gifsmith.timeline((t) => {
         document.addEventListener('click', window.__cupcakeTourClick, true);
       });
     },
-    { name: 'initialize production Markdown renderer', seconds: 0.1 },
+    { name: 'initialize tour interaction audit', seconds: 0.1 },
   );
   nav(t, 'Home');
   t.hold(0.65);
   nav(t, 'Projects');
   clickText(t, '.project-card__select', 'Rome beyond the battlefield');
-  t.call(hideReplayHistory, { name: 'hide old turns before opening replay', seconds: 0.01 });
-  clickText(t, '.shelf__recent-list button', 'How did Rome keep an army fed?');
-  t.call(prepareReplay, { name: 'prepare saved provider exchange', seconds: 0.2 });
+  t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.28 });
+  t.call(prepareReplay, { name: 'prepare genuine empty chat', seconds: 0.2 });
   t.call(
     async (page) => {
       await page.type('textarea[aria-label="Message Cupcake"]', prepared.user.content, {
@@ -86,18 +95,15 @@ const timeline = gifsmith.timeline((t) => {
   );
   t.hold(0.15);
   t.click('button[aria-label="Send message"]', { via: 'cursor', glideSeconds: 0.28 });
+  t.call(startReplay, { name: 'start production response after Send', seconds: 0.2 });
   t.call(playResponse, { name: 'replay exact saved response', seconds: 7 });
   t.hold(0.65);
   t.scroll('.conversation-scroll', 350, 0.8, 'easeInOut');
   t.hold(0.65);
-  t.call((page) => restoreReplay(page, true), {
-    name: 'restore replay while keeping later turns hidden',
-    seconds: 0.2,
-  });
   if (args.includes('--stream-only')) return;
   nav(t, 'Memory');
-  t.call(clearReplayVisibility, {
-    name: 'restore history after leaving the conversation',
+  t.call(finishReplayAudit, {
+    name: 'finish audit after leaving the conversation',
     seconds: 0.01,
   });
   t.hold(0.65);
@@ -109,7 +115,7 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   t.scroll('.app-content', 380, 0.8, 'easeInOut');
   t.hold(0.65);
-  t.click('button[aria-label="New chat"]', { via: 'cursor', glideSeconds: 0.28 });
+  t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.28 });
   for (const route of ['Cohere', 'Groq']) {
     t.click('button.model-chip:not(.group-model-chip)', { via: 'cursor', glideSeconds: 0.28 });
     t.call(
@@ -140,23 +146,18 @@ const timeline = gifsmith.timeline((t) => {
   t.call(
     async (page) => {
       prepared = exchanges.code;
-      await hideReplayHistory(page);
+      await prepareReplay(page);
     },
     { name: 'prepare real code exchange', seconds: 0.1 },
   );
-  clickText(t, '.shelf__recent-list button', 'When would a Roman fort run out of grain?');
-  t.call(prepareReplay, { name: 'prepare saved code response', seconds: 0.2 });
   t.call(
     (page) =>
       page.type('textarea[aria-label="Message Cupcake"]', prepared.user.content, { delay: 28 }),
     { name: 'ask about the grain calculation', seconds: 1.8 },
   );
   t.click('button[aria-label="Send message"]', { via: 'cursor', glideSeconds: 0.28 });
+  t.call(startReplay, { name: 'start production code response after Send', seconds: 0.2 });
   t.call(playResponse, { name: 'show AI generated Python in chat', seconds: 6 });
-  t.call((page) => restoreReplay(page, true), {
-    name: 'restore saved code for real execution',
-    seconds: 0.1,
-  });
   t.call(
     (page) =>
       page.evaluate(() => {
@@ -190,7 +191,7 @@ const timeline = gifsmith.timeline((t) => {
   );
   t.hold(0.65);
   nav(t, 'Artifacts');
-  t.call(clearReplayVisibility, { name: 'restore offscreen saved history', seconds: 0.01 });
+  t.call(finishReplayAudit, { name: 'finish audit after leaving code', seconds: 0.01 });
   // The newest saved artifact is first; prior failed work remains in the audit history.
   t.click('.artifact-list__item:first-child', { via: 'cursor', glideSeconds: 0.28 });
   t.hold(0.65);
@@ -319,27 +320,6 @@ if (!execute) {
   process.exit(0);
 }
 await mkdir(output, { recursive: true });
-const { build } = await import('vite');
-await build({
-  configFile: false,
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-  resolve: {
-    alias: {
-      'react-dom': resolve('apps/desktop/node_modules/react-dom'),
-      react: resolve('apps/desktop/node_modules/react'),
-    },
-  },
-  build: {
-    outDir: join(output, 'renderer'),
-    emptyOutDir: false,
-    lib: {
-      entry: resolve('scripts/demo-markdown-entry.mjs'),
-      name: 'CupcakeDemoMarkdown',
-      formats: ['iife'],
-      fileName: () => 'renderer.js',
-    },
-  },
-});
 const browser = await puppeteer.connect({
   browserURL: 'http://127.0.0.1:10131',
   defaultViewport: null,
@@ -370,6 +350,8 @@ try {
     }),
   );
   prepared = {
+    title: conversation.title,
+    routeId: 'google:gemini-3.8-flash',
     user,
     assistant,
     modelNames,
@@ -388,6 +370,8 @@ try {
   exchanges = {
     analysis: prepared,
     code: {
+      title: codeConversation.title,
+      routeId: 'openai-compatible:groq/openai/gpt-oss-120b',
       user: codeHistory.find((item) => item.role === 'user'),
       assistant: codeAssistant,
       modelNames,
@@ -409,7 +393,27 @@ try {
     join(output, 'replayed-exchange.json'),
     JSON.stringify({ user, assistant }, null, 2),
   );
+  receipt.exchanges = Object.fromEntries(
+    Object.entries(exchanges).map(([name, exchange]) => [
+      name,
+      {
+        branchId: exchange.branchId,
+        userId: exchange.user.id,
+        assistantId: exchange.assistant.id,
+        provider: exchange.assistant.provider_id,
+        model: exchange.assistant.model_id,
+        textSha256: digest(exchange.assistant.content),
+        historySha256: exchange.historyDigest,
+      },
+    ]),
+  );
+  await writeFile(
+    join(output, 'replayed-code-exchange.json'),
+    JSON.stringify({ user: exchanges.code.user, assistant: exchanges.code.assistant }, null, 2),
+  );
+  await installReplayTransport(page);
   receipt.result = await gifsmith.render(scene);
+  await finishReplayAudit(page);
   for (const exchange of Object.values(exchanges)) {
     const after = await request(page, 'chat.history', { branchId: exchange.branchId });
     assert.equal(
@@ -427,20 +431,29 @@ try {
   );
   assert.equal(
     receipt.navigation.filter((item) => item.area === 'recent').length,
-    args.includes('--stream-only') ? 1 : 3,
+    args.includes('--stream-only') ? 0 : 1,
+  );
+  assert.equal(
+    receipt.navigation.filter((item) => item.area === 'new-chat').length,
+    args.includes('--stream-only') ? 1 : 2,
   );
   assert.equal(receipt.replays.length, args.includes('--stream-only') ? 1 : 2);
   for (const replay of receipt.replays) {
     assert.equal(replay.interceptedSends, 1, 'Exactly one controlled Send per replay expected');
     assert.equal(replay.unexpectedUserFrames, 0, 'Saved follow-up appeared without being sent');
+    assert.equal(replay.preSendUserFrames, 0, 'User message appeared before Send');
+    assert.equal(replay.emptyListFrames, 0, 'Empty bullet appeared before text');
+    assert.equal(replay.preSendAnswerFrames, 0, 'Answer appeared before Send');
+    assert.equal(replay.duplicateCursorFrames, 0, 'Two streaming cursors rendered');
+    assert.equal(replay.preSendTitleFrames, 0, 'Conversation had a generated title before Send');
   }
   receipt.outcome = 'completed';
 } catch (error) {
   receipt.error = String(error.stack ?? error);
   process.exitCode = 1;
 } finally {
-  await restoreReplay(page).catch(() => {});
-  await clearReplayVisibility(page, false).catch(() => {});
+  await finishReplayAudit(page).catch(() => {});
+  await page.evaluate(() => window.__cupcakeTransportReplay?.cleanup()).catch(() => {});
   await page
     .evaluate(() => document.removeEventListener('click', window.__cupcakeTourClick, true))
     .catch(() => {});
@@ -448,7 +461,19 @@ try {
   await writeFile(join(output, 'evidence.json'), JSON.stringify(receipt, null, 2));
   await browser.disconnect();
 }
-process.stdout.write(JSON.stringify(receipt, null, 2));
+process.stdout.write(
+  JSON.stringify(
+    {
+      ...receipt,
+      replays: receipt.replays?.map(({ frames, ...replay }) => ({
+        ...replay,
+        sampledFrames: frames.length,
+      })),
+    },
+    null,
+    2,
+  ),
+);
 
 function digest(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -500,151 +525,23 @@ async function mark(page, selector, text, exact = false) {
     }
   });
 }
-async function hideReplayHistory(page) {
-  await page.evaluate(() => {
-    const style = document.createElement('style');
-    style.id = 'demo-replay-visibility';
-    style.textContent = '.turn:not([data-demo-revealed]) { display:none !important; }';
-    document.head.append(style);
-    window.__cupcakeReplayReceipt = {
-      interceptedSends: 0,
-      preSendUserFrames: 0,
-      unexpectedUserFrames: 0,
-      emptyListFrames: 0,
-      frames: [],
-      sentAt: null,
-    };
-  });
-}
 async function prepareReplay(page) {
-  await page.waitForSelector(`#message-${prepared.assistant.id} .rich-response`, {
-    visible: false,
-  });
-  await page.evaluate(
-    ({ userId, assistantId }) => {
-      const user = document.getElementById(`message-${userId}`);
-      const assistant = document.getElementById(`message-${assistantId}`);
-      if (!user || !assistant) throw Error('Replay rows missing');
-      const original = assistant.querySelector('.rich-response');
-      original.style.display = 'none';
-      const response = document.createElement('div');
-      response.className = 'rich-response';
-      response.dataset.demoResponse = 'true';
-      original.after(response);
-      window.CupcakeDemoMarkdown.mount(response);
-      const send = document.querySelector('button[aria-label="Send message"]');
-      const receipt = window.__cupcakeReplayReceipt;
-      const intercept = (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        receipt.interceptedSends += 1;
-        receipt.sentAt = performance.now();
-        user.dataset.demoRevealed = 'true';
-        const input = document.querySelector('textarea[aria-label="Message Cupcake"]');
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, '');
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      };
-      send.addEventListener('click', intercept, true);
-      const replay = { user, assistant, original, response, send, intercept, frame: 0 };
-      window.__cupcakeReplay = replay;
-      window.__cupcakeActiveReplayAudit = replay;
-      replay.receipt = receipt;
-      const sample = () => {
-        if (
-          receipt.sentAt === null &&
-          [...document.querySelectorAll('.turn--user')].some(
-            (n) => n.getBoundingClientRect().height > 0,
-          )
-        )
-          receipt.preSendUserFrames++;
-        if (
-          [...document.querySelectorAll('.turn--user')].some(
-            (n) => n !== user && n.getBoundingClientRect().height > 0,
-          )
-        )
-          receipt.unexpectedUserFrames++;
-        if ([...response.querySelectorAll('li')].some((n) => !n.textContent.trim()))
-          receipt.emptyListFrames++;
-        receipt.frames.push({
-          at: performance.now(),
-          characters: response.innerText.length,
-          items: response.querySelectorAll('li').length,
-        });
-        replay.frame = requestAnimationFrame(sample);
-      };
-      replay.frame = requestAnimationFrame(sample);
-      document.querySelector('.conversation-scroll').scrollTop = 0;
-    },
-    { userId: prepared.user.id, assistantId: prepared.assistant.id },
-  );
+  await armReplay(page, prepared);
 }
 async function playResponse(page, ctx) {
-  await page.evaluate(() => {
-    if (window.__cupcakeReplayReceipt.interceptedSends !== 1)
-      throw Error('Send must occur before response');
-    window.__cupcakeReplay.assistant.dataset.demoRevealed = 'true';
-  });
-  // Feed genuine Markdown prefixes through the same React component as live chat.
-  // The app's presentation buffer smooths these deliberately uneven transport chunks.
   const text = prepared.assistant.content;
   const step = Math.ceil(text.length / 72);
-  for (let visible = step; visible < text.length + step; visible += step) {
-    await page.evaluate(
-      (text) => window.CupcakeDemoMarkdown.render(text, true),
-      text.slice(0, visible),
-    );
+  for (let start = 0; start < text.length; start += step) {
+    await feedReplay(page, text.slice(start, start + step));
     if (prepared === exchanges.code)
       await page.evaluate(() => {
         const pane = document.querySelector('.conversation-scroll');
         pane.scrollTop = pane.scrollHeight;
-        const code = window.__cupcakeReplay.response.querySelector('.markdown-code-block > pre');
+        const code = document.querySelector('.markdown-code-block > pre');
         if (code) code.scrollTop = code.scrollHeight;
       });
     await ctx.advance(70);
   }
-  await page.evaluate((text) => window.CupcakeDemoMarkdown.render(text, false), text);
+  await completeReplay(page);
   await ctx.advance(200);
-  await page.evaluate(() => {
-    const receipt = window.__cupcakeReplayReceipt;
-    if (receipt.preSendUserFrames || receipt.emptyListFrames)
-      throw Error('Replay showed a premature message or empty list');
-  });
-}
-async function restoreReplay(page, keepHistoryHidden = false) {
-  await page.evaluate((keepHistoryHidden) => {
-    const replay = window.__cupcakeReplay;
-    if (!replay) return;
-    if (!keepHistoryHidden) cancelAnimationFrame(replay.frame);
-    window.__cupcakeReplayReceipts.push(window.__cupcakeReplayReceipt);
-    window.CupcakeDemoMarkdown.unmount();
-    replay.response.remove();
-    replay.original.style.display = '';
-    if (!keepHistoryHidden) {
-      document.getElementById('demo-replay-visibility')?.remove();
-      document
-        .querySelectorAll('[data-demo-revealed]')
-        .forEach((n) => n.removeAttribute('data-demo-revealed'));
-    }
-    replay.send.removeEventListener('click', replay.intercept, true);
-    delete window.__cupcakeReplay;
-  }, keepHistoryHidden === true);
-}
-async function clearReplayVisibility(page, requireOffscreen = true) {
-  // A navigation click can precede its React commit. Never reveal saved later
-  // turns until the conversation has actually left the rendered page.
-  if (requireOffscreen !== false)
-    await page.waitForFunction(() => !document.querySelector('.conversation-scroll'));
-  await page.evaluate(() => {
-    const audit = window.__cupcakeActiveReplayAudit;
-    if (audit) {
-      cancelAnimationFrame(audit.frame);
-      if (audit.receipt.unexpectedUserFrames || audit.receipt.preSendUserFrames)
-        throw Error('Replay transition exposed an unsent user message');
-      delete window.__cupcakeActiveReplayAudit;
-    }
-    document.getElementById('demo-replay-visibility')?.remove();
-    document
-      .querySelectorAll('[data-demo-revealed]')
-      .forEach((n) => n.removeAttribute('data-demo-revealed'));
-  });
 }

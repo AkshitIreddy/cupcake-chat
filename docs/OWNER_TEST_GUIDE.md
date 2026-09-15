@@ -30,16 +30,16 @@ Earlier examples and rejected attempts are archived, not featured.
 ## Review files
 
 - [README](../README.md): user and contributor sections, free provider options, and six screenshots.
-- Review MP4: `E:\temp\cupcake-chat-review-1.8-recent.mp4`, kept outside the repository.
+- Review MP4: `E:\temp\cupcake-chat-review-1.8-new-chat.mp4`, kept outside the repository.
 - [README animation](media/cupcake-chat-demo-preview.gif): the fast public feature tour.
 - [Demo notes](demo-storyboard.md): recording and replay provenance.
 - Installer: `E:\temp\cupcakeagi-tauri-target\release\bundle\nsis\Cupcake Chat_1.8.0_x64-setup.exe`.
 - Executable: `E:\temp\cupcakeagi-tauri-target\release\CupcakeAI.exe`.
 
-Product source is `9bbad6c`, including MIT licensing, compact first-release update status, smooth
-Markdown streaming, stable chat headers, full-width paragraphs, reusable inline Python tests,
-accurate Home project counts, and display equations. Package and media receipts are under
-`E:\temp\cupcake-chat-smooth-demo-1.8`.
+Product source is `43ef226`, including MIT licensing, compact first-release update status, smooth
+Markdown streaming with one cursor, stable chat headers, full-width paragraphs, reusable inline
+Python tests, accurate Home project counts, and display equations. Package and media receipts are
+under `E:\temp\cupcake-chat-smooth-demo-1.8`.
 
 ## What to try
 
