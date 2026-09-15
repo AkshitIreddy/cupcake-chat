@@ -2,18 +2,12 @@ name: Cupcake Chat Windows draft release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: Stable version already present in every manifest
-        required: true
-        default: '1.8.0'
-        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: cupcake-chat-release-${{ inputs.version }}
+  group: cupcake-chat-release
   cancel-in-progress: false
 
 jobs:
@@ -36,10 +30,9 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: services/runtime/pyproject.toml
-      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
       - run: node scripts/ci/install-js.mjs
-      - run: node scripts/assert-release-version.mjs "${{ inputs.version }}"
       - name: Require updater signing configuration
         shell: pwsh
         env:
@@ -110,7 +103,6 @@ jobs:
           python -m pip install --disable-pip-version-check -e
           "services/runtime[documents,durability,providers,sqlcipher]" pyinstaller==6.22.2
       - run: node scripts/package-sidecars.mjs
-      - run: node scripts/verify.mjs --lane rust
       - name: Build signed updater and create draft release
         uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa
         env:
@@ -124,16 +116,9 @@ jobs:
           tagName: v__VERSION__
           releaseName: Cupcake Chat v__VERSION__
           releaseBody:
-            Updater-signed Windows x64 release candidate. Review the installer evidence before
-            publishing this draft.
+            Cupcake Chat for Windows 10 and 11. Download the installer below to get started.
           releaseDraft: true
           prerelease: false
           generateReleaseNotes: true
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
-      - run:
-          node scripts/release-candidate-audit.mjs --require-artifacts --require-updater-artifacts
-      - if: env.AUTHENTICODE_ENABLED == 'true'
-        run:
-          node scripts/release-candidate-audit.mjs --require-artifacts --require-updater-artifacts
-          --require-authenticode

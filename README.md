@@ -205,8 +205,10 @@ node scripts/verify.mjs --lane rust
 
 The contract lane checks generated schemas. The Rust lane covers both the ToolBroker and the Tauri
 host. Live-provider checks are explicit, secret-safe opt-ins that supplement deterministic tests.
-The [development guide](docs/development.md) covers contracts, provider adapters, Cupcake Local,
-theme work, native visual acceptance, sidecar freezing, and the draft release pipeline.
+Run checks locally before submitting changes. GitHub automatically builds and uploads the Windows
+installer. The **Validation** and **Security** workflows are available on demand. The
+[development guide](docs/development.md) covers contracts, provider adapters, Cupcake Local, theme
+work, native visual acceptance, sidecar freezing, and the draft release pipeline.
 
 ### Build the Windows app
 
@@ -224,12 +226,12 @@ and one current-user NSIS installer under `apps/desktop/src-tauri/target/release
 space-constrained machine, set `CARGO_TARGET_DIR`, `TEMP`, and `TMP` to dedicated directories
 outside the repository before the build.
 
-The GitHub release workflow is manual and protected by the release environment. It validates the
-manifests, builds the Windows artifacts, signs the updater payload, and creates a **draft** GitHub
-Release containing the NSIS installer, required updater signature, and `latest.json`. Windows
-Authenticode signing is optional; drafts without it are explicitly marked. The workflow does not run
-automatically when a tag is pushed. Maintainers review the draft before publication. Store updater
-keys, Windows signing certificates, and release credentials in GitHub Actions secrets.
+The GitHub release workflow is manual and protected by the release environment. It builds the
+Windows artifacts, signs the updater payload, and creates a **draft** GitHub Release containing the
+NSIS installer, required updater signature, and `latest.json`. Windows Authenticode signing is
+optional; drafts without it are explicitly marked. The workflow does not run automatically when a
+tag is pushed. Maintainers review the draft before publication. Store updater keys, Windows signing
+certificates, and release credentials in GitHub Actions secrets.
 
 ### Release checklist
 

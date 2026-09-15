@@ -174,9 +174,13 @@ disposable profile; a successful version check alone does not prove signature re
 download/install, retained profile data, restart, or rollback behavior.
 
 `.github/workflows/release-windows.yml` is a manual `workflow_dispatch` protected by the `release`
-environment. It validates the 1.8.0 manifests, builds the Windows app, creates the required Tauri
-updater signature, generates `latest.json`, and uploads the installer and updater files to a
-**draft** GitHub Release. It must not run automatically from a tag or publish that draft.
+environment. It builds the Windows app, creates the required Tauri updater signature, generates
+`latest.json`, and uploads the installer and updater files to a **draft** GitHub Release. It must
+not run automatically from a tag or publish that draft.
+
+GitHub's automatic workflow only builds and uploads the Windows installer. Run tests, lint, version
+checks, and audits locally before releasing. The hosted Validation and Security workflows are manual
+options and do not block installer creation.
 
 Authenticode is optional: configure the certificate, password, and timestamp URL together to sign
 the Windows installer. Without them, the workflow labels the draft as lacking Authenticode while

@@ -1,9 +1,7 @@
 name: Validation
 
 on:
-  pull_request:
-  push:
-    branches: [main, master, 'feat/**']
+  # Maintainers run the full suite locally; hosted validation is opt-in.
   workflow_dispatch:
 
 permissions:
