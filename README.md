@@ -75,7 +75,7 @@ topic, cleaning a spreadsheet, drafting a message, or turning an answer into a f
 ### Install and finish setup
 
 Download the
-[Windows x64 installer](https://github.com/AkshitIreddy/cupcake-chat/releases/download/v1.8.1/Cupcake-Chat_1.8.1_x64-setup.exe)
+[Windows x64 installer](https://github.com/AkshitIreddy/cupcake-chat/releases/download/v1.8.2/Cupcake-Chat_1.8.2_x64-setup.exe)
 and run it to install Cupcake Chat for your Windows account. The app uses an NSIS installer and uses
 Microsoft Edge WebView2. The installer can obtain WebView2 when Windows does not already have it.
 
