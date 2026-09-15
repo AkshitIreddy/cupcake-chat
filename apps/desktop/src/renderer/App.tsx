@@ -1075,6 +1075,7 @@ function Composer({
   const [attachments, setAttachments] = useState<StagedAttachmentRecord[]>([]);
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const draftGeneration = useRef(0);
   const draftIdentityRef = useRef('');
   draftIdentityRef.current = JSON.stringify({
     conversationId: workspace.activeConversationId,
@@ -1085,6 +1086,7 @@ function Composer({
   });
   useEffect(() => {
     const reset = () => {
+      draftGeneration.current++;
       void clearSuccessfulDraft(attachments);
     };
     window.addEventListener('cupcake:new-draft', reset);
@@ -1119,12 +1121,41 @@ function Composer({
   const submit = async (input: ComposerSendInput) => {
     setSending(true);
     setDisclosureError('');
+    // The send promise spans the whole response. Move text out of the composer
+    // now, and never erase a follow-up the user writes while that response runs.
+    const sentText = value;
+    const submittedGeneration = draftGeneration.current;
+    const restoreText = () => {
+      if (draftGeneration.current === submittedGeneration) {
+        setValue((current) => current || sentText);
+      }
+    };
+    setValue('');
     try {
       const success = await onSend(input);
-      if (success) await clearSuccessfulDraft(input.attachments);
-      else setDisclosureError('Message not sent. Your draft and file access are still available.');
+      if (success) {
+        setAttachments((current) =>
+          current.filter(
+            (item) => !input.attachments.some((sent) => sent.handleId === item.handleId),
+          ),
+        );
+        setReferences((current) =>
+          current.filter(
+            (item) =>
+              !input.references.some((sent) => sent.id === item.id && sent.type === item.type),
+          ),
+        );
+        if (window.cupcake)
+          await Promise.allSettled(
+            input.attachments.map((item) => window.cupcake!.dialog.releaseHandle(item.handleId)),
+          );
+      } else {
+        restoreText();
+        setDisclosureError('Message not sent. Your draft and file access are still available.');
+      }
       return success;
     } catch (reason) {
+      restoreText();
       setDisclosureError(reason instanceof Error ? reason.message : 'Message could not be sent');
       return false;
     } finally {
@@ -2419,15 +2450,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
     }
   };
   if (!workspace.activeConversationId && workspace.messages.length === 0) {
-    return (
-      <div className="conversation">
-        <EmptyState
-          icon="chat"
-          title="Start a new thread"
-          body="What would make today a little easier?"
-        />
-      </div>
-    );
+    return <div className="conversation" />;
   }
   return (
     <div className="conversation live-conversation" data-rendered-messages={visible.length}>
