@@ -21,6 +21,10 @@ if not (RUNTIME / "pyproject.toml").is_file():
     raise SystemExit("services/runtime/pyproject.toml is required for the Python CI lane")
 
 run("pip", "install", "--disable-pip-version-check", "--upgrade", "pip==26.2.1")
+if sys.platform == "linux":
+    # Hosted Linux runners have no GPU. Avoid downloading several GB of CUDA
+    # libraries through Docling's Torch dependency before tests can even start.
+    run("pip", "install", "-r", str(ROOT / "scripts/ci/requirements-cpu.txt"))
 run(
     "pip",
     "install",
