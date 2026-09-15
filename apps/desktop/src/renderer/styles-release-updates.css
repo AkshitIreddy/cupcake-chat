@@ -16,6 +16,30 @@
   box-shadow: var(--shadow-soft);
 }
 
+.release-updates--preview {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  padding: 12px 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.release-updates--preview > div {
+  display: grid;
+  gap: 3px;
+}
+
+.release-updates--preview p,
+.release-updates--preview small {
+  margin: 0;
+  color: var(--muted);
+}
+
 .release-updates__heading {
   display: flex;
   grid-column: 1 / -1;

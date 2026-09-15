@@ -355,6 +355,21 @@ export function ReleaseUpdates({
   const action = updateAction(state, controller);
   const presentation = updatePresentation(state);
 
+  if (state.phase === 'unavailable' && state.configured === false) {
+    return (
+      <section
+        className="release-updates release-updates--preview"
+        aria-label="Cupcake Chat updates"
+      >
+        <div>
+          <strong>App updates</strong>
+          <small>Version {state.currentVersion}</small>
+        </div>
+        <p>Updates start with the first release.</p>
+      </section>
+    );
+  }
+
   return (
     <section
       className={`release-updates${compact ? ' release-updates--compact' : ''}`}
@@ -431,12 +446,8 @@ function updatePresentation(state: ReleaseUpdateState): {
     case 'unavailable':
       return {
         label: 'Unavailable',
-        title:
-          state.configured === false ? 'Signed updates are not configured' : 'Updates unavailable',
-        detail:
-          state.configured === false
-            ? 'This build cannot verify release downloads. Install a signed release build to enable updates.'
-            : 'Open the packaged Windows app to check for releases.',
+        title: 'Updates unavailable',
+        detail: 'Open the packaged Windows app to check for releases.',
         tone: 'quiet',
       };
     case 'idle':
