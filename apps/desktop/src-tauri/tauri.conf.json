@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "corepack pnpm run dev:web --host 127.0.0.1 --port 42619",
     "devUrl": "http://127.0.0.1:42619",
-    "beforeBuildCommand": "corepack pnpm run build:web",
+    "beforeBuildCommand": "corepack pnpm --filter @cupcakeagi/contracts build && corepack pnpm run build:web",
     "frontendDist": "../dist"
   },
   "app": {
