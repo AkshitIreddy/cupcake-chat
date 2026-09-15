@@ -167,6 +167,7 @@ try {
 
   await checkDefaultAdvisors();
   await checkSettingsOnboardingAndUpdater();
+  await checkHistoricalPortraitPersistence();
 
   if (faultTest) await checkRuntimeRecovery();
   if (taskTest) await checkOdmSandboxTask();
@@ -270,7 +271,10 @@ async function checkDefaultAdvisors() {
   requireCheck('fifteen-default-advisors', advisors.length === 15, receipt.advisors, true);
   requireCheck('default-advisor-prompt-depth', promptQuality, { advisors }, true);
   const history = personas.filter(
-    (item) => !item.archivedAt && item.avatar?.startsWith('product:art/history/'),
+    (item) =>
+      !item.archivedAt &&
+      /^(egyptian|greek|roman|viking|mongol|medieval)_/u.test(item.handle) &&
+      item.avatar?.startsWith('product:art/history/'),
   );
   requireCheck(
     '24-historical-advisors',
@@ -282,6 +286,52 @@ async function checkDefaultAdvisors() {
     { count: history.length, names: history.map((item) => item.name) },
     true,
   );
+}
+
+async function checkHistoricalPortraitPersistence() {
+  const before = await runtime('settings.list');
+  const choices = [
+    {
+      selector: '.avatar-picker:not(.avatar-picker--assistant) button[data-tooltip^="Flavia"]',
+      key: 'profile.avatar',
+      value: 'product:art/history/roman-1.webp',
+    },
+    {
+      selector: '.avatar-picker--assistant button[data-tooltip^="Milo"]',
+      key: 'assistant.avatar',
+      value: 'product:art/history/roman-0.webp',
+    },
+  ];
+  try {
+    await page.locator('.shelf').getByRole('button', { name: 'Settings', exact: true }).click();
+    await page
+      .locator('.settings-layout aside')
+      .getByRole('button', { name: 'Profile', exact: true })
+      .click();
+    for (const choice of choices) {
+      await page.locator(choice.selector).scrollIntoViewIfNeeded();
+      await page.locator(choice.selector).click();
+      await page.waitForFunction(
+        (selector) => globalThis.document.querySelector(selector)?.classList.contains('is-active'),
+        choice.selector,
+      );
+    }
+    await screenshot('historical-portraits-selected.png');
+    await page.reload();
+    await page.locator('.app-shell').waitFor({ timeout: 120000 });
+    const saved = await runtime('settings.list');
+    requireCheck(
+      'historical-portraits-persist',
+      choices.every((choice) => saved[choice.key] === choice.value),
+      Object.fromEntries(choices.map((choice) => [choice.key, saved[choice.key]])),
+      true,
+    );
+  } finally {
+    for (const choice of choices)
+      await runtime('settings.set', { key: choice.key, value: before[choice.key] });
+    await page.reload();
+    await page.locator('.app-shell').waitFor({ timeout: 120000 });
+  }
 }
 
 async function checkSettingsOnboardingAndUpdater() {
@@ -299,7 +349,7 @@ async function checkSettingsOnboardingAndUpdater() {
   const nativeStatus = await page.evaluate(() => globalThis.window.cupcake.app.updates.status());
   const updateCard = page.getByRole('region', { name: 'Cupcake Chat updates' });
   await updateCard.waitFor({ state: 'visible' });
-  await updateCard.getByText('Signed updates are not configured', { exact: true }).waitFor();
+  await updateCard.getByText('Updates start with the first release.', { exact: true }).waitFor();
   const updaterUi = {
     text: sanitize(await updateCard.innerText()),
     actionCount: await updateCard.locator('.release-updates__action').count(),
@@ -310,8 +360,8 @@ async function checkSettingsOnboardingAndUpdater() {
     nativeStatus?.configured === false &&
       nativeStatus?.currentVersion === VERSION &&
       updaterUi.actionCount === 0 &&
-      /Unavailable/iu.test(updaterUi.text) &&
-      /Signed updates are not configured/iu.test(updaterUi.text),
+      /Updates start with the first release/iu.test(updaterUi.text) &&
+      !/Unavailable|cannot verify|not configured/iu.test(updaterUi.text),
     receipt.updater,
     true,
   );
