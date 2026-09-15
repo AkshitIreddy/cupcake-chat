@@ -36,7 +36,7 @@
   <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
-<p align="center"><sub>Built with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a></sub></p>
+<p align="center"><sub>Demo built with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a></sub></p>
 
 ---
 
