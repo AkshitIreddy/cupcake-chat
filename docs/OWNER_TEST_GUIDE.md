@@ -30,7 +30,7 @@ Earlier examples and rejected attempts are archived, not featured.
 ## Review files
 
 - [README](../README.md): user and contributor sections, free provider options, and six screenshots.
-- Review MP4: `E:\temp\cupcake-chat-review-1.8.mp4`, kept outside the repository.
+- Review MP4: `E:\temp\cupcake-chat-review-1.8-recent.mp4`, kept outside the repository.
 - [README animation](media/cupcake-chat-demo-preview.gif): the fast public feature tour.
 - [Demo notes](demo-storyboard.md): recording and replay provenance.
 - Installer: `E:\temp\cupcakeagi-tauri-target\release\bundle\nsis\Cupcake Chat_1.8.0_x64-setup.exe`.

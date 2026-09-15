@@ -54,6 +54,17 @@ const timeline = gifsmith.timeline((t) => {
       );
       await page.evaluate(() => {
         window.__cupcakeReplayReceipts = [];
+        window.__cupcakeTourNavigation = [];
+        window.__cupcakeTourClick = (event) => {
+          const button = event.target.closest?.('button');
+          if (button?.matches('.shelf__nav button, .shelf__recent-list button')) {
+            window.__cupcakeTourNavigation.push({
+              area: button.closest('.shelf__recent-list') ? 'recent' : 'navigation',
+              label: button.textContent.trim(),
+            });
+          }
+        };
+        document.addEventListener('click', window.__cupcakeTourClick, true);
       });
     },
     { name: 'initialize production Markdown renderer', seconds: 0.1 },
@@ -62,9 +73,8 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   nav(t, 'Projects');
   clickText(t, '.project-card__select', 'Rome beyond the battlefield');
-  nav(t, 'Chats');
   t.call(hideReplayHistory, { name: 'hide old turns before opening replay', seconds: 0.01 });
-  clickText(t, '.chat-list__main', 'How did Rome keep an army fed?');
+  clickText(t, '.shelf__recent-list button', 'How did Rome keep an army fed?');
   t.call(prepareReplay, { name: 'prepare saved provider exchange', seconds: 0.2 });
   t.call(
     async (page) => {
@@ -80,9 +90,16 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   t.scroll('.conversation-scroll', 350, 0.8, 'easeInOut');
   t.hold(0.65);
-  t.call(restoreReplay, { name: 'restore original saved conversation', seconds: 0.2 });
+  t.call((page) => restoreReplay(page, true), {
+    name: 'restore replay while keeping later turns hidden',
+    seconds: 0.2,
+  });
   if (args.includes('--stream-only')) return;
   nav(t, 'Memory');
+  t.call(clearReplayVisibility, {
+    name: 'restore history after leaving the conversation',
+    seconds: 0.01,
+  });
   t.hold(0.65);
   t.click('button[aria-label="Search Cupcake Chat"]', { via: 'cursor', glideSeconds: 0.28 });
   t.waitFor('input[aria-label="Search workspace"]');
@@ -120,10 +137,6 @@ const timeline = gifsmith.timeline((t) => {
   }
   t.click('button[aria-label="Show all chats in sidebar"]', { via: 'cursor', glideSeconds: 0.28 });
   t.hold(0.65);
-  t.click('button[aria-label="Show all chats in sidebar"]', { via: 'cursor', glideSeconds: 0.28 });
-  nav(t, 'Projects');
-  clickText(t, '.project-card__select', 'Rome beyond the battlefield');
-  nav(t, 'Chats');
   t.call(
     async (page) => {
       prepared = exchanges.code;
@@ -131,7 +144,7 @@ const timeline = gifsmith.timeline((t) => {
     },
     { name: 'prepare real code exchange', seconds: 0.1 },
   );
-  clickText(t, '.chat-list__main', 'When would a Roman fort run out of grain?');
+  clickText(t, '.shelf__recent-list button', 'When would a Roman fort run out of grain?');
   t.call(prepareReplay, { name: 'prepare saved code response', seconds: 0.2 });
   t.call(
     (page) =>
@@ -185,10 +198,7 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   nav(t, 'Tasks');
   t.hold(0.65);
-  nav(t, 'Projects');
-  clickText(t, '.project-card__select', 'Rome beyond the battlefield');
-  nav(t, 'Chats');
-  clickText(t, '.chat-list__main', 'Winning battles, losing the war');
+  clickText(t, '.shelf__recent-list button', 'Winning battles, losing the war');
   t.hold(0.65);
   t.scroll('.conversation-scroll', -760, 0.9, 'easeInOut');
   t.hold(0.65);
@@ -409,16 +419,31 @@ try {
     );
   }
   receipt.replays = await page.evaluate(() => window.__cupcakeReplayReceipts);
+  receipt.navigation = await page.evaluate(() => window.__cupcakeTourNavigation);
+  assert.equal(
+    receipt.navigation.filter((item) => item.area === 'navigation' && item.label === 'Projects')
+      .length,
+    1,
+  );
+  assert.equal(
+    receipt.navigation.filter((item) => item.area === 'recent').length,
+    args.includes('--stream-only') ? 1 : 3,
+  );
   assert.equal(receipt.replays.length, args.includes('--stream-only') ? 1 : 2);
-  for (const replay of receipt.replays)
+  for (const replay of receipt.replays) {
     assert.equal(replay.interceptedSends, 1, 'Exactly one controlled Send per replay expected');
+    assert.equal(replay.unexpectedUserFrames, 0, 'Saved follow-up appeared without being sent');
+  }
   receipt.outcome = 'completed';
 } catch (error) {
   receipt.error = String(error.stack ?? error);
   process.exitCode = 1;
 } finally {
   await restoreReplay(page).catch(() => {});
-  await clearReplayVisibility(page).catch(() => {});
+  await clearReplayVisibility(page, false).catch(() => {});
+  await page
+    .evaluate(() => document.removeEventListener('click', window.__cupcakeTourClick, true))
+    .catch(() => {});
   receipt.finishedAt = new Date().toISOString();
   await writeFile(join(output, 'evidence.json'), JSON.stringify(receipt, null, 2));
   await browser.disconnect();
@@ -484,6 +509,7 @@ async function hideReplayHistory(page) {
     window.__cupcakeReplayReceipt = {
       interceptedSends: 0,
       preSendUserFrames: 0,
+      unexpectedUserFrames: 0,
       emptyListFrames: 0,
       frames: [],
       sentAt: null,
@@ -521,6 +547,8 @@ async function prepareReplay(page) {
       send.addEventListener('click', intercept, true);
       const replay = { user, assistant, original, response, send, intercept, frame: 0 };
       window.__cupcakeReplay = replay;
+      window.__cupcakeActiveReplayAudit = replay;
+      replay.receipt = receipt;
       const sample = () => {
         if (
           receipt.sentAt === null &&
@@ -529,6 +557,12 @@ async function prepareReplay(page) {
           )
         )
           receipt.preSendUserFrames++;
+        if (
+          [...document.querySelectorAll('.turn--user')].some(
+            (n) => n !== user && n.getBoundingClientRect().height > 0,
+          )
+        )
+          receipt.unexpectedUserFrames++;
         if ([...response.querySelectorAll('li')].some((n) => !n.textContent.trim()))
           receipt.emptyListFrames++;
         receipt.frames.push({
@@ -580,7 +614,7 @@ async function restoreReplay(page, keepHistoryHidden = false) {
   await page.evaluate((keepHistoryHidden) => {
     const replay = window.__cupcakeReplay;
     if (!replay) return;
-    cancelAnimationFrame(replay.frame);
+    if (!keepHistoryHidden) cancelAnimationFrame(replay.frame);
     window.__cupcakeReplayReceipts.push(window.__cupcakeReplayReceipt);
     window.CupcakeDemoMarkdown.unmount();
     replay.response.remove();
@@ -595,8 +629,19 @@ async function restoreReplay(page, keepHistoryHidden = false) {
     delete window.__cupcakeReplay;
   }, keepHistoryHidden === true);
 }
-async function clearReplayVisibility(page) {
+async function clearReplayVisibility(page, requireOffscreen = true) {
+  // A navigation click can precede its React commit. Never reveal saved later
+  // turns until the conversation has actually left the rendered page.
+  if (requireOffscreen !== false)
+    await page.waitForFunction(() => !document.querySelector('.conversation-scroll'));
   await page.evaluate(() => {
+    const audit = window.__cupcakeActiveReplayAudit;
+    if (audit) {
+      cancelAnimationFrame(audit.frame);
+      if (audit.receipt.unexpectedUserFrames || audit.receipt.preSendUserFrames)
+        throw Error('Replay transition exposed an unsent user message');
+      delete window.__cupcakeActiveReplayAudit;
+    }
     document.getElementById('demo-replay-visibility')?.remove();
     document
       .querySelectorAll('[data-demo-revealed]')

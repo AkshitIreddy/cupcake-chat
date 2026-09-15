@@ -23,7 +23,9 @@ assert(
 );
 assert(cutStart >= 0 && cutEnd > cutStart && cutEnd < evidence.result.durationSeconds);
 const source = join(root, 'cupcake-chat-demo.mp4');
-const mp4 = 'E:/temp/cupcake-chat-review-1.8.mp4';
+const outputIndex = process.argv.indexOf('--review-output');
+const mp4 =
+  outputIndex < 0 ? 'E:/temp/cupcake-chat-review-1.8.mp4' : resolve(process.argv[outputIndex + 1]);
 const gif = resolve('docs/media/cupcake-chat-demo-preview.gif');
 const run = (command, args) =>
   new Promise((resolve, reject) => {

@@ -17,8 +17,9 @@ contains an animated GIF. A separate MP4 is supplied locally for owner review.
 | Optional setup             | Show provider connection and local-runtime onboarding, then return Home.                                                                                                           |
 
 The tour moves quickly; viewers can pause. It has no bottom-right captions, standalone Tools-page
-tour, or long reading holds. Tool waiting time can be shortened in the edit, while retaining the
-actual click and its actual result. It is a feature demonstration, not a latency benchmark.
+tour, or long reading holds. Projects is shown once; all three chat selections use Recent in the
+sidebar. Tool waiting time can be shortened in the edit, while retaining the actual click and its
+actual result. It is a feature demonstration, not a latency benchmark.
 
 ## Saved examples
 
@@ -45,10 +46,11 @@ prefixes then pass through the production `RichMarkdown` component, including it
 The recorder restores the original conversation before clicking its real Run tests action.
 
 The helper checks for premature user messages and empty list items frame by frame, counts the
-intercepted replay Sends, and verifies that recording did not alter the saved histories. No new
-model request is made while filming. This temporary replay adapter is not shipped in the app.
-Navigation, provider selection, avatars, theme changes, onboarding, artifact browsing, and Python
-test execution use the real app controls.
+intercepted replay Sends, and verifies that recording did not alter the saved histories. The check
+continues through the end-of-replay transition, keeping later saved questions hidden until the
+conversation is offscreen. No new model request is made while filming. This temporary replay adapter
+is not shipped in the app. Navigation, provider selection, avatars, theme changes, onboarding,
+artifact browsing, and Python test execution use the real app controls.
 
 ## Reproduce locally
 
@@ -63,14 +65,14 @@ Without `--execute`, the helper prints its plan. Start the prepared packaged pro
 CDP on port 10131, then run:
 
 ```powershell
-node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\approved-take
+node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\recent-take
 ```
 
-The reviewed take lasts 97.8 seconds. Its final edit removes original seconds 47–60, after the Run
-tests click and before its completed output. Both review MP4 and README GIF last 84.8 seconds:
+The reviewed take lasts 92.6 seconds. Its final edit removes original seconds 44–57, after the Run
+tests click and before its completed output. Both review MP4 and README GIF last 79.6 seconds:
 
 ```powershell
-node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\approved-take --cut-start 47 --cut-end 60
+node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\recent-take --cut-start 44 --cut-end 57 --review-output E:\temp\cupcake-chat-review-1.8-recent.mp4
 ```
 
 Those boundaries were inspected in this take; inspect new recordings before choosing their cut
