@@ -26,7 +26,7 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/repo"
           ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
-          dir /repo --redact=100 --no-banner
+          dir /repo --config /repo/.gitleaks.toml --redact=100 --no-banner --verbose
 
   javascript-dependencies:
     name: JavaScript production dependencies

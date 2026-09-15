@@ -27,6 +27,8 @@ function requireCommand(command, hint) {
 
 async function verifyJavaScript() {
   const pnpm = pnpmCommand();
+  // Typed lint resolves the workspace package through its generated declarations.
+  run(pnpm.command, [...pnpm.prefix, '--filter', '@cupcakeagi/contracts', 'build']);
   run(pnpm.command, [...pnpm.prefix, 'lint']);
   run(pnpm.command, [...pnpm.prefix, 'typecheck']);
   run(pnpm.command, [...pnpm.prefix, 'test']);
@@ -69,7 +71,20 @@ async function verifyRust() {
       '-D',
       'warnings',
     ]);
-    run('cargo', ['test', '--manifest-path', manifest, '--all-features']);
+    // AppContainer probes must start without runner credentials. Keep the native
+    // broker's fail-closed inheritance check intact; scrub only the test child.
+    const testEnvironment = Object.fromEntries(
+      Object.keys(process.env)
+        .filter((name) =>
+          /SECRET|TOKEN|PASSWORD|CREDENTIAL|COOKIE|_KEY$|^CUPCAKE_(BROKER|RUNTIME)_AUTH$/i.test(
+            name,
+          ),
+        )
+        .map((name) => [name, undefined]),
+    );
+    run('cargo', ['test', '--manifest-path', manifest, '--all-features'], {
+      env: testEnvironment,
+    });
   }
 }
 

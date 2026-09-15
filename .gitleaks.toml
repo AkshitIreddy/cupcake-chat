@@ -1,0 +1,20 @@
+title = "Cupcake Chat secret scan"
+
+[extend]
+useDefault = true
+
+# Fixed cross-language protocol vectors: bytes 0..31 and their known HMAC.
+[[allowlists]]
+description = "Deterministic protocol authentication test vectors"
+condition = "AND"
+paths = ['''packages/contracts/test/protocol-auth-vectors\.json$''']
+regexTarget = "secret"
+regexes = ['''^AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8$''', '''^dKFgiRmUIwnND70jn7uBfJeUFk5pDHrrgf-7twWTsnU$''']
+
+# Public SHA-256 checksum of llama-tokenize.exe in the signed runtime catalog.
+[[allowlists]]
+description = "Public runtime binary checksum"
+condition = "AND"
+paths = ['''packaging/catalogs/cupcake-local-runtime-v1\.json$''']
+regexTarget = "secret"
+regexes = ['''^699ae62315adb2f00e2d5fbf4f1c57dd14dd6b38be6318dc51fcad40acd408e2$''']
