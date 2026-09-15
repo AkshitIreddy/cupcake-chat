@@ -23,13 +23,7 @@
   <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
-| A question about Rome                                                                         | A conversation with several Cupcakes                                                                     |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| ![A real Roman supply conversation in Roman Cupcake Camp](docs/media/cupcake-chat-roman.png)  | ![Historical advisors in a group chat on Rose Castle Garden](docs/media/cupcake-chat-group-rose.png)     |
-| Your choice of models                                                                         | Code, revisions and real results                                                                         |
-| ![Connected model catalog on Viking Cupcake Fjord](docs/media/cupcake-chat-models-viking.png) | ![A tested siege supply artifact on Aegean Cupcake Harbor](docs/media/cupcake-chat-artifacts-greek.png)  |
-| Explore the assumptions                                                                       | Meet your historical companions                                                                          |
-| ![An interactive Nile travel scenario](docs/media/cupcake-chat-workshop-egypt.png)            | ![Four Mongol-era Cupcake advisors with original portraits](docs/media/cupcake-chat-advisors-mongol.png) |
+<p align="center">Demo created with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a>.</p>
 
 ## For users
 
