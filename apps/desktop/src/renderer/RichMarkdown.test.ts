@@ -7,6 +7,19 @@ import { RichMarkdown, safeMarkdownUrl } from './RichMarkdown';
 import { markdownToAnnouncementText, StreamingAnnouncementBuffer } from './streaming-announcer';
 
 describe('prepareStreamingMarkdown', () => {
+  it('waits for list text before exposing a streaming bullet or checkbox', () => {
+    for (const marker of ['-', '* ', '1. ', '- [ ] ', '> - ', '- **']) {
+      const source = `A useful answer.\n\n${marker}`;
+      const frame = prepareStreamingMarkdown(source, true);
+      expect(frame.source).toBe(source);
+      const html = renderToStaticMarkup(React.createElement(RichMarkdown, null, frame.markdown));
+      expect(html).not.toContain('<li');
+      expect(frame.markdown.trim()).toBe('A useful answer.');
+      expect(prepareStreamingMarkdown(source, false).markdown).toBe(source);
+    }
+    expect(prepareStreamingMarkdown('```txt\n- ', true).markdown).toContain('- ');
+    expect(prepareStreamingMarkdown('- Grain', true).markdown).toBe('- Grain');
+  });
   it('temporarily closes unfinished fenced code with the matching marker', () => {
     const prepared = prepareStreamingMarkdown('Before\n\n~~~~ts\nconst value = 1;', true);
     expect(prepared.markdown).toBe('Before\n\n~~~~ts\nconst value = 1;\n~~~~');

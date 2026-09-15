@@ -537,3 +537,22 @@ html[data-reduced-motion='true'] .markdown-stream-cursor {
   transition: none !important;
   animation: none !important;
 }
+.markdown-code-result {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: 500 14px/1.5 var(--font-body, sans-serif);
+}
+.markdown-code-result details {
+  margin-top: 6px;
+}
+.markdown-code-result summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.markdown-code-result pre {
+  max-height: 240px;
+  white-space: pre-wrap;
+  padding: 10px 0 0;
+}

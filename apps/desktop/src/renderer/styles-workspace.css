@@ -9,7 +9,9 @@
 .app-content--chat {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Only the message pane scrolls. Hidden still permits focus/scrollIntoView
+     to displace this container and crop the fixed conversation header. */
+  overflow: clip;
 }
 .app-shell--wallpaper {
   --cocoa: #fff9ee;

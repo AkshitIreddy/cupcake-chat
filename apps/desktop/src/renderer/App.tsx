@@ -2233,6 +2233,44 @@ function RuntimeToolActivityCard({ activity }: { activity: ToolActivity }) {
   );
 }
 
+function ChatResponse({ message }: { message: MessageRecord }) {
+  const workspace = useWorkspace();
+  const runTests = useCallback(
+    async (code: string) => {
+      const title =
+        workspace.conversations.find((item) => item.id === workspace.activeConversationId)?.title ??
+        'Chat code';
+      const existing = workspace.artifacts.find(
+        (item) => item.mimeType === 'text/x-python' && item.content === code,
+      );
+      const artifact =
+        existing ??
+        (await workspace.createArtifact({
+          name: `${title.replace(/[<>:"/\\|?*]/g, '').slice(0, 70)}.py`,
+          kind: 'code',
+          mimeType: 'text/x-python',
+          content: code,
+        }));
+      const prepared = await workspace.createArtifactTestRun(artifact);
+      const result = await workspace.executeArtifactTestRun(prepared);
+      const summary = summarizeArtifactTestEvidence(result.evidence);
+      return {
+        headline: summary.headline,
+        output: summary.output || result.message || summary.detail,
+      };
+    },
+    [workspace],
+  );
+  return (
+    <RichMarkdown
+      streaming={message.streaming}
+      onRunPythonTests={workspace.activeProjectId ? runTests : undefined}
+    >
+      {message.content}
+    </RichMarkdown>
+  );
+}
+
 function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | null }) {
   const workspace = useWorkspace();
   const [windowEnd, setWindowEnd] = useState(workspace.messages.length);
@@ -2440,7 +2478,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
       {visible.map((message) => (
         <article
           className={cx('turn', message.role === 'user' ? 'turn--user' : 'turn--assistant')}
-          key={message.id}
+          key={message.renderKey ?? message.id}
           id={`message-${message.id}`}
         >
           <div
@@ -2547,9 +2585,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                   </div>
                 )}
                 {(message.content || message.responseState !== 'cancelled') && (
-                  <RichMarkdown streaming={message.streaming}>
-                    {message.content || 'Starting response…'}
-                  </RichMarkdown>
+                  <ChatResponse message={message} />
                 )}
                 {message.responseState === 'cancelled' && !message.streaming && (
                   <div className="response-limit-notice response-stopped-notice" role="status">

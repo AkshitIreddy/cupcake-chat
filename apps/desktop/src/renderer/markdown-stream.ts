@@ -164,6 +164,14 @@ export function prepareStreamingMarkdown(
 
   const completions: MarkdownCompletion[] = [];
   const fence = findOpenFence(normalized);
+  // A marker-only last line is syntax in transit, not an empty item to display.
+  // Keep it in source and preserve intentional empty items once the turn ends.
+  const visible = fence
+    ? normalized
+    : normalized.replace(
+        /(^|\n)[ \t]*(?:>[ \t]*)*(?:[-+*]|\d+[.)])[ \t]*(?:\[[ xX]?\]?[ \t]*)?(?:\*{1,2}|_{1,2})?[ \t]*$/u,
+        '',
+      );
 
   if (fence) {
     completions.push({ kind: 'fenced-code', marker: fence.character.repeat(fence.length) });
@@ -189,7 +197,7 @@ export function prepareStreamingMarkdown(
 
   return {
     source: normalized,
-    markdown: `${normalized}${suffix}`,
+    markdown: `${visible}${suffix}`,
     completions,
     streaming: true,
   };

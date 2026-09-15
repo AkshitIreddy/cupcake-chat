@@ -60,6 +60,8 @@ export interface BranchRecord {
 }
 
 export interface MessageRecord extends LiveChatMessage {
+  /** Keep the mounted renderer when a run ID is replaced by its persisted message ID. */
+  renderKey?: string;
   branchId?: string;
   createdAt?: string;
   modelId?: string | null;
@@ -997,7 +999,10 @@ function upsertAssistantMessage(
 ): MessageRecord[] {
   const existing = messages.find((message) => message.id === runId);
   if (!existing) {
-    return [...messages, update({ id: runId, role: 'assistant', content: '', streaming: true })];
+    return [
+      ...messages,
+      update({ id: runId, renderKey: runId, role: 'assistant', content: '', streaming: true }),
+    ];
   }
   return messages.map((message) => (message.id === runId ? update(message) : message));
 }
@@ -1478,6 +1483,25 @@ export function cancelledSendWasCommitted(
   if (!cancelled) return false;
   const parent = history.find((message) => message.id === cancelled.parent_message_id);
   return parent?.role === 'user' && parent.state === 'complete' && parent.content === content;
+}
+
+/** Runtime persistence changes IDs after streaming; keep the existing React
+ * identity when refreshing the same saved history so its buffer can drain. */
+export function reconcileMessageHistory(
+  previous: MessageRecord[],
+  history: RuntimeMessage[],
+): MessageRecord[] {
+  return history.map((message) => {
+    const prior = previous.find(
+      (item) =>
+        item.id === message.id ||
+        (message.run_id && (item.id === message.run_id || item.renderKey === message.run_id)),
+    );
+    return {
+      ...mapRuntimeMessage(message),
+      ...(prior?.renderKey ? { renderKey: prior.renderKey } : {}),
+    };
+  });
 }
 
 export function structuredAttachments(
@@ -3905,7 +3929,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (result.content) {
           const messageId = result.runId ?? result.message?.run_id ?? result.message?.id;
           setMessages((items) => {
-            if (messageId && items.some((item) => item.id === messageId)) return items;
+            if (
+              messageId &&
+              items.some(
+                (item) =>
+                  item.id === messageId ||
+                  item.renderKey === messageId ||
+                  item.id === result.message?.id,
+              )
+            )
+              return items;
             return [
               ...items,
               {
@@ -3925,7 +3958,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const history = await request<RuntimeMessage[]>('chat.history', {
             branchId: result.branchId,
           });
-          setMessages(history.map(mapRuntimeMessage));
+          setMessages((items) => reconcileMessageHistory(items, history));
         } catch (reason) {
           refreshErrors.push(reason instanceof Error ? reason.message : 'history refresh failed');
         }

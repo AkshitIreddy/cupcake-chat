@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeEvent } from '../shared/desktop-api';
-import { applyRuntimeMessageEvent, type MessageRecord } from './workspace';
+import { applyRuntimeMessageEvent, reconcileMessageHistory, type MessageRecord } from './workspace';
 
 function event(type: string, payload: Record<string, unknown>, sequence = 1): RuntimeEvent {
   return { type, payload, sequence, timestamp: '2026-08-29T12:00:00.000Z' };
 }
 
 describe('workspace runtime message stream', () => {
+  it('keeps the streaming renderer mounted through the final history refresh', () => {
+    const previous: MessageRecord[] = [
+      { id: 'saved', renderKey: 'run', role: 'assistant', content: 'Almost', streaming: true },
+    ];
+    const refreshed = reconcileMessageHistory(previous, [
+      {
+        id: 'saved',
+        run_id: 'run',
+        role: 'assistant',
+        content: 'All done',
+        state: 'complete',
+        branch_id: 'branch',
+        created_at: '2026-09-15T12:00:00Z',
+      },
+    ]);
+    expect(refreshed[0]).toMatchObject({ id: 'saved', renderKey: 'run', content: 'All done' });
+    expect(refreshed[0]?.streaming).not.toBe(true);
+  });
   it('resets discarded provider deltas and accumulates the replacement stream', () => {
     const initial: MessageRecord[] = [
       {
@@ -81,6 +99,7 @@ describe('workspace runtime message stream', () => {
     expect(completed).toEqual([
       expect.objectContaining({
         id: 'message-2',
+        renderKey: 'run-2',
         branchId: 'branch-2',
         content: 'Final answer',
         modelId: 'model-2',

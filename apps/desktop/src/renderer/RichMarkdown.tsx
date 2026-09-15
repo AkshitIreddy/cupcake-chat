@@ -1,10 +1,13 @@
 import {
   Children,
+  createContext,
   isValidElement,
+  memo,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -26,6 +29,7 @@ import {
 } from './citations';
 import { prepareStreamingMarkdown } from './markdown-stream';
 import { useStreamingAnnouncement } from './streaming-announcer';
+import { useStreamingText } from './streaming-text';
 import './styles-markdown.css';
 
 const CITATION_PROTOCOL = 'cupcake-citation:';
@@ -46,7 +50,14 @@ export interface RichMarkdownProps {
   readonly onCitationActivate?: (activation: CitationActivation) => void;
   readonly onOpenLink?: (link: OpenMarkdownLink) => void;
   readonly onCopyCode?: (code: string) => void | Promise<void>;
+  readonly onRunPythonTests?: (code: string) => Promise<{ headline: string; output: string }>;
 }
+
+const CodeActions = createContext<{
+  onCopyCode?: RichMarkdownProps['onCopyCode'];
+  onRunPythonTests?: RichMarkdownProps['onRunPythonTests'];
+  streaming: boolean;
+}>({ streaming: false });
 
 export function safeMarkdownUrl(value: string): string {
   const trimmed = value.trim();
@@ -114,6 +125,10 @@ interface CodeBlockProps {
 }
 
 function CodeBlock({ children, className, onCopyCode }: CodeBlockProps) {
+  const actions = useContext(CodeActions);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ headline: string; output: string } | null>(null);
+  const inFlight = useRef(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const code = textFromNode(children).replace(/\n$/, '');
@@ -147,6 +162,33 @@ function CodeBlock({ children, className, onCopyCode }: CodeBlockProps) {
     <figure className="markdown-code-block">
       <figcaption>
         <span>{label}</span>
+        {actions.onRunPythonTests && ['py', 'python'].includes(language.toLowerCase()) && (
+          <button
+            disabled={actions.streaming || running}
+            type="button"
+            onClick={() => {
+              if (inFlight.current || !actions.onRunPythonTests) return;
+              inFlight.current = true;
+              setRunning(true);
+              setResult(null);
+              void actions
+                .onRunPythonTests(code)
+                .then(setResult)
+                .catch((reason: unknown) => {
+                  setResult({
+                    headline: 'Tests could not run',
+                    output: reason instanceof Error ? reason.message : String(reason),
+                  });
+                })
+                .finally(() => {
+                  inFlight.current = false;
+                  setRunning(false);
+                });
+            }}
+          >
+            {running ? 'Running tests…' : 'Run tests'}
+          </button>
+        )}
         <button aria-label={`Copy ${label} code`} onClick={() => void copy()} type="button">
           {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
         </button>
@@ -154,6 +196,17 @@ function CodeBlock({ children, className, onCopyCode }: CodeBlockProps) {
       <pre aria-label={`${label} code example`} tabIndex={0}>
         <code className={className}>{children}</code>
       </pre>
+      {(running || result) && (
+        <div className="markdown-code-result" role="status">
+          <strong>{running ? 'Running in local Python…' : result?.headline}</strong>
+          {result?.output && (
+            <details open>
+              <summary>Python output</summary>
+              <pre>{result.output}</pre>
+            </details>
+          )}
+        </div>
+      )}
       <span aria-live="polite" className="markdown-sr-only">
         {copyState === 'copied'
           ? 'Code copied to clipboard'
@@ -164,6 +217,21 @@ function CodeBlock({ children, className, onCopyCode }: CodeBlockProps) {
     </figure>
   );
 }
+
+// A stable component type preserves code actions while Markdown grows or
+// workspace task events arrive. Inline component factories remounted this tree.
+const MarkdownPre: NonNullable<Components['pre']> = ({ children }) => {
+  const actions = useContext(CodeActions);
+  const child = Children.only(children) as ReactElement<{
+    children?: ReactNode;
+    className?: string;
+  }>;
+  return (
+    <CodeBlock className={child.props.className} onCopyCode={actions.onCopyCode}>
+      {child.props.children}
+    </CodeBlock>
+  );
+};
 
 class HeadingSlugger {
   readonly #seen = new Map<string, number>();
@@ -279,18 +347,7 @@ function makeComponents(
         </code>
       );
     },
-    pre({ children, node }) {
-      void node;
-      const child = Children.only(children) as ReactElement<{
-        children?: ReactNode;
-        className?: string;
-      }>;
-      return (
-        <CodeBlock className={child.props.className} onCopyCode={options.onCopyCode}>
-          {child.props.children}
-        </CodeBlock>
-      );
-    },
+    pre: MarkdownPre,
     table({ children, node, ...props }) {
       void node;
       return (
@@ -321,7 +378,7 @@ function makeComponents(
   };
 }
 
-export function RichMarkdown({
+export const RichMarkdown = memo(function RichMarkdown({
   children,
   className = '',
   citations = [],
@@ -331,53 +388,58 @@ export function RichMarkdown({
   onCitationActivate,
   onOpenLink,
   onCopyCode,
+  onRunPythonTests,
 }: RichMarkdownProps) {
+  const visible = useStreamingText(children, streaming);
+  const revealing = streaming || visible !== children;
   const prepared = useMemo(
-    () => prepareStreamingMarkdown(children, streaming),
-    [children, streaming],
+    () => prepareStreamingMarkdown(visible, revealing),
+    [visible, revealing],
   );
   const slugger = useMemo(() => new HeadingSlugger(), [prepared.markdown]);
   const components = useMemo(
     () => makeComponents(slugger, { allowRemoteImages, onCopyCode, onOpenLink }),
     [allowRemoteImages, onCopyCode, onOpenLink, slugger],
   );
-  const announcement = useStreamingAnnouncement(prepared.source, streaming);
+  const announcement = useStreamingAnnouncement(children, streaming);
 
   return (
     <CitationProvider citations={citations} onActivate={onCitationActivate}>
-      <div
-        aria-busy={streaming || undefined}
-        className={`rich-markdown ${streaming ? 'rich-markdown--streaming' : ''} ${className}`.trim()}
-        data-stream-completions={prepared.completions
-          .map((completion) => completion.kind)
-          .join(' ')}
-      >
-        <Markdown
-          components={components}
-          rehypePlugins={[
-            [rehypeHighlight, { detect: false, ignoreMissing: true }],
-            [
-              rehypeKatex,
-              { output: 'htmlAndMathml', strict: 'warn', throwOnError: false, trust: false },
-            ],
-          ]}
-          remarkPlugins={[remarkGfm, remarkMath, remarkCupcakeCitations]}
-          skipHtml
-          urlTransform={safeMarkdownUrl}
+      <CodeActions.Provider value={{ onCopyCode, onRunPythonTests, streaming: revealing }}>
+        <div
+          aria-busy={revealing || undefined}
+          className={`rich-markdown ${revealing ? 'rich-markdown--streaming' : ''} ${className}`.trim()}
+          data-stream-completions={prepared.completions
+            .map((completion) => completion.kind)
+            .join(' ')}
         >
-          {prepared.markdown}
-        </Markdown>
-        <span
-          aria-atomic="true"
-          aria-live="polite"
-          className="markdown-sr-only"
-          data-announcement-kind={announcement?.kind}
-          role="status"
-        >
-          {announcement?.text ?? ''}
-        </span>
-        {showCitationList && <CitationList />}
-      </div>
+          <Markdown
+            components={components}
+            rehypePlugins={[
+              [rehypeHighlight, { detect: false, ignoreMissing: true }],
+              [
+                rehypeKatex,
+                { output: 'htmlAndMathml', strict: 'warn', throwOnError: false, trust: false },
+              ],
+            ]}
+            remarkPlugins={[remarkGfm, remarkMath, remarkCupcakeCitations]}
+            skipHtml
+            urlTransform={safeMarkdownUrl}
+          >
+            {prepared.markdown}
+          </Markdown>
+          <span
+            aria-atomic="true"
+            aria-live="polite"
+            className="markdown-sr-only"
+            data-announcement-kind={announcement?.kind}
+            role="status"
+          >
+            {announcement?.text ?? ''}
+          </span>
+          {showCitationList && <CitationList />}
+        </div>
+      </CodeActions.Provider>
     </CitationProvider>
   );
-}
+});
