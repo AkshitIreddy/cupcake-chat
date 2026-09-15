@@ -87,6 +87,32 @@ function sourceOutsideFences(source: string): string {
   return visibleLines.join('\n');
 }
 
+/** Providers also use LaTeX display delimiters; remark-math expects dollars.
+ * Convert only stand-alone display delimiters, never examples inside code. */
+function displayMathDelimiters(source: string): string {
+  let fence: OpenFence | undefined;
+  return source
+    .split('\n')
+    .map((line) => {
+      const match = FENCE_PATTERN.exec(line);
+      const marker = match?.[1];
+      if (marker) {
+        const character = marker[0] as '`' | '~';
+        if (!fence) fence = { character, length: marker.length };
+        else if (
+          character === fence.character &&
+          marker.length >= fence.length &&
+          !(match?.[2] ?? '').trim()
+        )
+          fence = undefined;
+        return line;
+      }
+      if (!fence && ['\\[', '\\]'].includes(line.trim())) return '$$';
+      return line;
+    })
+    .join('\n');
+}
+
 function isEscaped(source: string, index: number): boolean {
   let slashCount = 0;
   for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor -= 1) {
@@ -158,17 +184,18 @@ export function prepareStreamingMarkdown(
   streaming = false,
 ): PreparedStreamingMarkdown {
   const normalized = normalizeMarkdownSource(source);
+  const displaySource = displayMathDelimiters(normalized);
   if (!streaming || normalized.length === 0) {
-    return { source: normalized, markdown: normalized, completions: [], streaming };
+    return { source: normalized, markdown: displaySource, completions: [], streaming };
   }
 
   const completions: MarkdownCompletion[] = [];
-  const fence = findOpenFence(normalized);
+  const fence = findOpenFence(displaySource);
   // A marker-only last line is syntax in transit, not an empty item to display.
   // Keep it in source and preserve intentional empty items once the turn ends.
   const visible = fence
-    ? normalized
-    : normalized.replace(
+    ? displaySource
+    : displaySource.replace(
         /(^|\n)[ \t]*(?:>[ \t]*)*(?:[-+*]|\d+[.)])[ \t]*(?:\[[ xX]?\]?[ \t]*)?(?:\*{1,2}|_{1,2})?[ \t]*$/u,
         '',
       );
@@ -176,7 +203,7 @@ export function prepareStreamingMarkdown(
   if (fence) {
     completions.push({ kind: 'fenced-code', marker: fence.character.repeat(fence.length) });
   } else {
-    const proseSource = sourceOutsideFences(normalized);
+    const proseSource = sourceOutsideFences(displaySource);
     const inlineCode = findOpenInlineCode(proseSource);
     if (inlineCode) {
       completions.push({ kind: 'inline-code', marker: '`'.repeat(inlineCode) });

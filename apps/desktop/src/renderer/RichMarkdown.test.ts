@@ -7,6 +7,19 @@ import { RichMarkdown, safeMarkdownUrl } from './RichMarkdown';
 import { markdownToAnnouncementText, StreamingAnnouncementBuffer } from './streaming-announcer';
 
 describe('prepareStreamingMarkdown', () => {
+  it('renders provider LaTeX display delimiters while preserving code examples and stored text', () => {
+    const source = 'Days:\n\\[\n\\frac{14400}{400 \\times 0.8}=45\n\\]';
+    const prepared = prepareStreamingMarkdown(source);
+    expect(prepared.source).toBe(source);
+    const html = renderToStaticMarkup(React.createElement(RichMarkdown, null, source));
+    expect(html).toContain('katex-display');
+    const code = '```tex\n\\[\nx\n\\]\n```';
+    expect(prepareStreamingMarkdown(code).markdown).toBe(code);
+    expect(prepareStreamingMarkdown('\\[\nx', true).completions).toContainEqual({
+      kind: 'block-math',
+      marker: '$$',
+    });
+  });
   it('waits for list text before exposing a streaming bullet or checkbox', () => {
     for (const marker of ['-', '* ', '1. ', '- [ ] ', '> - ', '- **']) {
       const source = `A useful answer.\n\n${marker}`;
