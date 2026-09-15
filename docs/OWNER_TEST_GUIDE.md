@@ -19,6 +19,6 @@ Use `pnpm clean:preview` to inspect the cleanup scope, `pnpm clean:generated` to
 QA/recording/packaging output, or `pnpm clean:profiles` to also reset development profiles after
 closing the app. Build caches, source, published media, and installed-app data are retained.
 
-If this checkout still has old E: junctions, run `Consolidate Cupcake Chat.bat` once. It copies and
-verifies the project directories before removing their old locations. It does not rename this
-checkout or move release credentials.
+The checkout now uses local directories. Old migration/archive launchers have been removed. Rust
+target directories are disposable compiler caches; removing them saves disk space at the cost of a
+fresh compile on the next build. Keep the source, artwork and clean sidecar inputs.

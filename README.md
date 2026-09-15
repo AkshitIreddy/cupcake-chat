@@ -189,8 +189,8 @@ pnpm install --frozen-lockfile
 pnpm --filter @cupcakeagi/desktop dev
 ```
 
-Keep large build outputs and model files in a dedicated directory outside the repository. Test with
-a disposable profile by setting `CUPCAKE_TEST_DATA_DIR` to an explicit empty directory. Development
+Keep project build outputs in this checkout and reuse its existing output directories. Test with a
+disposable profile by setting `CUPCAKE_TEST_DATA_DIR` to an explicit empty directory. Development
 fixtures make visual work possible without credentials, but they are never evidence of a real
 provider, installed local model, durable restart, or packaged application.
 
@@ -255,11 +255,11 @@ pnpm clean:profiles   # Also reset optional development profiles (close the app 
 ```
 
 Cleanup preserves compiled Rust caches, pinned downloads, build tools, staged sidecars, source,
-README media, and installed-app data. It refuses linked working directories. For a checkout that
-still links to the old E: folders, run `Consolidate Cupcake Chat.bat` once. It copies the six known
-project directories into this checkout, verifies their contents, and removes the old locations. The
-obsolete WSL CI virtual environment is discarded; the Windows runtime environment under
-`services/runtime/.venv/` is retained. No installed app or release credentials are moved.
+README media, and installed-app data. Rust `target/` directories and `out/cargo/` are disposable
+compiler caches, not part of the application. They can be removed when builds are stopped; the next
+native build will recreate them. Development profiles omit debug symbols and incremental object
+copies by default to keep those caches smaller. Keep `services/runtime/.venv/`, `node_modules/`,
+artwork, and the clean sidecar inputs for development.
 
 The GitHub release workflow is manual and protected by the release environment. It builds the
 Windows artifacts, signs the updater payload, and creates a **draft** GitHub Release containing the

@@ -55,3 +55,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = "symbols"
+
+# Keep local development caches compact; opt into symbols when debugging native code.
+[profile.dev]
+debug = 0
+incremental = false

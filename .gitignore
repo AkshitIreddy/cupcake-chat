@@ -4,6 +4,7 @@ node_modules/
 dist/
 out/
 *.consolidating/
+*.old-link
 release/
 coverage/
 playwright-report/
