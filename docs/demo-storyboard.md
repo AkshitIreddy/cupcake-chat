@@ -1,10 +1,11 @@
 # Cupcake Chat 1.8 demo
 
 The tour uses the packaged Windows app and Gifsmith 0.3.5, headlessly at 1440 × 920. It starts in
-Roman cupcake camp, changes once to Rose castle garden, and uses no zoom changes. The README
-contains a forward-looping animated GIF. A separate MP4 is supplied locally for owner review. Only
-the final Home hold dissolves into the opening frame; no scene plays backward or overlaps another
-chapter.
+Roman cupcake camp, explores Strawberry cupcakes and Rose castle garden, then returns to Rome.
+Editorial close-ups use smooth eased crops of the video; the app layout stays at its normal scale.
+The README contains a forward-looping animated WebP. A separate MP4 is supplied locally for owner
+review. Only the final Home hold dissolves into the opening frame; no scene plays backward or
+overlaps another chapter.
 
 ## Storyboard
 
@@ -13,16 +14,15 @@ chapter.
 | A curious question         | Type “How did Roman armies feed everyone so far from home?” and reveal the actual saved Google answer.                                                                             |
 | Keep the research together | Show project memory, search, and the connected model catalog. Switch model routes through the picker.                                                                              |
 | Code and tools in chat     | Type “Can you code and test when a Roman fort would run out of grain?” Show the actual saved Groq code appearing in chat, then click Run tests and show real local Python results. |
-| Work you can keep          | Open the saved Python artifact and task history.                                                                                                                                   |
-| A small conversation team  | Open the existing Cohere/Cloudflare discussion and the advisor picker, with visible cursor interactions.                                                                           |
-| Make it yours              | Change the human and assistant portraits, then change the theme and wallpaper once.                                                                                                |
+| A small conversation team  | Open the existing Cohere/Cloudflare discussion, browse Roman advisors, and show the custom advisor editor.                                                                         |
+| Make it yours              | Change both portraits, explore the settings, and view each chosen wallpaper in a clear new chat.                                                                                   |
 
-The tour moves quickly; viewers can pause. It has no bottom-right captions, standalone Tools-page
-tour, onboarding, or long reading holds. The prepared workspace is already Home in the Roman
-project, so the first action is New chat. Both typed exchanges start with New chat; the existing
-group discussion opens through Recent in the sidebar. Projects is never opened. Tool waiting time
-can be shortened in the edit, while retaining the actual click and its actual result. It is a
-feature demonstration, not a latency benchmark.
+The tour leaves room to follow model searches, advisor choices, and settings. It has no bottom-right
+captions, standalone Tools-page tour, Artifacts detour, or onboarding. The prepared workspace is
+already Home in the Roman project, so the first action is New chat. Both typed exchanges start with
+New chat; the existing group discussion opens through Recent in the sidebar. Projects is never
+opened. Tool waiting time can be shortened in the edit, while retaining the actual click and its
+actual result. It is a feature demonstration, not a latency benchmark.
 
 ## Saved examples
 
@@ -56,10 +56,10 @@ original source exchanges are hash-checked after filming.
 
 The helper samples frames from the empty draft through departure from the conversation. It checks
 for titles or user bubbles before Send, unsent follow-ups, and empty list items or duplicate
-streaming cursors, and counts actual New chat, Recent, and Projects clicks. No new model request is
-made while filming. This adapter is not shipped in the app. Provider selection, avatars, themes,
-onboarding, artifact browsing, and the inline Python test execution use real app controls and native
-operations.
+streaming cursors, stale composer text after Send, and counts actual New chat, Recent, and Projects
+clicks. No new model request is made while filming. This adapter is not shipped in the app. Provider
+selection, avatars, themes, settings, and the inline Python test execution use real app controls and
+native operations.
 
 ## Reproduce locally
 
@@ -74,24 +74,38 @@ Without `--execute`, the helper prints its plan. Start the prepared packaged pro
 CDP on port 10131, then run:
 
 ```powershell
-node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\forward-loop-final
+node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-demo-refresh-20260916\take
 ```
 
-The reviewed take lasts 98.93 seconds. Its final edit removes original seconds 57–75, after the Run
-tests click and before its completed output. Playback is 1.35x; the MP4 lasts 60.03 seconds and the
-forward-looping GIF lasts 60.0 seconds:
+Inspect each new recording before choosing the Python-wait cut points. Gifsmith motion-review
+intervals are not complete timeline-step boundaries. Export at normal speed and pass a JSON shot
+list to `--zooms` (each shot has `start`, `end`, `scale`, `x`, and `y`; times refer to the edited
+video and positions are normalized crop anchors). The editor eases camera movement over 750 ms and
+uses supersampling to reduce crop jitter. `edit.json` records all final choices.
 
 ```powershell
-node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\forward-loop-final --cut-start 57 --cut-end 75 --speed 1.35 --forward-loop --review-output E:\temp\cupcake-chat-review-1.8-forward-loop.mp4
+node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-demo-refresh-20260916\take --cut-start START --cut-end END --zooms E:\temp\cupcake-chat-demo-refresh-20260916\zooms.json --forward-loop --review-output E:\temp\cupcake-chat-review-1.8-refined.mp4
 ```
-
-Those boundaries were inspected in this take; inspect new recordings before choosing their cut
-points. Gifsmith motion-review intervals are not complete timeline-step boundaries.
 
 The helper requires packaged version 1.8.0 and rejects fixture mode. It attaches to the existing
 headless app, hides FFmpeg children, and never reads provider keys or loads a model. Review the MP4,
 `evidence.json`, and Gifsmith temporal frames together. Keep the review MP4 outside the repository;
-encode the approved public animation into `docs/media/cupcake-chat-demo-preview.gif`.
+encode the approved public animation into `docs/media/cupcake-chat-demo-preview.webp`.
 
 Earlier long recordings are superseded. Their narrower restart-recovery evidence is preserved in the
 worklog and is not used to qualify this revised capture.
+
+## September 16 revision
+
+The reviewed recording uses the packaged app with the composer fix in `89cfa78`. A send clears the
+textbox while the reply is pending, preserves a follow-up typed during that reply, and restores the
+draft on failure. `scripts/verify-demo-chat-behavior.mjs` exercised these cases in the native app. A
+separate headless check created an advisor through the UI, verified its model and instructions after
+reload, then removed it from the group and archived that temporary advisor.
+
+The raw take is 144.2 seconds. Removing only seconds 57.5–74.5 of inactive Python waiting produces a
+127.3-second review MP4 at 1440 × 920, 30 fps. The README uses a 960-pixel animated WebP at 20 fps.
+The two replay audits report zero stale-composer, premature-title, premature-user-message,
+empty-bullet, or duplicate-cursor frames. The saved source histories remained unchanged; the demo
+profile still contains seven conversations and 41 active advisors. Editorial crops and the final
+hold were inspected as temporal frame sequences, including the provider typing and advisor controls.

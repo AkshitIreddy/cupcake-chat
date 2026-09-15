@@ -79,9 +79,10 @@ const timeline = gifsmith.timeline((t) => {
     },
     { name: 'initialize tour interaction audit', seconds: 0.1 },
   );
-  t.hold(0.35);
+  t.hold(0.7);
   t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.28 });
   t.call(prepareReplay, { name: 'prepare genuine empty chat', seconds: 0.2 });
+  t.hold(1.4);
   t.call(
     async (page) => {
       await page.type('textarea[aria-label="Message Cupcake"]', prepared.user.content, {
@@ -110,8 +111,12 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   nav(t, 'Models');
   t.hold(0.65);
-  t.scroll('.app-content', 380, 0.8, 'easeInOut');
-  t.hold(0.65);
+  t.scroll('.app-content', 760, 1.3, 'easeInOut');
+  t.hold(1.1);
+  t.scroll('.app-content', 900, 1.4, 'easeInOut');
+  t.hold(1.1);
+  t.scroll('.app-content', 760, 1.3, 'easeInOut');
+  t.hold(1.1);
   t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.28 });
   for (const route of ['Cohere', 'Groq']) {
     t.click('button.model-chip:not(.group-model-chip)', { via: 'cursor', glideSeconds: 0.28 });
@@ -125,8 +130,21 @@ const timeline = gifsmith.timeline((t) => {
       },
       { name: 'clear model search', seconds: 0.1 },
     );
-    t.type('.model-picker input[placeholder*="Search model"]', route, { delayMs: 55 });
-    t.hold(0.65);
+    t.click('.model-picker input[placeholder*="Search model"]', {
+      via: 'cursor',
+      glideSeconds: 0.4,
+    });
+    t.hold(0.35);
+    t.call(
+      async (page, ctx) => {
+        for (const character of route) {
+          await page.keyboard.type(character);
+          await ctx.advance(220);
+        }
+      },
+      { name: `type ${route} visibly`, seconds: route.length * 0.22 },
+    );
+    t.hold(1.3);
     t.call((page) => mark(page, '.model-picker__list button', prepared.modelNames[route]), {
       name: `choose ${route}`,
       seconds: 0.1,
@@ -136,7 +154,7 @@ const timeline = gifsmith.timeline((t) => {
       name: 'model selected',
       seconds: 0.1,
     });
-    t.hold(0.25);
+    t.hold(0.7);
   }
   t.click('button[aria-label="Show all chats in sidebar"]', { via: 'cursor', glideSeconds: 0.28 });
   t.hold(0.65);
@@ -187,13 +205,7 @@ const timeline = gifsmith.timeline((t) => {
     { name: 'show actual local Python output', seconds: 0.2 },
   );
   t.hold(0.65);
-  nav(t, 'Artifacts');
-  t.call(finishReplayAudit, { name: 'finish audit after leaving code', seconds: 0.01 });
-  // The newest saved artifact is first; prior failed work remains in the audit history.
-  t.click('.artifact-list__item:first-child', { via: 'cursor', glideSeconds: 0.28 });
-  t.hold(0.65);
-  t.scroll('.document-preview', 590, 0.9, 'easeInOut');
-  t.hold(0.65);
+  t.call(finishReplayAudit, { name: 'finish code audit', seconds: 0.01 });
   nav(t, 'Tasks');
   t.hold(0.65);
   clickText(t, '.shelf__recent-list button', 'Winning battles, losing the war');
@@ -202,16 +214,19 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   t.click('button.participant-add', { via: 'cursor', glideSeconds: 0.28 });
   t.waitFor('button[aria-label="Close Add Cupcake"]');
-  t.click('select[aria-label="Advisor era"]', { via: 'cursor', glideSeconds: 0.28 });
-  t.call(
-    async (page) => {
-      await page.keyboard.press('r');
-      await page.keyboard.press('Enter');
-    },
-    { name: 'choose Roman companions from the open selector', seconds: 0.2 },
-  );
-  t.hold(0.65);
-  t.click('button[aria-label="Close Add Cupcake"]', { via: 'cursor', glideSeconds: 0.28 });
+  t.hold(1.1);
+  t.click('input[aria-label="Search your Cupcakes"]', { via: 'cursor', glideSeconds: 0.4 });
+  t.type('input[aria-label="Search your Cupcakes"]', 'Roman', { delayMs: 180 });
+  t.hold(1.6);
+  t.scroll('.add-cupcake-dialog__body', 290, 1.1, 'easeInOut');
+  t.hold(1.2);
+  clickText(t, '.add-cupcake-dialog__toolbar button', 'Create a Cupcake', true);
+  t.waitFor('[data-testid="persona-editor"]');
+  t.hold(1.4);
+  t.scroll('.persona-editor__fields', 410, 1.2, 'easeInOut');
+  t.hold(1.3);
+  t.click('button[aria-label="Close Cupcake editor"]', { via: 'cursor', glideSeconds: 0.4 });
+  t.hold(0.6);
   nav(t, 'Settings');
   clickText(t, '.settings-layout aside button', 'Profile', true);
   t.call(
@@ -258,12 +273,25 @@ const timeline = gifsmith.timeline((t) => {
     { name: 'verify saved assistant portrait', seconds: 0.2 },
   );
   t.hold(0.65);
-  clickText(t, '.settings-layout aside button', 'Appearance', true);
-  clickText(t, '.theme-grid button', 'Cupcake Dark');
-  clickText(t, '.wallpaper-grid button', 'Rose castle garden');
-  t.hold(0.65);
+  for (const tab of ['Personality', 'Providers', 'Local models', 'Window', 'Shortcuts']) {
+    clickText(t, '.settings-layout aside button', tab, true);
+    t.hold(2.8);
+  }
+  for (const [theme, wallpaper] of [
+    ['Cupcake Light', 'Strawberry cupcakes'],
+    ['Cupcake Dark', 'Rose castle garden'],
+    ['Cupcake Light', 'Roman cupcake camp'],
+  ]) {
+    nav(t, 'Settings');
+    clickText(t, '.settings-layout aside button', 'Appearance', true);
+    clickText(t, '.theme-grid button', theme);
+    clickText(t, '.wallpaper-grid button', wallpaper);
+    t.hold(0.6);
+    t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.4 });
+    t.hold(2.4);
+  }
   nav(t, 'Home');
-  t.hold(0.65);
+  t.hold(3.4);
 });
 const scene = {
   target: gifsmith.tauri({ port: 10131 }),
@@ -409,7 +437,7 @@ try {
   );
   assert.equal(
     receipt.navigation.filter((item) => item.area === 'new-chat').length,
-    args.includes('--stream-only') ? 1 : 2,
+    args.includes('--stream-only') ? 1 : 5,
   );
   assert.equal(
     receipt.navigation[0]?.area,
@@ -431,6 +459,11 @@ try {
     assert.equal(replay.preservedWhitespaceFrames, 0, 'Markdown inherited preformatted whitespace');
     assert.equal(replay.cursorRowFrames, 0, 'Streaming reserved an extra cursor row');
     assert.equal(replay.preSendTitleFrames, 0, 'Conversation had a generated title before Send');
+    assert.equal(
+      replay.staleComposerFrames,
+      0,
+      'Sent text remained in the composer while the answer streamed',
+    );
   }
   receipt.outcome = 'completed';
 } catch (error) {

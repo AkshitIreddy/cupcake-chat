@@ -1,10 +1,6 @@
 # Cupcake Chat
 
 <p align="center">
-  <img src="apps/desktop/public/brand/cupcake-mark.png" alt="Cupcake Chat" width="112" />
-</p>
-
-<p align="center">
   <strong>A warm Windows workspace where your AI chats can turn into useful work.</strong><br />
   Chat with one model, bring a small team of named Cupcakes into the same conversation, keep work
   organized by project, and choose exactly which local or hosted model answers.
@@ -20,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
+  <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
 <p align="center">Demo created with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a>.</p>
@@ -40,9 +36,10 @@ topic, cleaning a spreadsheet, drafting a message, or turning an answer into a f
   the runtime and downloads, and can run supported GGUF models on CPU, NVIDIA CUDA, or Vulkan.
 - **Cupcakes with a point of view.** Reusable advisors have names, roles, detailed instructions, and
   their own model. Add one with the **Add Cupcake** button or call specific members with
-  `@mentions`. Smart group turns let useful members answer while the rest stay quiet. The included
-  collection has **15 everyday advisors and 24 historical companions** across Egypt, Greece, Rome,
-  the Viking Age, the Mongol Empire, and medieval Europe.
+  `@mentions`. Make your own through **Add Cupcake → Create a Cupcake**. Smart group turns let
+  useful members answer while the rest stay quiet. The included collection has **15 everyday
+  advisors and 24 historical companions** across Egypt, Greece, Rome, the Viking Age, the Mongol
+  Empire, and medieval Europe.
 - **Projects that keep context together.** Chats, files, tasks, artifacts, and memory stay attached
   to the project they belong to. Recent can also show conversations from every project in one
   sidebar.

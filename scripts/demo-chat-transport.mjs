@@ -122,6 +122,7 @@ export async function armReplay(page, source) {
       preSendAnswerFrames: 0,
       preservedWhitespaceFrames: 0,
       cursorRowFrames: 0,
+      staleComposerFrames: 0,
       frames: [],
     };
     const audit = { receipt, frame: 0 };
@@ -132,6 +133,13 @@ export async function armReplay(page, source) {
       const answers = [...document.querySelectorAll('.turn--assistant .rich-response')];
       if (receipt.sentAt === null && users.length) receipt.preSendUserFrames++;
       if (receipt.sentAt === null && title !== 'New conversation') receipt.preSendTitleFrames++;
+      if (
+        answers.length &&
+        receipt.sentAt !== null &&
+        performance.now() - receipt.sentAt > 150 &&
+        document.querySelector('textarea[aria-label="Message Cupcake"]')?.value
+      )
+        receipt.staleComposerFrames++;
       if (users.length > 1) receipt.unexpectedUserFrames++;
       if (answers.some((n) => [...n.querySelectorAll('li')].some((li) => !li.textContent.trim())))
         receipt.emptyListFrames++;
