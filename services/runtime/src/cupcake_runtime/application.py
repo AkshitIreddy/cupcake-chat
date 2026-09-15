@@ -250,7 +250,7 @@ class RuntimeService:
             self.database,
             self.repository,
             self.objects,
-            product_version="1.8.0",
+            product_version="1.8.1",
         )
         self.ingestion = IngestionService(broad_adapter=DoclingAdapter())
         # These services add their own versioned tables to the authoritative
@@ -6103,7 +6103,7 @@ def _create_production_task_runtime(
     return create_production_dbos_runtime(
         coordinator,
         system_database_path=system_database_path,
-        application_version="1.8.0",
+        application_version="1.8.1",
     )
 
 

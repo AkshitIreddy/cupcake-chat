@@ -19,6 +19,7 @@ const requireUpdaterArtifacts = args.includes('--require-updater-artifacts');
 const requireAuthenticode = args.includes('--require-authenticode');
 const jsonOutput = parseArgValue(args, '--json', null);
 const checks = [];
+const releaseVersion = (await readJson(join(repoRoot, 'package.json'))).version;
 const targetTriple = 'x86_64-pc-windows-msvc';
 
 function record(name, ok, detail) {
@@ -26,7 +27,7 @@ function record(name, ok, detail) {
 }
 
 function assertReleaseVersion(label, version) {
-  record(`${label} version`, version === '1.8.0', String(version ?? 'missing'));
+  record(`${label} version`, version === releaseVersion, String(version ?? 'missing'));
 }
 
 async function auditVersions() {
@@ -51,7 +52,7 @@ async function auditVersions() {
   const pythonVersion = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
   record(
     'services/runtime/pyproject.toml version',
-    pythonVersion === '1.8.0',
+    pythonVersion === releaseVersion,
     String(pythonVersion ?? 'missing'),
   );
   const runtimeInit = await readFile(

@@ -1,6 +1,6 @@
 [package]
 name = "cupcakeagi-desktop-host"
-version = "1.8.0"
+version = "1.8.1"
 description = "Windows Tauri host for Cupcake Chat"
 authors = ["Cupcake Chat contributors"]
 edition = "2021"
