@@ -1003,12 +1003,11 @@ function HomeView({
                 <span>
                   <strong>{project.name}</strong>
                   <small>
-                    {workspace.conversations.filter((item) => item.project === project.name).length}{' '}
-                    {workspace.conversations.filter((item) => item.project === project.name)
-                      .length === 1
-                      ? 'chat'
-                      : 'chats'}{' '}
-                    · {workspace.artifactCounts[project.id] ?? 0}{' '}
+                    {workspace.conversationCounts
+                      ? (workspace.conversationCounts[project.id] ?? 0)
+                      : '…'}{' '}
+                    {workspace.conversationCounts?.[project.id] === 1 ? 'chat' : 'chats'} ·{' '}
+                    {workspace.artifactCounts[project.id] ?? 0}{' '}
                     {(workspace.artifactCounts[project.id] ?? 0) === 1 ? 'artifact' : 'artifacts'}
                   </small>
                 </span>
@@ -2240,13 +2239,28 @@ function ChatResponse({ message }: { message: MessageRecord }) {
       const title =
         workspace.conversations.find((item) => item.id === workspace.activeConversationId)?.title ??
         'Chat code';
-      const existing = workspace.artifacts.find(
-        (item) => item.mimeType === 'text/x-python' && item.content === code,
-      );
+      // Lists contain metadata only after a reload. Read matching candidates
+      // before creating another copy of the same chat code.
+      const size = new TextEncoder().encode(code).byteLength;
+      const name = `${title.replace(/[<>:"/\\|?*]/g, '').slice(0, 70)}.py`;
+      let existing: ArtifactRecord | undefined;
+      for (const item of workspace.artifacts.filter(
+        (item) =>
+          item.projectId === workspace.activeProjectId &&
+          item.mimeType === 'text/x-python' &&
+          item.name === name &&
+          (item.size === undefined || item.size === size),
+      )) {
+        const saved = item.content === undefined ? await workspace.getArtifact(item) : item;
+        if (saved.content === code) {
+          existing = saved;
+          break;
+        }
+      }
       const artifact =
         existing ??
         (await workspace.createArtifact({
-          name: `${title.replace(/[<>:"/\\|?*]/g, '').slice(0, 70)}.py`,
+          name,
           kind: 'code',
           mimeType: 'text/x-python',
           content: code,
