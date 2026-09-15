@@ -1,3 +1,35 @@
+.automatic-update-dialog {
+  width: min(440px, calc(100vw - 40px));
+  margin: auto;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--paper-raised);
+  color: var(--cocoa);
+  box-shadow: var(--shadow-soft);
+}
+.automatic-update-dialog::backdrop {
+  background: rgb(0 0 0 / 30%);
+}
+.automatic-update-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+}
+.automatic-update-dialog p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.automatic-update-dialog progress {
+  width: 100%;
+  accent-color: var(--berry);
+}
+.automatic-update-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
 .release-updates {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

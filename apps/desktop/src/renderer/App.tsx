@@ -25,7 +25,7 @@ import { BackupRecoverySettings } from './BackupRecoverySettings';
 import { ReleaseUpdates } from './ReleaseUpdates';
 import { HISTORY_PORTRAITS, historyPortraitSource } from './history-eras';
 import { HistoryLab } from './HistoryLab';
-import { useAutomaticReleaseCheck } from './useAutomaticReleaseCheck';
+import { AutomaticUpdatePrompt } from './AutomaticUpdatePrompt';
 import { summarizeArtifactTestEvidence } from './artifact-test-result';
 import {
   MODEL_SIZE_OPTIONS,
@@ -12744,10 +12744,6 @@ function OnboardingTour({
 
 function LiveApp() {
   const workspace = useWorkspace();
-  useAutomaticReleaseCheck({
-    offline: workspace.settings.offline,
-    ready: workspace.ready && workspace.configurationReady,
-  });
   const onboardingRequested = new URLSearchParams(window.location.search).get('onboarding') === '1';
   const [view, setView] = useState<View>(initialView);
   const [allChats, setAllChats] = useState(false);
@@ -13090,6 +13086,18 @@ function LiveApp() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
+      <AutomaticUpdatePrompt
+        offline={workspace.settings.offline}
+        ready={workspace.ready && workspace.configurationReady}
+        busy={
+          workspace.messages.some((message) => message.streaming) ||
+          workspace.tasks.some((task) => task.status === 'working') ||
+          Boolean(
+            workspace.activeGroupTurn &&
+            ['preparing', 'choosing', 'responding'].includes(workspace.activeGroupTurn.status),
+          )
+        }
+      />
       <CupcakeTitlebar onSearch={() => navigate('search')} />
       <Shelf
         view={view}

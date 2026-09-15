@@ -15,6 +15,11 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/download/v1.8.0/Cupcake-Chat_1.8.0_x64-setup.exe"><strong>Download Cupcake Chat 1.8 for Windows</strong></a>
+  · <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/tag/v1.8.0">Release notes</a>
+</p>
+
+<p align="center">
   <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
@@ -59,10 +64,10 @@ topic, cleaning a spreadsheet, drafting a message, or turning an answer into a f
 
 ### Install and finish setup
 
-Find available Windows installers on the
-[Releases page](https://github.com/AkshitIreddy/cupcake-chat/releases). Cupcake Chat is a
-current-user NSIS install and uses Microsoft Edge WebView2. The installer can obtain WebView2 when
-Windows does not already have it.
+Download the
+[Windows x64 installer](https://github.com/AkshitIreddy/cupcake-chat/releases/download/v1.8.0/Cupcake-Chat_1.8.0_x64-setup.exe)
+and run it to install Cupcake Chat for your Windows account. The app uses an NSIS installer and uses
+Microsoft Edge WebView2. The installer can obtain WebView2 when Windows does not already have it.
 
 The first-run guide is a checklist, not a commitment. Every optional step has a skip choice and can
 be replayed later from **Settings**.
@@ -121,9 +126,9 @@ a guided tour of those sections. The [full user guide](docs/user-guide.md) expla
 
 ### Updates, data, and keys
 
-Release builds check the project's signed update feed and show the available version before an
-update is installed. An update does not delete the existing profile. Back up important work before a
-major upgrade, and verify the publisher and version shown by Windows.
+Cupcake Chat checks for new releases automatically and asks when an update is available. Choose
+**Yes, update** to download, verify, install, and reopen the app in one step, or **Later** to keep
+working. Your chats, projects, and settings are preserved. Checks pause in offline mode.
 
 Hosted prompts and selected context go to the provider you chose. Provider keys are stored through
 the in-app connection flow and protected with Windows DPAPI; do not place keys in the repository,

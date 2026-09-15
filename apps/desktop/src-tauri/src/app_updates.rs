@@ -68,7 +68,7 @@ pub fn public_key() -> &'static str {
     option_env!("CUPCAKE_UPDATER_PUBLIC_KEY")
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("")
+        .unwrap_or(include_str!("../updater.pub").trim())
 }
 
 fn selected_endpoint() -> HostResult<Url> {

@@ -185,6 +185,13 @@ export class ReleaseUpdateController {
     return this.state;
   }
 
+  async updateNow(): Promise<ReleaseUpdateState> {
+    if (this.state.phase !== 'ready') await this.download();
+    // A failed signature or download must never reach the installer.
+    if (this.state.phase === 'ready') await this.install();
+    return this.state;
+  }
+
   private applyStatus(status: AppUpdateStatus): void {
     const base = {
       currentVersion: status.currentVersion,

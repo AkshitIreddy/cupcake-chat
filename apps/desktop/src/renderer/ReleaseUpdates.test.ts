@@ -33,6 +33,30 @@ const idleStatus: AppUpdateStatus = {
 beforeEach(() => resetAutomaticReleaseCheckForTests());
 
 describe('ReleaseUpdateController', () => {
+  it('downloads and installs after one update confirmation', async () => {
+    const mock = updaterMock({ status: { ...idleStatus, availableVersion: '1.9.0' } });
+    const controller = new ReleaseUpdateController(mock.api, { offline: false });
+    await controller.initialize();
+    expect(mock.download).not.toHaveBeenCalled();
+    expect(mock.install).not.toHaveBeenCalled();
+    await controller.updateNow();
+    expect(mock.download).toHaveBeenCalledOnce();
+    expect(mock.install).toHaveBeenCalledOnce();
+    expect(mock.download.mock.invocationCallOrder[0]).toBeLessThan(
+      mock.install.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('does not install when download or signature verification fails', async () => {
+    const mock = updaterMock({ status: { ...idleStatus, availableVersion: '1.9.0' } });
+    mock.download.mockRejectedValueOnce(new Error('Signature verification failed'));
+    const controller = new ReleaseUpdateController(mock.api, { offline: false });
+    await controller.initialize();
+    await controller.updateNow();
+    expect(controller.snapshot.phase).toBe('error');
+    expect(mock.install).not.toHaveBeenCalled();
+  });
+
   it('reports a successful no-release check without inventing it before the feed responds', async () => {
     const mock = updaterMock({ check: { available: false } });
     const controller = new ReleaseUpdateController(mock.api, { offline: false });
