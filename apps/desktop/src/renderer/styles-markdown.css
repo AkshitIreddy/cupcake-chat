@@ -14,6 +14,10 @@
   max-width: 80ch;
 }
 
+.chat-main .rich-markdown > :is(p, ul, ol, blockquote) {
+  max-width: none;
+}
+
 .rich-markdown > :first-child,
 .rich-markdown > :first-child > :first-child {
   margin-top: 0;
