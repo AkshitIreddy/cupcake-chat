@@ -26,9 +26,11 @@ actual result. It is a feature demonstration, not a latency benchmark.
 
 ## Saved examples
 
-The isolated profile is `E:\temp\cupcake-chat-demo-profile-1.8`. Three projects contain seven active
+The published tour was recorded from an isolated development profile with three projects and seven
 conversations about Roman supplies and transport, Viking voyages, and Mongol mobility. Ordinary
-fresh profiles receive no sample history. The owner's separate test profile stays empty.
+fresh profiles receive no sample history. The old local recording profiles have since been cleared;
+prepare new real examples in `out/profiles/demo/` before recording again. Saved conversation IDs in
+the recorder must match that newly prepared profile.
 
 - **How did Rome keep an army fed?** — selected Google Gemini answer.
 - **When would a Roman fort run out of grain?** — Groq-generated Python, reviewed after an actual
@@ -63,10 +65,10 @@ native operations.
 
 ## Reproduce locally
 
-Install the pinned recorder under a temporary directory and provide FFmpeg:
+Install the pinned recorder in the reusable tools directory and provide FFmpeg:
 
 ```powershell
-npm install --prefix E:\temp\cupcake-gifsmith gifsmith@0.3.5 --cache E:\temp\npm-cache --no-audit --no-fund
+npm install --prefix out\tools\gifsmith gifsmith@0.3.5 --cache out\download-cache\npm --no-audit --no-fund
 node scripts/demo-cupcake-chat-replay.mjs
 ```
 
@@ -74,7 +76,7 @@ Without `--execute`, the helper prints its plan. Start the prepared packaged pro
 CDP on port 10131, then run:
 
 ```powershell
-node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-demo-refresh-20260916\take
+node scripts/demo-cupcake-chat-replay.mjs --execute --output out\demo\replay
 ```
 
 Inspect each new recording before choosing the Python-wait cut points. Gifsmith motion-review
@@ -84,7 +86,7 @@ video and positions are normalized crop anchors). The editor eases camera moveme
 uses supersampling to reduce crop jitter. `edit.json` records all final choices.
 
 ```powershell
-node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-demo-refresh-20260916\take --cut-start START --cut-end END --zooms E:\temp\cupcake-chat-demo-refresh-20260916\zooms.json --forward-loop --review-output E:\temp\cupcake-chat-review-1.8-refined.mp4
+node scripts/edit-cupcake-demo.mjs out\demo\replay --cut-start START --cut-end END --zooms out\demo\zooms.json --forward-loop --review-output out\demo\cupcake-chat-review.mp4
 ```
 
 The helper requires packaged version 1.8.0 and rejects fixture mode. It attaches to the existing

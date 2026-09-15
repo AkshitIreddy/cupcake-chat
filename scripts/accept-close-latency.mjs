@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('accept-close-latency');
+
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -17,10 +20,8 @@ const executable = resolve(
     join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
   ),
 );
-const profile = resolve(option('--profile', join('out', 'tauri-test-profiles', 'close-latency')));
-const webviewData = resolve(
-  option('--webview-data', 'E:/temp/CupcakeAI/qa/close-latency-webview2'),
-);
+const profile = resolve(option('--profile', join('out', 'profiles', 'close-latency')));
+const webviewData = resolve(option('--webview-data', workPath('qa/close-latency-webview2')));
 const port = Number(option('--port', '10071'));
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
   throw new Error('--port must be a non-privileged TCP port');

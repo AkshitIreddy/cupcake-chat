@@ -1,8 +1,11 @@
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-history-workshop');
+
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 const native = process.argv.includes('--native');
-const output = 'E:/temp/cupcake-release-1.8-20260915/history-ui';
+const output = workPath('qa/release/history-ui');
 await mkdir(output, { recursive: true });
 const browser = native
   ? await chromium.connectOverCDP('http://127.0.0.1:10131')

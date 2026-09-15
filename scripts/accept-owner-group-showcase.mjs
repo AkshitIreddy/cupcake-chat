@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath, assertWorkPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('accept-owner-group-showcase');
+
 /**
  * Accept the real packaged owner-profile group-chat showcase over an existing CDP port.
  *
@@ -10,11 +14,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 
-const OWNER_PROFILE = resolve('E:/temp/cupcakeai-owner-test-20260902');
-const OUTPUT_ROOT = resolve('E:/temp/cupcakeai-owner-group-showcase-20260905');
+const OWNER_PROFILE = resolve(workPath('profiles/test'));
+const OUTPUT_ROOT = resolve(workPath('qa/group-showcase'));
 const HARBOR_PROJECT = {
   id: '01a07025-0334-7ee4-8c90-4b65b1115a40',
   name: '[LIVE] Harbor Data Reliability Lab',
@@ -100,7 +104,7 @@ if (profile.toLowerCase() !== OWNER_PROFILE.toLowerCase()) {
   throw new Error(`This harness is restricted to the owner test profile: ${OWNER_PROFILE}`);
 }
 const output = resolve(option('--output', OUTPUT_ROOT));
-assertUnderETemp(output, '--output');
+assertUnderWorkRoot(output, '--output');
 await mkdir(output, { recursive: true });
 
 const evidence = {
@@ -1107,12 +1111,8 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
-function assertUnderETemp(path, label) {
-  const root = resolve('E:/temp').toLowerCase();
-  const candidate = path.toLowerCase();
-  if (!isAbsolute(path) || (candidate !== root && !candidate.startsWith(`${root}\\`))) {
-    throw new Error(`${label} must be under E:\\temp`);
-  }
+function assertUnderWorkRoot(path) {
+  assertWorkPath(path);
 }
 
 function delay(milliseconds) {
@@ -1161,6 +1161,8 @@ function runSelfTests() {
   assert.match(SMART_PROMPT, /planner/u);
   assert.match(SMART_PROMPT, /independent critic/u);
   assert.equal(QUIET_PROMPT, 'Thanks, that is all. No further replies are needed.');
-  assertUnderETemp(OUTPUT_ROOT, 'test output');
-  assert.throws(() => assertUnderETemp(resolve('E:/temporary/not-allowed'), 'bad output'));
+  assertUnderWorkRoot(OUTPUT_ROOT, 'test output');
+  assert.throws(() =>
+    assertUnderWorkRoot(resolve(resolve('..', 'outside-cupcake-output')), 'bad output'),
+  );
 }

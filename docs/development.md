@@ -46,11 +46,11 @@ pnpm --filter @cupcakeagi/desktop dev
 The Tauri host starts Vite and opens a custom undecorated window. Only intended empty titlebar
 regions may initiate dragging; controls and application content must remain non-draggable.
 
-Use an explicit disposable path in `CUPCAKE_TEST_DATA_DIR` for app and installer testing. Keep large
-outputs outside the repository. On the owner's machine, set `TEMP`, `TMP`, and `CARGO_TARGET_DIR` to
-directories under `E:\temp`. Before any GPU-heavy test, read and obey
-`C:\Users\akshi\Desktop\Code Palace\gpu use.txt`. Start helper processes and test applications
-headlessly so terminals do not appear on the desktop.
+Use a fixed disposable path under `out/profiles/` in `CUPCAKE_TEST_DATA_DIR` for app and installer
+testing. Keep generated output inside the checkout, reuse its build caches, and use
+`pnpm clean:generated` for disposable files. Do not create dated folders or copies on E:. Before any
+GPU-heavy test, read and obey `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`. Start helper
+processes and test applications headlessly so terminals do not appear on the desktop.
 
 ## Contracts
 

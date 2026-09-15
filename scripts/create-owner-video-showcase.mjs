@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('create-owner-video-showcase');
+
 /* global window */
 // Operational owner-profile helper. All assistant messages come from the real packaged runtime.
 import assert from 'node:assert/strict';
@@ -8,7 +12,7 @@ import { resolve, join } from 'node:path';
 import { URL } from 'node:url';
 import { chromium } from '@playwright/test';
 
-const root = resolve('E:/temp/cupcake-video-showcase-20260914');
+const root = resolve(workPath('qa/video-showcase'));
 const scenarioFile = new URL('./fixtures/owner-video-scenarios.json', import.meta.url);
 const args = process.argv.slice(2);
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
@@ -437,7 +441,7 @@ try {
   const info = await page.evaluate(() => window.cupcake.app.getInfo());
   assert(info.packaged, 'Development or fixture renderer rejected');
   const cleanup = JSON.parse(await readFile(join(root, 'cleanup-receipt.json'), 'utf8'));
-  assert.equal(cleanup.profile, 'E:\\temp\\cupcakeai-owner-test-20260902');
+  assert.equal(cleanup.profile, workPath('profiles/test'));
   const before = JSON.parse(
     await readFile(join(root, 'before-cleanup/configuration.json'), 'utf8'),
   );

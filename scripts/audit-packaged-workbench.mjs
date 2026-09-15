@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('audit-packaged-workbench');
+
 /* global document, innerHeight, innerWidth */
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -19,11 +22,9 @@ const executable = resolve(
     join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
   ),
 );
-const profile = resolve(option('--profile', 'E:/temp/cupcakeai-owner-test-20260902'));
-const output = resolve(option('--output', 'E:/temp/cupcake-overhaul-20260905/baseline'));
-const webviewData = resolve(
-  option('--webview-data', 'E:/temp/cupcake-overhaul-20260905/baseline-webview2'),
-);
+const profile = resolve(option('--profile', workPath('profiles/test')));
+const output = resolve(option('--output', workPath('qa/workbench/baseline')));
+const webviewData = resolve(option('--webview-data', workPath('qa/workbench/baseline-webview2')));
 const port = Number(option('--port', '10105'));
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
   throw new Error('--port must be a non-privileged TCP port');

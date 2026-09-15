@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('accept-owner-profile-ui');
+
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -22,9 +25,7 @@ const profile = resolve(
 const output = resolve(
   option('--output', join('artifacts', 'screenshots', 'owner-profile-acceptance')),
 );
-const webviewData = resolve(
-  option('--webview-data', 'E:/temp/CupcakeAI/qa/owner-profile-webview2'),
-);
+const webviewData = resolve(option('--webview-data', workPath('qa/owner-profile-webview2')));
 const port = Number(option('--port', '10051'));
 const disableProtection =
   args.includes('--disable-protection') || args.includes('--remove-password');

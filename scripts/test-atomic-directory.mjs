@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { promoteDirectory } from './lib/atomic-directory.mjs';
-import { repoRoot } from './lib/process.mjs';
+import { acquireWorkspaceLock, workPath, resetWorkDirectory } from './lib/workspace.mjs';
 
-const root = await mkdtemp(join(repoRoot, 'out', 'atomic-directory-test-'));
+const releaseWorkspace = await acquireWorkspaceLock('atomic-directory-test');
+const root = await resetWorkDirectory(workPath('qa/atomic-directory-test'));
 try {
   const finalDirectory = join(root, 'sidecars');
   const stagingDirectory = join(root, '.sidecars.staging');
@@ -32,6 +33,7 @@ try {
   process.stdout.write('Atomic directory promotion and rollback passed.\n');
 } finally {
   await rm(root, { recursive: true, force: true });
+  releaseWorkspace();
 }
 
 async function seed(directory, value) {

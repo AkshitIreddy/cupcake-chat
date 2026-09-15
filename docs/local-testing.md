@@ -67,17 +67,17 @@ record or directory, and never operates on `%LOCALAPPDATA%\CUPCAKEAGI`.
 
 ## 4. Disposable profile
 
-Use a new absolute child of:
+Reuse one named child of this directory, resetting it before fresh-profile acceptance:
 
 ```text
-C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\out\tauri-test-profiles\
+C:\Users\akshi\Desktop\Code Palace\Cupcakeagi\out\profiles\
 ```
 
-The repository's `out` directory is redirected to `E:\temp\cupcakeagi-out`; new large disposable
-profiles and captures may also use explicitly named child directories directly under `E:\temp`. Set
-`CUPCAKE_TEST_DATA_DIR` to that absolute, non-root directory before launching the packaged
-executable. Record the exact directory in the final handoff. Never reuse an older desktop profile as
-acceptance evidence, and never delete the owner's normal application data.
+Keep profiles and captures in the repository's `out/` tree. Set `CUPCAKE_TEST_DATA_DIR` to the
+chosen absolute profile path. Reset the development profile for fresh-profile evidence instead of
+creating another dated folder. Use `pnpm clean:generated` for QA/media output and
+`pnpm clean:profiles` to also clear development profiles after closing the app. These commands never
+operate on the installed application's data. See the README for storage consolidation.
 
 ## 5. Reproduce the rejected baseline complaints
 

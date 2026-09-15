@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock } from './lib/workspace.mjs';
+await acquireWorkspaceLock('test-nsis-lifecycle');
 import { spawn, spawnSync } from 'node:child_process';
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
@@ -35,11 +37,9 @@ const portableExecutable = resolve(
 if (!process.env.LOCALAPPDATA)
   throw new Error('LOCALAPPDATA is required for NSIS lifecycle testing');
 const installDirectory = normalize(join(process.env.LOCALAPPDATA, productName));
-const profile = resolve(
-  option('--profile', join('out', 'tauri-test-profiles', 'nsis-lifecycle-retained')),
-);
+const profile = resolve(option('--profile', join('out', 'profiles', 'nsis-lifecycle-retained')));
 const resultPath = resolve(
-  option('--result', join('out', 'nsis-lifecycle', 'lifecycle-result.json')),
+  option('--result', join('out', 'qa', 'nsis-lifecycle', 'lifecycle-result.json')),
 );
 const port = Number(option('--port', '10041'));
 

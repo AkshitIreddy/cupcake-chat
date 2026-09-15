@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock } from './lib/workspace.mjs';
+await acquireWorkspaceLock('accept-packaged-local-model');
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -15,7 +17,7 @@ const executable = resolve(
     join('apps', 'desktop', 'src-tauri', 'target', 'release', 'CupcakeAI.exe'),
   ),
 );
-const profile = resolve(option('--profile', join('out', 'tauri-test-profiles', 'packaged-local')));
+const profile = resolve(option('--profile', join('out', 'profiles', 'packaged-local')));
 const output = resolve(option('--output', join('artifacts', 'screenshots', 'packaged-local')));
 const markerPath = option('--gpu-marker');
 const port = Number(option('--port', '10031'));

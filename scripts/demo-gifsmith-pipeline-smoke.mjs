@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { workPath } from './lib/workspace.mjs';
 /**
  * Exercise gifsmith's capture -> H.264 MP4 path without touching the app.
  * The source images are labelled historical stills; this is not a product demo.
@@ -17,17 +18,17 @@ const option = (name, fallback) => {
   return value;
 };
 
-const output = resolve(option('--output', 'E:/temp/cupcake-gifsmith/pipeline-smoke'));
+const output = resolve(option('--output', workPath('tools/gifsmith/pipeline-smoke')));
 const gifsmithRoot = resolve(
-  option('--gifsmith-root', 'E:/temp/cupcake-gifsmith/node_modules/gifsmith'),
+  option('--gifsmith-root', workPath('tools/gifsmith/node_modules/gifsmith')),
 );
-assertChildOfETemp(output);
+assertChildOfWorkRoot(output);
 await mkdir(output, { recursive: true });
 
 const stills = [
-  resolve('E:/temp/cupcake-video-showcase-20260914/final-package-9f5a571/owner-home.png'),
-  resolve('E:/temp/cupcake-video-showcase-20260914/visual-gallery.png'),
-  resolve('E:/temp/cupcake-video-showcase-20260914/visual-chat-repair-cafe-group.png'),
+  resolve(workPath('qa/video-showcase/packaged/owner-home.png')),
+  resolve(workPath('qa/video-showcase/visual-gallery.png')),
+  resolve(workPath('qa/video-showcase/visual-chat-repair-cafe-group.png')),
 ];
 for (const path of stills) assert((await readFile(path)).length > 1000, `Missing still: ${path}`);
 
@@ -78,9 +79,9 @@ const result = await gifsmith.render({
 await writeFile(join(output, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 
-function assertChildOfETemp(path) {
+function assertChildOfWorkRoot(path) {
   if (!isAbsolute(path)) throw new Error('Output must be absolute');
-  const root = resolve('E:/temp');
+  const root = resolve(workPath());
   const rel = relative(root, resolve(path));
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Output must be a child of ${root}`);

@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('verify-cupcake-chat-refresh');
 
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -12,7 +15,7 @@ const option = (name, fallback) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 const port = Number(option('--port', '10131'));
-const output = resolve(option('--output', 'E:/temp/cupcake-chat-rebrand-20260914/native'));
+const output = resolve(option('--output', workPath('qa/refresh/native')));
 const cdp = option('--cdp', `http://127.0.0.1:${port}`);
 
 const plannedChecks = [

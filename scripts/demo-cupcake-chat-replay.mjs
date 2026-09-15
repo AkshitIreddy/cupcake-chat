@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import {
+  workPath,
+  assertWorkPath,
+  acquireWorkspaceLock,
+  resetWorkDirectory,
+  removeWorkDirectory,
+} from './lib/workspace.mjs';
 /**
  * Gifsmith tour of a real packaged profile. Only the typing/response chapter is
  * a controlled replay, using exact saved provider text. It never sends a model
@@ -7,7 +14,7 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,9 +31,9 @@ import {
 const args = process.argv.slice(2);
 const option = (key, fallback) => (args.includes(key) ? args[args.indexOf(key) + 1] : fallback);
 const execute = args.includes('--execute');
-const output = resolve(option('--output', 'E:/temp/cupcake-chat-smooth-demo-1.8'));
-assert(output.toLowerCase().startsWith('e:\\temp\\'), 'Large recording files belong under E:/temp');
-const install = 'E:/temp/cupcake-gifsmith';
+const output = resolve(option('--output', workPath('demo/replay')));
+assertWorkPath(output);
+const install = workPath('tools/gifsmith');
 const require = createRequire(pathToFileURL(join(install, 'package.json')));
 const puppeteer = require('puppeteer-core');
 const spawn = childProcess.spawn;
@@ -304,7 +311,7 @@ const scene = {
   loop: 'none',
   review: { dir: join(output, 'review'), maxFindings: 12, controls: 3 },
   workDir: join(output, 'work'),
-  keepFrames: true,
+  keepFrames: false,
   logLevel: 'info',
 };
 if (!execute) {
@@ -321,7 +328,8 @@ if (!execute) {
   );
   process.exit(0);
 }
-await mkdir(output, { recursive: true });
+const releaseWorkspace = await acquireWorkspaceLock('demo-replay');
+await resetWorkDirectory(output);
 const browser = await puppeteer.connect({
   browserURL: 'http://127.0.0.1:10131',
   defaultViewport: null,
@@ -331,7 +339,7 @@ assert(page, 'Launch the packaged demo profile first');
 const receipt = { startedAt: new Date().toISOString(), outcome: 'failed' };
 try {
   const info = await page.evaluate(() => window.cupcake.app.getInfo());
-  assert(info.packaged && info.appVersion === '1.8.0', 'Packaged 1.8 app required');
+  assert(info.packaged && /^1\.8\./u.test(info.appVersion), 'Packaged 1.8 app required');
   assert.equal(await page.$('.fixture-banner'), null, 'No fixture mode in release media');
   const conversation = await request(page, 'conversations.get', { conversationId: ids.analysis });
   const history = await request(page, 'chat.history', { branchId: conversation.activeBranchId });
@@ -478,6 +486,8 @@ try {
   receipt.finishedAt = new Date().toISOString();
   await writeFile(join(output, 'evidence.json'), JSON.stringify(receipt, null, 2));
   await browser.disconnect();
+  await removeWorkDirectory(scene.workDir);
+  releaseWorkspace();
 }
 process.stdout.write(
   JSON.stringify(

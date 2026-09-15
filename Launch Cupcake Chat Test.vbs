@@ -10,7 +10,7 @@ repositoryRoot = fileSystem.GetParentFolderName(WScript.ScriptFullName)
 ' continue to use the same Windows application identity.
 executablePath = fileSystem.BuildPath(repositoryRoot, "apps\desktop\src-tauri\target\release\CupcakeAI.exe")
 
-environment("CUPCAKE_TEST_DATA_DIR") = "E:\temp\cupcakeai-owner-test-20260902"
-environment("WEBVIEW2_USER_DATA_FOLDER") = "E:\temp\cupcakeai-owner-test-20260902-webview2"
+environment("CUPCAKE_TEST_DATA_DIR") = fileSystem.BuildPath(repositoryRoot, "out\profiles\test")
+environment("WEBVIEW2_USER_DATA_FOLDER") = fileSystem.BuildPath(repositoryRoot, "out\profiles\test-webview2")
 
 shell.Run """" & executablePath & """", 1, False

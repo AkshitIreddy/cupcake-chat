@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-workbench-visuals');
+
 /* global document, getComputedStyle, HTMLElement, innerHeight, innerWidth, requestAnimationFrame */
 import AxeBuilder from '@axe-core/playwright';
 import { chromium } from '@playwright/test';
@@ -6,7 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const baseURL = process.argv[2] ?? 'http://127.0.0.1:42620';
-const output = resolve(process.argv[3] ?? 'E:/temp/cupcake-overhaul-20260905/integrated-ui');
+const output = resolve(process.argv[3] ?? workPath('qa/workbench/integrated-ui'));
 const variants = [
   {
     name: 'narrow-light-ink-snow',

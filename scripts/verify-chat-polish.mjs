@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-chat-polish');
+
 /** Attach to the packaged historical profile. Executes its real Python test action. */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -6,7 +9,7 @@ import { resolve, join } from 'node:path';
 import { chromium } from '@playwright/test';
 
 /* global document, window, performance, requestAnimationFrame, cancelAnimationFrame, getComputedStyle */
-const output = resolve('E:/temp/cupcake-chat-smooth-demo-1.8/native-verified');
+const output = resolve(workPath('demo/replay/native-verified'));
 await mkdir(output, { recursive: true });
 const browser = await chromium.connectOverCDP('http://127.0.0.1:10131');
 const page = browser

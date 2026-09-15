@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('create-owner-video-group');
+
 /**
  * Verify the persisted repair-cafe group showcase in the packaged owner app.
  *
@@ -16,13 +19,11 @@ import { chromium } from '@playwright/test';
 /* global window, document, location */
 
 const PORT = 10131;
-const PROFILE = resolve('E:/temp/cupcakeai-owner-test-20260902');
-const OUTPUT = resolve('E:/temp/cupcake-video-showcase-20260914/group');
+const PROFILE = resolve(workPath('profiles/test'));
+const OUTPUT = resolve(workPath('qa/video-showcase/group'));
 const FIXTURES = resolve('scripts/fixtures/owner-video-scenarios.json');
-const CLEANUP_RECEIPT = resolve('E:/temp/cupcake-video-showcase-20260914/cleanup-receipt.json');
-const OLD_CONFIGURATION = resolve(
-  'E:/temp/cupcake-video-showcase-20260914/before-cleanup/configuration.json',
-);
+const CLEANUP_RECEIPT = resolve(workPath('qa/video-showcase/cleanup-receipt.json'));
+const OLD_CONFIGURATION = resolve(workPath('qa/video-showcase/before-cleanup/configuration.json'));
 const HANDLES = ['mara_floor', 'quill_safe', 'remy_welcome'];
 
 const artifactId = option('--artifact-id');

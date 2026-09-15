@@ -3,6 +3,7 @@ node_modules/
 .vite/
 dist/
 out/
+*.consolidating/
 release/
 coverage/
 playwright-report/

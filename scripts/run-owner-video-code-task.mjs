@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('run-owner-video-code-task');
+
 /* global window */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -7,7 +10,7 @@ import { join } from 'node:path';
 import { chromium } from '@playwright/test';
 
 assert.equal(process.argv[2], 'EXECUTE_REVIEWED_SANDBOX_TESTS');
-const root = 'E:/temp/cupcake-video-showcase-20260914';
+const root = workPath('qa/video-showcase');
 const id = 'donor-csv-validator';
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const scenario = JSON.parse(

@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-demo-chat-behavior');
+
 /* global window, document */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -11,14 +14,14 @@ import {
   completeReplay,
 } from './demo-chat-transport.mjs';
 
-const require = createRequire('E:/temp/cupcake-gifsmith/package.json');
+const require = createRequire(workPath('tools/gifsmith/package.json'));
 const puppeteer = require('puppeteer-core');
 const browser = await puppeteer.connect({
   browserURL: 'http://127.0.0.1:10131',
   defaultViewport: null,
 });
 const page = (await browser.pages()).find((p) => p.url().includes('tauri.localhost'));
-const output = 'E:/temp/cupcake-chat-demo-refresh-20260916';
+const output = workPath('qa/demo-chat');
 const checks = [];
 const request = (method, params = {}) =>
   page.evaluate(

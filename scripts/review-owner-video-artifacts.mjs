@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('review-owner-video-artifacts');
+
 /* global window */
 // Save reviewed documents as editor revisions, never as model messages.
 import assert from 'node:assert/strict';
@@ -7,7 +11,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from '@playwright/test';
 
-const root = 'E:/temp/cupcake-video-showcase-20260914';
+const root = workPath('qa/video-showcase');
 const args = process.argv.slice(2);
 assert.equal(args[0], '--execute');
 assert.equal(args[1], 'REVIEWED_EDITOR_REVISIONS');

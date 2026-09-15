@@ -12,11 +12,13 @@ export async function promoteDirectory(
     removeDirectory = (path) => rm(path, { recursive: true, force: true }),
   } = {},
 ) {
-  const previousDirectory = join(
-    dirname(finalDirectory),
-    `.${basename(finalDirectory)}.previous-${String(process.pid)}`,
-  );
-  await removeDirectory(previousDirectory);
+  const previousDirectory = join(dirname(finalDirectory), `.${basename(finalDirectory)}.previous`);
+  // Recover the last good output if a process stopped between the two renames.
+  if ((await pathExists(previousDirectory)) && !(await pathExists(finalDirectory))) {
+    await renameDirectory(previousDirectory, finalDirectory);
+  } else {
+    await removeDirectory(previousDirectory);
+  }
   const hadPrevious = await pathExists(finalDirectory);
   if (hadPrevious) await renameDirectory(finalDirectory, previousDirectory);
   try {

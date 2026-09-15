@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHmac, randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
+import { acquireWorkspaceLock, workPath, resetWorkDirectory } from './lib/workspace.mjs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -23,8 +23,9 @@ const stage = join(
 );
 const broker = join(stage, `cupcake-tool-broker${suffix}`);
 const runtime = join(stage, `cupcake-runtime${suffix}`);
+const releaseWorkspace = await acquireWorkspaceLock('sidecar-protocol');
 const dataDirectory =
-  suppliedDataDirectory ?? (await mkdtemp(join(tmpdir(), 'cupcake-sidecar-smoke-')));
+  suppliedDataDirectory ?? (await resetWorkDirectory(workPath('qa/sidecar-protocol')));
 const secret = randomBytes(32);
 const sessionId = uuidV7();
 const inheritedEnvironment =
@@ -196,6 +197,8 @@ try {
     });
   }
 }
+
+releaseWorkspace();
 
 if (healthOnly) process.stdout.write('Sidecar health passed against the supplied profile.\n');
 

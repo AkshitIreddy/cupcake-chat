@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { Buffer } from 'node:buffer';
-import { copyFile, cp, mkdir, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promoteDirectory } from './lib/atomic-directory.mjs';
+import { acquireWorkspaceLock, workPath, removeWorkDirectory } from './lib/workspace.mjs';
 import {
   commandExists,
   ensureDir,
@@ -55,10 +56,7 @@ if (
 ) {
   throw new Error('Sidecar output must be a child of the repository out/ directory.');
 }
-const stagingOutputDir = join(
-  dirname(finalOutputDir),
-  `.${basename(finalOutputDir)}.staging-${String(process.pid)}`,
-);
+const stagingOutputDir = join(dirname(finalOutputDir), `.${basename(finalOutputDir)}.staging`);
 const outputDir = verifyOnly ? finalOutputDir : stagingOutputDir;
 const manifestPath = join(outputDir, 'sidecars.manifest.json');
 const binarySuffix = '.exe';
@@ -97,26 +95,6 @@ async function runtimeSupportRecords(directory = outputDir) {
     });
   }
   return records;
-}
-
-async function cleanStaleStagingDirectories() {
-  const parent = dirname(finalOutputDir);
-  const resolvedParent = resolve(parent);
-  const prefix = `.${basename(finalOutputDir)}.staging-`;
-  const entries = await readdir(parent, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
-    const candidate = resolve(parent, entry.name);
-    if (dirname(candidate) !== resolvedParent || !basename(candidate).startsWith(prefix)) {
-      throw new Error(`Refusing to clean unsafe sidecar staging path: ${candidate}`);
-    }
-    const details = await stat(candidate);
-    if (Date.now() - details.mtimeMs < 6 * 60 * 60 * 1000) continue;
-    await rm(candidate, { recursive: true, force: true });
-    process.stdout.write(
-      `Removed stale sidecar staging directory ${relative(repoRoot, candidate)}.\n`,
-    );
-  }
 }
 
 async function pythonCommand() {
@@ -246,14 +224,8 @@ async function buildRuntime() {
 }
 
 async function reuseFrozenRuntime() {
-  const builtDirectory = join(
-    repoRoot,
-    'out',
-    'pyinstaller',
-    `${targetPlatform}-${targetArch}`,
-    'dist',
-    'cupcake-runtime',
-  );
+  // Reuse the last published sidecar tree, not a second PyInstaller copy.
+  const builtDirectory = finalOutputDir;
   const built = join(builtDirectory, outputName('runtime'));
   if (!(await exists(built))) {
     throw new Error(`Reusable frozen runtime is missing: ${built}`);
@@ -428,18 +400,15 @@ async function verifyManifest() {
 }
 
 async function stageTauriBundleInputs() {
-  // Large generated sidecars may live behind an E:\temp junction on Windows.
+  // Respect an explicitly configured junction on other developer machines.
   // Resolve those destinations first so atomic staging remains on the same
   // volume and promotion replaces the junction target, not the junction.
   const binaryDestination = await realpath(tauriBinaryDir).catch(() => tauriBinaryDir);
   const resourceDestination = await realpath(tauriResourceDir).catch(() => tauriResourceDir);
-  const binaryStaging = join(
-    dirname(binaryDestination),
-    `.${basename(binaryDestination)}.staging-${String(process.pid)}`,
-  );
+  const binaryStaging = join(dirname(binaryDestination), `.${basename(binaryDestination)}.staging`);
   const resourceStaging = join(
     dirname(resourceDestination),
-    `.${basename(resourceDestination)}.staging-${String(process.pid)}`,
+    `.${basename(resourceDestination)}.staging`,
   );
   await rm(binaryStaging, { recursive: true, force: true });
   await rm(resourceStaging, { recursive: true, force: true });
@@ -484,27 +453,41 @@ async function stageTauriBundleInputs() {
   );
 }
 
-await cleanStaleStagingDirectories();
-
-if (verifyOnly) {
-  if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
-  await verifyManifest();
-} else {
-  await rm(stagingOutputDir, { recursive: true, force: true });
-  if ((!clean || reuseNative) && (await exists(finalOutputDir))) {
-    await cp(finalOutputDir, stagingOutputDir, { recursive: true });
+const releaseWorkspace = await acquireWorkspaceLock('sidecars');
+try {
+  if (verifyOnly) {
+    if (!skipCupcakeLocal) await stageCupcakeLocal({ verify: true });
+    await verifyManifest();
+  } else {
+    await rm(stagingOutputDir, { recursive: true, force: true });
+    if ((!clean || reuseNative) && (await exists(finalOutputDir))) {
+      await cp(finalOutputDir, stagingOutputDir, { recursive: true });
+    }
+    await ensureDir(outputDir);
+    if (!skipRuntime && !reuseNative) {
+      if (reuseRuntime) await reuseFrozenRuntime();
+      else await buildRuntime();
+    }
+    if (!skipBroker && !reuseNative) await buildBroker();
+    if (!skipCupcakeLocal) await stageCupcakeLocal();
+    await copyFile(join(repoRoot, 'LICENSE'), join(outputDir, 'LICENSE.txt'));
+    await createManifest();
+    await verifyManifest();
+    await promoteDirectory(stagingOutputDir, finalOutputDir);
+    await stageTauriBundleInputs();
+    process.stdout.write(`Promoted verified sidecars to ${relativeFinalOutput}.\n`);
   }
-  await ensureDir(outputDir);
-  if (!skipRuntime && !reuseNative) {
-    if (reuseRuntime) await reuseFrozenRuntime();
-    else await buildRuntime();
+} finally {
+  if (!verifyOnly) {
+    await rm(stagingOutputDir, { recursive: true, force: true });
+    for (const directory of [tauriBinaryDir, tauriResourceDir]) {
+      const destination = await realpath(directory).catch(() => directory);
+      await rm(join(dirname(destination), `.${basename(destination)}.staging`), {
+        recursive: true,
+        force: true,
+      });
+    }
+    await removeWorkDirectory(workPath('pyinstaller'));
   }
-  if (!skipBroker && !reuseNative) await buildBroker();
-  if (!skipCupcakeLocal) await stageCupcakeLocal();
-  await copyFile(join(repoRoot, 'LICENSE'), join(outputDir, 'LICENSE.txt'));
-  await createManifest();
-  await verifyManifest();
-  await promoteDirectory(stagingOutputDir, finalOutputDir);
-  await stageTauriBundleInputs();
-  process.stdout.write(`Promoted verified sidecars to ${relativeFinalOutput}.\n`);
+  releaseWorkspace();
 }

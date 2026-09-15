@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-living-motion');
 
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -12,7 +14,7 @@ const vitePath = join(repo, 'node_modules', 'vite', 'bin', 'vite.js');
 const output = resolve(
   process.argv.includes('--output')
     ? process.argv[process.argv.indexOf('--output') + 1]
-    : 'E:/temp/cupcake-chat-rebrand-20260915/living-motion-fixture',
+    : workPath('qa/refresh/living-motion-fixture'),
 );
 const port = Number(
   process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : '42629',

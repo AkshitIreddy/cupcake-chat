@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('create-owner-everyday-showcase');
+
 /**
  * Create a warmer, everyday CupcakeAI showcase through a running packaged app.
  *
@@ -13,8 +17,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 
-const OWNER_PROFILE = resolve('E:/temp/cupcakeai-owner-test-20260902');
-const DEFAULT_OUTPUT = resolve('E:/temp/cupcakeai-owner-everyday-showcase-20260908');
+const OWNER_PROFILE = resolve(workPath('profiles/test'));
+const DEFAULT_OUTPUT = resolve(workPath('qa/everyday-showcase'));
 const OWNER_SENTINEL = {
   id: '01a07025-0334-7ee4-8c90-4b65b1115a40',
   name: '[LIVE] Harbor Data Reliability Lab',
@@ -217,7 +221,7 @@ if (profile.toLowerCase() !== OWNER_PROFILE.toLowerCase()) {
   throw new Error(`This harness is restricted to the owner test profile: ${OWNER_PROFILE}`);
 }
 const output = resolve(option('--output', DEFAULT_OUTPUT));
-assertUnderETemp(output, '--output');
+assertUnderWorkRoot(output, '--output');
 if (phase === 'hosted' && option('--execute') !== 'REAL_PROVIDER_CALLS') {
   throw new Error('Hosted creation requires --execute REAL_PROVIDER_CALLS');
 }
@@ -1280,9 +1284,9 @@ function slugify(value) {
     .slice(0, 80);
 }
 
-function assertUnderETemp(path, label) {
+function assertUnderWorkRoot(path, label) {
   if (!isAbsolute(path)) throw new Error(`${label} must be absolute`);
-  const root = resolve('E:/temp');
+  const root = resolve(workPath());
   const child = resolve(path);
   const rel = relative(root, child);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
@@ -1349,8 +1353,8 @@ function runSelfTests() {
   );
   assert.equal(normalizeProvider('Google Gemini'), 'google');
   assert.equal(normalizeProvider('Groq Cloud'), 'groq-cloud');
-  assert.throws(() => assertUnderETemp('E:/temp', 'test'), /child/u);
-  assert.doesNotThrow(() => assertUnderETemp('E:/temp/cupcake-proof', 'test'));
+  assert.throws(() => assertUnderWorkRoot(workPath(), 'test'), /child/u);
+  assert.doesNotThrow(() => assertUnderWorkRoot(workPath('qa/path-proof'), 'test'));
   assert.equal(slugify('A photo walk for grey weather'), 'a-photo-walk-for-grey-weather');
   assert.equal(
     chooseReadyModel(

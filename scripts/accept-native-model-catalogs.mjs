@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test'))
+  await acquireWorkspaceLock('accept-native-model-catalogs');
+
 /* global document, fetch */
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -23,7 +27,7 @@ const profile = resolve(
 const output = resolve(
   option('--output', join('artifacts', 'screenshots', 'native-model-catalogs')),
 );
-const webviewData = resolve(option('--webview-data', 'E:/temp/CupcakeAI/qa/native-model-catalogs'));
+const webviewData = resolve(option('--webview-data', workPath('qa/native-model-catalogs')));
 const port = Number(option('--port', '10058'));
 const catalogTimeout = Number(option('--catalog-timeout', '120000'));
 

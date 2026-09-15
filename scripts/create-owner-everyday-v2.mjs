@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('create-owner-everyday-v2');
+
 /**
  * Create and verify the ordinary-life owner showcase through the packaged app.
  *
@@ -14,8 +17,8 @@ import { chromium } from '@playwright/test';
 
 /* global window, document, location */
 
-const OWNER_PROFILE = resolve('E:/temp/cupcakeai-owner-test-20260902');
-const DEFAULT_OUTPUT = resolve('E:/temp/cupcake-chat-everyday-v2-20260914');
+const OWNER_PROFILE = resolve(workPath('profiles/test'));
+const DEFAULT_OUTPUT = resolve(workPath('qa/everyday'));
 const FIXTURE = resolve('scripts/fixtures/owner-everyday-v2-scenarios.json');
 const MODELS = {
   groq: {
@@ -48,7 +51,7 @@ const ARCHIVE_CONVERSATIONS = {
   'Small Shop Control Room': ['What do I reorder before Monday?'],
   'Private Team Notebook': ['What did we actually decide?'],
 };
-const LEGACY_EVIDENCE = resolve('E:/temp/cupcake-video-showcase-20260914/verification.json');
+const LEGACY_EVIDENCE = resolve(workPath('qa/video-showcase/verification.json'));
 const ARCHIVE_TOKEN = 'ARCHIVE_NAMED_SHOWCASE';
 
 const args = process.argv.slice(2);
@@ -79,7 +82,7 @@ if (profile.toLowerCase() !== OWNER_PROFILE.toLowerCase()) {
   throw new Error(`Owner profile must be ${OWNER_PROFILE}`);
 }
 const output = resolve(option('--output', DEFAULT_OUTPUT));
-assertChildOfETemp(output);
+assertChildOfWorkRoot(output);
 if (phase === 'run' && option('--execute') !== 'REAL_PROVIDER_CALLS') {
   throw new Error('Creation requires --execute REAL_PROVIDER_CALLS');
 }
@@ -781,9 +784,9 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function assertChildOfETemp(path) {
+function assertChildOfWorkRoot(path) {
   if (!isAbsolute(path)) throw new Error('Output path must be absolute');
-  const root = resolve('E:/temp');
+  const root = resolve(workPath());
   const rel = relative(root, resolve(path));
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Output must be a child of ${root}`);
@@ -815,8 +818,8 @@ function selfTest() {
   };
   assert.equal(assistantAfterPrompt([{ role: 'user', content: 'hello' }, reply], 'hello'), reply);
   assert.doesNotThrow(() => assertRoute(reply, MODELS.cohere));
-  assert.throws(() => assertChildOfETemp('E:/temp'), /child/u);
-  assert.doesNotThrow(() => assertChildOfETemp('E:/temp/cupcake-proof'));
+  assert.throws(() => assertChildOfWorkRoot(workPath()), /child/u);
+  assert.doesNotThrow(() => assertChildOfWorkRoot(workPath('qa/path-proof')));
 }
 
 function fixtureForTest() {

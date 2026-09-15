@@ -1,11 +1,14 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('edit-cupcake-demo');
+
 /** Shorten the real sandbox wait; publish an animation and keep MP4 for owner review. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 
-const root = resolve(process.argv[2] ?? 'E:/temp/cupcake-chat-smooth-demo-1.8/final');
+const root = resolve(process.argv[2] ?? workPath('demo/replay'));
 const read = async (path) => JSON.parse(await readFile(path, 'utf8'));
 const evidence = await read(join(root, 'evidence.json'));
 assert.equal(evidence.outcome, 'completed');
@@ -25,7 +28,9 @@ assert(cutStart >= 0 && cutEnd > cutStart && cutEnd < evidence.result.durationSe
 const source = join(root, 'cupcake-chat-demo.mp4');
 const outputIndex = process.argv.indexOf('--review-output');
 const mp4 =
-  outputIndex < 0 ? 'E:/temp/cupcake-chat-review-1.8.mp4' : resolve(process.argv[outputIndex + 1]);
+  outputIndex < 0
+    ? workPath('demo/cupcake-chat-review.mp4')
+    : resolve(process.argv[outputIndex + 1]);
 const gifIndex = process.argv.includes('--preview-output')
   ? process.argv.indexOf('--preview-output')
   : process.argv.indexOf('--gif-output');

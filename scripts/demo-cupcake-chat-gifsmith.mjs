@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import {
+  workPath,
+  acquireWorkspaceLock,
+  resetWorkDirectory,
+  removeWorkDirectory,
+} from './lib/workspace.mjs';
 /**
  * Record the real packaged Cupcake Chat WebView2 UI through gifsmith.
  *
@@ -10,7 +16,7 @@
  */
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -81,9 +87,9 @@ if (phase === 'render' && option('--execute') !== 'ACTUAL_PACKAGED_APP_RECORDING
 }
 const port = Number(option('--port', '10131'));
 assert(Number.isSafeInteger(port) && port >= 1024 && port <= 65535, 'Invalid CDP port');
-const output = resolve(option('--output', 'E:/temp/cupcake-chat-gifsmith-demo'));
-assertChildOfETemp(output);
-const install = resolve(option('--gifsmith-install', 'E:/temp/cupcake-gifsmith'));
+const output = resolve(option('--output', workPath('demo/live')));
+assertChildOfWorkRoot(output);
+const install = resolve(option('--gifsmith-install', workPath('tools/gifsmith')));
 const gifsmithRoot = join(install, 'node_modules', 'gifsmith');
 const selections = {
   everydayProject: option('--everyday-project', defaults.everydayProject),
@@ -140,7 +146,8 @@ if (phase === 'plan') {
   process.exit(0);
 }
 
-await mkdir(output, { recursive: true });
+const releaseWorkspace = await acquireWorkspaceLock('demo-live');
+await resetWorkDirectory(output);
 initialState = await inspectPreparedApp();
 if (phase === 'dry-run') {
   const report = await gifsmith.dryRun(scene);
@@ -183,6 +190,8 @@ try {
     ok: false,
     error: safeError(error),
   }));
+  await removeWorkDirectory(scene.workDir);
+  releaseWorkspace();
   evidence.finishedAt = new Date().toISOString();
   await writeFile(join(output, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
 }
@@ -832,9 +841,9 @@ function settingValue(value) {
   return typeof value === 'object' && value !== null && 'value' in value ? value.value : value;
 }
 
-function assertChildOfETemp(path) {
+function assertChildOfWorkRoot(path) {
   if (!isAbsolute(path)) throw new Error('Output must be absolute');
-  const root = resolve('E:/temp');
+  const root = resolve(workPath());
   const rel = relative(root, resolve(path));
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Output must be a child of ${root}`);

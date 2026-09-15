@@ -19,7 +19,11 @@
     "test:e2e": "playwright test",
     "test:sidecars": "node scripts/test-sidecar-protocol.mjs",
     "test:watch": "vitest",
-    "typecheck": "corepack pnpm -r typecheck"
+    "typecheck": "corepack pnpm -r typecheck",
+    "clean:preview": "node scripts/clean-workspace.mjs",
+    "clean:generated": "node scripts/clean-workspace.mjs --apply",
+    "clean:profiles": "node scripts/clean-workspace.mjs --apply --profiles",
+    "test:workspace": "node --test scripts/test-workspace.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

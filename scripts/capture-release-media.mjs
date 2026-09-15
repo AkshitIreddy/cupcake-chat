@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('capture-release-media');
+
 /** Capture the already-running packaged recording profile, without fixtures or zoom. */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -147,10 +150,7 @@ try {
   await appearance('Roman cupcake camp', 'history-roman-camp');
   await nav('Home');
   receipt.identity = identity;
-  await writeFile(
-    'E:/temp/cupcake-release-1.8-20260915/readme-media.json',
-    JSON.stringify(receipt, null, 2),
-  );
+  await writeFile(workPath('qa/release/readme-media.json'), JSON.stringify(receipt, null, 2));
   process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
 } finally {
   await browser.close();

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('verify-release-1.8');
 
 /**
  * Final, attach-only Cupcake Chat 1.8 acceptance helper.
@@ -28,7 +30,7 @@ const option = (name, fallback) => {
 const port = Number(option('--port', '10131'));
 const hostPid = Number(option('--host-pid', '0'));
 const cdp = option('--cdp', `http://127.0.0.1:${port}`);
-const output = resolve(option('--output', 'E:/temp/cupcake-chat-rebrand-20260915/release-1.8'));
+const output = resolve(option('--output', workPath('qa/refresh/release-1.8')));
 const receiptPath = resolve(output, 'release-1.8-verification.json');
 
 const VERSION = '1.8.0';

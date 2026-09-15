@@ -237,9 +237,29 @@ node scripts/release-candidate-audit.mjs --require-artifacts
 ```
 
 The build produces the native executable at `apps/desktop/src-tauri/target/release/CupcakeAI.exe`
-and one current-user NSIS installer under `apps/desktop/src-tauri/target/release/bundle/nsis/`. On a
-space-constrained machine, set `CARGO_TARGET_DIR`, `TEMP`, and `TMP` to dedicated directories
-outside the repository before the build.
+and one current-user NSIS installer under `apps/desktop/src-tauri/target/release/bundle/nsis/`.
+Development files stay inside the checkout. Build caches reuse `out/cargo/` and the Rust `target/`
+directories; downloads and build tools reuse `out/download-cache/` and `out/tools/`. Demo recordings
+overwrite `out/demo/replay/`, QA output uses `out/qa/`, and optional development profiles use
+`out/profiles/`. Finished README media stays in `docs/media/`.
+
+Recording scripts remove intermediate frames when finished. Sidecar packaging uses one staging
+directory per output, cleans it after each run, and keeps the last complete output if promotion
+fails. Workspace locks prevent a second recording/build of the same kind from overwriting an active
+run and prevent maintenance from cleaning active jobs.
+
+```powershell
+pnpm clean:preview    # List disposable output without deleting it
+pnpm clean:generated  # Clear QA, demo, temporary, and Python packaging output
+pnpm clean:profiles   # Also reset optional development profiles (close the app first)
+```
+
+Cleanup preserves compiled Rust caches, pinned downloads, build tools, staged sidecars, source,
+README media, and installed-app data. It refuses linked working directories. For a checkout that
+still links to the old E: folders, run `Consolidate Cupcake Chat.bat` once. It copies the six known
+project directories into this checkout, verifies their contents, and removes the old locations. The
+obsolete WSL CI virtual environment is discarded; the Windows runtime environment under
+`services/runtime/.venv/` is retained. No installed app or release credentials are moved.
 
 The GitHub release workflow is manual and protected by the release environment. It builds the
 Windows artifacts, signs the updater payload, and creates a **draft** GitHub Release containing the

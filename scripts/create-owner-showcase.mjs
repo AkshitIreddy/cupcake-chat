@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { acquireWorkspaceLock, workPath } from './lib/workspace.mjs';
+if (!process.argv.includes('--self-test')) await acquireWorkspaceLock('create-owner-showcase');
+
 /**
  * Build the real CupcakeAI owner showcase through an already-running packaged app.
  *
@@ -14,8 +17,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 
-const OWNER_PROFILE = resolve('E:/temp/cupcakeai-owner-test-20260902');
-const DEFAULT_OUTPUT = resolve('E:/temp/cupcakeai-owner-showcase-20260905');
+const OWNER_PROFILE = resolve(workPath('profiles/test'));
+const DEFAULT_OUTPUT = resolve(workPath('qa/owner-showcase'));
 const DEFAULT_KEY_FILE = resolve('C:/Users/akshi/Desktop/Code Palace/Commonly used Keys.txt');
 const PROVIDERS = {
   openai: {
@@ -360,7 +363,7 @@ if (profile.toLowerCase() !== OWNER_PROFILE.toLowerCase()) {
   throw new Error(`This harness is restricted to the owner test profile: ${OWNER_PROFILE}`);
 }
 const output = resolve(option('--output', DEFAULT_OUTPUT));
-assertUnderETemp(output, '--output');
+assertUnderWorkRoot(output, '--output');
 const keyFile = resolve(option('--key-file', DEFAULT_KEY_FILE));
 const requestedProviders = new Set(
   String(option('--providers', ''))
@@ -1974,9 +1977,9 @@ function safeStringArray(value) {
   return Array.isArray(value) ? value.map((item) => sanitize(item)).filter(Boolean) : [];
 }
 
-function assertUnderETemp(path, label) {
+function assertUnderWorkRoot(path, label) {
   if (!isAbsolute(path)) throw new Error(`${label} must be absolute`);
-  const root = resolve('E:/temp');
+  const root = resolve(workPath());
   const child = resolve(path);
   const rel = relative(root, child);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) {

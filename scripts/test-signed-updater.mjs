@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import {
+  workPath,
+  acquireWorkspaceLock,
+  resetWorkDirectory,
+  removeWorkDirectory,
+} from './lib/workspace.mjs';
 /* global window */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -12,9 +18,9 @@ const option = (name, fallback) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : fallback;
 };
-const allowedTempRoot = resolve('E:/temp');
-const workspaceRoot = resolve(option('--workspace-root', 'E:/temp/cupcake-chat-updater-tests'));
-const targetDirectory = resolve(option('--target-dir', 'E:/temp/cupcake-chat-updater-cargo-cache'));
+const allowedTempRoot = resolve(workPath());
+const workspaceRoot = resolve(option('--workspace-root', workPath('qa/updater')));
+const targetDirectory = resolve(option('--target-dir', workPath('cargo/updater')));
 const reusedKeyDirectory = option('--key-directory', null);
 const configuredKeyDirectory = reusedKeyDirectory ? resolve(reusedKeyDirectory) : null;
 for (const [label, path] of [
@@ -24,10 +30,22 @@ for (const [label, path] of [
 ]) {
   const fromAllowedRoot = relative(allowedTempRoot, path);
   if (!fromAllowedRoot || fromAllowedRoot.startsWith('..') || isAbsolute(fromAllowedRoot)) {
-    throw new Error(`${label} must be a child of E:/temp`);
+    throw new Error(`${label} must be a child of the repository out/ directory`);
   }
 }
-const workspace = join(workspaceRoot, `run-${Date.now()}-${process.pid}`);
+const releaseWorkspace = await acquireWorkspaceLock('updater-test');
+const workspace = join(workspaceRoot, 'current');
+for (const retained of [
+  targetDirectory,
+  ...(configuredKeyDirectory ? [configuredKeyDirectory] : []),
+]) {
+  const rel = relative(workspace, retained);
+  if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) {
+    throw new Error(
+      'Reusable build caches and supplied keys must be outside the resettable updater workspace.',
+    );
+  }
+}
 const port = Number(option('--port', '43121'));
 const debugPort = Number(option('--debug-port', '43122'));
 if (
@@ -50,6 +68,7 @@ const evidencePath = join(workspace, 'evidence.json');
 const testConfig = 'src-tauri/tauri.updater-test.conf.json';
 const disposablePassphrase = 'cupcake-local-test-only';
 
+await resetWorkDirectory(workspace);
 await Promise.all([
   mkdir(keysDirectory, { recursive: true }),
   mkdir(feedDirectory, { recursive: true }),
@@ -239,6 +258,12 @@ try {
   await browser?.close().catch(() => undefined);
   if (child.exitCode === null) child.kill();
   await new Promise((resolveClose) => server.close(resolveClose));
+  if (child.exitCode === null) await new Promise((done) => child.once('exit', done));
+  for (const directory of [profileDirectory, webviewDirectory, feedDirectory]) {
+    await removeWorkDirectory(directory);
+  }
+  if (!configuredKeyDirectory) await removeWorkDirectory(keysDirectory);
+  releaseWorkspace();
 }
 
 async function waitForDevtools(activePort, processHandle, timeoutMs) {
