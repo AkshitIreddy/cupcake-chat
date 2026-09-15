@@ -1,93 +1,155 @@
-# CupcakeAI 2.0 user guide
+# Cupcake Chat 1.8 user guide
 
-This guide describes the intended Tauri candidate. Features still awaiting live or packaged
-verification are identified in [known issues](known-issues.md).
+Cupcake Chat is a Windows workspace for AI conversations that can grow into organized projects,
+tasks, files, memories, and versioned artifacts. You choose the model for each chat: a hosted
+provider you connect or an optional local model managed by the app.
 
-## Optional workspace password
+## First-run setup
 
-CupcakeAI opens directly by default. If you want an extra startup gate, use Settings → Privacy to
-create a 15–128 character password. Password-protected profiles keep local models, tools, and
-hosted-provider sidecars stopped until the password is accepted, and failed attempts are
-rate-limited. The same Privacy panel can change the password, lock immediately, or turn the password
-prompt off again.
+Onboarding maps the real app and can finish setup without forcing every optional choice. Close it at
+any time, jump directly to a chapter, or replay it later from **Settings → General → Welcome tour**.
 
-The app password is separate from at-rest encryption. Windows DPAPI continues to protect the
-encrypted profile key and hosted-provider credentials quietly for the current Windows user, even
-when no startup password is configured. CupcakeAI stores only a salted Argon2id password verifier,
-never the password itself.
+1. Set your display name and choose the portraits shown beside you and Cupcake Chat.
+2. Pick one of the four interface themes and an illustrated workspace wallpaper.
+3. Connect a hosted model provider, set up Cupcake Local, do both, or skip model setup for now.
+4. Review the device scan before installing an optional local runtime or model.
+5. Look through the starter Cupcake advisors and edit, archive, or create any roles you want.
+6. Create a project for work that should stay together, or start with an unfiled chat.
 
-## Workbench
+The setup map shows which areas are ready without treating skipped optional steps as failures.
 
-Use the persistent shelf for Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search,
-and Settings. Chat is the primary surface. Choose a model explicitly, review the Local/Cloud route,
-attach only the intended context, and use the Frosting Thread to navigate immutable branches.
+## Chats and model switching
 
-## Provider setup
+Choose a model from the model chip above the composer, write a message, and press **Enter** to send.
+Use **Shift+Enter** for a new line. The current provider and model stay visible; Cupcake Chat does
+not silently send a turn through a different route.
 
-Open Settings or Models and choose a hosted provider. CupcakeAI shows where prompts/files go,
-current cost/free-trial caveats, and a link to obtain your own key. Enter the key in the
-application, test the connection, review discovered models/capabilities, and save only after
-success.
+Stop a streaming answer, retry it, continue after an output limit, or edit an earlier message to
+create a sibling branch. The original branch remains available in the Frosting Thread. An untouched
+new-chat draft is discarded when you leave it, so empty chats do not fill Recent.
 
-The saved card shows a masked identity and last test time. Use Reconnect to replace a key and Remove
-to delete it. Provider setup must never escape into a generic Windows credential prompt. A key is
-protected for the current Windows user with DPAPI and must not appear in chat, logs, diagnostics, or
-the product database.
+The **All chats** toggle beside Recent shows conversations from every project in the same sidebar.
+Opening one also switches to its project, keeping retrieved files and memory in the correct scope.
 
-## Models
+## Cupcake advisors and group chats
 
-Hosted models show provider, capabilities, privacy route, and any unverified capability warning.
-There is no automatic routing.
+A Cupcake advisor is a reusable character with a name, role, detailed instructions, portrait, and
+exact model route. The included set covers several common kinds of work and is meant to be edited.
 
-Cupcake Local detects CPU, RAM, disk, Windows version, NVIDIA GPU/VRAM, and installed acceleration
-pack. The signed catalog currently offers 11 immutable, checksum-pinned GGUF choices across Qwen3,
-IBM Granite 3.3, Mistral Ministral 3, and Microsoft Phi-4, from 0.6B through a 30B
-mixture-of-experts model; weights are downloaded only after an explicit install. Before installation
-it ranks the verified catalog as Recommended, Fits with reduced context, CPU-only/slow, Hybrid, or
-Incompatible, with explanations and estimates. Filter by task, size, license, tools/vision, and
-local-only privacy.
+Use **Add Cupcake** in a conversation to add an existing advisor or create a new one. A group can
+contain up to eight Cupcakes.
 
-On NVIDIA systems, Cupcake recommends CUDA 13.3 only when the installed driver is 580 or newer;
-otherwise it can use the compatible CUDA 12.4 pack. Vulkan remains the portable GPU fallback and the
-bundled CPU runtime remains the safe baseline. Optional packs show their download size,
-requirements, integrity checks, and required license terms before installation.
+- Type `@name` or use **Mentions only** when specific Cupcakes should answer.
+- Use **Smart** when the roster should decide who has something useful to add. A useful member may
+  speak; the others can stay quiet.
+- Limit the number of replies when a short answer matters more than a round-table discussion.
+- Open the participant tray to inspect, reorder, edit, disable, or remove members.
 
-Install downloads optional model weights with pause/resume/cancel/retry and checksum verification.
-Load, benchmark, chat, unload, update, and remove are app-managed. Installed local chat can work
-offline. Model licenses and hardware requirements still apply.
+Each response keeps its real speaker and model route. Group conversations currently focus on chat;
+run tool-heavy work through a regular single-Cupcake turn.
 
-## Chat, tasks, and artifacts
+## Projects, tasks, artifacts, and memory
 
-Enter sends; Shift+Enter adds a line. Stop, Retry, Continue, edit, regenerate, and sibling-branch
-actions preserve canonical visible history. Tool and task activity appears in concise expandable
-cards. Longer work may continue durably while you chat and can request narrowly scoped approvals.
+Projects keep related chats, attachments, tasks, artifacts, and memory together. The selected
+project controls which saved context Cupcake Chat can retrieve.
 
-Artifacts keep immutable revisions. Preview, edit, export, and inspect provenance without destroying
-older versions.
+Tasks show durable progress and keep their results after you leave the page. Artifacts preserve
+revisions, so editing a useful answer does not erase the earlier version. A saved Python artifact
+can run its exact revision in the contained Windows sandbox, with completed tests, failures,
+infrastructure errors, and cancellation shown as different outcomes.
 
-## Projects, files, and memory
+In a project chat, a completed Python code block also has **Run tests**. It saves the code as an
+artifact, runs its `unittest` suite locally, and displays the actual result below the code. You can
+keep talking in the same conversation; the artifact and task remain in their project sections.
 
-Projects scope chats, files, retrieval, memories, tasks, artifacts, and grants. Attachments use
-opaque handles; the renderer never receives unrestricted paths. Cloud confirmation reflects the
-exact selected provider/model and context.
+Memory is inspectable. Review what was saved, correct it, pin it, disable it, change its scope, or
+remove it. Search finds work across chats, projects, artifacts, tasks, and memory without merging
+the projects themselves.
 
-Memory records show scope, source, confidence, revision, and expiry. Review, correct, pin, disable,
-or remove them. Secrets should not become ordinary memory.
+## Hosted providers
 
-## Tools and approvals
+Open **Models → Add provider** or the provider area in **Settings**. Choose a provider, paste a key,
+test the connection, review the discovered models, and save it. The connected card shows a masked
+identity and last test result; use **Reconnect** to replace the key or **Remove** to delete it.
 
-File, repository, web, Git, Python, model, artifact, and MCP tools use bounded grants. Deletion,
-external communication, financial actions, installation, system changes, and unsandboxed execution
-require fresh approval. Generated code starts without credentials or network.
+Cupcake Chat supports OpenAI, Anthropic, Google Gemini, xAI, Mistral, Cohere, NVIDIA NIM, Groq,
+OpenRouter, Cloudflare Workers AI, and generic OpenAI-compatible endpoints. Availability, quotas,
+model lists, prices, and provider terms can change. The README's free-options table links directly
+to each provider's current official documentation.
 
-## Accessibility and themes
+Keys are protected for the current Windows user with DPAPI and are not stored in chat or the main
+product database. Prompts, selected attachments, retrieved context, and model responses are still
+processed by the hosted provider you selected.
 
-Cupcake Light, Cupcake Dark, Minimal, and Classic share keyboard operation, visible focus, semantic
-streaming regions, reduced motion, high-contrast compatibility, responsive reflow, and deliberate
-scrollbars. Report any control overlap, generic control, unreachable region, or unreadable state.
+## Cupcake Local
 
-## Privacy
+Cupcake Local is optional and managed entirely in **Models**. It detects CPU, RAM, disk, Windows
+version, and NVIDIA GPU/VRAM, then explains whether each signed catalog model is Recommended, Fits
+with reduced context, CPU-only/slow, Hybrid, or Incompatible. Model weights are downloaded only
+after you choose one and accept its license.
 
-Confirm the destination indicator before sending sensitive context. Local means the installed
-Cupcake Local path; Cloud means the selected hosted provider or remote endpoint. Free access does
-not mean private. No fallback crosses a privacy or cost boundary silently.
+On compatible NVIDIA systems, the app chooses between its supported CUDA packs using the installed
+driver. Vulkan is the portable GPU fallback and the bundled CPU runtime is the baseline. Download,
+pause, resume, cancel, checksum verification, load, benchmark, unload, update, and removal all stay
+inside Cupcake Chat.
+
+Once the required runtime and model are installed, supported local chat works without a provider API
+charge and can run offline. The model's own license, storage, memory/VRAM, download bandwidth, and
+electricity still apply.
+
+## Tools and workspace freedom
+
+Tools use **Full freedom** by default, so enabled capabilities can act without repetitive permission
+dialogs. Turn individual tools off in **Tools** when a project does not need them. Credentials,
+project boundaries, application sandboxing, and Windows security boundaries remain enforced.
+
+Tool and task activity appears in expandable cards rather than interrupting the conversation with
+extra route-confirmation popups. Developer mode can show redacted traces, checkpoints, costs, and
+subagent details when deeper inspection is useful.
+
+## Appearance, motion, and accessibility
+
+**Settings → Appearance** combines Cupcake Light, Cupcake Dark, Minimal, or Classic with the
+wallpaper you choose. Message surfaces, controls, scrollbars, and the Cupcake icon tile adapt to
+that palette.
+
+Fresh workspaces start with **Roman cupcake camp**: a living Roman cupcake, rose-cream panels, and
+dark berry text. Existing saved appearance choices are preserved. Six historical worlds and other
+illustrated scenes expand the red, pink, green, blue, amber, and violet options.
+
+Small transitions, streaming cues, and playful entrance animations keep the workbench feeling alive.
+Turn on **Reduce motion** to remove movement and smooth scrolling. Keyboard navigation, visible
+focus, semantic streaming regions, responsive layouts, and Windows high-contrast behavior remain
+part of every theme.
+
+## Updates, backups, and the optional app password
+
+Release builds check the project's signed update feed. When a newer approved release is available,
+Cupcake Chat shows its version and release notes before installation. Update packages must pass the
+Tauri signature check; Windows publisher verification is a separate code-signing layer.
+
+The app opens directly by default. If you want an additional startup gate, create a workspace
+password in **Settings → Privacy**. Password-protected profiles keep local models, tools, and hosted
+provider sidecars stopped until the password is accepted. The password is separate from DPAPI
+protection and can be changed or turned off later.
+
+Backups can be prepared and verified from Settings. Keep a recent backup before a major upgrade or
+moving work between profiles.
+
+## Getting help
+
+When reporting a problem, include the Cupcake Chat version, Windows version, the page and action
+that triggered it, and the exact visible error. Redact keys, personal files, prompts, provider
+responses, and private paths before sharing screenshots or diagnostics.
+
+## Historical companions and workshop
+
+The 24 historical advisors span six eras, four companions each: New Kingdom Egypt, Classical and
+Hellenistic Greece, Rome, the Viking Age, the Mongol Empire, and medieval Europe. Filter them by era
+in Add Cupcake. Their model, instructions, speaking rules, and portrait remain editable.
+
+Open **Tools → History workshop** for a map-based travel estimate, siege supplies, or horse forage.
+Change the inputs and save the resulting explanation to the current project. Coastlines are modern,
+settlement coordinates are approximate, and dashed lines are distance guides rather than verified
+historical routes. The calculations are transparent teaching scenarios, not campaign
+reconstructions. [Asset and map provenance](design/history-companions.md).

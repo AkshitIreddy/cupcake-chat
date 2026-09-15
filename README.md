@@ -1,86 +1,179 @@
 # Cupcake Chat
 
-![Cupcake Chat mark](apps/desktop/public/brand/cupcake-mark.png)
+<p align="center">
+  <img src="apps/desktop/public/brand/cupcake-mark.png" alt="Cupcake Chat" width="112" />
+</p>
 
-Cupcake Chat is a Windows-first, text-first AI workspace for conversations, files, tools, tasks,
-citations, memory, projects, and artifacts. The application uses a React/TypeScript renderer inside
-a Tauri 2 host, with product behavior behind narrow versioned contracts.
+<p align="center">
+  <strong>A warm Windows workspace where your AI chats can turn into useful work.</strong><br />
+  Chat with one model, bring a small team of named Cupcakes into the same conversation, keep work
+  organized by project, and choose exactly which local or hosted model answers.
+</p>
 
-> **Local owner-test candidate.** Real Groq, Cohere, NVIDIA NIM, and app-managed CUDA demonstrations
-> are saved in the owner workspace, alongside a working two-provider group conversation. Local
-> installer lifecycle and retained-data reopening have observed evidence. Exact package versions,
-> final verification, and testing limits are recorded in the
-> [acceptance ledger](docs/worklogs/2026-09-15-sidebar-polish.md). Owner acceptance and distribution
-> approval remain separate decisions.
+<p align="center">
+  Windows 10/11 x64 · local models optional · bring your own provider keys · MIT License
+</p>
 
-For this machine, double-click `Launch Cupcake Chat Test.vbs` to open the existing owner workspace
-without a terminal. The [owner guide](docs/OWNER_TEST_GUIDE.md) covers everyday chats, a reviewed
-Python artifact, named Cupcakes, direct mentions, Smart selection, and local-model use. Ordinary
-fresh profiles receive no fabricated demo content.
+<p align="center">
+  <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
+</p>
 
-## Product contract
+The tour uses the packaged app. Typing and response segments replay real saved model answers with
+compressed timing; other interactions use the app's controls. The workspace explores Roman
+logistics, Viking voyages, and Mongol mobility. See the [demo notes](docs/demo-storyboard.md).
 
-- Chat remains the primary surface. Voice is excluded.
-- Model choice is explicit. Optional fallbacks are off by default and disclose cost/privacy changes.
-- Group conversations use reusable named Cupcakes with roles, personality, and exact models.
-  Structured `@mentions` call only the selected members. Smart mode chooses useful contributions
-  within a disclosed roster, can keep the entire turn quiet, and defaults to at most two replies. It
-  never invents a model route, silently falls back, or continues without a new user turn.
-- Provider setup stays inside Cupcake Chat: key entry, connection testing, supported-model
-  discovery, saved masked identity, reconnect, and removal.
-- Cupcake Local is the only installed local-model manager. It owns a pinned llama.cpp runtime and
-  optional downloaded GGUF weights; users do not need Node, Python, Conda, or a separate model
-  server.
-- OpenAI, Anthropic, Gemini, xAI, Mistral, Cohere, NVIDIA NIM, Groq, OpenRouter, Cloudflare Workers
-  AI, and generic remote OpenAI-compatible endpoints remain explicit hosted routes. Free access and
-  provider limits vary; the app reports actual availability and errors.
-- Home, Chats, Projects, Tasks, Artifacts, Memory, Models, Tools, Search, and Settings remain
-  persistent destinations.
-- Saved Python artifacts can run their exact revision in the contained Windows sandbox. Results
-  distinguish passing tests, failing tests, infrastructure errors, and cancellation, and remain
-  available after restart. Group conversations do not run tools in their first version.
-- Cupcake Light, Cupcake Dark, Minimal, and Classic can be combined with eleven illustrated scenes.
-- Send starts the selected model directly. Enabled tools use Full freedom by default, and empty
-  new-chat drafts do not clutter saved history. Recent → All chats opens conversations across
-  projects without mixing their context.
+| A question about Rome                                                                         | A conversation with several Cupcakes                                                                     |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| ![A real Roman supply conversation in Roman Cupcake Camp](docs/media/cupcake-chat-roman.png)  | ![Historical advisors in a group chat on Rose Castle Garden](docs/media/cupcake-chat-group-rose.png)     |
+| Your choice of models                                                                         | Code, revisions and real results                                                                         |
+| ![Connected model catalog on Viking Cupcake Fjord](docs/media/cupcake-chat-models-viking.png) | ![A tested siege supply artifact on Aegean Cupcake Harbor](docs/media/cupcake-chat-artifacts-greek.png)  |
+| Explore the assumptions                                                                       | Meet your historical companions                                                                          |
+| ![An interactive Nile travel scenario](docs/media/cupcake-chat-workshop-egypt.png)            | ![Four Mongol-era Cupcake advisors with original portraits](docs/media/cupcake-chat-advisors-mongol.png) |
 
-The corrective Models-screen target is useful before installation: detect the current device, load
-verified catalog metadata, rank compatible choices, explain RAM/VRAM/disk/context tradeoffs, and
-support download recovery, checksum validation, load/unload, removal, and measured benchmarking.
+> **Release status:** this branch is being prepared as the local **1.8.0 release candidate**. It is
+> not a published download yet. The owner will review the packaged app, README, screenshots, and
+> demo before anything is pushed or released.
 
-## Current architecture
+## For users
+
+### What Cupcake Chat is good at
+
+Cupcake Chat is designed for the ordinary problems that usually spread across several tabs and
+half-finished notes: planning a trip, understanding a bill, comparing choices, learning a difficult
+topic, cleaning a spreadsheet, drafting a message, or turning an answer into a file you can keep.
+
+- **One chat, many model choices.** Connect Groq, Gemini, Mistral, Cohere, NVIDIA NIM, OpenRouter,
+  Cloudflare Workers AI, OpenAI, Anthropic, xAI, or a compatible endpoint. The selected route is
+  explicit, and switching models does not silently reroute a request.
+- **Optional local AI.** Cupcake Local detects the computer, recommends compatible models, manages
+  the runtime and downloads, and can run supported GGUF models on CPU, NVIDIA CUDA, or Vulkan.
+- **Cupcakes with a point of view.** Reusable advisors have names, roles, detailed instructions, and
+  their own model. Add one with the **Add Cupcake** button or call specific members with
+  `@mentions`. Smart group turns let useful members answer while the rest stay quiet. The included
+  collection has **15 everyday advisors and 24 historical companions** across Egypt, Greece, Rome,
+  the Viking Age, the Mongol Empire, and medieval Europe.
+- **Projects that keep context together.** Chats, files, tasks, artifacts, and memory stay attached
+  to the project they belong to. Recent can also show conversations from every project in one
+  sidebar.
+- **Work you can inspect.** Run Python tests directly from an answer's code block, with results in
+  the conversation and a saved artifact and task. Python artifacts run their saved revision in the
+  contained Windows sandbox and keep the real result and test output.
+- **Learn by changing the assumptions.** The History Workshop combines an offline map with travel,
+  siege-store, and horse-forage calculators. Save an explanation and its inputs into your project as
+  an artifact. The scenarios use explicit assumptions, not invented historical measurements.
+- **A calmer interface.** Illustrated wallpapers, theme-matched colors, readable message layouts,
+  quick tooltips, and small animations make the workspace feel alive. Windows reduced-motion
+  preferences are respected.
+
+### Install and finish setup
+
+When 1.8.0 is approved and published, download the Windows installer from the repository's
+[Releases page](https://github.com/AkshitIreddy/CUPCAKEAGI/releases). Cupcake Chat is a current-user
+NSIS install and uses Microsoft Edge WebView2. The installer can obtain WebView2 when Windows does
+not already have it.
+
+The first-run guide is a checklist, not a commitment. Every optional step has a skip choice and can
+be replayed later from **Settings**.
+
+1. Meet the sword-carrying Roman cupcake in the default scene, or choose another world. Six
+   historical scenes join Strawberry cupcakes and a gallery of pink, red, green, blue, amber, and
+   violet wallpapers. The icon tile follows the theme.
+2. Choose a starting path: connect a hosted provider, set up Cupcake Local, or skip both and explore
+   the interface first.
+3. For a hosted provider, create a key on the provider's own site, paste it into Cupcake Chat, test
+   the connection, and choose one of the models it discovers. The saved credential is protected for
+   the current Windows user with DPAPI.
+4. For local AI, let the app scan the computer. Review the recommended runtime and model, including
+   download size and memory/VRAM fit, before installing either one. Model weights are never bundled
+   into the installer.
+5. Keep the included Cupcake advisors, edit them, or make your own. You can change any setup choice
+   later from **Models** or **Settings**.
+
+You do not need Node.js, Python, Rust, a separate model server, an API key, or a local model just to
+install and browse the app.
+
+### Free ways to start
+
+Provider offers change, sometimes by model, account, or region. This table was checked against the
+providers' official documentation on **15 September 2026**. Check the linked dashboard before a long
+session. Cupcake Chat never moves a conversation to another provider when an allowance runs out.
+
+| Option                                                                                              | What is currently offered                                                                                                                                                                      | Best use                                                                |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [Groq](https://console.groq.com/docs/rate-limits)                                                   | A free tier with model-specific request and token limits; the console shows the exact limits for your organization.                                                                            | Fast everyday chat and a generous first provider to try.                |
+| [Google Gemini](https://ai.google.dev/gemini-api/docs/pricing)                                      | Free input and output on selected models. Quotas are per project and vary by model; free-tier content may be used to improve Google products.                                                  | Long-context questions and a strong second free route.                  |
+| [Mistral](https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key) | Studio Free mode enables API access without a credit card, with usage and rate limits.                                                                                                         | General chat across Mistral's model range.                              |
+| [NVIDIA NIM](https://docs.api.nvidia.com/nim/docs/run-anywhere)                                     | NVIDIA Developer Program members can use hosted NIM endpoints free for prototyping. Production use has separate licensing.                                                                     | Trying a broad NVIDIA-hosted model catalog.                             |
+| [Cohere](https://docs.cohere.com/v2/docs/rate-limits)                                               | Free evaluation keys are limited to 1,000 API calls per month; current listed Chat trial limits are generally 20 requests per minute.                                                          | Testing Command and Aya models in short projects.                       |
+| [OpenRouter](https://openrouter.ai/docs/faq)                                                        | Free models are normally limited to 50 requests a day in total; accounts that have purchased at least $10 in credits currently receive 1,000 free-model requests a day. Availability can vary. | Occasional access to many model families through one key.               |
+| [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/)             | 10,000 Neurons per day at no charge on Free and Paid Workers plans. Some resource-intensive models require Workers Paid.                                                                       | Small experiments and another independent fallback you select yourself. |
+| **Cupcake Local**                                                                                   | No provider API fee after the runtime and model are downloaded. Hardware, electricity, bandwidth, storage, and each model's license still apply.                                               | Private or offline work on a capable PC.                                |
+
+Groq, Gemini, and Mistral are the easiest starting trio for repeated free experimentation. Keep
+OpenRouter and Cloudflare for lighter use, and use Cupcake Local when you want prompts and responses
+to stay on the computer.
+
+### A first useful conversation
+
+Create a project, choose a model, and start with something you are curious about:
+
+> How did Roman armies feed everyone so far from home?
+
+For a historical group, add Milo for Roman armies, Farro for supplies, and Flavia for the people and
+politics. Mention Farro when only the grain expert is needed, or choose Smart when the group should
+decide who has something useful to add.
+
+The main destinations are **Chats**, **Projects**, **Tasks**, **Artifacts**, **Memory**, **Models**,
+**Tools**, **Search**, and **Settings**. Onboarding can be replayed from Settings whenever you want
+a guided tour of those sections. The [full user guide](docs/user-guide.md) explains each workflow.
+
+### Updates, data, and keys
+
+Release builds check the project's signed update feed and show the available version before an
+update is installed. An update does not delete the existing profile. Back up important work before a
+major upgrade, and verify the publisher and version shown by Windows.
+
+Hosted prompts and selected context go to the provider you chose. Provider keys are stored through
+the in-app connection flow and protected with Windows DPAPI; do not place keys in the repository,
+`.env` files, screenshots, or bug reports. Cupcake Local keeps chat inference on the machine after
+the required runtime and model files have been downloaded.
+
+## For developers and AI contributors
+
+### Architecture
+
+Cupcake Chat is a Windows-first Tauri 2 application with small, typed boundaries between the UI and
+the processes that hold authority.
 
 ```text
 React + TypeScript renderer
-          │ typed invoke/events; no raw Node, path, process, credential, or network primitive
+          │ typed Tauri commands and canonical events
 Tauri 2 Rust host
-          │ window/tray/dialog/deep-link policy, capabilities, sidecar supervision
-          ├──────── packaged Python runtime
-          │         providers, tasks, memory, retrieval, persistence, Cupcake Local
-          │
-          └──────── Rust ToolBroker
-                    DPAPI vault, policy, grants, MCP, sandboxing, audit
+          │ window lifecycle, deep links, updater, sidecar supervision
+          ├── packaged Python runtime
+          │     providers, projects, chat, tasks, memory, retrieval, Cupcake Local
+          └── Rust ToolBroker
+                DPAPI vault, grants, tool policy, MCP, sandboxing, audit
 ```
 
-The Python runtime and ToolBroker remain private child processes, never public localhost services.
-The renderer receives opaque handles and canonical events. The main product database and managed
-objects support optional at-rest encryption, enabled by default for a persistent Windows profile;
-workflow checkpoints and broker policy/audit state are separate plaintext stores. Credentials and
-the profile master key remain protected by Windows DPAPI in either content mode. Conversations and
-artifacts are immutable revision graphs, and project scope is a privacy boundary.
+| Path                        | Owns                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `apps/desktop/src/renderer` | React UI, themes, accessibility, and typed workspace state                       |
+| `apps/desktop/src-tauri`    | Native host, capabilities, lifecycle, updater, and package configuration         |
+| `packages/contracts`        | TypeBox contracts and checked-in JSON Schema, Pydantic, and Serde outputs        |
+| `services/runtime`          | Product behavior, providers, persistence, retrieval, tasks, and local models     |
+| `crates/tool-broker`        | Credentials, tool policy, grants, MCP, sandboxing, and audit                     |
+| `packaging`                 | Sidecar descriptors and the signed Cupcake Local catalogs used by release builds |
 
-## Run from source
+The renderer never receives unrestricted filesystem, process, network, or credential primitives. The
+Python runtime and ToolBroker are private child processes rather than public localhost services.
+Projects form the context boundary; conversations and artifacts preserve revisions.
 
-Prerequisites:
+### Set up a development machine
 
-- Windows 10 or 11 x64;
-- Node.js 20.19 or newer and pnpm 10.15.1 through Corepack;
-- Python 3.12;
-- stable Rust using `x86_64-pc-windows-msvc`, with rustfmt and Clippy;
-- Visual Studio C++ Build Tools with Desktop development with C++;
-- Microsoft Edge WebView2 Runtime.
-
-From Windows PowerShell at the repository root:
+Use Windows 10 or 11 x64 with Node.js 20.19+, Corepack, Python 3.12, stable MSVC Rust, Visual Studio
+C++ Build Tools, Git, and WebView2. Native validation must run from Windows PowerShell; WSL does not
+exercise DPAPI, WebView2, Windows Job Objects, native DPI, or the installer.
 
 ```powershell
 corepack enable
@@ -89,10 +182,27 @@ pnpm install --frozen-lockfile
 pnpm --filter @cupcakeagi/desktop dev
 ```
 
-Development fixtures keep the renderer reviewable without credentials or installed models. Fixture
-content is never evidence of a live provider, installed model, durable recovery, or completed task.
+Keep large build outputs and model files outside the repository. On the owner's workstation that
+means `E:\temp`; contributors can choose another dedicated drive. Test with a disposable profile by
+setting `CUPCAKE_TEST_DATA_DIR` to an explicit empty directory. Development fixtures make visual
+work possible without credentials, but they are never evidence of a real provider, installed local
+model, durable restart, or packaged application.
 
-## Validation
+### Make a change that can be trusted
+
+Human and AI contributors follow the same standard:
+
+1. Read the relevant contract and implementation before editing. Historical handoffs are clues, not
+   proof that the current behavior works.
+2. Keep changes focused and preserve unrelated worktree changes.
+3. Add or update a meaningful test when behavior, persistence, contracts, routing, packaging, or
+   recovery changes.
+4. Verify the rendered state and affected interaction. For native behavior, run the real packaged
+   Tauri/WebView2 app; a browser fixture alone is not enough.
+5. Record exact limitations. Never label fixture content as a live provider result or infer a local
+   CUDA path from a saved label.
+
+Fast source checks:
 
 ```powershell
 pnpm format:check
@@ -102,14 +212,14 @@ node scripts/verify.mjs --lane python
 node scripts/verify.mjs --lane rust
 ```
 
-The Rust lane covers both `crates/tool-broker/Cargo.toml` and `apps/desktop/src-tauri/Cargo.toml`.
-Browser-renderer tests remain useful, but native Tauri behavior, window controls, WebView2
-scrollbars, DPI, packaging, and lifecycle require a packaged Windows app plus opened and inspected
-screenshots.
+The contract lane checks generated schemas. The Rust lane covers both the ToolBroker and the Tauri
+host. Live-provider checks are explicit, secret-safe opt-ins that supplement deterministic tests.
+The [development guide](docs/development.md) covers contracts, provider adapters, Cupcake Local,
+theme work, native visual acceptance, sidecar freezing, and the draft release pipeline.
 
-## Local unsigned package
+### Build the Windows app
 
-These commands are for a disposable local candidate only:
+Stage the pinned sidecars before building. Model weights are intentionally excluded.
 
 ```powershell
 node scripts/package-sidecars.mjs
@@ -118,49 +228,35 @@ node scripts/smoke-package.mjs --platform win32 --mode bundle
 node scripts/release-candidate-audit.mjs --require-artifacts
 ```
 
-Expected output conventions, which must be verified after a successful build:
+The build produces the native executable at `apps/desktop/src-tauri/target/release/CupcakeAI.exe`
+and one current-user NSIS installer under `apps/desktop/src-tauri/target/release/bundle/nsis/`. On a
+space-constrained machine, set `CARGO_TARGET_DIR`, `TEMP`, and `TMP` to dedicated directories
+outside the repository before the build.
 
-- executable: `apps/desktop/src-tauri/target/release/CupcakeAI.exe`;
-- installer: `apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe`;
-- disposable profile: set `CUPCAKE_TEST_DATA_DIR` to an explicitly selected new absolute directory
-  below `out/tauri-test-profiles/`.
+The GitHub release workflow is manual and protected by the release environment. It validates the
+manifests, builds the Windows artifacts, signs the updater payload, and creates a **draft** GitHub
+Release containing the NSIS installer, required updater signature, and `latest.json`. Windows
+Authenticode signing is optional; drafts without it are explicitly marked. The workflow does not run
+automatically when a tag is pushed and does not publish the draft. Preparing a candidate locally
+does not authorize pushing a tag, running that workflow, or publishing a release. Updater keys, the
+separate Windows code-signing certificate, and release credentials belong in repository secrets,
+never in source.
 
-The commands above currently produce the named executable and one unsigned NSIS installer, and the
-package smoke verifies their sidecar/resource digests. Rebuild them after any source, catalog, or
-sidecar change; never reuse an older artifact as current Tauri evidence.
+### Release checklist
 
-## Try before upgrading
+- Keep every manifest and runtime version on **1.8.0** and run the complete version audit.
+- Freeze and hash the Python runtime, ToolBroker, Cupcake Local catalogs, native executable, and
+  installer from the same source revision.
+- Run deterministic lanes, packaged smoke, native visual/functional acceptance, installer lifecycle,
+  updater checks against a disposable feed, and a secret scan.
+- Review the README images and MP4 from the exact packaged build.
+- Obtain owner approval before any push, tag, GitHub release, signature publication, or updater-feed
+  change.
 
-Provider terms change. The maintained [provider guide](docs/free-tier-guide.md) distinguishes
-published free/trial access from paid access and links to official dashboards. Add keys only through
-the in-app provider flow. Never commit keys, place them in `.env`, include them in screenshots, or
-paste them into diagnostics.
+### License
 
-Protecting a key locally does not keep hosted prompts, selected attachments, retrieved context, or
-responses on the device. Those are processed under the selected provider's current terms; the
-provider guide records the required route-specific disclosures.
-
-Cupcake Local has no provider API charge after a model is downloaded, but model licenses, storage,
-RAM/VRAM use, electricity, and download bandwidth still matter.
-
-NVIDIA NIM is an optional evaluation route, never unlimited or the default. Mistral's optional free
-Experiment mode has lower limits and different data-use terms than paid access. Cohere trial keys
-are limited to 1,000 calls per month and are not for production.
-
-## Documentation
-
-- [User guide](docs/user-guide.md)
-- [Development guide](docs/development.md)
-- [Corrective local testing](docs/local-testing.md)
-- [Known issues and unfinished gates](docs/known-issues.md)
-- [Architecture decisions](docs/architecture/)
-- [Product contracts](packages/contracts/README.md)
-
-The historical 1.x source and `write-the` generator remain at the `v1.0.0` tag. They are not a 2.0
-dependency, migration target, compatibility target, or packaging path.
-
-## Release policy
-
-Local testing does not authorize a push, package publication, public download, GitHub release,
-production signature, updater, or artifact distribution. The owner decides whether a fully tested
-corrective build becomes the CupcakeAI 2.0 release candidate.
+Cupcake Chat's original code and artwork are released under the [MIT License](LICENSE). You may use,
+modify, and distribute it, including commercially, provided you retain the copyright and permission
+notice. The software is provided without warranty. Dependencies, model files, fonts, provider
+services, and other third-party material keep their own licenses and terms; check their notices
+before redistributing a complete build.
