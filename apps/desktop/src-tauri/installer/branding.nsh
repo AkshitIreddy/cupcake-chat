@@ -8,3 +8,15 @@
 !define MUI_FINISHPAGE_TITLE "Your Cupcakes are ready"
 !define MUI_FINISHPAGE_TEXT "Cupcake Chat is installed.$\r$\n$\r$\nOpen the app to choose your first model, meet your advisors, and make yourself at home."
 !define MUI_FINISHPAGE_RUN_TEXT "Open Cupcake Chat"
+
+; An upgrade must replace the runtime tree, not overlay it: old Python package
+; metadata otherwise survives and fails the host's exact manifest validation.
+!macro NSIS_HOOK_PREINSTALL
+  IfFileExists "$INSTDIR\sidecars\sidecars.manifest.json" 0 cupcake_runtime_clean
+  ClearErrors
+  RMDir /r "$INSTDIR\sidecars"
+  IfErrors 0 cupcake_runtime_clean
+  MessageBox MB_OK|MB_ICONSTOP "Close Cupcake Chat before installing this update."
+  Abort
+  cupcake_runtime_clean:
+!macroend

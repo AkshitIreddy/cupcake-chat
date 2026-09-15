@@ -537,43 +537,38 @@ function EmptyState({
   );
 }
 
-function WorkspaceOpening() {
-  const [scene] = useState(() => {
-    const requested = Number(new URLSearchParams(window.location.search).get('openingScene'));
-    return Number.isInteger(requested) && requested >= 0 && requested <= 3
-      ? requested
-      : Math.floor(Math.random() * 4);
-  });
-  useEffect(() => {
-    document.documentElement.dataset.openingScene = String(scene);
-    return () => {
-      delete document.documentElement.dataset.openingScene;
-    };
-  }, [scene]);
+function WorkspaceOpening({
+  error,
+  onRetry,
+  busy = false,
+}: {
+  error?: string | null;
+  onRetry?: () => void;
+  busy?: boolean;
+}) {
   return (
     <main className="workspace-opening" aria-live="polite">
-      <Dreamscape scene={scene} />
       <section className="workspace-opening__card">
-        <span className="eyebrow">Opening workspace</span>
-        <h2>Bringing your history into view</h2>
-        <p>
-          Your conversations open first. Hardware scans, catalogs, and local models stay asleep
-          until their page or a message needs them.
-        </p>
-        <div className="workspace-opening__meter" aria-label="Opening workspace">
-          <i />
-        </div>
-        <div className="workspace-opening__stages">
-          <span className="is-done">
-            <Icon name="check" /> Profile ready
-          </span>
-          <span className="is-active">
-            <i /> Opening recent chats
-          </span>
-          <span>
-            <i /> Optional services on demand
-          </span>
-        </div>
+        <span className="eyebrow">Cupcake Chat</span>
+        <h2>{error ? 'Your workspace couldn’t open' : 'Opening your workspace'}</h2>
+        <p>{error || 'Getting your conversations ready.'}</p>
+        {error ? (
+          <>
+            <p>
+              Close and reopen Cupcake Chat. If this keeps happening, reinstall the latest
+              installer.
+            </p>
+            {onRetry && (
+              <button className="button button--primary" disabled={busy} onClick={onRetry}>
+                {busy ? 'Opening…' : 'Try again'}
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="workspace-opening__meter" aria-label="Opening workspace">
+            <i />
+          </div>
+        )}
       </section>
     </main>
   );
@@ -12978,7 +12973,14 @@ function LiveApp() {
   let content: ReactNode;
   const forceOpening =
     workspace.fixtureMode && new URLSearchParams(window.location.search).get('opening') === '1';
-  if ((!workspace.ready && !workspace.fixtureMode) || forceOpening) content = <WorkspaceOpening />;
+  if ((!workspace.ready && !workspace.fixtureMode) || forceOpening)
+    content = (
+      <WorkspaceOpening
+        error={workspace.error}
+        busy={workspace.busy}
+        onRetry={() => void workspace.refresh()}
+      />
+    );
   else if (view === 'home')
     content = (
       <HomeView
@@ -13154,7 +13156,7 @@ function LiveApp() {
             this preview.
           </div>
         )}
-        {workspace.error && (
+        {workspace.error && workspace.ready && (
           <div className="runtime-error" role="alert">
             <Icon name="info" />
             {workspace.error}

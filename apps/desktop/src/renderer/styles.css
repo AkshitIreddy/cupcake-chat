@@ -491,50 +491,6 @@ kbd {
     background 260ms var(--ease),
     color 260ms var(--ease);
 }
-html[data-opening-scene='0'] .app-shell:has(.workspace-opening) :is(.shelf, .cupcake-titlebar) {
-  --crumb: #182642;
-  --paper: #223757;
-  --cocoa: #f5efe2;
-  --muted: #c7cde0;
-  --line: #3d5072;
-  --berry: #efc66b;
-  --berry-dark: #ffe39b;
-  --berry-soft: #33466c;
-  --soft: #2d405f;
-}
-html[data-opening-scene='1'] .app-shell:has(.workspace-opening) :is(.shelf, .cupcake-titlebar) {
-  --crumb: #efe0bd;
-  --paper: #f8edcf;
-  --cocoa: #4b342a;
-  --muted: #776050;
-  --line: #d6bd91;
-  --berry: #a53f63;
-  --berry-dark: #7e2848;
-  --berry-soft: #edcbd1;
-  --soft: #dfcaa4;
-}
-html[data-opening-scene='2'] .app-shell:has(.workspace-opening) :is(.shelf, .cupcake-titlebar) {
-  --crumb: #352216;
-  --paper: #49301d;
-  --cocoa: #fae7c6;
-  --muted: #d5ba91;
-  --line: #6b4c2c;
-  --berry: #e4aa59;
-  --berry-dark: #ffd18a;
-  --berry-soft: #604023;
-  --soft: #53381f;
-}
-html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cupcake-titlebar) {
-  --crumb: #eadfe7;
-  --paper: #f7edf0;
-  --cocoa: #4c3d55;
-  --muted: #76657c;
-  --line: #cdbccd;
-  --berry: #9c5279;
-  --berry-dark: #713a5b;
-  --berry-soft: #dfcfe1;
-  --soft: #d8c9d8;
-}
 .shelf__top {
   display: flex;
   align-items: center;
@@ -1375,7 +1331,8 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
   padding: 30px;
   border: 1px solid color-mix(in srgb, var(--line), transparent 12%);
   border-radius: 24px;
-  background: color-mix(in srgb, var(--paper), transparent 8%);
+  background: var(--paper);
+  color: var(--cocoa);
   box-shadow: 0 32px 90px rgba(26, 18, 17, 0.3);
   backdrop-filter: blur(20px) saturate(1.15);
 }
@@ -1386,7 +1343,7 @@ html[data-opening-scene='3'] .app-shell:has(.workspace-opening) :is(.shelf, .cup
     'Bricolage Grotesque';
 }
 .workspace-opening__card > p {
-  margin: 0;
+  margin: 0 0 16px;
   color: var(--muted);
   line-height: 1.55;
 }

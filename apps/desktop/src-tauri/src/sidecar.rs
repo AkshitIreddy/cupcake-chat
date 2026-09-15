@@ -234,11 +234,23 @@ impl SidecarSupervisor {
         let (receiver, generation) = {
             let mut inner = self.lock();
             let Some(connection) = inner.connection.as_mut() else {
-                return RuntimeResponse::failure(
-                    "RUNTIME_NOT_READY",
-                    "The local runtime is not ready",
-                    true,
-                );
+                return if inner.status.state == RuntimeState::Crashed {
+                    RuntimeResponse::failure(
+                        "RUNTIME_START_FAILED",
+                        inner
+                            .status
+                            .detail
+                            .clone()
+                            .unwrap_or_else(|| "The local runtime could not start".into()),
+                        false,
+                    )
+                } else {
+                    RuntimeResponse::failure(
+                        "RUNTIME_NOT_READY",
+                        "The local runtime is not ready",
+                        true,
+                    )
+                };
             };
             let receiver = connection.subscribe(correlation);
             if let Err(error) = connection.send(MessageType::Request, correlation, payload, timeout)
@@ -305,11 +317,23 @@ impl SidecarSupervisor {
         let (receiver, generation) = {
             let mut inner = self.lock();
             let Some(connection) = inner.connection.as_mut() else {
-                return RuntimeResponse::failure(
-                    "RUNTIME_NOT_READY",
-                    "The local runtime is not ready",
-                    true,
-                );
+                return if inner.status.state == RuntimeState::Crashed {
+                    RuntimeResponse::failure(
+                        "RUNTIME_START_FAILED",
+                        inner
+                            .status
+                            .detail
+                            .clone()
+                            .unwrap_or_else(|| "The local runtime could not start".into()),
+                        false,
+                    )
+                } else {
+                    RuntimeResponse::failure(
+                        "RUNTIME_NOT_READY",
+                        "The local runtime is not ready",
+                        true,
+                    )
+                };
             };
             let receiver = connection.subscribe(correlation);
             if let Err(error) = connection.send_sensitive(

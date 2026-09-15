@@ -2535,6 +2535,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           } catch (reason) {
             bootstrapFailure =
               reason instanceof Error ? reason : new Error('The local workspace could not open.');
+            if (reason instanceof RuntimeRequestFailure && reason.code === 'RUNTIME_START_FAILED')
+              break;
             if (attempt < 2)
               await new Promise<void>((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
           }
