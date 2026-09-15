@@ -1,25 +1,44 @@
-# Cupcake Chat
-
 <p align="center">
-  <strong>A warm Windows workspace where your AI chats can turn into useful work.</strong><br />
-  Chat with one model, bring a small team of named Cupcakes into the same conversation, keep work
-  organized by project, and choose exactly which local or hosted model answers.
+  <img src="docs/media/cupcake-chat-banner.png" alt="Cupcake Chat — three curious cupcake companions sharing maps, books, and ideas in a warm strawberry-pink study" width="960" />
 </p>
 
 <p align="center">
-  Windows 10/11 x64 · local models optional · bring your own provider keys · MIT License
+  <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/latest"><img src="https://img.shields.io/badge/Download-Windows-E69AAE?style=flat-square&amp;labelColor=583344" alt="Download for Windows" /></a>
+  <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/cupcake-chat?style=flat-square&amp;labelColor=583344&amp;color=C87991&amp;label=latest" alt="Latest release" /></a>
+  <a href="#free-ways-to-start"><img src="https://img.shields.io/badge/Models-local%20%2B%20cloud-B3C3A0?style=flat-square&amp;labelColor=583344" alt="Local and cloud models" /></a>
+  <a href="#what-cupcake-chat-is-good-at"><img src="https://img.shields.io/badge/Your%20team-custom%20Cupcakes-D9B47A?style=flat-square&amp;labelColor=583344" alt="Create your own Cupcake advisors" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-BCA8D0?style=flat-square&amp;labelColor=583344" alt="MIT License" /></a>
+</p>
+
+<h1 align="center">Cupcake Chat</h1>
+
+<p align="center">
+  <strong>A little curiosity. A whole team of possibilities.</strong><br />
+  Chat with your favorite models, gather a team of Cupcake advisors,<br />
+  and turn questions into ideas, working code, and projects worth keeping.
 </p>
 
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/download/v1.8.0/Cupcake-Chat_1.8.0_x64-setup.exe"><strong>Download Cupcake Chat 1.8 for Windows</strong></a>
-  · <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/tag/v1.8.0">Release notes</a>
+  <a href="#install-and-finish-setup"><strong>▸ Get started</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#see-it-in-action"><strong>▸ See it in action</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#free-ways-to-start"><strong>▸ Free model options</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/latest"><strong>▸ What's new</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#for-developers-and-ai-contributors"><strong>▸ For developers</strong></a>
 </p>
+
+<a id="see-it-in-action"></a>
 
 <p align="center">
   <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
-<p align="center">Demo created with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a>.</p>
+<p align="center"><sub>Built with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a></sub></p>
+
+---
 
 ## For users
 
