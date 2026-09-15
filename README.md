@@ -18,10 +18,6 @@
   <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
-The forward-looping tour uses the packaged app. Typing and response segments replay real saved model answers with
-compressed timing; other interactions use the app's controls. The workspace explores Roman
-logistics, Viking voyages, and Mongol mobility. See the [demo notes](docs/demo-storyboard.md).
-
 | A question about Rome                                                                         | A conversation with several Cupcakes                                                                     |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | ![A real Roman supply conversation in Roman Cupcake Camp](docs/media/cupcake-chat-roman.png)  | ![Historical advisors in a group chat on Rose Castle Garden](docs/media/cupcake-chat-group-rose.png)     |
@@ -29,10 +25,6 @@ logistics, Viking voyages, and Mongol mobility. See the [demo notes](docs/demo-s
 | ![Connected model catalog on Viking Cupcake Fjord](docs/media/cupcake-chat-models-viking.png) | ![A tested siege supply artifact on Aegean Cupcake Harbor](docs/media/cupcake-chat-artifacts-greek.png)  |
 | Explore the assumptions                                                                       | Meet your historical companions                                                                          |
 | ![An interactive Nile travel scenario](docs/media/cupcake-chat-workshop-egypt.png)            | ![Four Mongol-era Cupcake advisors with original portraits](docs/media/cupcake-chat-advisors-mongol.png) |
-
-> **Release status:** this branch is being prepared as the local **1.8.0 release candidate**. It is
-> not a published download yet. The owner will review the packaged app, README, screenshots, and
-> demo before anything is pushed or released.
 
 ## For users
 
@@ -67,10 +59,10 @@ topic, cleaning a spreadsheet, drafting a message, or turning an answer into a f
 
 ### Install and finish setup
 
-When 1.8.0 is approved and published, download the Windows installer from the repository's
-[Releases page](https://github.com/AkshitIreddy/CUPCAKEAGI/releases). Cupcake Chat is a current-user
-NSIS install and uses Microsoft Edge WebView2. The installer can obtain WebView2 when Windows does
-not already have it.
+Find available Windows installers on the
+[Releases page](https://github.com/AkshitIreddy/cupcake-chat/releases). Cupcake Chat is a
+current-user NSIS install and uses Microsoft Edge WebView2. The installer can obtain WebView2 when
+Windows does not already have it.
 
 The first-run guide is a checklist, not a commitment. Every optional step has a skip choice and can
 be replayed later from **Settings**.
@@ -182,11 +174,10 @@ pnpm install --frozen-lockfile
 pnpm --filter @cupcakeagi/desktop dev
 ```
 
-Keep large build outputs and model files outside the repository. On the owner's workstation that
-means `E:\temp`; contributors can choose another dedicated drive. Test with a disposable profile by
-setting `CUPCAKE_TEST_DATA_DIR` to an explicit empty directory. Development fixtures make visual
-work possible without credentials, but they are never evidence of a real provider, installed local
-model, durable restart, or packaged application.
+Keep large build outputs and model files in a dedicated directory outside the repository. Test with
+a disposable profile by setting `CUPCAKE_TEST_DATA_DIR` to an explicit empty directory. Development
+fixtures make visual work possible without credentials, but they are never evidence of a real
+provider, installed local model, durable restart, or packaged application.
 
 ### Make a change that can be trusted
 
@@ -237,10 +228,8 @@ The GitHub release workflow is manual and protected by the release environment. 
 manifests, builds the Windows artifacts, signs the updater payload, and creates a **draft** GitHub
 Release containing the NSIS installer, required updater signature, and `latest.json`. Windows
 Authenticode signing is optional; drafts without it are explicitly marked. The workflow does not run
-automatically when a tag is pushed and does not publish the draft. Preparing a candidate locally
-does not authorize pushing a tag, running that workflow, or publishing a release. Updater keys, the
-separate Windows code-signing certificate, and release credentials belong in repository secrets,
-never in source.
+automatically when a tag is pushed. Maintainers review the draft before publication. Store updater
+keys, Windows signing certificates, and release credentials in GitHub Actions secrets.
 
 ### Release checklist
 
@@ -249,9 +238,8 @@ never in source.
   installer from the same source revision.
 - Run deterministic lanes, packaged smoke, native visual/functional acceptance, installer lifecycle,
   updater checks against a disposable feed, and a secret scan.
-- Review the README images and MP4 from the exact packaged build.
-- Obtain owner approval before any push, tag, GitHub release, signature publication, or updater-feed
-  change.
+- Verify documentation and demo media against the packaged build.
+- Review the signed installer and update metadata before publishing the release.
 
 ### License
 

@@ -10,7 +10,7 @@ use url::Url;
 
 pub const UPDATE_PROGRESS_EVENT_NAME: &str = "cupcake://update-progress";
 const PRODUCTION_UPDATE_ENDPOINT: &str =
-    "https://github.com/AkshitIreddy/CUPCAKEAGI/releases/latest/download/latest.json";
+    "https://github.com/AkshitIreddy/cupcake-chat/releases/latest/download/latest.json";
 
 struct PendingUpdate {
     update: Update,
