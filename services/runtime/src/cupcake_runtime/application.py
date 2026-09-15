@@ -6468,6 +6468,7 @@ def _validate_setting(key: str, value: Any, providers: ProviderRegistry) -> Any:
             value.startswith("atlas:")
             or value.startswith("/brand/")
             or value.startswith("data:image/")
+            or any(persona.avatar == value for persona in DEFAULT_PERSONA_CATALOG)
         ):
             raise RuntimeCommandError("INVALID_SETTING", "Avatar source is not allowed")
         return value

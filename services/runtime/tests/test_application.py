@@ -22,6 +22,7 @@ from cupcake_runtime.agents import (
 )
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
 from cupcake_runtime.domain.models import Setting
+from cupcake_runtime.groups.history_catalog import HISTORY_PERSONA_CATALOG
 from cupcake_runtime.local_models import CupcakeLocalManager
 from cupcake_runtime.local_models.types import (
     HardwareProfile,
@@ -42,6 +43,27 @@ from cupcake_runtime.providers.types import (
 
 def service(tmp_path: Path) -> RuntimeService:
     return RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+
+
+def test_historical_profile_portraits_persist_and_reject_unknown_assets(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    for persona in HISTORY_PERSONA_CATALOG:
+        for key in ("profile.avatar", "assistant.avatar"):
+            saved, _ = runtime.handle("settings.set", {"key": key, "value": persona.avatar})
+            assert saved["value"] == persona.avatar
+    for invalid in (
+        "product:art/history/roman-99.webp",
+        "product:art/history/../../secret.png",
+        "https://example.com/avatar.png",
+    ):
+        with pytest.raises(RuntimeCommandError, match="Avatar source is not allowed"):
+            runtime.handle("settings.set", {"key": "profile.avatar", "value": invalid})
+    runtime.close()
+    reopened = service(tmp_path)
+    settings, _ = reopened.handle("settings.list")
+    assert settings["profile.avatar"] == HISTORY_PERSONA_CATALOG[-1].avatar
+    assert settings["assistant.avatar"] == HISTORY_PERSONA_CATALOG[-1].avatar
+    reopened.close()
 
 
 def _active_cuda_13_runtime(*, verify_integrity: bool = True) -> SimpleNamespace:
