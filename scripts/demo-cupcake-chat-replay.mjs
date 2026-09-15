@@ -79,10 +79,7 @@ const timeline = gifsmith.timeline((t) => {
     },
     { name: 'initialize tour interaction audit', seconds: 0.1 },
   );
-  nav(t, 'Home');
-  t.hold(0.65);
-  nav(t, 'Projects');
-  clickText(t, '.project-card__select', 'Rome beyond the battlefield');
+  t.hold(0.35);
   t.click('button.new-chat', { via: 'cursor', glideSeconds: 0.28 });
   t.call(prepareReplay, { name: 'prepare genuine empty chat', seconds: 0.2 });
   t.call(
@@ -267,29 +264,6 @@ const timeline = gifsmith.timeline((t) => {
   t.hold(0.65);
   nav(t, 'Home');
   t.hold(0.65);
-  nav(t, 'Settings');
-  clickText(t, '.settings-layout aside button', 'Appearance', true);
-  clickText(t, '.settings-layout aside button', 'General', true);
-  t.call((page) => page.evaluate(() => window.sessionStorage.removeItem('cupcake.setup.step')), {
-    name: 'start setup tour at welcome',
-    seconds: 0.1,
-  });
-  clickText(t, '.settings-layout button', 'Replay onboarding', true);
-  t.hold(0.65);
-  clickText(t, '.onboarding-layer nav button', 'Cloud providers');
-  t.hold(0.65);
-  clickText(t, '.onboarding-provider-guide button', 'Groq');
-  t.hold(0.65);
-  t.click('button[aria-label="Close provider setup"]', { via: 'cursor', glideSeconds: 0.4 });
-  clickText(t, '.onboarding-layer nav button', 'Optional · run models on this PC');
-  t.hold(0.65);
-  clickText(t, '.onboarding-layer button', 'Set up local models and runtimes');
-  t.hold(0.65);
-  clickText(t, 'button', 'Continue setup', true);
-  t.click('button[aria-label="Skip onboarding"]', { via: 'cursor', glideSeconds: 0.28 });
-  t.hold(0.25);
-  nav(t, 'Home');
-  t.hold(0.65);
 });
 const scene = {
   target: gifsmith.tauri({ port: 10131 }),
@@ -427,7 +401,7 @@ try {
   assert.equal(
     receipt.navigation.filter((item) => item.area === 'navigation' && item.label === 'Projects')
       .length,
-    1,
+    0,
   );
   assert.equal(
     receipt.navigation.filter((item) => item.area === 'recent').length,
@@ -437,6 +411,15 @@ try {
     receipt.navigation.filter((item) => item.area === 'new-chat').length,
     args.includes('--stream-only') ? 1 : 2,
   );
+  assert.equal(
+    receipt.navigation[0]?.area,
+    'new-chat',
+    'The tour must start directly with New chat',
+  );
+  assert.equal(
+    receipt.navigation.filter((item) => item.area === 'navigation' && item.label === 'Home').length,
+    args.includes('--stream-only') ? 0 : 1,
+  );
   assert.equal(receipt.replays.length, args.includes('--stream-only') ? 1 : 2);
   for (const replay of receipt.replays) {
     assert.equal(replay.interceptedSends, 1, 'Exactly one controlled Send per replay expected');
@@ -445,6 +428,8 @@ try {
     assert.equal(replay.emptyListFrames, 0, 'Empty bullet appeared before text');
     assert.equal(replay.preSendAnswerFrames, 0, 'Answer appeared before Send');
     assert.equal(replay.duplicateCursorFrames, 0, 'Two streaming cursors rendered');
+    assert.equal(replay.preservedWhitespaceFrames, 0, 'Markdown inherited preformatted whitespace');
+    assert.equal(replay.cursorRowFrames, 0, 'Streaming reserved an extra cursor row');
     assert.equal(replay.preSendTitleFrames, 0, 'Conversation had a generated title before Send');
   }
   receipt.outcome = 'completed';

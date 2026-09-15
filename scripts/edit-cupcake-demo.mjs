@@ -26,7 +26,16 @@ const source = join(root, 'cupcake-chat-demo.mp4');
 const outputIndex = process.argv.indexOf('--review-output');
 const mp4 =
   outputIndex < 0 ? 'E:/temp/cupcake-chat-review-1.8.mp4' : resolve(process.argv[outputIndex + 1]);
-const gif = resolve('docs/media/cupcake-chat-demo-preview.gif');
+const gifIndex = process.argv.indexOf('--gif-output');
+const gif = resolve(
+  gifIndex < 0 ? 'docs/media/cupcake-chat-demo-preview.gif' : process.argv[gifIndex + 1],
+);
+const forwardLoop = process.argv.includes('--forward-loop');
+const playbackSpeed = Number.isFinite(option('--speed')) ? option('--speed') : 1;
+assert(playbackSpeed >= 1 && playbackSpeed <= 2, 'Playback speed must be between 1 and 2');
+const editedDuration = (evidence.result.durationSeconds - (cutEnd - cutStart)) / playbackSpeed;
+const seamSeconds = 0.3;
+const outputDuration = editedDuration + (forwardLoop ? 0.1 : 0);
 const run = (command, args) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -37,10 +46,12 @@ const run = (command, args) =>
     child.on('error', reject);
     child.on('close', (code) => (code === 0 ? resolve() : reject(Error(error))));
   });
-const filter =
-  cutEnd > cutStart
-    ? `[0:v]split[a][b];[a]trim=end=${cutStart},setpts=PTS-STARTPTS[x];[b]trim=start=${cutEnd},setpts=PTS-STARTPTS[y];[x][y]concat=n=2:v=1:a=0[v]`
-    : '[0:v]setpts=PTS-STARTPTS[v]';
+const cutFilter = `[0:v]split[a][b];[a]trim=end=${cutStart},setpts=PTS-STARTPTS[x];[b]trim=start=${cutEnd},setpts=PTS-STARTPTS[y];[x][y]concat=n=2:v=1:a=0,setpts=PTS/${playbackSpeed}[cut]`;
+// Keep every scene in chronological order. Only the final Home hold dissolves
+// into the opening still; no reverse playback or half-cycle scene blending.
+const filter = forwardLoop
+  ? `${cutFilter};[cut]fps=30,format=yuv420p,split[body][head];[head]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${seamSeconds + 0.1}[anchor];[body][anchor]xfade=transition=fade:duration=${seamSeconds}:offset=${(editedDuration - seamSeconds).toFixed(6)},trim=duration=${outputDuration.toFixed(6)}[v]`
+  : `${cutFilter};[cut]null[v]`;
 await run('ffmpeg', [
   '-hide_banner',
   '-loglevel',
@@ -55,6 +66,8 @@ await run('ffmpeg', [
   '-an',
   '-c:v',
   'libx264',
+  '-pix_fmt',
+  'yuv420p',
   '-preset',
   'fast',
   '-crf',
@@ -88,6 +101,10 @@ await writeFile(
       gif,
       cutStart,
       cutEnd,
+      forwardLoop,
+      playbackSpeed,
+      outputDuration,
+      seamSeconds: forwardLoop ? seamSeconds : 0,
       removedSeconds: Math.max(0, cutEnd - cutStart),
       reason:
         'Shortened actual Python waiting time; original click, computation, and results retained.',

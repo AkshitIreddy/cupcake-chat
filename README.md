@@ -18,7 +18,7 @@
   <img src="docs/media/cupcake-chat-demo-preview.gif" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
-The tour uses the packaged app. Typing and response segments replay real saved model answers with
+The forward-looping tour uses the packaged app. Typing and response segments replay real saved model answers with
 compressed timing; other interactions use the app's controls. The workspace explores Roman
 logistics, Viking voyages, and Mongol mobility. See the [demo notes](docs/demo-storyboard.md).
 

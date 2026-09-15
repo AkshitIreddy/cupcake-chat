@@ -2,7 +2,9 @@
 
 The tour uses the packaged Windows app and Gifsmith 0.3.5, headlessly at 1440 × 920. It starts in
 Roman cupcake camp, changes once to Rose castle garden, and uses no zoom changes. The README
-contains an animated GIF. A separate MP4 is supplied locally for owner review.
+contains a forward-looping animated GIF. A separate MP4 is supplied locally for owner review. Only
+the final Home hold dissolves into the opening frame; no scene plays backward or overlaps another
+chapter.
 
 ## Storyboard
 
@@ -14,13 +16,13 @@ contains an animated GIF. A separate MP4 is supplied locally for owner review.
 | Work you can keep          | Open the saved Python artifact and task history.                                                                                                                                   |
 | A small conversation team  | Open the existing Cohere/Cloudflare discussion and the advisor picker, with visible cursor interactions.                                                                           |
 | Make it yours              | Change the human and assistant portraits, then change the theme and wallpaper once.                                                                                                |
-| Optional setup             | Show provider connection and local-runtime onboarding, then return Home.                                                                                                           |
 
 The tour moves quickly; viewers can pause. It has no bottom-right captions, standalone Tools-page
-tour, or long reading holds. Projects is shown once. Both typed exchanges start with New chat; the
-existing group discussion opens through Recent in the sidebar. Tool waiting time can be shortened in
-the edit, while retaining the actual click and its actual result. It is a feature demonstration, not
-a latency benchmark.
+tour, onboarding, or long reading holds. The prepared workspace is already Home in the Roman
+project, so the first action is New chat. Both typed exchanges start with New chat; the existing
+group discussion opens through Recent in the sidebar. Projects is never opened. Tool waiting time
+can be shortened in the edit, while retaining the actual click and its actual result. It is a
+feature demonstration, not a latency benchmark.
 
 ## Saved examples
 
@@ -72,14 +74,15 @@ Without `--execute`, the helper prints its plan. Start the prepared packaged pro
 CDP on port 10131, then run:
 
 ```powershell
-node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\new-chat-final
+node scripts/demo-cupcake-chat-replay.mjs --execute --output E:\temp\cupcake-chat-smooth-demo-1.8\forward-loop-final
 ```
 
-The reviewed take lasts 91.6 seconds. Its final edit removes original seconds 44–57, after the Run
-tests click and before its completed output. Both review MP4 and README GIF last 78.6 seconds:
+The reviewed take lasts 98.93 seconds. Its final edit removes original seconds 57–75, after the Run
+tests click and before its completed output. Playback is 1.35x; the MP4 lasts 60.03 seconds and the
+forward-looping GIF lasts 60.0 seconds:
 
 ```powershell
-node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\new-chat-final --cut-start 44 --cut-end 57 --review-output E:\temp\cupcake-chat-review-1.8-new-chat.mp4
+node scripts/edit-cupcake-demo.mjs E:\temp\cupcake-chat-smooth-demo-1.8\forward-loop-final --cut-start 57 --cut-end 75 --speed 1.35 --forward-loop --review-output E:\temp\cupcake-chat-review-1.8-forward-loop.mp4
 ```
 
 Those boundaries were inspected in this take; inspect new recordings before choosing their cut

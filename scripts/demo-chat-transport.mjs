@@ -2,7 +2,7 @@
  * Virtual chats exist only in this webview; native artifacts and tests stay real.
  * Never bundled into the application. Reload removes the adapter and its chats.
  */
-/* global window, document, performance, requestAnimationFrame, cancelAnimationFrame, crypto */
+/* global window, document, performance, requestAnimationFrame, cancelAnimationFrame, crypto, getComputedStyle */
 export async function installReplayTransport(page) {
   await page.evaluate(() => {
     const nativeRequest = window.cupcake.runtime.request;
@@ -120,6 +120,8 @@ export async function armReplay(page, source) {
       emptyListFrames: 0,
       duplicateCursorFrames: 0,
       preSendAnswerFrames: 0,
+      preservedWhitespaceFrames: 0,
+      cursorRowFrames: 0,
       frames: [],
     };
     const audit = { receipt, frame: 0 };
@@ -141,6 +143,12 @@ export async function armReplay(page, source) {
         )
       )
         receipt.duplicateCursorFrames++;
+      for (const answer of answers) {
+        const markdown = answer.querySelector('.rich-markdown');
+        if (!markdown) continue;
+        if (getComputedStyle(markdown).whiteSpace !== 'normal') receipt.preservedWhitespaceFrames++;
+        if (getComputedStyle(markdown, '::after').content !== 'none') receipt.cursorRowFrames++;
+      }
       receipt.frames.push({
         at: performance.now(),
         title,
