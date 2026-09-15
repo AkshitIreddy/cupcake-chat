@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1041,6 +1042,8 @@ function Composer({
   offline,
   groupMode = false,
   onRepairPersona,
+  restoredDraft,
+  onDraftRestored,
 }: {
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
   compact?: boolean;
@@ -1049,6 +1052,8 @@ function Composer({
   offline: boolean;
   groupMode?: boolean;
   onRepairPersona?: (persona: CupcakePersona) => void;
+  restoredDraft?: ComposerSendInput | null;
+  onDraftRestored?: () => void;
 }) {
   const workspace = useWorkspace();
   const modelReady = selectedModel ? modelIsAvailableInChat(selectedModel) : false;
@@ -1071,6 +1076,29 @@ function Composer({
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const draftGeneration = useRef(0);
+  const lastRestoredDraft = useRef<ComposerSendInput | null>(null);
+  useEffect(() => {
+    if (!restoredDraft || lastRestoredDraft.current === restoredDraft) return;
+    lastRestoredDraft.current = restoredDraft;
+    setValue((current) =>
+      current.trim() ? `${restoredDraft.content}\n\n${current}` : restoredDraft.content,
+    );
+    setAttachments((current) => [
+      ...restoredDraft.attachments,
+      ...current.filter(
+        (item) => !restoredDraft.attachments.some((sent) => sent.handleId === item.handleId),
+      ),
+    ]);
+    setReferences((current) => [
+      ...restoredDraft.references,
+      ...current.filter(
+        (item) =>
+          !restoredDraft.references.some((sent) => sent.id === item.id && sent.type === item.type),
+      ),
+    ]);
+    setDisclosureError('Message not sent. Your draft and files are ready to retry.');
+    onDraftRestored?.();
+  }, [restoredDraft, onDraftRestored]);
   const draftIdentityRef = useRef('');
   draftIdentityRef.current = JSON.stringify({
     conversationId: workspace.activeConversationId,
@@ -2337,10 +2365,17 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
     return () => window.clearTimeout(timer);
   }, [workspace.messages]);
   const start = Math.max(0, windowEnd - windowSize);
-  const visible = workspace.messages.slice(start, windowEnd);
+  const hasDisplayContent = (message: MessageRecord) =>
+    message.role !== 'assistant' ||
+    Boolean(message.content.trim() || message.reasoningSummary?.trim()) ||
+    (!message.streaming &&
+      (message.responseState === 'cancelled' || message.finishReason === 'length'));
+  const visible = workspace.messages.slice(start, windowEnd).filter(hasDisplayContent);
   const outlineStep = Math.max(1, Math.ceil(workspace.messages.length / 60));
   const outline = workspace.messages.filter(
-    (_, index) => index % outlineStep === 0 || index === workspace.messages.length - 1,
+    (message, index) =>
+      hasDisplayContent(message) &&
+      (index % outlineStep === 0 || index === workspace.messages.length - 1),
   );
   const executeAction = async (
     message: MessageRecord,
@@ -2825,6 +2860,8 @@ function ChatView({
   setModelOpen,
   offline,
   onSend,
+  restoredDraft,
+  onDraftRestored,
 }: {
   openArtifacts: () => void;
   openTask: () => void;
@@ -2832,6 +2869,8 @@ function ChatView({
   setModelOpen: () => void;
   offline: boolean;
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
+  restoredDraft?: ComposerSendInput | null;
+  onDraftRestored?: () => void;
 }) {
   const workspace = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
@@ -2848,12 +2887,28 @@ function ChatView({
   const conversationScroll = useRef(new ConversationScrollController());
   const latestMessage = workspace.messages.at(-1);
   const followSignal = `${workspace.activeConversationId ?? 'new'}:${workspace.messages.length}:${latestMessage?.content.length ?? 0}:${latestMessage?.streaming ? 'streaming' : 'settled'}`;
+  const userMessageCount = workspace.messages.filter((message) => message.role === 'user').length;
+  const previousUserMessageCount = useRef(userMessageCount);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const surface = conversationScrollRef.current;
     if (!surface) return;
-    conversationScroll.current.follow(surface);
-  }, [followSignal]);
+    const sent = userMessageCount > previousUserMessageCount.current;
+    previousUserMessageCount.current = userMessageCount;
+    conversationScroll.current.follow(surface, { force: sent });
+    if (sent) setFollowingLatest(true);
+  }, [followSignal, userMessageCount]);
+
+  useLayoutEffect(() => {
+    const surface = conversationScrollRef.current;
+    const content = surface?.querySelector('.conversation');
+    if (!surface || !content) return;
+    // Markdown, images, and the history window can grow after the message render.
+    const observer = new ResizeObserver(() => conversationScroll.current.follow(surface));
+    observer.observe(content);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const surface = conversationScrollRef.current;
@@ -3379,14 +3434,13 @@ function ChatView({
           />
           <Composer
             compact
-            onSend={async (input) => {
-              const sent = await onSend(input);
-              if (sent) {
-                const surface = conversationScrollRef.current;
-                if (surface) conversationScroll.current.follow(surface, { force: true });
-                setFollowingLatest(true);
-              }
-              return sent;
+            restoredDraft={restoredDraft}
+            onDraftRestored={onDraftRestored}
+            onSend={(input) => {
+              const surface = conversationScrollRef.current;
+              if (surface) conversationScroll.current.follow(surface, { force: true });
+              setFollowingLatest(true);
+              return onSend(input);
             }}
             onModel={setModelOpen}
             selectedModel={selectedModel}
@@ -12773,6 +12827,8 @@ function LiveApp() {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [onboardingOpen, setOnboardingOpen] = useState(onboardingRequested);
+  const [failedHomeDraft, setFailedHomeDraft] = useState<ComposerSendInput | null>(null);
+  const clearFailedHomeDraft = useCallback(() => setFailedHomeDraft(null), []);
   const [onboardingPaused, setOnboardingPaused] = useState(false);
   const onboardingAutoShown = useRef(onboardingRequested);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
@@ -12961,8 +13017,12 @@ function LiveApp() {
   const homeComposer = (
     <Composer
       onSend={async (input) => {
-        const sent = await sendChat(input);
-        if (sent) navigate('chat');
+        let accepted = false;
+        const sent = await workspace.sendMessage(input, () => {
+          accepted = true;
+          navigate('chat');
+        });
+        if (accepted && !sent) setFailedHomeDraft(input);
         return sent;
       }}
       onModel={() => setModelOpen(true)}
@@ -13016,6 +13076,8 @@ function LiveApp() {
         setModelOpen={() => setModelOpen(true)}
         offline={workspace.settings.offline}
         onSend={sendChat}
+        restoredDraft={failedHomeDraft}
+        onDraftRestored={clearFailedHomeDraft}
       />
     );
   else if (view === 'projects') content = <ProjectsView navigate={navigate} />;

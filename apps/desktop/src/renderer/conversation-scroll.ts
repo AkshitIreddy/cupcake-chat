@@ -12,6 +12,10 @@ const DEFAULT_BOTTOM_THRESHOLD = 72;
 export class ConversationScrollController {
   private following = true;
   private framePending = false;
+  private lastScrollTop = 0;
+  private lastScrollHeight = 0;
+  private lastClientHeight = 0;
+  private measured = false;
 
   constructor(
     private readonly schedule: ScheduleFrame = (callback) =>
@@ -24,7 +28,18 @@ export class ConversationScrollController {
       0,
       surface.scrollHeight - surface.clientHeight - surface.scrollTop,
     );
-    this.following = distanceFromBottom <= this.bottomThreshold;
+    const layoutChanged =
+      surface.scrollHeight !== this.lastScrollHeight ||
+      surface.clientHeight !== this.lastClientHeight;
+    const movedUp = surface.scrollTop < this.lastScrollTop - 1;
+    // Content growth can produce a scroll event before the next follow frame.
+    // Only an actual move away from the end should disable automatic following.
+    if (!this.measured || !this.following || movedUp || !layoutChanged)
+      this.following = distanceFromBottom <= this.bottomThreshold;
+    this.measured = true;
+    this.lastScrollTop = surface.scrollTop;
+    this.lastScrollHeight = surface.scrollHeight;
+    this.lastClientHeight = surface.clientHeight;
     return this.following;
   }
 
@@ -38,10 +53,15 @@ export class ConversationScrollController {
     this.framePending = true;
     this.schedule(() => {
       this.framePending = false;
+      if (!this.following) return;
       surface.scrollTo({
         behavior: options.smooth ? 'smooth' : 'auto',
         top: surface.scrollHeight,
       });
+      this.lastScrollTop = surface.scrollTop;
+      this.lastScrollHeight = surface.scrollHeight;
+      this.lastClientHeight = surface.clientHeight;
+      this.measured = true;
     });
     return true;
   }

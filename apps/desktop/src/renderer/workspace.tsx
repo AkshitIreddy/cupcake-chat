@@ -608,21 +608,24 @@ interface WorkspaceContextValue {
   preflightGroupTurn(input: GroupTurnDraftInput): Promise<PreparedGroupTurn>;
   sendGroupTurn(prepared: PreparedGroupTurn): Promise<boolean>;
   stopGroupTurn(): Promise<boolean>;
-  sendMessage(input: {
-    content: string;
-    modelId: string;
-    attachments: StagedAttachmentRecord[];
-    references?: ReferenceRecord[];
-    reasoningEffort: ReasoningEffort;
-    enabledToolIds: string[];
-    mode?: 'send' | 'retry' | 'continue' | 'edit' | 'regenerate';
-    messageId?: string;
-    conversationId?: string;
-    branchId?: string;
-    projectId?: string | null;
-    outboundConfirmationToken?: string;
-    outboundIntent?: OutboundIntent;
-  }): Promise<boolean>;
+  sendMessage(
+    input: {
+      content: string;
+      modelId: string;
+      attachments: StagedAttachmentRecord[];
+      references?: ReferenceRecord[];
+      reasoningEffort: ReasoningEffort;
+      enabledToolIds: string[];
+      mode?: 'send' | 'retry' | 'continue' | 'edit' | 'regenerate';
+      messageId?: string;
+      conversationId?: string;
+      branchId?: string;
+      projectId?: string | null;
+      outboundConfirmationToken?: string;
+      outboundIntent?: OutboundIntent;
+    },
+    onAccepted?: () => void,
+  ): Promise<boolean>;
   preflightCloudDisclosure(input: {
     content: string;
     modelId: string;
@@ -3810,7 +3813,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const sendMessage = useCallback(
-    async (input: Parameters<WorkspaceContextValue['sendMessage']>[0]) => {
+    async (input: Parameters<WorkspaceContextValue['sendMessage']>[0], onAccepted?: () => void) => {
       if (
         settings.offline &&
         !models
@@ -3833,6 +3836,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
         ]);
       }
+      onAccepted?.();
       if (fixtureMode) {
         if (!activeConversationId) {
           const createdAt = Date.now();

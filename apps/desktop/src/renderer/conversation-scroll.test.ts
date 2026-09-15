@@ -73,4 +73,34 @@ describe('ConversationScrollController', () => {
     expect(surface.scrollToMock).toHaveBeenCalledWith({ behavior: 'auto', top: 950 });
     expect(controller.isFollowing()).toBe(true);
   });
+
+  it('keeps following when layout grows before its scroll event', () => {
+    const scheduled: Array<() => void> = [];
+    const controller = new ConversationScrollController((callback) => {
+      scheduled.push(callback);
+      return 1;
+    });
+    const surface = createSurface();
+    controller.observe(surface);
+    surface.scrollHeight = 900;
+    expect(controller.observe(surface)).toBe(true);
+    controller.follow(surface);
+    scheduled.shift()?.();
+    expect(surface.scrollToMock).toHaveBeenCalledWith({ behavior: 'auto', top: 900 });
+  });
+
+  it('cancels a queued follow when the reader scrolls up before the frame', () => {
+    const scheduled: Array<() => void> = [];
+    const controller = new ConversationScrollController((callback) => {
+      scheduled.push(callback);
+      return 1;
+    });
+    const surface = createSurface();
+    controller.observe(surface);
+    controller.follow(surface);
+    surface.scrollTop = 40;
+    expect(controller.observe(surface)).toBe(false);
+    scheduled.shift()?.();
+    expect(surface.scrollToMock).not.toHaveBeenCalled();
+  });
 });
