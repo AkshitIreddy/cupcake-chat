@@ -3,7 +3,7 @@
   "version": "1.8.0",
   "private": true,
   "description": "Cupcake Chat local desktop workspace",
-  "license": "Unlicense",
+  "license": "MIT",
   "packageManager": "pnpm@10.15.1",
   "engines": {
     "node": ">=20.19.0",

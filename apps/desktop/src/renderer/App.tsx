@@ -9871,7 +9871,7 @@ function AboutView() {
           <div className="about-version">
             <strong>Cupcake Chat 1.8</strong>
             <span>Local release candidate</span>
-            <span>Unlicense</span>
+            <span>MIT License</span>
           </div>
         </div>
       </div>

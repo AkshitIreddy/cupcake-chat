@@ -2,7 +2,7 @@
 name = "cupcake-tool-broker"
 version = "1.8.0"
 edition = "2021"
-license = "Unlicense"
+license = "MIT"
 description = "Security boundary and native-tool broker for Cupcake Chat"
 
 [lib]

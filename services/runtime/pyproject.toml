@@ -8,7 +8,7 @@ version = "1.8.0"
 description = "Local Cupcake Chat runtime, product contracts, and authoritative storage"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Unlicense" }
+license = { text = "MIT" }
 dependencies = [
   "cryptography>=43.0,<46",
   "pydantic>=2.10,<3",

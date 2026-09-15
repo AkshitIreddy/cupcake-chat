@@ -45,14 +45,10 @@
     "category": "Productivity",
     "shortDescription": "A local, text-first AI workspace.",
     "longDescription": "Cupcake Chat is a Windows-first local AI workbench for conversations, files, tools, tasks, memory, projects, and artifacts.",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.ico"
-    ],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "resources": {
-      "resources/sidecars/": "sidecars/"
+      "resources/sidecars/": "sidecars/",
+      "../../../LICENSE": "LICENSE"
     },
     "externalBin": ["binaries/cupcake-tool-broker", "binaries/cupcake-runtime"],
     "windows": {
