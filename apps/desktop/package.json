@@ -11,7 +11,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --no-bundle",
-    "bundle:nsis": "tauri build --bundles nsis",
+    "bundle:nsis": "node ../../scripts/build-installer.mjs",
     "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.mts",
     "test:watch": "node ../../node_modules/vitest/vitest.mjs --config vitest.config.mts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

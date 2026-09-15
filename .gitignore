@@ -6,6 +6,8 @@ out/
 *.consolidating/
 *.old-link
 release/
+/Cupcake-Chat-setup.exe
+/Cupcake-Chat-setup.exe.pending
 coverage/
 playwright-report/
 test-results/

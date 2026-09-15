@@ -237,11 +237,13 @@ node scripts/release-candidate-audit.mjs --require-artifacts
 ```
 
 The build produces the native executable at `apps/desktop/src-tauri/target/release/CupcakeAI.exe`
-and one current-user NSIS installer under `apps/desktop/src-tauri/target/release/bundle/nsis/`.
-Development files stay inside the checkout. Build caches reuse `out/cargo/` and the Rust `target/`
-directories; downloads and build tools reuse `out/download-cache/` and `out/tools/`. Demo recordings
-overwrite `out/demo/replay/`, QA output uses `out/qa/`, and optional development profiles use
-`out/profiles/`. Finished README media stays in `docs/media/`.
+and a current-user NSIS installer at `Cupcake-Chat-setup.exe` in the project folder. Each successful
+build replaces that file; a failed build keeps the previous installer available. Tauri also keeps
+its release bundle under `apps/desktop/src-tauri/target/release/bundle/nsis/`. Development files
+stay inside the checkout. Build caches reuse `out/cargo/` and the Rust `target/` directories;
+downloads and build tools reuse `out/download-cache/` and `out/tools/`. Demo recordings overwrite
+`out/demo/replay/`, QA output uses `out/qa/`, and optional development profiles use `out/profiles/`.
+Finished README media stays in `docs/media/`.
 
 Recording scripts remove intermediate frames when finished. Sidecar packaging uses one staging
 directory per output, cleans it after each run, and keeps the last complete output if promotion
