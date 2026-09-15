@@ -2664,9 +2664,6 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     ))}
                   </div>
                 )}
-                {message.streaming && (
-                  <span className="streaming-caret" aria-label="Response is streaming" />
-                )}
               </div>
             ) : (
               <p>{message.content}</p>
