@@ -628,6 +628,7 @@ interface WorkspaceContextValue {
     },
     onAccepted?: () => void,
   ): Promise<boolean>;
+  getSendError(): string | null;
   preflightCloudDisclosure(input: {
     content: string;
     modelId: string;
@@ -2392,6 +2393,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [configurationReady, setConfigurationReady] = useState(fixtureMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sendErrorRef = useRef<string | null>(null);
+  const sendAttemptRef = useRef(0);
+  const getSendError = useCallback(() => sendErrorRef.current, []);
   const [runtimeEvents, setRuntimeEvents] = useState<RuntimeEvent[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>(fixtureMode ? fixtureProjects() : []);
   const [conversations, setConversations] = useState<Conversation[]>(
@@ -3352,6 +3356,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const startConversationDraft = useCallback(() => {
     ++conversationSelectionGeneration.current;
     ++projectSelectionGeneration.current;
+    sendErrorRef.current = null;
     activeConversationIdRef.current = null;
     setActiveConversationId(null);
     setActiveBranchId(null);
@@ -3883,13 +3888,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const sendMessage = useCallback(
     async (input: Parameters<WorkspaceContextValue['sendMessage']>[0], onAccepted?: () => void) => {
+      const sendAttempt = ++sendAttemptRef.current;
+      const selectionGeneration = conversationSelectionGeneration.current;
+      const routeIsCurrent = () => selectionGeneration === conversationSelectionGeneration.current;
+      sendErrorRef.current = null;
       if (
         settings.offline &&
         !models
           .find((item) => item.id === input.modelId || item.runtimeModelId === input.modelId)
           ?.route.startsWith('Local')
       ) {
-        setError('Offline mode blocked this cloud model. Choose a local model before sending.');
+        const message =
+          'Offline mode blocked this cloud model. Choose a local model before sending.';
+        if (sendAttemptRef.current === sendAttempt && routeIsCurrent()) {
+          sendErrorRef.current = message;
+          setError(message);
+        }
         return false;
       }
       const optimisticId = `user-${Date.now()}`;
@@ -3998,10 +4012,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
           120_000,
         );
-        setActiveConversationId(result.conversationId);
-        activeConversationIdRef.current = result.conversationId;
-        setActiveBranchId(result.branchId);
-        if (result.content) {
+        if (routeIsCurrent()) {
+          setActiveConversationId(result.conversationId);
+          activeConversationIdRef.current = result.conversationId;
+          setActiveBranchId(result.branchId);
+        }
+        if (result.content && routeIsCurrent()) {
           const messageId = result.runId ?? result.message?.run_id ?? result.message?.id;
           setMessages((items) => {
             if (
@@ -4033,7 +4049,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const history = await request<RuntimeMessage[]>('chat.history', {
             branchId: result.branchId,
           });
-          setMessages((items) => reconcileMessageHistory(items, history));
+          if (routeIsCurrent()) setMessages((items) => reconcileMessageHistory(items, history));
         } catch (reason) {
           refreshErrors.push(reason instanceof Error ? reason.message : 'history refresh failed');
         }
@@ -4062,29 +4078,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             [] as RuntimeConversation[],
           ),
         ]);
-        if (!conversationList.failure) {
-          setConversations(conversationList.value.map((item) => mapConversation(item, projects)));
-        } else refreshErrors.push(conversationList.failure);
-        if (!conversationState.failure) {
-          setBranches(
-            (conversationState.value.branches ?? []).map((item) => ({
-              id: item.id,
-              conversationId: item.conversation_id,
-              name: item.name ?? 'Branch',
-              headMessageId: item.head_message_id,
-              parentMessageId: item.parent_message_id,
-            })),
-          );
-        } else refreshErrors.push(conversationState.failure);
-        if (!conversationInventory.failure) {
-          setAllConversations(
-            conversationInventory.value.map((item) => mapConversation(item, projects)),
-          );
-          setConversationCounts(
-            projectConversationCountsFromInventory(conversationInventory.value),
-          );
-        } else refreshErrors.push(conversationInventory.failure);
-        if (refreshErrors.length) {
+        if (routeIsCurrent()) {
+          if (!conversationList.failure) {
+            setConversations(conversationList.value.map((item) => mapConversation(item, projects)));
+          } else refreshErrors.push(conversationList.failure);
+          if (!conversationState.failure) {
+            setBranches(
+              (conversationState.value.branches ?? []).map((item) => ({
+                id: item.id,
+                conversationId: item.conversation_id,
+                name: item.name ?? 'Branch',
+                headMessageId: item.head_message_id,
+                parentMessageId: item.parent_message_id,
+              })),
+            );
+          } else refreshErrors.push(conversationState.failure);
+          if (!conversationInventory.failure) {
+            setAllConversations(
+              conversationInventory.value.map((item) => mapConversation(item, projects)),
+            );
+            setConversationCounts(
+              projectConversationCountsFromInventory(conversationInventory.value),
+            );
+          } else refreshErrors.push(conversationInventory.failure);
+        }
+        if (routeIsCurrent() && refreshErrors.length) {
           setError(
             `Message sent, but the conversation refresh failed: ${refreshErrors.join('; ')}`,
           );
@@ -4116,9 +4134,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   stableIntent?.conversationId ??
                   input.conversationId ??
                   activeConversationId;
-                setMessages(history.map(mapRuntimeMessage));
-                setActiveBranchId(branchId);
-                if (conversationId) {
+                if (routeIsCurrent()) {
+                  setMessages(history.map(mapRuntimeMessage));
+                  setActiveBranchId(branchId);
+                }
+                if (conversationId && routeIsCurrent()) {
                   activeConversationIdRef.current = conversationId;
                   setActiveConversationId(conversationId);
                   const projectId =
@@ -4161,7 +4181,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                     );
                   }
                 }
-                setError(null);
+                if (sendAttemptRef.current === sendAttempt && routeIsCurrent()) {
+                  sendErrorRef.current = null;
+                  setError(null);
+                }
                 return true;
               }
             } catch {
@@ -4170,14 +4193,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }
         }
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'The runtime request failed');
+          const message = reason instanceof Error ? reason.message : 'The runtime request failed';
+          if (sendAttemptRef.current === sendAttempt && routeIsCurrent()) {
+            sendErrorRef.current = message;
+            setError(message);
+          }
+        } else {
+          if (sendAttemptRef.current === sendAttempt && routeIsCurrent())
+            sendErrorRef.current = 'The response stopped before this message could be saved.';
         }
-        if (shouldOptimisticallyAppendUser(input.mode)) {
+        if (routeIsCurrent() && shouldOptimisticallyAppendUser(input.mode)) {
           setMessages((items) => items.filter((item) => item.id !== optimisticId));
         }
         return false;
       } finally {
-        setBusy(false);
+        if (sendAttemptRef.current === sendAttempt) setBusy(false);
       }
     },
     [
@@ -5484,6 +5514,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       sendGroupTurn,
       stopGroupTurn,
       sendMessage,
+      getSendError,
       preflightCloudDisclosure,
       stopRun,
       copyMessage,
@@ -5583,6 +5614,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       sendGroupTurn,
       stopGroupTurn,
       sendMessage,
+      getSendError,
       preflightCloudDisclosure,
       stopRun,
       copyMessage,

@@ -19,6 +19,7 @@ import {
 } from './data';
 import { Icon, type IconName } from './icons';
 import { ConversationScrollController } from './conversation-scroll';
+import { draftGenerationIsCurrent, shouldRestoreFailedDraft } from './draft-isolation';
 import { classifyProviderError } from './provider-errors';
 import { FormDialog } from './FormDialog';
 import { RichMarkdown } from './RichMarkdown';
@@ -1020,6 +1021,11 @@ interface ComposerSendInput {
   projectId?: string | null;
 }
 
+interface RestoredComposerDraft {
+  input: ComposerSendInput;
+  failureMessage?: string;
+}
+
 function Composer({
   onSend,
   compact = false,
@@ -1038,7 +1044,7 @@ function Composer({
   offline: boolean;
   groupMode?: boolean;
   onRepairPersona?: (persona: CupcakePersona) => void;
-  restoredDraft?: ComposerSendInput | null;
+  restoredDraft?: RestoredComposerDraft | null;
   onDraftRestored?: () => void;
 }) {
   const workspace = useWorkspace();
@@ -1062,27 +1068,30 @@ function Composer({
   const [sending, setSending] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const draftGeneration = useRef(0);
-  const lastRestoredDraft = useRef<ComposerSendInput | null>(null);
+  const lastRestoredDraft = useRef<RestoredComposerDraft | null>(null);
   useEffect(() => {
     if (!restoredDraft || lastRestoredDraft.current === restoredDraft) return;
     lastRestoredDraft.current = restoredDraft;
+    const restoredInput = restoredDraft.input;
     setValue((current) =>
-      current.trim() ? `${restoredDraft.content}\n\n${current}` : restoredDraft.content,
+      current.trim() ? `${restoredInput.content}\n\n${current}` : restoredInput.content,
     );
     setAttachments((current) => [
-      ...restoredDraft.attachments,
+      ...restoredInput.attachments,
       ...current.filter(
-        (item) => !restoredDraft.attachments.some((sent) => sent.handleId === item.handleId),
+        (item) => !restoredInput.attachments.some((sent) => sent.handleId === item.handleId),
       ),
     ]);
     setReferences((current) => [
-      ...restoredDraft.references,
+      ...restoredInput.references,
       ...current.filter(
         (item) =>
-          !restoredDraft.references.some((sent) => sent.id === item.id && sent.type === item.type),
+          !restoredInput.references.some((sent) => sent.id === item.id && sent.type === item.type),
       ),
     ]);
-    setDisclosureError('Message not sent. Your draft and files are ready to retry.');
+    setDisclosureError(
+      restoredDraft.failureMessage || 'Message not sent. Your draft and files are ready to retry.',
+    );
     onDraftRestored?.();
   }, [restoredDraft, onDraftRestored]);
   const draftIdentityRef = useRef('');
@@ -1096,6 +1105,10 @@ function Composer({
   useEffect(() => {
     const reset = () => {
       draftGeneration.current++;
+      lastRestoredDraft.current = null;
+      setPendingGroupDisclosure(null);
+      setDisclosureError('');
+      setSending(false);
       void clearSuccessfulDraft(attachments);
     };
     window.addEventListener('cupcake:new-draft', reset);
@@ -1127,51 +1140,64 @@ function Composer({
       );
     }
   };
-  const submit = async (input: ComposerSendInput) => {
+  const submit = async (
+    input: ComposerSendInput,
+    submittedGeneration = draftGeneration.current,
+    submittedText = value,
+  ) => {
+    if (!draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) return false;
     setSending(true);
     setDisclosureError('');
     // The send promise spans the whole response. Move text out of the composer
     // now, and never erase a follow-up the user writes while that response runs.
-    const sentText = value;
-    const submittedGeneration = draftGeneration.current;
     const restoreText = () => {
       if (draftGeneration.current === submittedGeneration) {
-        setValue((current) => current || sentText);
+        setValue((current) => current || submittedText);
       }
     };
     setValue('');
     try {
       const success = await onSend(input);
       if (success) {
-        setAttachments((current) =>
-          current.filter(
-            (item) => !input.attachments.some((sent) => sent.handleId === item.handleId),
-          ),
-        );
-        setReferences((current) =>
-          current.filter(
-            (item) =>
-              !input.references.some((sent) => sent.id === item.id && sent.type === item.type),
-          ),
-        );
+        if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) {
+          setAttachments((current) =>
+            current.filter(
+              (item) => !input.attachments.some((sent) => sent.handleId === item.handleId),
+            ),
+          );
+          setReferences((current) =>
+            current.filter(
+              (item) =>
+                !input.references.some((sent) => sent.id === item.id && sent.type === item.type),
+            ),
+          );
+        }
         if (window.cupcake)
           await Promise.allSettled(
             input.attachments.map((item) => window.cupcake!.dialog.releaseHandle(item.handleId)),
           );
       } else {
         restoreText();
-        setDisclosureError('Message not sent. Your draft and file access are still available.');
+        if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+          setDisclosureError(
+            workspace.getSendError() ||
+              'Message not sent. Your draft and file access are still available.',
+          );
       }
       return success;
     } catch (reason) {
       restoreText();
-      setDisclosureError(reason instanceof Error ? reason.message : 'Message could not be sent');
+      if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+        setDisclosureError(reason instanceof Error ? reason.message : 'Message could not be sent');
       return false;
     } finally {
-      setSending(false);
+      if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) setSending(false);
     }
   };
-  const submitGroup = async (prepared: PreparedGroupTurn) => {
+  const submitGroup = async (
+    prepared: PreparedGroupTurn,
+    submittedGeneration = draftGeneration.current,
+  ) => {
     const submittedDraftIdentity = draftIdentityRef.current;
     setSending(true);
     setDisclosureError('');
@@ -1189,20 +1215,28 @@ function Composer({
             );
         }
       } else {
-        setDisclosureError('Group turn not sent. Your draft and file access are still available.');
+        if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+          setDisclosureError(
+            'Group turn not sent. Your draft and file access are still available.',
+          );
       }
       return success;
     } catch (reason) {
-      setDisclosureError(reason instanceof Error ? reason.message : 'Group turn could not be sent');
+      if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+        setDisclosureError(
+          reason instanceof Error ? reason.message : 'Group turn could not be sent',
+        );
       return false;
     } finally {
-      setSending(false);
+      if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) setSending(false);
     }
   };
   const send = async () => {
     if (sending) return;
     const clean = value.trim();
     if (!clean && attachments.length === 0) return;
+    const submittedGeneration = draftGeneration.current;
+    const submittedText = value;
     if (groupMode) {
       if (!workspace.activeConversationId || !workspace.activeBranchId) {
         setDisclosureError('Open this conversation fully before starting a group turn.');
@@ -1238,11 +1272,14 @@ function Composer({
           setPendingGroupDisclosure(prepared);
           return;
         }
-        await submitGroup(prepared);
+        if (!draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) return;
+        await submitGroup(prepared, submittedGeneration);
       } catch (reason) {
-        setDisclosureError(reason instanceof Error ? reason.message : 'Group preflight failed.');
+        if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+          setDisclosureError(reason instanceof Error ? reason.message : 'Group preflight failed.');
       } finally {
-        setSending(false);
+        if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+          setSending(false);
       }
       return;
     }
@@ -1279,6 +1316,7 @@ function Composer({
               branchId: undefined,
               projectId: workspace.activeProjectId,
             };
+    if (!draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) return;
     if (!context) {
       setDisclosureError('A conversation could not be created. Your draft is still here.');
       setSending(false);
@@ -1310,24 +1348,33 @@ function Composer({
           projectId: input.projectId,
         })
         .then(async (result) => {
+          if (!draftGenerationIsCurrent(submittedGeneration, draftGeneration.current)) return;
           if (!result.confirmationToken) {
             throw new Error('The provider did not return a cloud confirmation token.');
           }
-          await submit({
-            ...input,
-            outboundConfirmationToken: result.confirmationToken,
-            outboundIntent: result.outboundIntent,
-          });
+          await submit(
+            {
+              ...input,
+              outboundConfirmationToken: result.confirmationToken,
+              outboundIntent: result.outboundIntent,
+            },
+            submittedGeneration,
+            submittedText,
+          );
         })
-        .catch((reason) =>
-          setDisclosureError(
-            reason instanceof Error ? reason.message : 'Disclosure preflight failed',
-          ),
-        )
-        .finally(() => setSending(false));
+        .catch((reason) => {
+          if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+            setDisclosureError(
+              reason instanceof Error ? reason.message : 'Disclosure preflight failed',
+            );
+        })
+        .finally(() => {
+          if (draftGenerationIsCurrent(submittedGeneration, draftGeneration.current))
+            setSending(false);
+        });
       return;
     }
-    void submit(input);
+    void submit(input, submittedGeneration, submittedText);
   };
   const attach = async () => {
     const files = await window.cupcake?.dialog.openFiles({
@@ -2897,7 +2944,7 @@ function ChatView({
   setModelOpen: () => void;
   offline: boolean;
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
-  restoredDraft?: ComposerSendInput | null;
+  restoredDraft?: RestoredComposerDraft | null;
   onDraftRestored?: () => void;
 }) {
   const workspace = useWorkspace();
@@ -11097,11 +11144,13 @@ function CommandPalette({
   close,
   setView,
   openModel,
+  onNewChat,
 }: {
   open: boolean;
   close: () => void;
   setView: (v: View) => void;
   openModel: () => void;
+  onNewChat?: () => void;
 }) {
   const workspace = useWorkspace();
   const [query, setQuery] = useState('');
@@ -11130,9 +11179,12 @@ function CommandPalette({
       detail: 'Start a clean conversation',
       icon: 'edit',
       action: () => {
-        workspace.startConversationDraft();
-        window.dispatchEvent(new Event('cupcake:new-draft'));
-        setView('chat');
+        if (onNewChat) onNewChat();
+        else {
+          workspace.startConversationDraft();
+          window.dispatchEvent(new Event('cupcake:new-draft'));
+          setView('chat');
+        }
       },
       key: 'Ctrl N',
     },
@@ -12826,8 +12878,9 @@ function LiveApp() {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [onboardingOpen, setOnboardingOpen] = useState(onboardingRequested);
-  const [failedHomeDraft, setFailedHomeDraft] = useState<ComposerSendInput | null>(null);
+  const [failedHomeDraft, setFailedHomeDraft] = useState<RestoredComposerDraft | null>(null);
   const clearFailedHomeDraft = useCallback(() => setFailedHomeDraft(null), []);
+  const composerRouteGeneration = useRef(0);
   const [onboardingPaused, setOnboardingPaused] = useState(false);
   const onboardingAutoShown = useRef(onboardingRequested);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(workspace.tasks[0]?.id ?? null);
@@ -12918,12 +12971,18 @@ function LiveApp() {
     document.querySelector('.app-content')?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [view]);
   const openConversation = (id: string) => {
+    composerRouteGeneration.current += 1;
+    setFailedHomeDraft(null);
+    window.dispatchEvent(new Event('cupcake:new-draft'));
     const epoch = ++navigationEpoch.current;
     void workspace.selectConversation(id).then(() => {
       if (navigationEpoch.current === epoch) navigate('chat');
     });
   };
   const startNewChat = () => {
+    navigationEpoch.current += 1;
+    composerRouteGeneration.current += 1;
+    setFailedHomeDraft(null);
     workspace.startConversationDraft();
     window.dispatchEvent(new Event('cupcake:new-draft'));
     navigate('chat');
@@ -13016,12 +13075,30 @@ function LiveApp() {
   const homeComposer = (
     <Composer
       onSend={async (input) => {
+        const submittedGeneration = composerRouteGeneration.current;
         let accepted = false;
         const sent = await workspace.sendMessage(input, () => {
           accepted = true;
           navigate('chat');
         });
-        if (accepted && !sent) setFailedHomeDraft(input);
+        const restoreFailedDraft = shouldRestoreFailedDraft({
+          accepted,
+          sent,
+          submittedGeneration,
+          currentGeneration: composerRouteGeneration.current,
+        });
+        if (restoreFailedDraft) {
+          setFailedHomeDraft({
+            input,
+            failureMessage:
+              workspace.getSendError() ||
+              'Message not sent. Your draft and file access are still available.',
+          });
+        } else if (accepted && !sent && window.cupcake) {
+          await Promise.allSettled(
+            input.attachments.map((item) => window.cupcake!.dialog.releaseHandle(item.handleId)),
+          );
+        }
         return sent;
       }}
       onModel={() => setModelOpen(true)}
@@ -13254,6 +13331,7 @@ function LiveApp() {
         open={commandOpen}
         close={() => setCommandOpen(false)}
         setView={navigate}
+        onNewChat={startNewChat}
         openModel={() => {
           setCommandOpen(false);
           setModelOpen(true);

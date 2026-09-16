@@ -18,12 +18,32 @@ function createSurface(): TestSurface {
   };
 
   scrollToMock.mockImplementation(({ top }: ScrollToOptions) => {
-    surface.scrollTop = Number(top ?? surface.scrollTop);
+    surface.scrollTop = Math.min(
+      surface.scrollHeight - surface.clientHeight,
+      Number(top ?? surface.scrollTop),
+    );
   });
   return surface;
 }
 
 describe('ConversationScrollController', () => {
+  it('jumps on send before a queued scroll event can cancel following', () => {
+    const scheduled: Array<() => void> = [];
+    const controller = new ConversationScrollController((callback) => {
+      scheduled.push(callback);
+      return 1;
+    });
+    const surface = createSurface();
+    surface.scrollTop = 40;
+    controller.observe(surface);
+    controller.follow(surface, { force: true });
+    expect(surface.scrollTop).toBe(300);
+    expect(controller.observe(surface)).toBe(true);
+    surface.scrollHeight = 950;
+    scheduled.shift()?.();
+    expect(surface.scrollTop).toBe(650);
+  });
+
   it('keeps following output while the reader is at the bottom', () => {
     const scheduled: Array<() => void> = [];
     const controller = new ConversationScrollController((callback) => {

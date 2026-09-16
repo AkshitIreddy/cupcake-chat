@@ -47,7 +47,18 @@ export class ConversationScrollController {
     surface: ConversationScrollSurface,
     options: { force?: boolean; smooth?: boolean } = {},
   ): boolean {
-    if (options.force) this.following = true;
+    if (options.force) {
+      this.following = true;
+      // A send is an explicit request to leave history. Apply it before queued
+      // scroll events can mistake the old position for a new reader gesture.
+      if (!options.smooth) {
+        surface.scrollTo({ behavior: 'auto', top: surface.scrollHeight });
+        this.lastScrollTop = surface.scrollTop;
+        this.lastScrollHeight = surface.scrollHeight;
+        this.lastClientHeight = surface.clientHeight;
+        this.measured = true;
+      }
+    }
     if (!this.following) return false;
     if (this.framePending) return true;
     this.framePending = true;
