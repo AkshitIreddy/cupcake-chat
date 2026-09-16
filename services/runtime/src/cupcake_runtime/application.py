@@ -118,6 +118,7 @@ from cupcake_runtime.providers.onboarding import (
 )
 from cupcake_runtime.providers.types import (
     CanonicalMessage,
+    CostClass,
     ModelCapabilities,
     ModelDescriptor,
     ModelRequest,
@@ -773,11 +774,9 @@ class RuntimeService:
         prefix = "openai-compatible:cupcake-local/"
         if not selected.startswith(prefix):
             return {"attempted": False, "loaded": False, "errorType": None}
-        try:
-            self.providers.catalog.get(selected)
+        route = self.providers.compatible_runtime_route(selected)
+        if route is not None and self._cupcake_local_route_is_ready(selected, route):
             return {"attempted": False, "loaded": True, "errorType": None}
-        except KeyError:
-            pass
         artifact_id = selected.removeprefix(prefix)
         try:
             result = self._cupcake_local_load(
@@ -838,7 +837,39 @@ class RuntimeService:
 
     def _models_select(self, params: Mapping[str, Any]) -> Any:
         model_id = _required_string(params, "modelId")
-        descriptor = self.providers.catalog.select(model_id)
+        prefix = "openai-compatible:cupcake-local/"
+        if model_id.startswith(prefix):
+            try:
+                installed = self.cupcake_local.models.get(
+                    model_id.removeprefix(prefix), verify=False
+                )
+            except (KeyError, FileNotFoundError) as exc:
+                raise RuntimeCommandError(
+                    "LOCAL_MODEL_NOT_INSTALLED",
+                    "Finish downloading this model before selecting it.",
+                ) from exc
+            # Selection records intent. Only loading may register a live endpoint;
+            # a downloaded model is selectable even after a fresh app launch.
+            descriptor = ModelDescriptor(
+                id=model_id,
+                provider="openai-compatible",
+                model=installed.id,
+                display_name=installed.display_name,
+                family="cupcake-local",
+                context_window=installed.context_window,
+                max_output_tokens=None,
+                capabilities=ModelCapabilities(),
+                privacy_route=PrivacyRoute.LOCAL,
+                cost_class=CostClass.FREE,
+                metadata={"runtime_kind": "cupcake_llama_cpp", "runtime_loaded": False},
+            )
+        else:
+            try:
+                descriptor = self.providers.catalog.select(model_id)
+            except KeyError as exc:
+                raise RuntimeCommandError(
+                    "MODEL_NOT_FOUND", "This model is no longer available. Refresh the model list."
+                ) from exc
         if _requires_model_compatibility_confirmation(descriptor):
             explicitly_confirmed = params.get("compatibilityConfirmed") is True
             if not explicitly_confirmed and not self._model_compatibility_confirmed(model_id):

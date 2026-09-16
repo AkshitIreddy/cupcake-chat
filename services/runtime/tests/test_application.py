@@ -294,6 +294,68 @@ def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
     runtime.close()
 
 
+def test_select_downloaded_local_model_before_loading_and_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_id = "openai-compatible:cupcake-local/qwen3-1-7b-q8-0"
+    for _ in range(2):
+        runtime = service(tmp_path)
+        monkeypatch.setattr(
+            runtime.cupcake_local.models,
+            "get",
+            lambda artifact_id, **_kwargs: SimpleNamespace(
+                id=artifact_id, display_name="Qwen3 1.7B", context_window=32768
+            ),
+        )
+
+        def unexpected_load(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("Choosing a downloaded model must not start inference")
+
+        monkeypatch.setattr(runtime, "_cupcake_local_load", unexpected_load)
+        result, _ = runtime.handle("models.select", {"modelId": model_id})
+        assert result["id"] == model_id
+        assert result["privacy_route"] == "local"
+        assert result["metadata"]["runtime_loaded"] is False
+        assert runtime.repository.get_setting("models.default") == model_id
+        assert runtime.providers.compatible_runtime_route(model_id) is None
+        runtime.close()
+
+
+def test_select_missing_model_returns_actionable_error(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    for model_id in ["openai-compatible:cupcake-local/missing", "groq:missing"]:
+        with pytest.raises(RuntimeCommandError, match=r"available|download"):
+            runtime.handle("models.select", {"modelId": model_id})
+    runtime.close()
+
+
+def test_local_chat_reloads_an_unloaded_registered_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    descriptor = runtime._register_local_endpoint_model(
+        endpoint_id="cupcake-local",
+        model="qwen3-1-7b-q8-0",
+        display_name="Qwen",
+        base_url="http://127.0.0.1:18888/v1",
+        privacy=PrivacyRoute.LOCAL,
+        runtime_kind="cupcake_llama_cpp",
+        runtime_loaded=True,
+    )
+    loads: list[str] = []
+    monkeypatch.setattr(runtime, "_cupcake_local_route_is_ready", lambda *_args: False)
+    monkeypatch.setattr(
+        runtime,
+        "_cupcake_local_load",
+        lambda params: loads.append(params["modelId"]) or {"model": {"id": descriptor.id}},
+    )
+    result = runtime._ensure_selected_local_model_loaded(descriptor.id)
+    assert result["attempted"] is True
+    assert result["loaded"] is True
+    assert loads == ["qwen3-1-7b-q8-0"]
+    runtime.close()
+
+
 def test_streaming_chat_offloads_lazy_local_model_load_from_event_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
