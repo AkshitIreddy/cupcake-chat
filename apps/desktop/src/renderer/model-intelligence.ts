@@ -561,7 +561,12 @@ export function modelAvailabilityDetail(model: ModelDescriptor): string {
   if (model.status === 'setup') return `Connect ${model.provider} to use this route`;
   if (model.status === 'catalog' || model.status === 'incompatible')
     return 'Install before chatting';
-  if (model.status === 'download' || model.status === 'paused' || model.status === 'verifying')
+  if (
+    model.status === 'download' ||
+    model.status === 'paused' ||
+    model.status === 'verifying' ||
+    model.status === 'installing'
+  )
     return 'Installation is still in progress';
   if (model.status === 'error' || model.status === 'checksum-failed')
     return 'Needs attention in Models';

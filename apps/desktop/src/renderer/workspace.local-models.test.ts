@@ -6,10 +6,59 @@ import {
   mapCupcakeRuntimePacks,
   mapDiscoveredRuntime,
   mapModel,
+  mapDownloads,
+  mapDownloadSnapshot,
   normalizeHardware,
 } from './workspace';
 
 describe('workspace local model integration', () => {
+  it('keeps CUDA companion controls tied to their file and resume tied to the parent pack', () => {
+    const [companion] = mapDownloads({
+      availableRuntimes: [
+        { id: 'cuda-pack', companions: [{ id: 'cuda-dlls', display_name: 'CUDA libraries' }] },
+      ],
+      downloads: [
+        { model_id: 'cuda-dlls', state: 'paused', bytes_downloaded: 512, bytes_total: 2048 },
+      ],
+    });
+    expect(companion).toMatchObject({
+      id: 'cuda-dlls',
+      parentId: 'cuda-pack',
+      kind: 'runtime',
+      name: 'CUDA libraries',
+      state: 'paused',
+      bytesReceived: 512,
+    });
+    expect(
+      mapDownloadSnapshot(
+        { model_id: 'cuda-dlls', state: 'downloading', bytes_downloaded: 1024 },
+        companion,
+      ),
+    ).toMatchObject({
+      id: 'cuda-dlls',
+      parentId: 'cuda-pack',
+      name: 'CUDA libraries',
+      totalBytes: 2048,
+      bytesReceived: 1024,
+    });
+  });
+
+  it('retains paused and failed downloads even when the model catalog is unavailable', () => {
+    const rows = mapDownloads({
+      downloads: [
+        { model_id: 'paused-model', state: 'paused', bytes_downloaded: 1024, bytes_total: 4096 },
+        { model_id: 'failed-model', state: 'failed', error_detail: 'Connection interrupted' },
+      ],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: 'paused-model', state: 'paused', bytesReceived: 1024 });
+    expect(rows[1]).toMatchObject({
+      id: 'failed-model',
+      state: 'failed',
+      error: 'Connection interrupted',
+    });
+  });
+
   const cupcakeLocal = mapModel({
     id: 'cupcake-local:qwen3-4b-q4-k-m',
     provider: 'cupcake_local',

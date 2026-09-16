@@ -253,6 +253,17 @@ export interface ProviderTestResult {
   detail?: string;
 }
 
+export interface DownloadRecord {
+  id: string;
+  parentId?: string;
+  name: string;
+  kind: 'model' | 'runtime';
+  state: string;
+  bytesReceived: number;
+  totalBytes: number;
+  error?: string;
+}
+
 export interface LocalRuntimeRecord {
   id: string;
   name: string;
@@ -368,8 +379,6 @@ export interface WorkspaceSettings {
   allowRamFallback: boolean;
   ramLimitMode: 'auto' | 'manual';
   maxRamGb: number;
-  autoEvictLocalModels: boolean;
-  localModelIdleMinutes: number;
   reserveSystemRamGb: number;
   reserveVramGb: number;
 }
@@ -564,6 +573,8 @@ interface WorkspaceContextValue {
   searchResults: SearchRecord[];
   hardware: HardwareRecord | null;
   localRuntimes: LocalRuntimeRecord[];
+  downloads: DownloadRecord[];
+  runDownloadAction(action: 'pause' | 'resume' | 'cancel' | 'reset', id: string): Promise<void>;
   toolActivity: ToolActivity[];
   providers: Record<string, boolean>;
   personas: CupcakePersona[];
@@ -679,7 +690,7 @@ interface WorkspaceContextValue {
   querySearch(query: string, globalScope?: boolean): Promise<void>;
   selectModel(id: string, options?: { compatibilityConfirmed?: boolean }): Promise<void>;
   runModelAction(action: ModelAction, modelId: string): Promise<void>;
-  installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<void>;
+  installRuntimePack(runtimeId: string, acceptedLicenseUrls: string[]): Promise<boolean>;
   activateRuntimePack(runtime: LocalRuntimeRecord): Promise<void>;
   discoverCommunityModels: (
     query?: string,
@@ -1809,13 +1820,69 @@ function localDownloadState(value: string, errorCode = ''): ModelDescriptor['sta
   if (['queued', 'resolving', 'downloading'].includes(value)) return 'download';
   if (value === 'paused') return 'paused';
   if (value === 'verifying') return 'verifying';
+  if (value === 'installing' || value === 'extracting') return 'installing';
   if (value === 'failed')
     return errorCode.toLowerCase().includes('checksum') ? 'checksum-failed' : 'error';
   return 'catalog';
 }
 
 function isActiveDownload(value: string): boolean {
-  return ['queued', 'resolving', 'downloading', 'paused', 'verifying', 'failed'].includes(value);
+  return [
+    'queued',
+    'resolving',
+    'downloading',
+    'paused',
+    'verifying',
+    'installing',
+    'extracting',
+    'failed',
+  ].includes(value);
+}
+
+export function mapDownloadSnapshot(
+  item: Record<string, unknown>,
+  previous?: DownloadRecord,
+): DownloadRecord {
+  const id = textValue(item.model_id ?? item.modelId, previous?.id ?? '');
+  return {
+    id,
+    name: previous?.name ?? id,
+    parentId: previous?.parentId,
+    kind: previous?.kind ?? 'model',
+    state: textValue(item.state, previous?.state ?? 'queued'),
+    bytesReceived:
+      Number(item.bytes_downloaded ?? item.bytesReceived ?? previous?.bytesReceived) || 0,
+    totalBytes: Number(item.bytes_total ?? item.totalBytes ?? previous?.totalBytes) || 0,
+    error: textValue(item.error_detail ?? item.error_code) || undefined,
+  };
+}
+
+export function mapDownloads(status: CupcakeLocalStatus): DownloadRecord[] {
+  const artifacts = [
+    ...(status.availableModels ?? []).map((item) => ({
+      item,
+      kind: 'model' as const,
+      parentId: undefined as string | undefined,
+    })),
+    ...(status.availableRuntimes ?? []).flatMap((item) => [
+      { item, kind: 'runtime' as const, parentId: undefined as string | undefined },
+      ...recordValues(item.companions).map((companion) => ({
+        item: companion,
+        kind: 'runtime' as const,
+        parentId: textValue(item.id),
+      })),
+    ]),
+  ];
+  return (status.downloads ?? []).map((item) => {
+    const snapshot = mapDownloadSnapshot(item);
+    const artifact = artifacts.find(({ item: entry }) => entry.id === snapshot.id);
+    return {
+      ...snapshot,
+      name: textValue(artifact?.item.display_name ?? artifact?.item.name, snapshot.id),
+      kind: artifact?.kind ?? 'model',
+      parentId: artifact?.parentId,
+    };
+  });
 }
 
 export function mapCupcakeLocalModels(
@@ -2012,6 +2079,7 @@ export function mapModel(item: RuntimeModel, selectedId?: string): ModelDescript
     'download',
     'paused',
     'verifying',
+    'installing',
     'checksum-failed',
     'installed',
     'loading',
@@ -2368,8 +2436,6 @@ const fallbackSettings: WorkspaceSettings = {
   allowRamFallback: true,
   ramLimitMode: 'auto',
   maxRamGb: 24,
-  autoEvictLocalModels: true,
-  localModelIdleMinutes: 30,
   reserveSystemRamGb: 4,
   reserveVramGb: 1.5,
 };
@@ -2464,6 +2530,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [searchResults, setSearchResults] = useState<SearchRecord[]>([]);
   const [hardware, setHardware] = useState<HardwareRecord | null>(null);
   const [localRuntimes, setLocalRuntimes] = useState<LocalRuntimeRecord[]>([]);
+  const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
+  const localCatalogRef = useRef<CupcakeLocalStatus>({});
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [providers, setProviders] = useState<Record<string, boolean>>({});
   const [personas, setPersonas] = useState<CupcakePersona[]>([]);
@@ -2795,6 +2863,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
         setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
         setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
+        setDownloads(mapDownloads(localStatus));
+        localCatalogRef.current = localStatus;
         if (includeHostedCatalog === true) {
           if (!providerCatalogRefresh.current) {
             const connected = ['nvidia-nim', 'groq', 'openrouter', 'cloudflare'].filter(
@@ -2902,14 +2972,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           maxRamGb: Math.max(
             4,
             Math.min(256, Number(runtimeSettings['models.local.max_ram_gb'] ?? current.maxRamGb)),
-          ),
-          autoEvictLocalModels: runtimeSettings['models.local.auto_evict'] !== false,
-          localModelIdleMinutes: Math.max(
-            1,
-            Math.min(
-              240,
-              Number(runtimeSettings['models.local.idle_minutes'] ?? current.localModelIdleMinutes),
-            ),
           ),
           reserveSystemRamGb: Math.max(
             2,
@@ -3082,6 +3144,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             payload.model_id,
         );
         const state = textValue(downloadPayload.state, 'downloading');
+        setDownloads((items) => {
+          const previous = items.find((item) => item.id === modelId);
+          const metadata = mapDownloads({
+            ...localCatalogRef.current,
+            downloads: [downloadPayload],
+          })[0];
+          const next = mapDownloadSnapshot(downloadPayload, previous ?? metadata);
+          next.kind = payload.artifactKind === 'runtime' ? 'runtime' : (previous?.kind ?? 'model');
+          return previous
+            ? items.map((item) => (item.id === modelId ? next : item))
+            : [...items, next];
+        });
         setModels((items) =>
           items.map((item) =>
             item.id === modelId || item.runtimeModelId === modelId
@@ -5094,6 +5168,108 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [fixtureMode, request],
   );
+  const refreshLocalModels = useCallback(async () => {
+    const status = await request<CupcakeLocalStatus>('local_models.cupcake.status');
+    setDownloads(mapDownloads(status));
+    localCatalogRef.current = status;
+    setLocalRuntimes(mapCupcakeRuntimePacks(status));
+    setModels((items) =>
+      mergeModelDescriptors(
+        items.filter((item) => item.provider !== 'Cupcake Local'),
+        mapCupcakeLocalModels(status, selectedModelIdRef.current ?? undefined),
+        selectedModelIdRef.current,
+      ),
+    );
+  }, [request]);
+
+  const startDownload = useCallback(
+    (download: DownloadRecord, extra: Record<string, unknown> = {}) => {
+      setDownloads((items) => [
+        ...items.filter((item) => item.id !== download.id),
+        { ...download, state: 'queued', error: undefined },
+      ]);
+      window.dispatchEvent(new Event('cupcake:open-downloads'));
+      return request<Record<string, unknown>>(
+        'local_models.cupcake.download',
+        {
+          artifactId: download.parentId ?? download.id,
+          artifactKind: download.kind,
+          ...extra,
+        },
+        86_400_000,
+      )
+        .then(async (result) => {
+          const completed =
+            recordValue(result.download)?.state === 'completed' && Boolean(result.installed);
+          await refreshLocalModels();
+          return completed;
+        })
+        .catch((reason) => {
+          setDownloads((items) =>
+            items.map((item) =>
+              item.id === download.id
+                ? {
+                    ...item,
+                    state: 'failed',
+                    error: reason instanceof Error ? reason.message : 'Download failed. Try again.',
+                  }
+                : item,
+            ),
+          );
+          return false;
+        });
+    },
+    [request, refreshLocalModels],
+  );
+
+  const runDownloadAction = useCallback(
+    async (action: 'pause' | 'resume' | 'cancel' | 'reset', id: string) => {
+      if (fixtureMode) return;
+      const download = downloads.find((item) => item.id === id);
+      if (!download) throw new Error('This download is no longer available.');
+      if (action === 'resume') {
+        void startDownload(
+          download,
+          download.kind === 'runtime'
+            ? {
+                activate: true,
+                acceptedLicenseUrls:
+                  localRuntimes.find((item) => item.id === (download.parentId ?? id))
+                    ?.licenseUrls ?? [],
+              }
+            : {},
+        );
+        return;
+      }
+      const snapshot = await request<Record<string, unknown>>(
+        `local_models.cupcake.download.${action}`,
+        { artifactId: id },
+        60_000,
+      );
+      if (action === 'reset') {
+        setDownloads((items) => items.filter((item) => item.id !== id));
+        void startDownload(
+          { ...download, bytesReceived: 0 },
+          download.kind === 'runtime'
+            ? {
+                activate: true,
+                acceptedLicenseUrls:
+                  localRuntimes.find((item) => item.id === (download.parentId ?? id))
+                    ?.licenseUrls ?? [],
+              }
+            : {},
+        );
+        return;
+      } else {
+        setDownloads((items) =>
+          items.map((item) => (item.id === id ? mapDownloadSnapshot(snapshot, item) : item)),
+        );
+      }
+      await refreshLocalModels();
+    },
+    [fixtureMode, downloads, localRuntimes, request, startDownload, refreshLocalModels],
+  );
+
   const runModelAction = useCallback(
     async (action: ModelAction, modelId: string) => {
       if (fixtureMode) return;
@@ -5101,6 +5277,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         (model) => model.id === modelId || model.runtimeModelId === modelId,
       );
       if (!target) throw new Error('The selected local model is no longer available.');
+      if (['pause', 'cancel', 'reset', 'resume'].includes(action)) {
+        await runDownloadAction(
+          action as 'pause' | 'cancel' | 'reset' | 'resume',
+          target.runtimeModelId ?? target.id,
+        );
+        return;
+      }
       const operation = localModelActionRequest(action, target, {
         allowRamFallback: settings.allowRamFallback,
         ramLimitMode: settings.ramLimitMode,
@@ -5108,17 +5291,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         reserveSystemRamGb: settings.reserveSystemRamGb,
         reserveVramGb: settings.reserveVramGb,
       });
-      if (action === 'download' || action === 'resume') {
+      if (action === 'download') {
         setError(null);
         setModels((items) =>
           items.map((item) => (item.id === target.id ? { ...item, status: 'download' } : item)),
         );
-        void request<Record<string, unknown>>(operation.method, operation.params, 3_600_000)
-          .then(() => refresh())
-          .catch((reason) => {
-            setError(reason instanceof Error ? reason.message : 'The verified download failed.');
-            void refresh();
-          });
+        void startDownload({
+          id: target.runtimeModelId ?? target.id,
+          name: target.name,
+          kind: 'model',
+          state: 'queued',
+          bytesReceived: 0,
+          totalBytes: target.fileSizeBytes ?? 0,
+        });
         return;
       }
       await guard(async () => {
@@ -5158,26 +5343,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       settings.maxRamGb,
       settings.reserveSystemRamGb,
       settings.reserveVramGb,
+      runDownloadAction,
+      startDownload,
     ],
   );
   const installRuntimePack = useCallback(
     async (runtimeId: string, acceptedLicenseUrls: string[]) => {
-      if (fixtureMode) return;
-      await guard(async () => {
-        await request(
-          'local_models.cupcake.download',
-          {
-            artifactId: runtimeId,
-            artifactKind: 'runtime',
-            activate: true,
-            acceptedLicenseUrls,
-          },
-          1_800_000,
-        );
-        await refresh();
-      });
+      if (fixtureMode) return false;
+      const runtime = localRuntimes.find((item) => item.id === runtimeId);
+      return startDownload(
+        {
+          id: runtimeId,
+          name: runtime?.name ?? runtimeId,
+          kind: 'runtime',
+          state: 'queued',
+          bytesReceived: 0,
+          totalBytes: runtime?.sizeBytes ?? 0,
+        },
+        { activate: true, acceptedLicenseUrls },
+      );
     },
-    [fixtureMode, guard, refresh, request],
+    [fixtureMode, localRuntimes, startDownload],
   );
   const activateRuntimePack = useCallback(
     async (runtime: LocalRuntimeRecord) => {
@@ -5335,10 +5521,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (patch.ramLimitMode !== undefined)
           entries.push(['models.local.ram_limit_mode', patch.ramLimitMode]);
         if (patch.maxRamGb !== undefined) entries.push(['models.local.max_ram_gb', patch.maxRamGb]);
-        if (patch.autoEvictLocalModels !== undefined)
-          entries.push(['models.local.auto_evict', patch.autoEvictLocalModels]);
-        if (patch.localModelIdleMinutes !== undefined)
-          entries.push(['models.local.idle_minutes', patch.localModelIdleMinutes]);
         if (patch.reserveSystemRamGb !== undefined)
           entries.push(['models.local.reserve_system_ram_gb', patch.reserveSystemRamGb]);
         if (patch.reserveVramGb !== undefined)
@@ -5488,6 +5670,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       searchResults,
       hardware,
       localRuntimes,
+      downloads,
+      runDownloadAction,
       toolActivity,
       providers,
       personas,
@@ -5588,6 +5772,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       searchResults,
       hardware,
       localRuntimes,
+      downloads,
+      runDownloadAction,
       toolActivity,
       providers,
       personas,

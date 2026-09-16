@@ -158,6 +158,7 @@ export interface ModelDescriptor {
     | 'download'
     | 'paused'
     | 'verifying'
+    | 'installing'
     | 'checksum-failed'
     | 'installed'
     | 'loading'

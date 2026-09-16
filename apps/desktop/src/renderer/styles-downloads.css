@@ -1,0 +1,525 @@
+.runtime-install-layer .model-install-dialog {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.runtime-recommendation {
+  margin: 10px 0 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.downloads-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 246;
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+  background: color-mix(in srgb, #201918 38%, transparent);
+  backdrop-filter: blur(5px);
+  animation: downloads-backdrop-in 160ms ease-out both;
+}
+
+.downloads-panel {
+  width: min(460px, calc(100vw - 20px));
+  height: calc(100dvh - 20px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--berry));
+  border-radius: 23px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  box-shadow: -22px 24px 70px rgba(35, 26, 23, 0.22);
+  color: var(--cocoa);
+  animation: downloads-panel-in 260ms var(--ease) both;
+}
+
+.downloads-panel .button:not(.button--primary) {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--paper-raised) 94%, var(--crumb));
+  color: var(--cocoa);
+}
+
+.downloads-panel .button:not(.button--primary):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--berry) 46%, var(--line));
+  background: color-mix(in srgb, var(--berry-soft) 50%, var(--paper-raised));
+}
+
+.downloads-panel .button--primary {
+  border-color: var(--berry);
+  background: var(--berry);
+  color: var(--on-accent, #fff);
+}
+
+.downloads-panel .button--primary:hover:not(:disabled) {
+  border-color: var(--berry-dark);
+  background: var(--berry-dark);
+  color: var(--on-accent, #fff);
+}
+
+.downloads-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 22px 15px;
+}
+
+.downloads-panel__heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.downloads-panel__heading .eyebrow {
+  margin-bottom: 2px;
+}
+
+.downloads-panel__heading h2 {
+  margin: 0;
+  font:
+    680 27px/1 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque',
+    sans-serif;
+  letter-spacing: -0.025em;
+}
+
+.downloads-panel__mark {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--berry) 30%, var(--line));
+  border-radius: 14px;
+  background:
+    radial-gradient(
+      circle at 30% 22%,
+      color-mix(in srgb, var(--paper) 74%, transparent),
+      transparent 48%
+    ),
+    var(--berry-soft);
+  color: var(--berry-dark);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--berry) 13%, transparent);
+}
+
+.downloads-panel__summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 11px;
+  margin: 0 22px 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, var(--berry-soft));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--crumb) 78%, var(--paper));
+}
+
+.downloads-panel__summary > strong {
+  min-width: 33px;
+  height: 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--berry);
+  color: #fff;
+  font:
+    700 15px/1 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque',
+    sans-serif;
+}
+
+.downloads-panel__summary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.downloads-panel__body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 14px 22px 22px;
+  scrollbar-gutter: stable;
+}
+
+.downloads-group + .downloads-group {
+  margin-top: 23px;
+}
+
+.downloads-group__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 9px;
+}
+
+.downloads-group__heading h3 {
+  margin: 0;
+  color: var(--muted);
+  font:
+    500 10px/1.3 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.downloads-group__heading > span {
+  min-width: 23px;
+  padding: 3px 7px;
+  border-radius: 99px;
+  background: var(--soft);
+  color: var(--muted);
+  font:
+    500 10px/1.2 'IBM Plex Mono',
+    monospace;
+  text-align: center;
+}
+
+.downloads-group__list {
+  display: grid;
+  gap: 9px;
+}
+
+.downloads-transfer {
+  position: relative;
+  padding: 15px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--paper-raised) 94%, var(--crumb));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--cocoa) 5%, transparent);
+}
+
+.downloads-transfer::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--berry);
+  content: '';
+}
+
+.downloads-transfer--paused::before {
+  background: var(--gold);
+}
+
+.downloads-transfer--failed::before {
+  background: var(--danger);
+}
+
+.downloads-transfer__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.downloads-transfer__icon {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--berry-soft);
+  color: var(--berry-dark);
+}
+
+.downloads-transfer--paused .downloads-transfer__icon {
+  background: color-mix(in srgb, var(--gold) 17%, var(--paper));
+  color: var(--gold-ink);
+}
+
+.downloads-transfer--failed .downloads-transfer__icon {
+  background: color-mix(in srgb, var(--danger) 13%, var(--paper));
+  color: var(--danger);
+}
+
+.downloads-transfer__header > div {
+  min-width: 0;
+}
+
+.downloads-transfer__header > div > span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font:
+    500 9px/1.2 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.downloads-transfer__header h4 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--cocoa);
+  font:
+    660 15px/1.25 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque',
+    sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.downloads-state {
+  padding: 5px 8px;
+  border-radius: 99px;
+  background: var(--berry-soft);
+  color: var(--berry-dark);
+  font:
+    500 9px/1.2 'IBM Plex Mono',
+    monospace;
+  white-space: nowrap;
+}
+
+.downloads-state--paused {
+  background: color-mix(in srgb, var(--gold) 16%, var(--paper));
+  color: var(--gold-ink);
+}
+
+.downloads-state--failed {
+  background: color-mix(in srgb, var(--danger) 13%, var(--paper));
+  color: var(--danger);
+}
+
+.downloads-transfer__progress {
+  margin: 14px 0 12px;
+}
+
+.downloads-transfer__progress progress {
+  width: 100%;
+  height: 7px;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  background: var(--soft);
+  color: var(--berry);
+  accent-color: var(--berry);
+}
+
+.downloads-transfer__progress progress::-webkit-progress-bar {
+  border-radius: 99px;
+  background: var(--soft);
+}
+
+.downloads-transfer__progress progress::-webkit-progress-value {
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--berry-dark), var(--berry));
+}
+
+.downloads-transfer--paused progress {
+  color: var(--gold);
+  accent-color: var(--gold);
+}
+
+.downloads-transfer--paused progress::-webkit-progress-value {
+  background: var(--gold);
+}
+
+.downloads-transfer--failed progress {
+  color: var(--danger);
+  accent-color: var(--danger);
+}
+
+.downloads-transfer--failed progress::-webkit-progress-value {
+  background: var(--danger);
+}
+
+.downloads-transfer__progress progress:indeterminate {
+  background:
+    linear-gradient(90deg, transparent 0 32%, var(--berry) 44% 56%, transparent 68% 100%),
+    var(--soft);
+  background-size: 210% 100%;
+  animation: downloads-progress-indeterminate 1.25s ease-in-out infinite;
+}
+
+.downloads-transfer__progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.downloads-transfer__progress strong {
+  color: var(--cocoa);
+  font:
+    600 10px/1.3 'IBM Plex Mono',
+    monospace;
+}
+
+.downloads-transfer__error {
+  margin: 0 0 12px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--paper));
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.downloads-transfer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.downloads-transfer__actions .button {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.downloads-cancel {
+  color: var(--muted);
+}
+
+.downloads-action-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, var(--muted) 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: downloads-spin 700ms linear infinite;
+}
+
+.downloads-empty {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 48px 28px;
+  text-align: center;
+}
+
+.downloads-empty > span {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--berry) 24%, var(--line));
+  border-radius: 19px;
+  background: var(--berry-soft);
+  color: var(--berry-dark);
+}
+
+.downloads-empty h3 {
+  margin: 0;
+  font:
+    680 21px/1.2 'Bricolage Grotesque Variable',
+    'Bricolage Grotesque',
+    sans-serif;
+}
+
+.downloads-empty p {
+  max-width: 310px;
+  margin: 8px 0 19px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.downloads-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 13px 22px 17px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--crumb) 68%, var(--paper));
+}
+
+.downloads-panel__footer .button {
+  flex: 0 0 auto;
+  min-height: 33px;
+  font-size: 11px;
+}
+
+@keyframes downloads-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes downloads-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes downloads-progress-indeterminate {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes downloads-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (max-width: 620px) {
+  .downloads-layer {
+    padding: 0;
+  }
+
+  .downloads-panel {
+    width: 100%;
+    height: 100dvh;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .downloads-panel__header {
+    padding: 18px 17px 13px;
+  }
+
+  .downloads-panel__summary {
+    margin: 0 17px 12px;
+  }
+
+  .downloads-panel__body {
+    padding: 0 10px 18px 17px;
+  }
+
+  .downloads-panel__footer {
+    padding: 12px 17px max(14px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .downloads-layer,
+  .downloads-panel,
+  .downloads-transfer__progress progress:indeterminate,
+  .downloads-action-spinner {
+    animation: none;
+  }
+}
+
+html[data-reduced-motion='true'] .downloads-layer,
+html[data-reduced-motion='true'] .downloads-panel,
+html[data-reduced-motion='true'] .downloads-transfer__progress progress:indeterminate,
+html[data-reduced-motion='true'] .downloads-action-spinner {
+  animation: none;
+}

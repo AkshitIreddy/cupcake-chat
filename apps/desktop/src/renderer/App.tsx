@@ -22,6 +22,9 @@ import { ConversationScrollController } from './conversation-scroll';
 import { draftGenerationIsCurrent, shouldRestoreFailedDraft } from './draft-isolation';
 import { classifyProviderError } from './provider-errors';
 import { FormDialog } from './FormDialog';
+import { createPortal } from 'react-dom';
+import { DownloadsPanel } from './DownloadsPanel';
+import './styles-downloads.css';
 import { RichMarkdown } from './RichMarkdown';
 import { ContentProtectionSettings } from './ContentProtectionSettings';
 import { BackupRecoverySettings } from './BackupRecoverySettings';
@@ -574,6 +577,8 @@ function Shelf({
   onSelectConversation,
   allConversations = conversations,
   profile,
+  onDownloads,
+  downloadCount = 0,
 }: {
   view: View;
   setView: (v: View) => void;
@@ -586,6 +591,8 @@ function Shelf({
   onSelectConversation?: (id: string) => void;
   allConversations?: Conversation[];
   profile?: WorkspaceSettings['profile'];
+  onDownloads?: () => void;
+  downloadCount?: number;
 }) {
   const [showAllRecent, setShowAllRecent] = useState(false);
   const sidebarChats = (showAllRecent ? allConversations : conversations).filter(
@@ -694,6 +701,20 @@ function Shelf({
             <Icon name="code" />
             <span>Developer mode</span>
             <em className="live-badge">LIVE</em>
+          </button>
+        )}
+        {onDownloads && (
+          <button
+            className="nav-item"
+            onClick={() => {
+              onDownloads();
+              closeMobile();
+            }}
+            aria-label={downloadCount ? `Downloads, ${downloadCount} current` : 'Downloads'}
+          >
+            <Icon name="download" />
+            <span>Downloads</span>
+            {downloadCount > 0 && <em className="download-count">{downloadCount}</em>}
           </button>
         )}
         <button
@@ -2952,6 +2973,11 @@ function ChatView({
 }) {
   const workspace = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
+  const [unloadingModel, setUnloadingModel] = useState(false);
+  const loadedLocalModel = workspace.models.find(
+    (model) =>
+      model.provider === 'Cupcake Local' && ['ready', 'benchmarked'].includes(model.status),
+  );
   const [stopped, setStopped] = useState(false);
   const [addCupcakeOpen, setAddCupcakeOpen] = useState(false);
   const [personaEditorOpen, setPersonaEditorOpen] = useState(false);
@@ -3114,6 +3140,22 @@ function ChatView({
             </div>
           </div>
           <div className="chat-header__actions">
+            {loadedLocalModel && (
+              <button
+                className="context-toggle"
+                disabled={unloadingModel || workspace.messages.some((message) => message.streaming)}
+                data-tooltip={`Free memory used by ${loadedLocalModel.name}`}
+                onClick={() => {
+                  setUnloadingModel(true);
+                  void workspace
+                    .runModelAction('unload', loadedLocalModel.id)
+                    .finally(() => setUnloadingModel(false));
+                }}
+              >
+                <Icon name="local" size={15} />
+                {unloadingModel ? 'Unloading…' : 'Unload model'}
+              </button>
+            )}
             {workspace.participants.length === 0 && (
               <button
                 className="context-toggle chat-header__add"
@@ -6353,6 +6395,7 @@ function modelStatusLabel(status: ModelDescriptor['status']) {
     download: 'Downloading',
     paused: 'Paused',
     verifying: 'Checking SHA-256',
+    installing: 'Installing',
     'checksum-failed': 'Checksum failed',
     installed: 'Installed',
     loading: 'Loading',
@@ -6396,6 +6439,11 @@ function ModelsView({
   const stableModelsRef = useRef(models);
   if (models.length) stableModelsRef.current = models;
   const catalogModels = models.length ? models : stableModelsRef.current;
+  const downloadInProgress = workspace.downloads.some((item) =>
+    ['queued', 'resolving', 'downloading', 'verifying', 'extracting', 'installing'].includes(
+      item.state,
+    ),
+  );
   const [modelQuery, setModelQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<ModelTask[]>([]);
@@ -6410,28 +6458,22 @@ function ModelsView({
   const [communityCursor, setCommunityCursor] = useState<string | undefined>();
   const [communityHasMore, setCommunityHasMore] = useState(false);
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(12);
-  const [pendingDownload, setPendingDownload] = useState<ModelDescriptor | null>(null);
   const [pendingRemove, setPendingRemove] = useState<ModelDescriptor | null>(null);
-  const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [pendingRuntime, setPendingRuntime] = useState<LocalRuntimeRecord | null>(null);
+  const [modelAfterRuntime, setModelAfterRuntime] = useState<ModelDescriptor | null>(null);
   const [runtimeTermsAccepted, setRuntimeTermsAccepted] = useState(false);
-  const installRef = useRef<HTMLElement>(null);
   const removeRef = useRef<HTMLElement>(null);
   const runtimeInstallRef = useRef<HTMLElement>(null);
-  const closeInstall = useCallback(() => {
-    setPendingDownload(null);
-    setLicenseAccepted(false);
-  }, []);
   const closeRemove = useCallback(() => setPendingRemove(null), []);
   const closeRuntimeInstall = useCallback(() => {
     setPendingRuntime(null);
+    setModelAfterRuntime(null);
     setRuntimeTermsAccepted(false);
   }, []);
-  useModalFocusTrap(Boolean(pendingDownload), installRef, closeInstall);
   useModalFocusTrap(Boolean(pendingRemove), removeRef, closeRemove);
   useModalFocusTrap(Boolean(pendingRuntime), runtimeInstallRef, closeRuntimeInstall);
 
@@ -6618,7 +6660,29 @@ function ModelsView({
       | 'reset',
     model: ModelDescriptor,
   ) => {
-    if (workingId) return;
+    if (workingId === model.id) return;
+    if (
+      action === 'download' &&
+      !workspace.localRuntimes.some((runtime) => runtime.active || runtime.status === 'installed')
+    ) {
+      const recommended =
+        workspace.localRuntimes.find(
+          (runtime) => runtime.recommended && runtime.compatible !== false,
+        ) ??
+        workspace.localRuntimes.find(
+          (runtime) => runtime.compatible !== false && runtime.backend === 'cpu',
+        ) ??
+        workspace.localRuntimes.find((runtime) => runtime.compatible !== false);
+      if (recommended) {
+        setModelAfterRuntime(model);
+        setPendingRuntime(recommended);
+        return;
+      }
+      setActionError(
+        'No compatible runtime is available yet. Refresh device information and try again.',
+      );
+      return;
+    }
     setActionError(null);
     setWorkingId(model.id);
     try {
@@ -6690,12 +6754,16 @@ function ModelsView({
       return (
         <button
           className="button"
-          disabled={model.fit === 'incompatible'}
-          onClick={() => setPendingDownload(model)}
+          disabled={model.fit === 'incompatible' || downloadInProgress}
+          title={
+            downloadInProgress ? 'Pause the current download before starting another.' : undefined
+          }
+          onClick={() => void runAction('download', model)}
         >
-          {model.fit === 'incompatible' ? 'Does not fit' : 'Install'}
+          {model.fit === 'incompatible' ? 'Does not fit' : 'Download'}
         </button>
       );
+    if (model.status === 'installing') return <span className="selected-label">Installing…</span>;
     if (model.status === 'download' || model.status === 'verifying')
       return (
         <button className="button" disabled={busy} onClick={() => void runAction('status', model)}>
@@ -6704,7 +6772,11 @@ function ModelsView({
       );
     if (model.status === 'paused')
       return (
-        <button className="button" disabled={busy} onClick={() => void runAction('resume', model)}>
+        <button
+          className="button"
+          disabled={busy || downloadInProgress}
+          onClick={() => void runAction('resume', model)}
+        >
           Resume download
         </button>
       );
@@ -7031,7 +7103,9 @@ function ModelsView({
                     ) : (
                       <button
                         className="button"
-                        disabled={runtime.compatible === false || workspace.busy}
+                        disabled={
+                          runtime.compatible === false || workspace.busy || downloadInProgress
+                        }
                         onClick={() => setPendingRuntime(runtime)}
                       >
                         Install pack
@@ -7350,6 +7424,7 @@ function ModelsView({
                         </span>
                         <button
                           aria-label={`${model.status === 'paused' ? 'Resume' : 'Pause'} download for ${model.name}`}
+                          disabled={workingId === model.id || model.status === 'verifying'}
                           onClick={() =>
                             void runAction(model.status === 'paused' ? 'resume' : 'pause', model)
                           }
@@ -7358,6 +7433,7 @@ function ModelsView({
                         </button>
                         <button
                           aria-label={`Cancel download for ${model.name}`}
+                          disabled={workingId === model.id}
                           onClick={() => void runAction('cancel', model)}
                         >
                           <Icon name="x" />
@@ -7438,187 +7514,119 @@ function ModelsView({
         </section>
       )}
 
-      {pendingDownload && (
-        <div className="popover-layer">
-          <section
-            ref={installRef}
-            className="provider-dialog model-install-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="model-install-title"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Signed Cupcake Local catalog</span>
-                <h2 id="model-install-title">Install {pendingDownload.name}</h2>
-              </div>
-              <button className="icon-button" onClick={closeInstall} aria-label="Cancel install">
-                <Icon name="x" />
-              </button>
-            </header>
-            <div className={cx('model-fit', `model-fit--${pendingDownload.fit ?? 'pending'}`)}>
-              <strong>
-                {pendingDownload.fit === 'pending'
-                  ? 'Device scan pending'
-                  : cap((pendingDownload.fit ?? 'pending').replace('-', ' '))}
-              </strong>
-              <span>{pendingDownload.fitReason}</span>
-            </div>
-            <dl className="permission-list">
-              <div>
-                <dt>Catalog source</dt>
-                <dd>{pendingDownload.source ?? 'Cupcake Local signed catalog'}</dd>
-              </div>
-              <div>
-                <dt>Artifact</dt>
-                <dd>
-                  {pendingDownload.parameters ?? 'Size not reported'} ·{' '}
-                  {pendingDownload.quantization ?? 'Quantization not reported'} ·{' '}
-                  {formatStorage(pendingDownload.fileSizeBytes)}
-                </dd>
-              </div>
-              <div>
-                <dt>Memory estimate</dt>
-                <dd>
-                  {formatStorage(pendingDownload.estimatedRamBytes)} RAM ·{' '}
-                  {formatStorage(pendingDownload.estimatedVramBytes)} VRAM ·{' '}
-                  {formatStorage(pendingDownload.estimatedDiskBytes)} disk
-                </dd>
-              </div>
-              <div>
-                <dt>Integrity</dt>
-                <dd>
-                  Catalog signature is checked before download; SHA-256 is checked before install.
-                </dd>
-              </div>
-              <div>
-                <dt>License</dt>
-                <dd>
-                  {pendingDownload.license ?? 'Open the catalog source to review the model terms.'}
-                </dd>
-              </div>
-            </dl>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={licenseAccepted}
-                onChange={(event) => setLicenseAccepted(event.target.checked)}
-              />
-              <span>I reviewed this catalog entry, its license, and the storage estimate.</span>
-            </label>
-            <footer>
-              <button className="button" onClick={closeInstall}>
-                Cancel
-              </button>
-              <span />
-              <button
-                className="button button--primary"
-                disabled={
-                  !licenseAccepted ||
-                  pendingDownload.fit === 'incompatible' ||
-                  workingId === pendingDownload.id
-                }
-                onClick={() => {
-                  void runAction('download', pendingDownload);
-                  closeInstall();
-                }}
-              >
-                Install model
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
-      {pendingRuntime && (
-        <div className="popover-layer">
-          <section
-            ref={runtimeInstallRef}
-            className="provider-dialog model-install-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="runtime-install-title"
-          >
-            <header>
-              <div>
-                <span className="eyebrow">Signed acceleration component</span>
-                <h2 id="runtime-install-title">Install {pendingRuntime.name}?</h2>
-              </div>
-              <button
-                className="icon-button"
-                onClick={closeRuntimeInstall}
-                aria-label="Cancel runtime install"
-              >
-                <Icon name="x" />
-              </button>
-            </header>
-            <dl className="permission-list">
-              <div>
-                <dt>Download</dt>
-                <dd>{formatStorage(pendingRuntime.totalDownloadBytes)}</dd>
-              </div>
-              <div>
-                <dt>Integrity</dt>
-                <dd>Signed catalog, pinned revision, SHA-256, and per-file hashes.</dd>
-              </div>
-              <div>
-                <dt>License</dt>
-                <dd>{pendingRuntime.license ?? 'See the pinned upstream catalog.'}</dd>
-              </div>
-              {(pendingRuntime.prerequisites ?? []).map((item) => (
-                <div key={item}>
-                  <dt>Requirement</dt>
-                  <dd>{item}</dd>
+      {pendingRuntime &&
+        createPortal(
+          <div className="popover-layer runtime-install-layer">
+            <section
+              ref={runtimeInstallRef}
+              className="provider-dialog model-install-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="runtime-install-title"
+            >
+              <header>
+                <div>
+                  <span className="eyebrow">
+                    {modelAfterRuntime ? 'Set up local chat' : 'Local runtime'}
+                  </span>
+                  <h2 id="runtime-install-title">Install {pendingRuntime.name}?</h2>
                 </div>
-              ))}
-              {(pendingRuntime.licenseUrls ?? []).map((url) => (
-                <div key={url}>
-                  <dt>Required terms</dt>
-                  <dd>
-                    <a
-                      href={url}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        void window.cupcake?.app.openExternal(url);
-                      }}
-                    >
-                      Review NVIDIA CUDA Toolkit EULA
-                    </a>
-                  </dd>
+                <button
+                  className="icon-button"
+                  onClick={closeRuntimeInstall}
+                  aria-label="Cancel runtime install"
+                >
+                  <Icon name="x" />
+                </button>
+              </header>
+              {modelAfterRuntime && (
+                <p className="runtime-recommendation">
+                  {modelAfterRuntime.name} needs a runtime to run on this computer. We recommend{' '}
+                  {pendingRuntime.name}. {pendingRuntime.detail} Install it along with your model?
+                </p>
+              )}
+              <dl className="permission-list">
+                <div>
+                  <dt>Download</dt>
+                  <dd>{formatStorage(pendingRuntime.totalDownloadBytes)}</dd>
                 </div>
-              ))}
-            </dl>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={runtimeTermsAccepted}
-                onChange={(event) => setRuntimeTermsAccepted(event.target.checked)}
-              />
-              <span>
-                I reviewed the runtime license, device requirements, and any required companion
-                terms shown above.
-              </span>
-            </label>
-            <footer>
-              <button className="button" onClick={closeRuntimeInstall}>
-                Cancel
-              </button>
-              <span />
-              <button
-                className="button button--primary"
-                disabled={!runtimeTermsAccepted || workspace.busy}
-                onClick={() => {
-                  const runtime = pendingRuntime;
-                  void workspace
-                    .installRuntimePack(runtime.id, runtime.licenseUrls ?? [])
-                    .finally(closeRuntimeInstall);
-                }}
-              >
-                {workspace.busy ? 'Installing…' : 'Download and verify'}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
+                <div>
+                  <dt>Integrity</dt>
+                  <dd>Signed catalog, pinned revision, SHA-256, and per-file hashes.</dd>
+                </div>
+                <div>
+                  <dt>License</dt>
+                  <dd>{pendingRuntime.license ?? 'See the pinned upstream catalog.'}</dd>
+                </div>
+                {(pendingRuntime.prerequisites ?? []).map((item) => (
+                  <div key={item}>
+                    <dt>Requirement</dt>
+                    <dd>{item}</dd>
+                  </div>
+                ))}
+                {(pendingRuntime.licenseUrls ?? []).map((url) => (
+                  <div key={url}>
+                    <dt>Required terms</dt>
+                    <dd>
+                      <a
+                        href={url}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void window.cupcake?.app.openExternal(url);
+                        }}
+                      >
+                        Review NVIDIA CUDA Toolkit EULA
+                      </a>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {(pendingRuntime.licenseUrls?.length ?? 0) > 0 && (
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={runtimeTermsAccepted}
+                    onChange={(event) => setRuntimeTermsAccepted(event.target.checked)}
+                  />
+                  <span>I accept the required runtime terms linked above.</span>
+                </label>
+              )}
+              <footer>
+                <button className="button" onClick={closeRuntimeInstall}>
+                  Cancel
+                </button>
+                <span />
+                <button
+                  className="button button--primary"
+                  disabled={
+                    ((pendingRuntime.licenseUrls?.length ?? 0) > 0 && !runtimeTermsAccepted) ||
+                    workspace.busy
+                  }
+                  onClick={() => {
+                    const runtime = pendingRuntime;
+                    const nextModel = modelAfterRuntime;
+                    closeRuntimeInstall();
+                    void workspace
+                      .installRuntimePack(runtime.id, runtime.licenseUrls ?? [])
+                      .then((completed) =>
+                        completed && nextModel
+                          ? workspace.runModelAction('download', nextModel.id)
+                          : undefined,
+                      )
+                      .catch((reason) =>
+                        setActionError(
+                          reason instanceof Error ? reason.message : 'Runtime installation failed.',
+                        ),
+                      );
+                  }}
+                >
+                  {modelAfterRuntime ? 'Install runtime, then download model' : 'Install runtime'}
+                </button>
+              </footer>
+            </section>
+          </div>,
+          document.body,
+        )}
       {pendingRemove && (
         <div className="popover-layer">
           <section
@@ -9009,50 +9017,6 @@ function SettingsView({
                   </label>
                 )}
               </div>
-            </div>
-            <div className="setting-row">
-              <span>
-                <strong>Unload idle local models</strong>
-                <small>Release RAM and VRAM automatically after the selected idle period.</small>
-              </span>
-              <Toggle
-                checked={workspace.settings.autoEvictLocalModels}
-                onChange={() =>
-                  void workspace.updateSettings({
-                    autoEvictLocalModels: !workspace.settings.autoEvictLocalModels,
-                  })
-                }
-                label="Unload idle local models"
-              />
-            </div>
-            <div
-              className={cx(
-                'setting-row',
-                !workspace.settings.autoEvictLocalModels && 'is-disabled',
-              )}
-            >
-              <span>
-                <strong>Idle time before unload</strong>
-                <small>Each local chat resets this timer.</small>
-              </span>
-              <label className="number-setting">
-                <input
-                  type="number"
-                  min="1"
-                  max="240"
-                  disabled={!workspace.settings.autoEvictLocalModels}
-                  value={workspace.settings.localModelIdleMinutes}
-                  onChange={(event) =>
-                    void workspace.updateSettings({
-                      localModelIdleMinutes: Math.max(
-                        1,
-                        Math.min(240, Number(event.target.value) || 1),
-                      ),
-                    })
-                  }
-                />
-                <span>min</span>
-              </label>
             </div>
             <div className="setting-row">
               <span>
@@ -12877,6 +12841,12 @@ function LiveApp() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  useEffect(() => {
+    const openDownloads = () => setDownloadsOpen(true);
+    window.addEventListener('cupcake:open-downloads', openDownloads);
+    return () => window.removeEventListener('cupcake:open-downloads', openDownloads);
+  }, []);
   const [providerDialog, setProviderDialog] = useState<string | null>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [toast, setToast] = useState('');
@@ -13266,6 +13236,15 @@ function LiveApp() {
         }
       />
       <CupcakeTitlebar />
+      {downloadsOpen && (
+        <DownloadsPanel
+          onClose={() => setDownloadsOpen(false)}
+          onBrowseModels={() => {
+            setDownloadsOpen(false);
+            navigate('models');
+          }}
+        />
+      )}
       <Shelf
         view={view}
         setView={navigate}
@@ -13281,6 +13260,11 @@ function LiveApp() {
         onSelectConversation={openConversation}
         allConversations={workspace.allConversations}
         profile={workspace.settings.profile}
+        onDownloads={() => setDownloadsOpen(true)}
+        downloadCount={
+          workspace.downloads.filter((item) => !['completed', 'cancelled'].includes(item.state))
+            .length
+        }
       />
       <section
         className={cx(
