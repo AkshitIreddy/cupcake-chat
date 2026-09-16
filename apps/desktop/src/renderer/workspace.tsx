@@ -2494,7 +2494,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [activeRunConversationId, setActiveRunConversationId] = useState<string | null>(null);
   const bootstrapped = useRef(false);
-  const nvidiaCatalogRefresh = useRef<Promise<void> | null>(null);
+  const providerCatalogRefresh = useRef<Promise<void> | null>(null);
   const selectedModelIdRef = useRef<string | null>(
     fixtureModels.find((model) => model.selected)?.id ?? null,
   );
@@ -2795,48 +2795,58 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
         setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
         setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
-        if (includeHostedCatalog === true && configuredProviders['nvidia-nim']) {
-          if (!nvidiaCatalogRefresh.current) {
-            const refreshCatalog = request<Record<string, unknown>>(
-              'providers.catalog.refresh',
-              { provider: 'nvidia-nim' },
-              120_000,
-            )
-              .then((result) => {
-                const catalog = recordValue(result.catalog);
-                const catalogModels = Array.isArray(result.models)
-                  ? (result.models as Array<Record<string, unknown>>)
-                  : Array.isArray(catalog?.models)
-                    ? (catalog.models as Array<Record<string, unknown>>)
-                    : [];
-                if (!catalogModels.length) return;
-                setModels((current) => {
-                  const incoming = catalogModels.map((item) => ({
-                    ...mapModel(
-                      {
-                        ...item,
-                        provider: textValue(item.provider, 'nvidia-nim'),
-                      },
-                      selectedModelIdRef.current ?? undefined,
+        if (includeHostedCatalog === true) {
+          if (!providerCatalogRefresh.current) {
+            const connected = ['nvidia-nim', 'groq', 'openrouter', 'cloudflare'].filter(
+              (provider) => configuredProviders[provider],
+            );
+            providerCatalogRefresh.current = Promise.all(
+              connected.map(async (provider) => {
+                try {
+                  const result = await request<Record<string, unknown>>(
+                    'providers.catalog.refresh',
+                    { provider, force: true },
+                    120_000,
+                  );
+                  if (result.state === 'failed' || result.discovery === 'failed')
+                    throw new Error(
+                      textValue(recordValue(result.diagnostic)?.message, 'Catalog refresh failed'),
+                    );
+                  // Read canonical runtime descriptors after discovery, including
+                  // endpoint IDs and capabilities; onboarding rows are not routes.
+                  const prefix =
+                    provider === 'nvidia-nim' ? 'nvidia-nim:' : `openai-compatible:${provider}/`;
+                  const catalog = await request<RuntimeModel[]>('models.list', {
+                    provider: provider === 'nvidia-nim' ? provider : 'openai-compatible',
+                  });
+                  const incoming = catalog
+                    .filter((model) => textValue(model.id).startsWith(prefix))
+                    .map((model) => ({
+                      ...mapModel(model, selectedModelIdRef.current ?? undefined),
+                      status: 'ready' as const,
+                    }));
+                  setModels((current) =>
+                    mergeModelDescriptors(
+                      current.filter((model) => !model.id.startsWith(prefix)),
+                      incoming,
+                      selectedModelIdRef.current,
                     ),
-                    status: 'ready' as const,
-                  }));
-                  return mergeModelDescriptors(current, incoming, selectedModelIdRef.current);
-                });
-              })
-              .catch((reason) => {
-                setError(
-                  reason instanceof Error
-                    ? `NVIDIA NIM catalog is unavailable: ${reason.message}`
-                    : 'NVIDIA NIM catalog is unavailable. Reopen Models to retry.',
-                );
+                  );
+                  return null;
+                } catch (reason) {
+                  return `${provider}: ${reason instanceof Error ? reason.message : 'Catalog refresh failed'}`;
+                }
+              }),
+            )
+              .then((failures) => {
+                const messages = failures.filter(Boolean);
+                if (messages.length) setError(messages.join(' · '));
               })
               .finally(() => {
-                nvidiaCatalogRefresh.current = null;
+                providerCatalogRefresh.current = null;
               });
-            nvidiaCatalogRefresh.current = refreshCatalog;
-            void refreshCatalog;
           }
+          await providerCatalogRefresh.current;
         }
         if (auxiliaryFailures.length) {
           setError(

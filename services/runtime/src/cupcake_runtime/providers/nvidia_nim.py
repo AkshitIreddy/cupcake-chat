@@ -526,6 +526,32 @@ def verified_hosted_descriptor(model_id: str) -> ModelDescriptor | None:
     )
 
 
+def cached_account_descriptor(model_id: str) -> ModelDescriptor | None:
+    """Rebuild one previously account-discovered route without network access.
+
+    The broker persists only bounded model identifiers, never provider response
+    bodies. Unknown routes therefore return with conservative limits and an
+    explicit compatibility-confirmation marker until the user refreshes the
+    live NVIDIA catalog again.
+    """
+
+    normalized = model_id.strip()
+    if (
+        not normalized
+        or len(normalized) > MAX_MODEL_ID_LENGTH
+        or _SAFE_MODEL_ID.fullmatch(normalized) is None
+        or normalized in _RETIRED_HOSTED_MODEL_IDS
+    ):
+        return None
+    verified = verified_hosted_descriptor(normalized)
+    if verified is not None:
+        return verified
+    compatibility, evidence, declared = _classify_chat_compatibility({}, normalized)
+    if compatibility is ChatCompatibility.NON_CHAT:
+        return None
+    return _descriptor_from_record(normalized, {}, compatibility, evidence, declared)
+
+
 def _bounded_positive_integer(value: Any, *, maximum: int = 100_000_000) -> int | None:
     if isinstance(value, bool):
         return None

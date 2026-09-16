@@ -404,10 +404,44 @@ def test_generic_remote_openai_compatible_discovery() -> None:
             "groq",
             None,
             [
-                {"id": "openai/gpt-oss-20b", "name": "GPT OSS 20B"},
-                {"id": "vendor/paid", "name": "Paid"},
+                {
+                    "id": "openai/gpt-oss-20b",
+                    "name": "GPT OSS 20B",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                },
+                {
+                    "id": "groq/compound",
+                    "name": "Compound",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                },
+                {
+                    "id": "allam-2-7b",
+                    "name": "ALLaM 2 7B",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                },
+                {
+                    "id": "whisper-large-v3",
+                    "name": "Whisper",
+                    "input_modalities": ["audio"],
+                    "output_modalities": ["text"],
+                },
+                {
+                    "id": "canopylabs/orpheus-v1-english",
+                    "name": "Orpheus",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["audio"],
+                },
+                {
+                    "id": "openai/gpt-oss-safeguard-20b",
+                    "name": "Safety GPT OSS",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                },
             ],
-            ["openai/gpt-oss-20b"],
+            ["allam-2-7b", "groq/compound", "openai/gpt-oss-20b"],
         ),
         (
             "openrouter",
@@ -462,6 +496,10 @@ def test_named_compatible_endpoints_and_model_policy_are_fixed() -> None:
     assert named_compatible_model_allowed("openrouter", "nvidia/nemotron-3.5-lightning:free")
     assert named_compatible_model_allowed("openrouter", "vendor/model:free")
     assert not named_compatible_model_allowed("openrouter", "vendor/model")
+    assert named_compatible_model_allowed("groq", "groq/compound-mini")
+    assert named_compatible_model_allowed("groq", "allam-2-7b")
+    assert not named_compatible_model_allowed("groq", "whisper-large-v3")
+    assert not named_compatible_model_allowed("groq", "openai/gpt-oss-safeguard-20b")
 
 
 def test_named_compatible_endpoint_override_and_invalid_account_fail_closed() -> None:

@@ -4,7 +4,9 @@ from typing import Any
 
 import pytest
 
+from cupcake_runtime.agent_engine import CupcakeAgentEngine
 from cupcake_runtime.application import RuntimeCommandError, RuntimeService
+from cupcake_runtime.domain.models import Setting
 from cupcake_runtime.providers.base import ProviderConfig
 from cupcake_runtime.providers.onboarding import (
     DiscoveredProviderModel,
@@ -15,8 +17,10 @@ from cupcake_runtime.providers.onboarding import (
     ProviderTestState,
 )
 from cupcake_runtime.providers.types import (
+    CanonicalMessage,
     ModelCapabilities,
     ModelDescriptor,
+    ModelRequest,
     PrivacyRoute,
     ReasoningEffort,
 )
@@ -219,6 +223,38 @@ def test_trusted_nim_hydration_preserves_exact_account_discovered_model(
         runtime.close()
 
 
+def test_trusted_nim_hydration_restores_bounded_cached_account_catalog(tmp_path: Any) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        result, _ = runtime.handle(
+            "providers.configure",
+            {
+                "provider": "nvidia-nim",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "catalogModels": [
+                    "nvidia/nemotron-3.5-lightning",
+                    "vendor/account-discovered-chat",
+                    "nvidia/nemotron-3-nano-30b-a3b",
+                ],
+            },
+        )
+
+        assert result["hydrated"] is True
+        assert {model["model"] for model in result["models"]} == {
+            "nvidia/nemotron-3.5-lightning",
+            "vendor/account-discovered-chat",
+        }
+        assert "nvidia-nim:nvidia/nemotron-3-nano-30b-a3b" not in {
+            model.id for model in runtime.providers.catalog.list()
+        }
+        unknown = runtime.providers.catalog.get("nvidia-nim:vendor/account-discovered-chat")
+        assert unknown.metadata["verification_state"] == "account_discoverable"
+        assert unknown.metadata["requires_compatibility_confirmation"] is True
+    finally:
+        runtime.close()
+
+
 def test_trusted_named_hydration_rejects_non_free_route(tmp_path: Any) -> None:
     runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
     try:
@@ -271,6 +307,87 @@ def test_trusted_groq_gpt_oss_hydration_restores_reasoning_contract(tmp_path: An
         assert descriptor.default_reasoning_effort is ReasoningEffort.LOW
         assert descriptor.context_window == 131_072
         assert descriptor.max_output_tokens == 65_536
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize(
+    ("model_id", "context_window", "max_output_tokens", "tools", "reasoning"),
+    (
+        ("allam-2-7b", 4_096, 2_048, False, False),
+        ("groq/compound", 131_072, 8_192, False, False),
+        ("groq/compound-mini", 131_072, 8_192, False, False),
+        ("qwen/qwen3.8-27b", 131_042, 16_384, True, True),
+    ),
+)
+def test_trusted_groq_hydration_restores_route_specific_contract(
+    tmp_path: Any,
+    model_id: str,
+    context_window: int,
+    max_output_tokens: int,
+    tools: bool,
+    reasoning: bool,
+) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        runtime.handle(
+            "providers.configure",
+            {
+                "provider": "openai-compatible",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "endpointId": "groq",
+                "modelId": model_id,
+                "displayName": f"Groq · {model_id}",
+                "baseUrl": "https://api.groq.com/openai/v1",
+            },
+        )
+
+        descriptor = runtime.providers.catalog.get(f"openai-compatible:groq/{model_id}")
+        assert descriptor.context_window == context_window
+        assert descriptor.max_output_tokens == max_output_tokens
+        assert descriptor.capabilities.tools is tools
+        assert descriptor.capabilities.reasoning is reasoning
+    finally:
+        runtime.close()
+
+
+def test_allam_default_agent_request_reserves_input_context(tmp_path: Any) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        runtime.handle(
+            "providers.configure",
+            {
+                "provider": "openai-compatible",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "endpointId": "groq",
+                "modelId": "allam-2-7b",
+                "displayName": "Groq · ALLaM 2 7B",
+                "baseUrl": "https://api.groq.com/openai/v1",
+            },
+        )
+        model_id = "openai-compatible:groq/allam-2-7b"
+
+        plan = CupcakeAgentEngine(runtime.providers).prepare(
+            ModelRequest(model_id, (CanonicalMessage("user", "Explain this in Arabic."),))
+        )
+
+        assert plan.max_output_tokens == 2_048
+        assert plan.estimated_context_tokens < 2_048
+        # Simulate a previously enabled tool. Unsupported model routes must omit
+        # caller-provided schemas before looking up or validating those tools.
+        runtime.repository.set_setting(Setting(key="tools.enabled", value=["missing.tool"]))
+        created, _ = runtime.handle("conversations.create", {"title": "ALLaM tools"})
+        prepared = runtime._prepare_chat(
+            created["conversation"]["id"],
+            created["branch"]["id"],
+            run_id="run-allam-tools",
+            model_id=model_id,
+            fallback_model_id=None,
+            params={},
+        )
+        assert prepared.request.tools == ()
     finally:
         runtime.close()
 
@@ -370,7 +487,9 @@ def test_named_compatible_connect_registers_isolated_free_route(
         descriptor = runtime.providers.catalog.get(descriptor_id)
         adapter = runtime.providers.adapter(descriptor_id, client=object())
         assert descriptor.metadata["provider_preset"] == provider
-        assert descriptor.metadata["cost_policy"] == "free-tier-eligible"
+        assert descriptor.metadata["cost_policy"] == (
+            "account-discovered" if provider == "groq" else "free-tier-eligible"
+        )
         assert descriptor.privacy_route.value == "cloud"
         assert adapter.config.base_url == expected_url
         assert adapter.config.api_key == SECRET_CANARY
@@ -383,6 +502,66 @@ def test_named_compatible_connect_registers_isolated_free_route(
                 ReasoningEffort.HIGH,
             )
             assert descriptor.default_reasoning_effort is ReasoningEffort.LOW
+    finally:
+        runtime.close()
+
+
+def test_named_compatible_refresh_replaces_retired_selected_route(tmp_path: Any) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    try:
+        runtime.handle(
+            "providers.configure",
+            {
+                "provider": "openai-compatible",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "endpointId": "groq",
+                "modelId": "qwen/qwen3.6-27b",
+                "displayName": "Groq · retired Qwen",
+                "baseUrl": "https://api.groq.com/openai/v1",
+            },
+        )
+        result = ProviderOnboardingResult(
+            provider="groq",
+            state=ProviderTestState.READY,
+            discovery=ModelDiscoveryState.SUPPORTED,
+            models=(
+                DiscoveredProviderModel(
+                    id="openai/gpt-oss-20b",
+                    model="openai/gpt-oss-20b",
+                    display_name="GPT OSS 20B",
+                    capabilities=("streaming",),
+                    compatibility_verified=True,
+                ),
+                DiscoveredProviderModel(
+                    id="groq/compound",
+                    model="groq/compound",
+                    display_name="Compound",
+                    capabilities=("streaming",),
+                    compatibility_verified=True,
+                ),
+            ),
+            tested_at_ms=123,
+            latency_ms=4,
+        )
+        runtime.provider_onboarding = FixedOnboardingService(  # type: ignore[assignment]
+            ProviderOnboardingExecution(result)
+        )
+
+        runtime.handle(
+            "providers.configure",
+            {
+                "provider": "groq",
+                "credentialLease": SECRET_CANARY,
+                "modelId": "qwen/qwen3.6-27b",
+                "allowSelectedReplacement": True,
+            },
+        )
+
+        ids = {model.id for model in runtime.providers.catalog.list()}
+        assert "openai-compatible:groq/qwen/qwen3.6-27b" not in ids
+        assert "openai-compatible:groq/openai/gpt-oss-20b" in ids
+        assert "openai-compatible:groq/groq/compound" in ids
     finally:
         runtime.close()
 

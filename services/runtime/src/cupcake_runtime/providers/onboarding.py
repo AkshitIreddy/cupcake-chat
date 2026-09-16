@@ -49,13 +49,13 @@ NAMED_COMPATIBLE_DEFAULT_MODELS: dict[str, str] = {
     "openrouter": "nvidia/nemotron-3.5-lightning:free",
     "cloudflare": "@cf/meta/llama-3.1-8b-instruct-fp8",
 }
-_GROQ_FREE_PLAN_MODELS = frozenset(
-    {
-        "openai/gpt-oss-20b",
-        "openai/gpt-oss-120b",
-        "qwen/qwen3.6-27b",
-        "qwen/qwen3.8-27b",
-    }
+_GROQ_NON_CHAT_MODEL_MARKERS = (
+    "guard",
+    "safeguard",
+    "whisper",
+    "orpheus",
+    "speech",
+    "tts",
 )
 _CLOUDFLARE_FREE_DEFAULTS = frozenset({NAMED_COMPATIBLE_DEFAULT_MODELS["cloudflare"]})
 _CLOUDFLARE_ACCOUNT_ID = re.compile(r"^[0-9a-fA-F]{32}$")
@@ -122,6 +122,8 @@ class DiscoveredProviderModel:
     display_name: str
     capabilities: tuple[str, ...] = ()
     compatibility_verified: bool = False
+    input_modalities: tuple[str, ...] = ()
+    output_modalities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,12 +465,19 @@ def validate_named_compatible_config(provider: str, config: ProviderConfig) -> s
 
 
 def named_compatible_model_allowed(provider: str, model_id: str) -> bool:
-    """Restrict convenience presets to explicit zero-cost/free-allocation routes."""
+    """Restrict convenience presets to account-discoverable conversational routes.
+
+    Groq changes its hosted catalog frequently. The authoritative allow step is
+    therefore the bounded account catalog returned during onboarding; this
+    string-only predicate rejects known utility routes and is also used when a
+    previously discovered route is restored from the credential vault.
+    """
 
     normalized = provider.strip().casefold()
     model = model_id.strip()
     if normalized == "groq":
-        return model in _GROQ_FREE_PLAN_MODELS
+        lowered = model.casefold()
+        return bool(model) and not any(marker in lowered for marker in _GROQ_NON_CHAT_MODEL_MARKERS)
     if normalized == "openrouter":
         return model == "openrouter/free" or model.endswith(":free")
     if normalized == "cloudflare":
@@ -479,7 +488,13 @@ def named_compatible_model_allowed(provider: str, model_id: str) -> bool:
 def _named_compatible_models(
     provider: str, models: tuple[DiscoveredProviderModel, ...]
 ) -> tuple[DiscoveredProviderModel, ...]:
-    safe = tuple(model for model in models if named_compatible_model_allowed(provider, model.model))
+    safe = tuple(
+        model
+        for model in models
+        if named_compatible_model_allowed(provider, model.model)
+        and (provider != "groq" or not model.input_modalities or "text" in model.input_modalities)
+        and (provider != "groq" or not model.output_modalities or "text" in model.output_modalities)
+    )
     if not safe:
         raise ProviderError(
             f"{_provider_label(provider)} did not return a supported free model.",
@@ -635,6 +650,8 @@ def _as_model_collection(value: Any) -> Iterable[Any] | AsyncIterable[Any] | Non
 def _normalize_model(record: Any) -> DiscoveredProviderModel | None:
     model_id: str | None
     display_name: str | None
+    input_modalities: tuple[str, ...] = ()
+    output_modalities: tuple[str, ...] = ()
     if isinstance(record, str):
         model_id = record
         display_name = record
@@ -642,9 +659,13 @@ def _normalize_model(record: Any) -> DiscoveredProviderModel | None:
         record_map = cast(Mapping[str, Any], record)
         model_id = _first_string(record_map, "id", "model", "name")
         display_name = _first_string(record_map, "display_name", "displayName", "name") or model_id
+        input_modalities = _safe_string_sequence(record_map.get("input_modalities"))
+        output_modalities = _safe_string_sequence(record_map.get("output_modalities"))
     else:
         model_id = _first_attribute(record, "id", "model", "name")
         display_name = _first_attribute(record, "display_name", "displayName", "name") or model_id
+        input_modalities = _safe_string_sequence(getattr(record, "input_modalities", None))
+        output_modalities = _safe_string_sequence(getattr(record, "output_modalities", None))
     if not model_id:
         return None
     model_id = model_id.strip()
@@ -655,7 +676,21 @@ def _normalize_model(record: Any) -> DiscoveredProviderModel | None:
     ):
         return None
     safe_display = (display_name or model_id).strip()[:256] or model_id
-    return DiscoveredProviderModel(model_id, model_id, safe_display)
+    return DiscoveredProviderModel(
+        model_id,
+        model_id,
+        safe_display,
+        input_modalities=input_modalities,
+        output_modalities=output_modalities,
+    )
+
+
+def _safe_string_sequence(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, Iterable) or isinstance(value, (str, bytes, bytearray, Mapping)):
+        return ()
+    return tuple(
+        item.strip().casefold() for item in value if isinstance(item, str) and item.strip()
+    )[:16]
 
 
 def _first_string(value: Mapping[Any, Any], *names: str) -> str | None:

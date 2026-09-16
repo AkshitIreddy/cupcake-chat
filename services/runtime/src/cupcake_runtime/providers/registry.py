@@ -135,6 +135,20 @@ class ProviderRegistry:
             removed = self._model_configs.pop(descriptor.id, None) is not None or removed
         return removed
 
+    def reconcile_openai_compatible_endpoint(
+        self, endpoint_id: str, retained_model_ids: set[str]
+    ) -> None:
+        """Remove routes absent from one authoritative account catalog snapshot."""
+
+        prefix = f"openai-compatible:{endpoint_id}/"
+        for descriptor in self.catalog.list(provider="openai-compatible", include_deprecated=True):
+            if not descriptor.id.startswith(prefix) or descriptor.id in retained_model_ids:
+                continue
+            if isinstance(descriptor.metadata.get("runtime_kind"), str):
+                continue
+            self.catalog.unregister(descriptor.id)
+            self._model_configs.pop(descriptor.id, None)
+
     async def refresh_nvidia_nim_models(
         self, *, client: Any = None, force: bool = False
     ) -> NvidiaNimCatalogResult:

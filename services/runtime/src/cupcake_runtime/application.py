@@ -105,6 +105,7 @@ from cupcake_runtime.providers import ProviderOnboardingService, ProviderRegistr
 from cupcake_runtime.providers.base import ProviderConfig
 from cupcake_runtime.providers.nvidia_nim import (
     NVIDIA_NIM_PROVIDER,
+    cached_account_descriptor,
     verified_hosted_descriptor,
 )
 from cupcake_runtime.providers.onboarding import (
@@ -1409,6 +1410,7 @@ class RuntimeService:
                     context_window=context_window,
                     max_output_tokens=max_output_tokens,
                     reasoning_efforts=reasoning_efforts,
+                    capabilities=_named_compatible_capabilities(endpoint_id, model_id),
                     replace=True,
                 )
                 if endpoint_id in NAMED_COMPATIBLE_PROVIDERS:
@@ -1421,7 +1423,11 @@ class RuntimeService:
                         metadata={
                             **descriptor.metadata,
                             "provider_preset": endpoint_id,
-                            "cost_policy": "free-tier-eligible",
+                            "cost_policy": (
+                                "account-discovered"
+                                if endpoint_id == "groq"
+                                else "free-tier-eligible"
+                            ),
                             "routing_behavior": (
                                 "variable-free-model-router"
                                 if endpoint_id == "openrouter"
@@ -1432,23 +1438,50 @@ class RuntimeService:
                     )
                     self.providers.catalog.register(descriptor, replace=True)
                 models = [_jsonable(descriptor)]
-            elif provider == NVIDIA_NIM_PROVIDER and params.get("modelId") is not None:
-                model_id = _required_string(params, "modelId")
-                descriptor_id = f"{NVIDIA_NIM_PROVIDER}:{model_id}"
-                try:
-                    descriptor = self.providers.catalog.get(descriptor_id)
-                except KeyError:
-                    verified = verified_hosted_descriptor(model_id)
-                    if verified is None:
+            elif provider == NVIDIA_NIM_PROVIDER and (
+                params.get("modelId") is not None or params.get("catalogModels") is not None
+            ):
+                model_ids: list[str] = []
+                explicit_model_id: str | None = None
+                cached_models = params.get("catalogModels")
+                if cached_models is not None:
+                    if not isinstance(cached_models, Sequence) or isinstance(
+                        cached_models, (str, bytes, bytearray)
+                    ):
                         raise RuntimeCommandError(
-                            "MODEL_NOT_VERIFIED",
-                            "The saved NVIDIA NIM model no longer has verified "
-                            "hosted-chat metadata.",
-                        ) from None
-                    descriptor = verified
-                    self.providers.catalog.register(descriptor, replace=True)
+                            "INVALID_MODEL_CATALOG", "The saved NVIDIA NIM catalog is invalid."
+                        )
+                    if len(cached_models) > 256:
+                        raise RuntimeCommandError(
+                            "INVALID_MODEL_CATALOG", "The saved NVIDIA NIM catalog is too large."
+                        )
+                    model_ids.extend(
+                        model.strip()
+                        for model in cached_models
+                        if isinstance(model, str) and model.strip()
+                    )
+                if params.get("modelId") is not None:
+                    explicit_model_id = _required_string(params, "modelId")
+                    model_ids.append(explicit_model_id)
+                descriptors: dict[str, ModelDescriptor] = {}
+                for model_id in dict.fromkeys(model_ids):
+                    descriptor_id = f"{NVIDIA_NIM_PROVIDER}:{model_id}"
+                    try:
+                        descriptor = self.providers.catalog.get(descriptor_id)
+                    except KeyError:
+                        descriptor = cached_account_descriptor(model_id)
+                        if descriptor is None:
+                            if model_id == explicit_model_id:
+                                raise RuntimeCommandError(
+                                    "MODEL_NOT_VERIFIED",
+                                    "The selected NVIDIA NIM route no longer qualifies as "
+                                    "hosted chat.",
+                                ) from None
+                            continue
+                        self.providers.catalog.register(descriptor, replace=True)
+                    descriptors[descriptor.id] = descriptor
                 self.providers.configure(provider, config)
-                models = [_jsonable(descriptor)]
+                models = [_jsonable(descriptor) for descriptor in descriptors.values()]
             else:
                 self.providers.configure(provider, config)
                 models = []
@@ -1489,6 +1522,7 @@ class RuntimeService:
                     result.models,
                     selected_model=_required_string(params, "modelId"),
                     config=config,
+                    allow_selected_replacement=params.get("allowSelectedReplacement") is True,
                 )
             else:
                 self.providers.configure_tested(
@@ -1505,20 +1539,35 @@ class RuntimeService:
         *,
         selected_model: str,
         config: ProviderConfig,
+        allow_selected_replacement: bool = False,
     ) -> None:
         if not named_compatible_model_allowed(provider, selected_model):
             raise RuntimeCommandError(
                 "PAID_MODEL_DENIED",
                 "This convenience connection accepts only its documented free-tier-eligible route.",
             )
-        discovered = {str(model.model): str(model.display_name) for model in models}
+        discovered = {
+            str(model.model): (
+                str(model.display_name),
+                tuple(getattr(model, "input_modalities", ())),
+            )
+            for model in models
+        }
         if provider == "openrouter" and selected_model == "openrouter/free":
-            discovered.setdefault(selected_model, "Variable free-model router")
+            discovered.setdefault(
+                selected_model,
+                ("Variable free-model router", ()),
+            )
         if selected_model not in discovered:
-            raise RuntimeCommandError(
-                "FREE_MODEL_UNAVAILABLE",
-                "The selected free model was not returned by the provider test.",
-                retryable=True,
+            if not allow_selected_replacement:
+                raise RuntimeCommandError(
+                    "FREE_MODEL_UNAVAILABLE",
+                    "The selected free model was not returned by the provider test.",
+                    retryable=True,
+                )
+            default_model = NAMED_COMPATIBLE_DEFAULT_MODELS[provider]
+            selected_model = (
+                default_model if default_model in discovered else next(iter(discovered))
             )
         base_url = named_compatible_base_url(provider, config.account_id)
         provider_label = {
@@ -1526,7 +1575,8 @@ class RuntimeService:
             "openrouter": "OpenRouter",
             "cloudflare": "Cloudflare Workers AI",
         }[provider]
-        for model_id, display_name in discovered.items():
+        retained_ids: set[str] = set()
+        for model_id, (display_name, input_modalities) in discovered.items():
             if not named_compatible_model_allowed(provider, model_id):
                 continue
             context_window, max_output_tokens = _named_compatible_limits(provider, model_id)
@@ -1540,13 +1590,16 @@ class RuntimeService:
                 context_window=context_window,
                 max_output_tokens=max_output_tokens,
                 reasoning_efforts=reasoning_efforts,
-                capabilities=ModelCapabilities(
-                    streaming=True,
-                    reasoning=bool(reasoning_efforts),
+                capabilities=_named_compatible_capabilities(
+                    provider,
+                    model_id,
+                    input_modalities=input_modalities,
                 ),
                 metadata={
                     "provider_preset": provider,
-                    "cost_policy": "free-tier-eligible",
+                    "cost_policy": (
+                        "account-discovered" if provider == "groq" else "free-tier-eligible"
+                    ),
                     "selected_default": model_id == selected_model,
                     "routing_behavior": (
                         "variable-free-model-router"
@@ -1566,6 +1619,8 @@ class RuntimeService:
                 ),
                 replace=True,
             )
+            retained_ids.add(descriptor.id)
+        self.providers.reconcile_openai_compatible_endpoint(provider, retained_ids)
 
     def _provider_disconnect(self, params: Mapping[str, Any]) -> dict[str, Any]:
         provider = _required_string(params, "provider")
@@ -3909,9 +3964,10 @@ class RuntimeService:
                         "score": hit.score,
                     }
                 )
+        descriptor = self.providers.catalog.select(model_id)
         requested_tools = (
             ()
-            if group_speaker is not None
+            if group_speaker is not None or not descriptor.capabilities.tools
             else tuple(
                 str(item)
                 for item in params.get(
@@ -3938,7 +3994,6 @@ class RuntimeService:
             params.get("reasoningEffort")
             or self.repository.get_setting("models.reasoning_effort", default="none")
         )
-        descriptor = self.providers.catalog.select(model_id)
         selected_effort = ReasoningEffort(effort_value)
         request_effort: ReasoningEffort | None = selected_effort
         if (
@@ -6162,7 +6217,21 @@ _MAX_GROUP_PREFLIGHT_BINARY_BYTES = 64 * 1024 * 1024
 
 def _named_compatible_limits(provider: str, model_id: str) -> tuple[int, int | None]:
     if provider == "groq":
-        return (131_072, 65_536 if model_id.startswith("openai/gpt-oss-") else 16_384)
+        if model_id == "allam-2-7b":
+            # Reserve half of ALLaM's compact context for the prompt. Using its
+            # full 4K generation ceiling as the default would leave zero input
+            # budget in the agent engine.
+            return (4_096, 2_048)
+        if model_id.startswith("groq/compound"):
+            return (131_072, 8_192)
+        if model_id in {"qwen/qwen3.6-27b", "qwen/qwen3.8-27b"}:
+            return (131_072 if model_id.endswith("3.6-27b") else 131_042, 16_384)
+        if model_id.startswith("openai/gpt-oss-"):
+            return (131_072, 65_536)
+        # Account discovery is authoritative for availability, but its metadata
+        # is not persisted in the vault. Keep future conversational routes on a
+        # conservative budget until they receive an explicit product contract.
+        return (32_768, None)
     if provider == "cloudflare":
         return (32_000, 4_096)
     if provider == "openrouter" and model_id == NAMED_COMPATIBLE_DEFAULT_MODELS[provider]:
@@ -6175,13 +6244,35 @@ def _named_compatible_limits(provider: str, model_id: str) -> tuple[int, int | N
 def _named_compatible_reasoning_efforts(
     provider: str, model_id: str
 ) -> tuple[ReasoningEffort, ...]:
-    if provider == "groq" and model_id.startswith("openai/gpt-oss-"):
+    if provider == "groq" and (
+        model_id.startswith("openai/gpt-oss-") or model_id == "qwen/qwen3.8-27b"
+    ):
         return (
             ReasoningEffort.LOW,
             ReasoningEffort.MEDIUM,
             ReasoningEffort.HIGH,
         )
     return ()
+
+
+def _named_compatible_capabilities(
+    provider: str, model_id: str, *, input_modalities: Sequence[str] = ()
+) -> ModelCapabilities:
+    reasoning = bool(_named_compatible_reasoning_efforts(provider, model_id))
+    if provider == "groq":
+        # Compound uses Groq-owned built-in tools and rejects caller-provided
+        # function definitions. ALLaM is conversational but does not advertise
+        # remote tool calling. Keeping `tools` false prevents agent execution
+        # from sending a payload those routes cannot honor.
+        supports_app_tools = model_id != "allam-2-7b" and not model_id.startswith("groq/compound")
+        return ModelCapabilities(
+            streaming=True,
+            tools=supports_app_tools,
+            images=model_id in {"qwen/qwen3.6-27b", "qwen/qwen3.8-27b"}
+            or "image" in input_modalities,
+            reasoning=reasoning,
+        )
+    return ModelCapabilities(streaming=True, reasoning=reasoning)
 
 
 def _named_compatible_default_reasoning_effort(provider: str, model_id: str) -> ReasoningEffort:

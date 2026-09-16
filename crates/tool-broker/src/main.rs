@@ -929,27 +929,35 @@ fn hydrate_named_compatible_providers(
         let Some(secret) = vault.inner().load(&provider_account(provider))? else {
             continue;
         };
-        let Some(model_id) = endpoint.model_id.as_deref() else {
-            continue;
-        };
-        if !named_compatible_model_allowed(provider, model_id) {
-            return Err(BrokerError::Integrity(
-                "saved provider model violates the free-tier policy".into(),
-            ));
+        let mut cached_models = load_named_compatible_catalog(vault, provider)?;
+        if cached_models.is_empty() {
+            let Some(model_id) = endpoint.model_id.as_deref() else {
+                continue;
+            };
+            cached_models.push(NamedCompatibleCatalogModel {
+                model_id: model_id.to_owned(),
+                display_name: if provider == "openrouter" && model_id == "openrouter/free" {
+                    "Variable free-model router".to_owned()
+                } else {
+                    model_id.to_owned()
+                },
+            });
         }
-        let display_name = if provider == "openrouter" && model_id == "openrouter/free" {
-            "OpenRouter · Variable free-model router".to_owned()
-        } else {
-            format!("{provider} · {model_id}")
-        };
-        let options = object(json!({
-            "baseUrl": endpoint.base_url,
-            "endpointId": endpoint.id,
-            "modelId": model_id,
-            "displayName": display_name,
-            "trustedHydration": true
-        }));
-        let _ = configure_provider("openai-compatible", secret.expose(), &options, runtime)?;
+        for model in cached_models {
+            if !named_compatible_model_allowed(provider, &model.model_id) {
+                return Err(BrokerError::Integrity(
+                    "saved provider model violates the account-chat policy".into(),
+                ));
+            }
+            let options = object(json!({
+                "baseUrl": endpoint.base_url,
+                "endpointId": endpoint.id,
+                "modelId": model.model_id,
+                "displayName": format!("{} · {}", provider_label(provider), model.display_name),
+                "trustedHydration": true
+            }));
+            let _ = configure_provider("openai-compatible", secret.expose(), &options, runtime)?;
+        }
     }
     Ok(())
 }
@@ -981,12 +989,15 @@ fn dispatch_secure_request(
             .filter(|p| !is_named_compatible_provider(p))
         {
             if let Some(secret) = vault.inner().load(&provider_account(provider))? {
-                configure_provider(
-                    provider,
-                    secret.expose(),
-                    &object(json!({"trustedHydration":true})),
-                    runtime,
-                )?;
+                let options = if *provider == "nvidia-nim" {
+                    object(json!({
+                        "trustedHydration": true,
+                        "catalogModels": load_nvidia_nim_catalog(vault)?
+                    }))
+                } else {
+                    object(json!({"trustedHydration":true}))
+                };
+                configure_provider(provider, secret.expose(), &options, runtime)?;
             }
         }
     }
@@ -1033,19 +1044,63 @@ fn dispatch_secure_request(
             let provider = params
                 .get("provider")
                 .and_then(Value::as_str)
-                .filter(|value| *value == "nvidia-nim")
+                .filter(|value| *value == "nvidia-nim" || is_named_compatible_provider(value))
                 .ok_or_else(|| BrokerError::InvalidConfig("unsupported catalog provider".into()))?;
             let secret = vault
                 .inner()
                 .load(&provider_account(provider))?
                 .ok_or_else(|| {
-                    BrokerError::PermissionDenied("NVIDIA NIM is not connected".into())
+                    BrokerError::PermissionDenied(format!("{provider} is not connected"))
                 })?;
             let mut options = Map::new();
             if params.get("force").and_then(Value::as_bool) == Some(true) {
                 options.insert("forceCatalogRefresh".into(), Value::Bool(true));
             }
+            let endpoint = if is_named_compatible_provider(provider) {
+                let endpoint =
+                    load_named_compatible_endpoint(vault, provider)?.ok_or_else(|| {
+                        BrokerError::PermissionDenied(format!("{provider} is not connected"))
+                    })?;
+                let model_id = endpoint.model_id.as_deref().ok_or_else(|| {
+                    BrokerError::Integrity("saved provider selection is missing".into())
+                })?;
+                options.insert("baseUrl".into(), Value::String(endpoint.base_url.clone()));
+                options.insert("endpointId".into(), Value::String(endpoint.id.clone()));
+                options.insert("modelId".into(), Value::String(model_id.to_owned()));
+                options.insert("allowSelectedReplacement".into(), Value::Bool(true));
+                if provider == "cloudflare" {
+                    let account_id = endpoint
+                        .base_url
+                        .strip_prefix("https://api.cloudflare.com/client/v4/accounts/")
+                        .and_then(|value| value.strip_suffix("/ai/v1"))
+                        .ok_or_else(|| {
+                            BrokerError::Integrity("saved Cloudflare endpoint is invalid".into())
+                        })?;
+                    options.insert("accountId".into(), Value::String(account_id.to_owned()));
+                }
+                Some(endpoint)
+            } else {
+                None
+            };
             let result = configure_provider(provider, secret.expose(), &options, runtime)?;
+            if let Some(mut endpoint) = endpoint {
+                let catalog = named_compatible_catalog_from_result(provider, &result)?;
+                if endpoint
+                    .model_id
+                    .as_deref()
+                    .is_none_or(|selected| !catalog.iter().any(|model| model.model_id == selected))
+                {
+                    let preferred = named_compatible_default_model(provider);
+                    endpoint.model_id = catalog
+                        .iter()
+                        .find(|model| model.model_id == preferred)
+                        .or_else(|| catalog.first())
+                        .map(|model| model.model_id.clone());
+                }
+                store_named_compatible_endpoint(vault, provider, &endpoint, &catalog)?;
+            } else if provider == "nvidia-nim" {
+                store_nvidia_nim_catalog(vault, &nvidia_nim_catalog_from_result(&result)?)?;
+            }
             Ok(Some(vec![(MessageType::Response, success(result))]))
         }
         "providers.test" | "providers.connect" => {
@@ -1099,7 +1154,7 @@ fn dispatch_secure_request(
                     })?;
                 if !named_compatible_model_allowed(&provider, model) {
                     return Err(BrokerError::PermissionDenied(
-                        "Named provider presets accept only documented free-tier-eligible routes"
+                        "Named provider presets accept only supported account-discovered routes"
                             .into(),
                     ));
                 }
@@ -1179,10 +1234,17 @@ fn dispatch_secure_request(
                     BrokerError::InvalidConfig("validated preset endpoint is missing".into())
                 })?;
                 vault.inner().store(&provider_account(&provider), &secret)?;
-                store_named_compatible_endpoint(vault, &provider, &endpoint)?;
+                let catalog = named_compatible_catalog_from_result(&provider, &runtime_result)?;
+                store_named_compatible_endpoint(vault, &provider, &endpoint, &catalog)?;
                 Some(endpoint.id)
             } else {
                 vault.inner().store(&provider_account(&provider), &secret)?;
+                if provider == "nvidia-nim" {
+                    store_nvidia_nim_catalog(
+                        vault,
+                        &nvidia_nim_catalog_from_result(&runtime_result)?,
+                    )?;
+                }
                 None
             };
             let mut response = runtime_result.as_object().cloned().unwrap_or_default();
@@ -1228,7 +1290,11 @@ fn dispatch_secure_request(
                     .delete(&named_compatible_endpoint_account(provider))?;
                 removed
             } else {
-                vault.inner().delete(&provider_account(provider))?
+                let removed = vault.inner().delete(&provider_account(provider))?;
+                if provider == "nvidia-nim" {
+                    vault.inner().delete(NVIDIA_NIM_CATALOG_ACCOUNT)?;
+                }
+                removed
             };
             let runtime_disconnected = match runtime_response {
                 Ok(response) if response.get("ok").and_then(Value::as_bool) == Some(true) => true,
@@ -1292,14 +1358,24 @@ fn configure_selected_provider(
         let (endpoint, secret) = if is_named_compatible_provider(selected_endpoint) {
             if !named_compatible_model_allowed(selected_endpoint, selected_model) {
                 return Err(BrokerError::PermissionDenied(
-                    "Named provider presets accept only documented free-tier-eligible routes"
-                        .into(),
+                    "Named provider presets accept only supported account-discovered routes".into(),
                 ));
             }
             let endpoint =
                 load_named_compatible_endpoint(vault, selected_endpoint)?.ok_or_else(|| {
                     BrokerError::PermissionDenied(format!("{selected_endpoint} is not connected"))
                 })?;
+            let cached_models = load_named_compatible_catalog(vault, selected_endpoint)?;
+            let selected_is_saved = named_compatible_model_was_saved(
+                selected_model,
+                endpoint.model_id.as_deref(),
+                &cached_models,
+            );
+            if !selected_is_saved {
+                return Err(BrokerError::PermissionDenied(
+                    "Named provider model was not discovered for this connected account".into(),
+                ));
+            }
             let secret = vault
                 .inner()
                 .load(&provider_account(selected_endpoint))?
@@ -1513,6 +1589,12 @@ fn configure_provider_response(
         }
     }
     if let Some(value) = options
+        .get("catalogModels")
+        .filter(|value| value.is_array())
+    {
+        params.insert("catalogModels".into(), value.clone());
+    }
+    if let Some(value) = options
         .get("forceCatalogRefresh")
         .filter(|value| value.is_boolean())
     {
@@ -1523,6 +1605,12 @@ fn configure_provider_response(
         .filter(|value| value.is_boolean())
     {
         params.insert("validateOnly".into(), value.clone());
+    }
+    if let Some(value) = options
+        .get("allowSelectedReplacement")
+        .filter(|value| value.is_boolean())
+    {
+        params.insert("allowSelectedReplacement".into(), value.clone());
     }
     if let Some(value) = options
         .get("trustedHydration")
@@ -1574,18 +1662,193 @@ fn is_named_compatible_provider(provider: &str) -> bool {
 
 fn named_compatible_model_allowed(provider: &str, model: &str) -> bool {
     match provider {
-        "groq" => matches!(
-            model,
-            "openai/gpt-oss-20b" | "openai/gpt-oss-120b" | "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b"
-        ),
+        // The runtime accepts only models returned by this account's bounded
+        // `/models` response. Keep this string-only restore guard broad enough
+        // for Groq's changing chat catalog while excluding its utility routes.
+        "groq" => {
+            let normalized = model.trim().to_ascii_lowercase();
+            !normalized.is_empty()
+                && normalized.len() <= 256
+                && !["guard", "safeguard", "whisper", "orpheus", "speech", "tts"]
+                    .iter()
+                    .any(|marker| normalized.contains(marker))
+        }
         "openrouter" => model == "openrouter/free" || model.ends_with(":free"),
         "cloudflare" => model == "@cf/meta/llama-3.1-8b-instruct-fp8",
         _ => false,
     }
 }
 
+fn provider_label(provider: &str) -> &str {
+    match provider {
+        "groq" => "Groq",
+        "openrouter" => "OpenRouter",
+        "cloudflare" => "Cloudflare Workers AI",
+        _ => provider,
+    }
+}
+
+fn named_compatible_default_model(provider: &str) -> &str {
+    match provider {
+        "groq" => "openai/gpt-oss-20b",
+        "openrouter" => "openrouter/free",
+        "cloudflare" => "@cf/meta/llama-3.1-8b-instruct-fp8",
+        _ => "",
+    }
+}
+
+const MAX_SAVED_PROVIDER_MODELS: usize = 256;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NamedCompatibleCatalogModel {
+    model_id: String,
+    display_name: String,
+}
+
+fn named_compatible_model_was_saved(
+    selected_model: &str,
+    legacy_selected_model: Option<&str>,
+    cached_models: &[NamedCompatibleCatalogModel],
+) -> bool {
+    if cached_models.is_empty() {
+        return legacy_selected_model == Some(selected_model);
+    }
+    cached_models
+        .iter()
+        .any(|model| model.model_id == selected_model)
+}
+
+fn named_compatible_catalog_from_result(
+    provider: &str,
+    result: &Value,
+) -> Result<Vec<NamedCompatibleCatalogModel>> {
+    let models = result
+        .get("models")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BrokerError::Integrity("provider result omitted its model catalog".into())
+        })?;
+    if models.len() > MAX_SAVED_PROVIDER_MODELS {
+        return Err(BrokerError::Integrity(
+            "provider result exceeded the saved catalog limit".into(),
+        ));
+    }
+    let mut saved = Vec::with_capacity(models.len());
+    for value in models {
+        let object = value.as_object().ok_or_else(|| {
+            BrokerError::Integrity("provider result contained invalid model metadata".into())
+        })?;
+        let model_id = object
+            .get("model")
+            .or_else(|| object.get("id"))
+            .and_then(Value::as_str)
+            .filter(|model| named_compatible_model_allowed(provider, model))
+            .ok_or_else(|| {
+                BrokerError::Integrity("provider result contained a disallowed model".into())
+            })?;
+        let display_name = object
+            .get("display_name")
+            .or_else(|| object.get("displayName"))
+            .and_then(Value::as_str)
+            .unwrap_or(model_id)
+            .trim();
+        if display_name.is_empty() || display_name.len() > 256 {
+            return Err(BrokerError::Integrity(
+                "provider result contained an invalid model label".into(),
+            ));
+        }
+        saved.push(NamedCompatibleCatalogModel {
+            model_id: model_id.to_owned(),
+            display_name: display_name.to_owned(),
+        });
+    }
+    Ok(saved)
+}
+
 fn provider_account(provider: &str) -> String {
     format!("provider.{provider}.api-key")
+}
+
+const NVIDIA_NIM_CATALOG_ACCOUNT: &str = "provider.nvidia-nim.catalog";
+
+fn valid_saved_model_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'@' | b'.' | b'_' | b':' | b'+' | b'/' | b'-')
+        })
+}
+
+fn nvidia_nim_catalog_from_result(result: &Value) -> Result<Vec<String>> {
+    let models = result
+        .get("models")
+        .and_then(Value::as_array)
+        .ok_or_else(|| BrokerError::Integrity("NVIDIA result omitted its model catalog".into()))?;
+    if models.len() > MAX_SAVED_PROVIDER_MODELS {
+        return Err(BrokerError::Integrity(
+            "NVIDIA result exceeded the saved catalog limit".into(),
+        ));
+    }
+    let mut ids = Vec::with_capacity(models.len());
+    for model in models {
+        let object = model.as_object().ok_or_else(|| {
+            BrokerError::Integrity("NVIDIA result contained invalid model metadata".into())
+        })?;
+        let model_id = object
+            .get("model")
+            .or_else(|| object.get("id"))
+            .and_then(Value::as_str)
+            .filter(|value| valid_saved_model_id(value))
+            .ok_or_else(|| {
+                BrokerError::Integrity("NVIDIA result contained an invalid model id".into())
+            })?;
+        ids.push(model_id.to_owned());
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+fn store_nvidia_nim_catalog(vault: &SelectedVault, models: &[String]) -> Result<()> {
+    if models.len() > MAX_SAVED_PROVIDER_MODELS
+        || models.iter().any(|model| !valid_saved_model_id(model))
+    {
+        return Err(BrokerError::Integrity(
+            "NVIDIA catalog cannot be persisted safely".into(),
+        ));
+    }
+    let metadata = serde_json::to_vec(&json!({"models": models}))?;
+    vault
+        .inner()
+        .store(NVIDIA_NIM_CATALOG_ACCOUNT, &SecretBytes::new(metadata)?)
+}
+
+fn load_nvidia_nim_catalog(vault: &SelectedVault) -> Result<Vec<String>> {
+    let Some(metadata) = vault.inner().load(NVIDIA_NIM_CATALOG_ACCOUNT)? else {
+        return Ok(Vec::new());
+    };
+    let value: Value = serde_json::from_slice(metadata.expose())
+        .map_err(|_| BrokerError::Integrity("invalid saved NVIDIA catalog".into()))?;
+    let models = value
+        .get("models")
+        .and_then(Value::as_array)
+        .ok_or_else(|| BrokerError::Integrity("invalid saved NVIDIA catalog".into()))?;
+    if models.len() > MAX_SAVED_PROVIDER_MODELS {
+        return Err(BrokerError::Integrity(
+            "saved NVIDIA catalog exceeds its model limit".into(),
+        ));
+    }
+    models
+        .iter()
+        .map(|model| {
+            model
+                .as_str()
+                .filter(|value| valid_saved_model_id(value))
+                .map(str::to_owned)
+                .ok_or_else(|| BrokerError::Integrity("invalid saved NVIDIA model id".into()))
+        })
+        .collect()
 }
 
 const OPENAI_COMPATIBLE_ENDPOINT_ACCOUNT: &str = "provider.openai-compatible.selected-endpoint";
@@ -1649,16 +1912,69 @@ fn store_named_compatible_endpoint(
     vault: &SelectedVault,
     provider: &str,
     endpoint: &OpenAiCompatibleEndpoint,
+    models: &[NamedCompatibleCatalogModel],
 ) -> Result<()> {
     let metadata = serde_json::to_vec(&json!({
         "endpointId": endpoint.id,
         "baseUrl": endpoint.base_url,
-        "modelId": endpoint.model_id
+        "modelId": endpoint.model_id,
+        "models": models.iter().map(|model| json!({
+            "modelId": model.model_id,
+            "displayName": model.display_name
+        })).collect::<Vec<_>>()
     }))?;
     vault.inner().store(
         &named_compatible_endpoint_account(provider),
         &SecretBytes::new(metadata)?,
     )
+}
+
+fn load_named_compatible_catalog(
+    vault: &SelectedVault,
+    provider: &str,
+) -> Result<Vec<NamedCompatibleCatalogModel>> {
+    let Some(metadata) = vault
+        .inner()
+        .load(&named_compatible_endpoint_account(provider))?
+    else {
+        return Ok(Vec::new());
+    };
+    let value: Value = serde_json::from_slice(metadata.expose())
+        .map_err(|_| BrokerError::Integrity("invalid provider endpoint metadata".into()))?;
+    let Some(models) = value.get("models") else {
+        // Metadata written before catalog snapshots were introduced contains
+        // only the selected model and is migrated by the next explicit refresh.
+        return Ok(Vec::new());
+    };
+    let models = models
+        .as_array()
+        .ok_or_else(|| BrokerError::Integrity("invalid saved provider catalog".into()))?;
+    if models.len() > MAX_SAVED_PROVIDER_MODELS {
+        return Err(BrokerError::Integrity(
+            "saved provider catalog exceeds its model limit".into(),
+        ));
+    }
+    let mut result = Vec::with_capacity(models.len());
+    for model in models {
+        let object = model
+            .as_object()
+            .ok_or_else(|| BrokerError::Integrity("invalid saved provider model".into()))?;
+        let model_id = object
+            .get("modelId")
+            .and_then(Value::as_str)
+            .filter(|value| named_compatible_model_allowed(provider, value))
+            .ok_or_else(|| BrokerError::Integrity("invalid saved provider model id".into()))?;
+        let display_name = object
+            .get("displayName")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty() && value.len() <= 256)
+            .ok_or_else(|| BrokerError::Integrity("invalid saved provider model label".into()))?;
+        result.push(NamedCompatibleCatalogModel {
+            model_id: model_id.to_owned(),
+            display_name: display_name.to_owned(),
+        });
+    }
+    Ok(result)
 }
 
 fn load_named_compatible_endpoint(
@@ -2498,6 +2814,96 @@ mod tests {
             "openrouter",
             "nvidia/nemotron-3.5-lightning"
         ));
+        assert!(named_compatible_model_allowed("groq", "groq/compound"));
+        assert!(named_compatible_model_allowed("groq", "allam-2-7b"));
+        assert!(!named_compatible_model_allowed("groq", "whisper-large-v3"));
+        assert!(!named_compatible_model_allowed(
+            "groq",
+            "openai/gpt-oss-safeguard-20b"
+        ));
+    }
+
+    #[test]
+    fn named_compatible_catalog_preserves_bounded_discovered_chat_models() {
+        let result = json!({
+            "models": [
+                {"model": "allam-2-7b", "display_name": "ALLaM 2 7B"},
+                {"model": "groq/compound-mini", "display_name": "Compound Mini"}
+            ]
+        });
+        let models = named_compatible_catalog_from_result("groq", &result).unwrap();
+
+        assert_eq!(
+            models,
+            vec![
+                NamedCompatibleCatalogModel {
+                    model_id: "allam-2-7b".into(),
+                    display_name: "ALLaM 2 7B".into(),
+                },
+                NamedCompatibleCatalogModel {
+                    model_id: "groq/compound-mini".into(),
+                    display_name: "Compound Mini".into(),
+                },
+            ]
+        );
+        assert!(named_compatible_catalog_from_result(
+            "groq",
+            &json!({"models":[{"model":"whisper-large-v3"}]})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn named_compatible_selection_requires_saved_account_membership() {
+        let cached = vec![NamedCompatibleCatalogModel {
+            model_id: "groq/compound".into(),
+            display_name: "Compound".into(),
+        }];
+
+        assert!(named_compatible_model_was_saved(
+            "groq/compound",
+            Some("openai/gpt-oss-20b"),
+            &cached,
+        ));
+        assert!(!named_compatible_model_was_saved(
+            "vendor/guessed-chat-model",
+            Some("openai/gpt-oss-20b"),
+            &cached,
+        ));
+        assert!(named_compatible_model_was_saved(
+            "openai/gpt-oss-20b",
+            Some("openai/gpt-oss-20b"),
+            &[],
+        ));
+        assert!(!named_compatible_model_was_saved(
+            "vendor/guessed-chat-model",
+            Some("openai/gpt-oss-20b"),
+            &[],
+        ));
+    }
+
+    #[test]
+    fn nvidia_catalog_snapshot_keeps_only_bounded_model_ids() {
+        let ids = nvidia_nim_catalog_from_result(&json!({
+            "models": [
+                {"model": "nvidia/nemotron-3.5-lightning"},
+                {"model": "vendor/account-chat"},
+                {"model": "vendor/account-chat"}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            ids,
+            vec![
+                "nvidia/nemotron-3.5-lightning".to_owned(),
+                "vendor/account-chat".to_owned(),
+            ]
+        );
+        assert!(
+            nvidia_nim_catalog_from_result(&json!({"models":[{"model":"invalid model id"}]}))
+                .is_err()
+        );
     }
 
     #[test]
