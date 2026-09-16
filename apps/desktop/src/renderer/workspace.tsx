@@ -1885,6 +1885,27 @@ export function mapDownloads(status: CupcakeLocalStatus): DownloadRecord[] {
   });
 }
 
+export function reconcileDownloadSnapshots(
+  current: DownloadRecord[],
+  snapshot: DownloadRecord[],
+  receivedLiveProgress: boolean,
+): DownloadRecord[] {
+  if (!receivedLiveProgress) return snapshot;
+  // A catalog read can finish after newer progress arrives, especially during
+  // startup. Keep the live transfer state while filling in catalog metadata.
+  const merged = new Map(snapshot.map((item) => [item.id, item]));
+  for (const item of current) {
+    const metadata = merged.get(item.id);
+    merged.set(item.id, {
+      ...metadata,
+      ...item,
+      name: item.name === item.id ? (metadata?.name ?? item.name) : item.name,
+      parentId: item.parentId ?? metadata?.parentId,
+    });
+  }
+  return [...merged.values()];
+}
+
 export function mapCupcakeLocalModels(
   status: CupcakeLocalStatus,
   selectedId?: string,
@@ -2531,6 +2552,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [hardware, setHardware] = useState<HardwareRecord | null>(null);
   const [localRuntimes, setLocalRuntimes] = useState<LocalRuntimeRecord[]>([]);
   const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
+  const downloadRevisionRef = useRef(0);
   const localCatalogRef = useRef<CupcakeLocalStatus>({});
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [providers, setProviders] = useState<Record<string, boolean>>({});
@@ -2648,6 +2670,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(
     async (includeHostedCatalog = false) => {
       if (fixtureMode) return;
+      const downloadRevision = downloadRevisionRef.current;
       const contextGeneration = ++conversationSelectionGeneration.current;
       ++projectSelectionGeneration.current;
       await guard(async () => {
@@ -2863,7 +2886,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
         setHardware(normalizeHardware(localStatus.hardware ?? bootstrap.hardware));
         setLocalRuntimes(mapCupcakeRuntimePacks(localStatus));
-        setDownloads(mapDownloads(localStatus));
+        setDownloads((current) =>
+          reconcileDownloadSnapshots(
+            current,
+            mapDownloads(localStatus),
+            downloadRevision !== downloadRevisionRef.current,
+          ),
+        );
         localCatalogRef.current = localStatus;
         if (includeHostedCatalog === true) {
           if (!providerCatalogRefresh.current) {
@@ -3144,6 +3173,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             payload.model_id,
         );
         const state = textValue(downloadPayload.state, 'downloading');
+        downloadRevisionRef.current += 1;
         setDownloads((items) => {
           const previous = items.find((item) => item.id === modelId);
           const metadata = mapDownloads({
@@ -5169,8 +5199,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [fixtureMode, request],
   );
   const refreshLocalModels = useCallback(async () => {
+    const downloadRevision = downloadRevisionRef.current;
     const status = await request<CupcakeLocalStatus>('local_models.cupcake.status');
-    setDownloads(mapDownloads(status));
+    setDownloads((current) =>
+      reconcileDownloadSnapshots(
+        current,
+        mapDownloads(status),
+        downloadRevision !== downloadRevisionRef.current,
+      ),
+    );
     localCatalogRef.current = status;
     setLocalRuntimes(mapCupcakeRuntimePacks(status));
     setModels((items) =>
@@ -5184,6 +5221,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const startDownload = useCallback(
     (download: DownloadRecord, extra: Record<string, unknown> = {}) => {
+      downloadRevisionRef.current += 1;
       setDownloads((items) => [
         ...items.filter((item) => item.id !== download.id),
         { ...download, state: 'queued', error: undefined },

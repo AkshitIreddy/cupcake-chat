@@ -8,10 +8,29 @@ import {
   mapModel,
   mapDownloads,
   mapDownloadSnapshot,
+  reconcileDownloadSnapshots,
   normalizeHardware,
 } from './workspace';
 
 describe('workspace local model integration', () => {
+  it('keeps real progress when an older startup snapshot finishes later', () => {
+    const live = mapDownloads({
+      downloads: [
+        { model_id: 'qwen', state: 'paused', bytes_downloaded: 196608, bytes_total: 639446688 },
+      ],
+    });
+    expect(reconcileDownloadSnapshots(live, [], true)).toEqual(live);
+    const old = mapDownloads({
+      availableModels: [{ id: 'qwen', display_name: 'Qwen' }],
+      downloads: [{ model_id: 'qwen', state: 'downloading', bytes_downloaded: 0 }],
+    });
+    expect(reconcileDownloadSnapshots(live, old, true)[0]).toMatchObject({
+      name: 'Qwen',
+      state: 'paused',
+      bytesReceived: 196608,
+    });
+    expect(reconcileDownloadSnapshots(live, [], false)).toEqual([]);
+  });
   it('keeps CUDA companion controls tied to their file and resume tied to the parent pack', () => {
     const [companion] = mapDownloads({
       availableRuntimes: [
