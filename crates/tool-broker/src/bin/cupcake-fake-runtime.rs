@@ -63,7 +63,7 @@ fn run() -> Result<()> {
             )?,
             MessageType::Request => {
                 if let Some(cancel) = deferred_cancel.take() {
-                    write(
+                    write_expired(
                         &mut output,
                         &mut sequences,
                         &secret,
@@ -213,6 +213,46 @@ fn write<W: std::io::Write>(
     message_type: MessageType,
     payload: Map<String, Value>,
 ) -> Result<()> {
+    write_with_deadline(
+        output,
+        sequences,
+        secret,
+        request,
+        message_type,
+        payload,
+        (Utc::now() + chrono::Duration::seconds(30)).to_rfc3339_opts(SecondsFormat::Millis, true),
+    )
+}
+
+fn write_expired<W: std::io::Write>(
+    output: &mut W,
+    sequences: &mut HashMap<Uuid, u64>,
+    secret: &[u8],
+    request: &ProtocolEnvelope,
+    message_type: MessageType,
+    payload: Map<String, Value>,
+) -> Result<()> {
+    write_with_deadline(
+        output,
+        sequences,
+        secret,
+        request,
+        message_type,
+        payload,
+        (Utc::now() - chrono::Duration::seconds(1)).to_rfc3339_opts(SecondsFormat::Millis, true),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_with_deadline<W: std::io::Write>(
+    output: &mut W,
+    sequences: &mut HashMap<Uuid, u64>,
+    secret: &[u8],
+    request: &ProtocolEnvelope,
+    message_type: MessageType,
+    payload: Map<String, Value>,
+    deadline: String,
+) -> Result<()> {
     let sequence = sequences
         .entry(request.correlation_id)
         .and_modify(|value| *value += 1)
@@ -222,7 +262,7 @@ fn write<W: std::io::Write>(
         request.correlation_id,
         request.session_id,
         *sequence,
-        (Utc::now() + chrono::Duration::seconds(30)).to_rfc3339_opts(SecondsFormat::Millis, true),
+        deadline,
         ProtocolLineage::default(),
         message_type,
         payload,

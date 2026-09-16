@@ -258,12 +258,11 @@ impl RuntimeChild {
         loop {
             let envelope: ProtocolEnvelope =
                 read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
-            envelope.verify_auth(self.secret.as_slice())?;
-            self.replay.accept(&envelope, Utc::now())?;
+            if self.accept_runtime_envelope(&envelope)? {
+                self.control.consume_cancel_ack(&envelope)?;
+                continue;
+            }
             if envelope.correlation_id != correlation {
-                if self.control.consume_cancel_ack(&envelope)? {
-                    continue;
-                }
                 return Err(BrokerError::InvalidEnvelope(
                     "runtime returned an unexpected correlation id".into(),
                 ));
@@ -289,12 +288,11 @@ impl RuntimeChild {
         loop {
             let envelope: ProtocolEnvelope =
                 read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
-            envelope.verify_auth(self.secret.as_slice())?;
-            self.replay.accept(&envelope, Utc::now())?;
+            if self.accept_runtime_envelope(&envelope)? {
+                self.control.consume_cancel_ack(&envelope)?;
+                continue;
+            }
             if envelope.correlation_id != correlation {
-                if self.control.consume_cancel_ack(&envelope)? {
-                    continue;
-                }
                 return Err(BrokerError::InvalidEnvelope(
                     "runtime returned an unexpected correlation id".into(),
                 ));
@@ -310,6 +308,28 @@ impl RuntimeChild {
                 ));
             }
         }
+    }
+
+    /// Validate an inbound runtime frame and report whether it is the exact
+    /// response to a fire-and-forget cancellation. A cancellation receipt can
+    /// sit unread while no runtime request is active, so its transport deadline
+    /// may have elapsed before the next request drains the shared pipe. Only a
+    /// known cancellation response gets that deadline exception; authentication,
+    /// session binding, message replay, and per-correlation ordering still apply.
+    fn accept_runtime_envelope(&mut self, envelope: &ProtocolEnvelope) -> Result<bool> {
+        envelope.verify_auth(self.secret.as_slice())?;
+        let is_cancel_ack = self.control.is_pending_cancel_ack(envelope)?;
+        let now = Utc::now();
+        let validation_time = if is_cancel_ack {
+            chrono::DateTime::parse_from_rfc3339(&envelope.deadline)
+                .map(|deadline| deadline.with_timezone(&Utc))
+                .map(|deadline| if deadline < now { deadline } else { now })
+                .unwrap_or(now)
+        } else {
+            now
+        };
+        self.replay.accept(envelope, validation_time)?;
+        Ok(is_cancel_ack)
     }
 
     fn send(
@@ -338,7 +358,7 @@ impl RuntimeControl {
         Ok(())
     }
 
-    fn consume_cancel_ack(&self, envelope: &ProtocolEnvelope) -> Result<bool> {
+    fn is_pending_cancel_ack(&self, envelope: &ProtocolEnvelope) -> Result<bool> {
         if envelope.message_type != MessageType::Response {
             return Ok(false);
         }
@@ -346,7 +366,21 @@ impl RuntimeControl {
             .pending_cancel_acks
             .lock()
             .map_err(|_| BrokerError::InvalidConfig("runtime cancellation lock failed".into()))?
-            .remove(&envelope.correlation_id))
+            .contains(&envelope.correlation_id))
+    }
+
+    fn consume_cancel_ack(&self, envelope: &ProtocolEnvelope) -> Result<()> {
+        let removed = self
+            .pending_cancel_acks
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime cancellation lock failed".into()))?
+            .remove(&envelope.correlation_id);
+        if !removed {
+            return Err(BrokerError::InvalidEnvelope(
+                "runtime returned an unknown cancellation response".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn send(
