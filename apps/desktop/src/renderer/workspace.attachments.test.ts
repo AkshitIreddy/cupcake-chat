@@ -109,6 +109,31 @@ describe('workspace attachment and reference contracts', () => {
     ).toBe(false);
   });
 
+  it('does not mistake a recent identical prior turn for the current send', () => {
+    const history = [
+      {
+        id: 'user-prior',
+        role: 'user' as const,
+        content: 'Explain the supply line.',
+        state: 'complete',
+      },
+      {
+        id: 'assistant-prior',
+        role: 'assistant' as const,
+        content: 'A previous answer',
+        state: 'complete',
+        parent_message_id: 'user-prior',
+        created_at: '2026-09-16T05:00:20.999Z',
+      },
+    ];
+
+    expect(
+      sendWasCommitted(history, 'Explain the supply line.', {
+        notBefore: Date.parse('2026-09-16T05:00:21.000Z'),
+      }),
+    ).toBe(false);
+  });
+
   it('preserves the authoritative project identity for conversations', () => {
     const projects = [
       { id: 'project-a', name: 'Alpha', description: '', archived: false },

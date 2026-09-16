@@ -16,17 +16,21 @@ try {
     throw new Error('The Windows installer must be built on Windows.');
   if (!publishOnly) {
     const pnpm = pnpmCommand();
-    run(pnpm.command, [
-      ...pnpm.prefix,
-      '--filter',
-      '@cupcakeagi/desktop',
-      'exec',
-      'tauri',
-      'build',
-      '--bundles',
-      'nsis',
-      ...buildArgs,
-    ]);
+    run(
+      pnpm.command,
+      [
+        ...pnpm.prefix,
+        '--filter',
+        '@cupcakeagi/desktop',
+        'exec',
+        'tauri',
+        'build',
+        '--bundles',
+        'nsis',
+        ...buildArgs,
+      ],
+      { env: { CI: 'true' } },
+    );
   }
   const config = await readJson(join(repoRoot, 'apps/desktop/src-tauri/tauri.conf.json'));
   const targetIndex = buildArgs.indexOf('--target');

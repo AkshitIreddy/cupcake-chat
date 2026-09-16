@@ -1546,7 +1546,7 @@ export function sendWasCommitted(
     if (options.assistantMessageId) return message.id === options.assistantMessageId;
     if (options.notBefore === undefined || !message.created_at) return false;
     const createdAt = Date.parse(message.created_at);
-    return Number.isFinite(createdAt) && createdAt >= options.notBefore - 5_000;
+    return Number.isFinite(createdAt) && createdAt >= options.notBefore;
   });
   if (!response) return false;
   const parent = history.find((message) => message.id === response.parent_message_id);
