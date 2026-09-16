@@ -254,7 +254,7 @@ class RuntimeService:
             self.database,
             self.repository,
             self.objects,
-            product_version="1.8.3",
+            product_version="1.8.5",
         )
         self.ingestion = IngestionService(broad_adapter=DoclingAdapter())
         # These services add their own versioned tables to the authoritative
@@ -813,6 +813,16 @@ class RuntimeService:
             return {"attempted": True, "loaded": loaded, "errorType": None}
         except Exception as exc:
             return {"attempted": True, "loaded": False, "errorType": type(exc).__name__}
+
+    async def _preload_selected_local_model(self, selected: str) -> None:
+        outcome = await asyncio.to_thread(self._ensure_selected_local_model_loaded, selected)
+        if outcome["attempted"] and not outcome["loaded"]:
+            raise RuntimeCommandError(
+                "LOCAL_MODEL_LOAD_FAILED",
+                "Cupcake Local could not start this model. Check that its runtime is active and "
+                "try loading it again.",
+                retryable=True,
+            )
 
     def _models_list(self, params: Mapping[str, Any]) -> Any:
         selected = self.repository.get_setting("models.default")
@@ -3624,6 +3634,8 @@ class RuntimeService:
         event: dict[str, Any] | None = None
         prepared: PreparedChat | None = None
         background: tuple[Any, dict[str, Any]] | None = None
+        selected_model: str | None = None
+        expected_head_id: str | None = None
         with self._state_lock:
             conversation_id = _optional_string(params, "conversationId")
             branch_id = _optional_string(params, "branchId")
@@ -3663,27 +3675,7 @@ class RuntimeService:
                 value, event = background
             else:
                 selected_model = _selected_model(self.repository, params)
-                self._enforce_model_policy(selected_model, params, content=content)
-                resolved_context = self._resolve_explicit_chat_context(conversation_id, params)
-                user = self.repository.append_message(
-                    branch_id,
-                    role=MessageRole.USER,
-                    content=content,
-                    expected_head_id=branch.head_message_id,
-                    canonical_metadata={
-                        "attachments": list(resolved_context.attachments),
-                        "references": list(resolved_context.references),
-                    },
-                )
-                prepared = self._prepare_chat(
-                    conversation_id,
-                    branch_id,
-                    run_id=user.id,
-                    model_id=selected_model,
-                    fallback_model_id=_enabled_fallback(params),
-                    params=params,
-                    resolved_context=resolved_context,
-                )
+                expected_head_id = branch.head_message_id
         if memory_command is not None:
             for command_event in command_events:
                 await emit(command_event)
@@ -3692,6 +3684,31 @@ class RuntimeService:
             assert event is not None
             await emit(event)
             return value
+        assert selected_model is not None
+        await self._preload_selected_local_model(selected_model)
+        with self._state_lock:
+            branch = self._validated_branch(conversation_id, branch_id)
+            self._enforce_model_policy(selected_model, params, content=content)
+            resolved_context = self._resolve_explicit_chat_context(conversation_id, params)
+            user = self.repository.append_message(
+                branch_id,
+                role=MessageRole.USER,
+                content=content,
+                expected_head_id=expected_head_id,
+                canonical_metadata={
+                    "attachments": list(resolved_context.attachments),
+                    "references": list(resolved_context.references),
+                },
+            )
+            prepared = self._prepare_chat(
+                conversation_id,
+                branch_id,
+                run_id=user.id,
+                model_id=selected_model,
+                fallback_model_id=_enabled_fallback(params),
+                params=params,
+                resolved_context=resolved_context,
+            )
         assert prepared is not None
         return await self._execute_prepared_chat(prepared, emit, cancellation)
 
@@ -3808,6 +3825,9 @@ class RuntimeService:
     ) -> Any:
         content = _required_string(params, "content")
         with self._state_lock:
+            selected_model = _selected_model(self.repository, params)
+        await self._preload_selected_local_model(selected_model)
+        with self._state_lock:
             original = self.repository.get_message(_required_string(params, "messageId"))
             if original.role is not MessageRole.USER:
                 raise RuntimeCommandError("INVALID_EDIT", "Only user messages can be edited")
@@ -3818,7 +3838,6 @@ class RuntimeService:
                 raise RuntimeCommandError(
                     "CONVERSATION_BOUNDARY", "Edited message belongs to another conversation"
                 )
-            selected_model = _selected_model(self.repository, params)
             self._enforce_model_policy(selected_model, params, content=content)
             branch = self.repository.fork_branch(
                 conversation_id,
@@ -3856,6 +3875,9 @@ class RuntimeService:
         cancellation: threading.Event,
     ) -> Any:
         with self._state_lock:
+            selected_model = _selected_model(self.repository, params)
+        await self._preload_selected_local_model(selected_model)
+        with self._state_lock:
             original = self.repository.get_message(_required_string(params, "messageId"))
             if original.role is not MessageRole.ASSISTANT:
                 raise RuntimeCommandError(
@@ -3867,7 +3889,6 @@ class RuntimeService:
                 raise RuntimeCommandError(
                     "INVALID_REGENERATE", "Assistant message has no visible parent"
                 )
-            selected_model = _selected_model(self.repository, params)
             self._enforce_model_policy(selected_model, params, content="")
             branch = self.repository.fork_branch(
                 conversation_id,
@@ -4547,7 +4568,6 @@ class RuntimeService:
     def _enforce_model_policy(
         self, model_id: str, params: Mapping[str, Any], *, content: str
     ) -> None:
-        self._ensure_selected_local_model_loaded(model_id)
         self._touch_local_model_idle_timer(model_id)
         descriptor = self.providers.catalog.select(model_id)
         if _requires_model_compatibility_confirmation(
@@ -6271,7 +6291,7 @@ def _create_production_task_runtime(
     return create_production_dbos_runtime(
         coordinator,
         system_database_path=system_database_path,
-        application_version="1.8.3",
+        application_version="1.8.5",
     )
 
 

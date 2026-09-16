@@ -282,7 +282,7 @@ dependencies = [
 
 [[package]]
 name = "cupcake-tool-broker"
-version = "1.8.3"
+version = "1.8.5"
 dependencies = [
  "aes-gcm",
  "argon2",

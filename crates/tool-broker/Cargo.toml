@@ -1,6 +1,6 @@
 [package]
 name = "cupcake-tool-broker"
-version = "1.8.3"
+version = "1.8.5"
 edition = "2021"
 license = "MIT"
 description = "Security boundary and native-tool broker for Cupcake Chat"

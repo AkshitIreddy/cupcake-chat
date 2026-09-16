@@ -294,6 +294,59 @@ def test_bootstrap_defers_an_explicitly_selected_cupcake_local_model(
     runtime.close()
 
 
+def test_streaming_chat_offloads_lazy_local_model_load_from_event_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    conversation, _ = runtime.handle("conversations.create", {"title": "Local chat"})
+    model_id = "openai-compatible:cupcake-local/qwen3-1-7b-q8-0"
+    event_loop_thread = threading.get_ident()
+    load_threads: list[int] = []
+
+    monkeypatch.setattr(
+        runtime,
+        "_ensure_selected_local_model_loaded",
+        lambda selected: (
+            load_threads.append(threading.get_ident())
+            or {"attempted": True, "loaded": True, "errorType": None}
+        ),
+    )
+    monkeypatch.setattr(runtime, "_enforce_model_policy", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_explicit_chat_context",
+        lambda *_args, **_kwargs: SimpleNamespace(attachments=(), references=()),
+    )
+    monkeypatch.setattr(runtime, "_prepare_chat", lambda *_args, **_kwargs: object())
+
+    async def execute(*_args: object, **_kwargs: object) -> dict[str, str]:
+        return {"modelId": model_id}
+
+    monkeypatch.setattr(runtime, "_execute_prepared_chat", execute)
+
+    async def send() -> Any:
+        async def emit(_event: dict[str, Any]) -> None:
+            return None
+
+        return await runtime.handle_stream(
+            "chat.send",
+            {
+                "conversationId": conversation["conversation"]["id"],
+                "branchId": conversation["branch"]["id"],
+                "content": "Explain why this maneuver worked.",
+                "modelId": model_id,
+            },
+            emit,
+        )
+
+    result = asyncio.run(send())
+
+    assert result == {"modelId": model_id}
+    assert len(load_threads) == 1
+    assert load_threads[0] != event_loop_thread
+    runtime.close()
+
+
 def test_packaged_local_runtime_install_is_deferred_until_local_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

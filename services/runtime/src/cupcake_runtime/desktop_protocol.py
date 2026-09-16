@@ -315,7 +315,7 @@ class DesktopRuntimeServer:
                         {
                             "product": "CUPCAKEAGI",
                             "protocolVersion": PROTOCOL_VERSION,
-                            "runtimeVersion": "1.8.3",
+                            "runtimeVersion": "1.8.5",
                             "pid": os.getpid(),
                         },
                     )
