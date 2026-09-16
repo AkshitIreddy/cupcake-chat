@@ -173,6 +173,7 @@ export interface CupcakeDesktopApi {
     };
   };
   window: {
+    startDragging(): Promise<void>;
     minimize(): Promise<void>;
     toggleMaximize(): Promise<boolean>;
     close(): Promise<void>;

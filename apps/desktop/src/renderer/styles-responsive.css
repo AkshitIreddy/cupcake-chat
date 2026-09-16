@@ -709,12 +709,6 @@
   .window-control {
     width: 40px;
   }
-  .cupcake-titlebar__center {
-    grid-template-columns: 0 minmax(96px, 1fr) 0;
-  }
-  .cupcake-titlebar__search kbd {
-    display: none;
-  }
   .composer-chip {
     display: none;
   }

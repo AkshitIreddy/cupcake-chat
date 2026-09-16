@@ -62,6 +62,7 @@ export function installTauriDesktopApi(): boolean {
       },
     },
     window: {
+      startDragging: () => invoke<void>('window_start_dragging'),
       minimize: () => invoke<void>('window_minimize'),
       toggleMaximize: () => invoke<boolean>('window_toggle_maximize'),
       close: () => invoke<void>('window_close'),

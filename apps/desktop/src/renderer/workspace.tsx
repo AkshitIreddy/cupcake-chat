@@ -73,7 +73,9 @@ export interface MessageRecord extends LiveChatMessage {
   citations?: Array<{ id: string; title: string; url?: string }>;
   reasoningSummary?: string;
   finishReason?: string;
-  responseState?: 'cancelled';
+  responseState?: 'cancelled' | 'error';
+  errorCode?: string;
+  errorMessage?: string;
   groupTurnId?: string;
   groupSequence?: number;
   speaker?: GroupSpeakerSnapshot;
@@ -1031,7 +1033,10 @@ function runtimeFailureEvent(type: string): boolean {
 function runtimeFailureMessage(payload: Record<string, unknown>): string {
   const error = recordValue(payload.error);
   return textValue(
-    payload.message ?? error?.message ?? error?.detail,
+    payload.errorMessage ??
+      (typeof payload.message === 'string' ? payload.message : undefined) ??
+      error?.message ??
+      error?.detail,
     'The runtime could not complete the response.',
   );
 }
@@ -1148,11 +1153,32 @@ export function applyRuntimeMessageEvent(
     });
   }
   if (runtimeFailureEvent(event.type) && messageKey) {
-    return upsertAssistantMessage(messages, messageKey, (message) => ({
-      ...message,
-      content: message.content || runtimeFailureMessage(payload),
-      streaming: false,
-    }));
+    return upsertAssistantMessage(messages, messageKey, (message) => {
+      const persisted = recordValue(payload.message);
+      const metadata = recordValue(persisted?.canonical_metadata ?? persisted?.canonicalMetadata);
+      const partial = textValue(
+        payload.partialContent ?? payload.partial_content ?? persisted?.content,
+        message.content,
+      );
+      const errorCode =
+        textValue(
+          payload.errorCode ?? payload.error_code ?? metadata?.errorCode ?? metadata?.error_code,
+        ) || undefined;
+      return withGroupMessageProvenance(
+        withFinalMessageProvenance(
+          {
+            ...message,
+            content: partial,
+            streaming: false,
+            responseState: 'error',
+            errorCode,
+            errorMessage: runtimeFailureMessage(payload),
+          },
+          payload,
+        ),
+        payload,
+      );
+    });
   }
   return messages;
 }
@@ -1283,6 +1309,18 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
       : typeof metadata.finish_reason === 'string'
         ? metadata.finish_reason
         : undefined;
+  const errorCode =
+    typeof metadata.errorCode === 'string'
+      ? metadata.errorCode
+      : typeof metadata.error_code === 'string'
+        ? metadata.error_code
+        : undefined;
+  const errorMessage =
+    typeof metadata.errorMessage === 'string'
+      ? metadata.errorMessage
+      : typeof metadata.error_message === 'string'
+        ? metadata.error_message
+        : undefined;
   const continuity = recordValue(metadata._providerContinuity);
   const modelFamily =
     continuity && typeof continuity.model_family === 'string'
@@ -1312,7 +1350,13 @@ export function mapRuntimeMessage(item: RuntimeMessage): MessageRecord {
     speaker,
     selectionReason,
     responseState:
-      item.role === 'assistant' && item.state === 'cancelled' ? 'cancelled' : undefined,
+      item.role === 'assistant' && item.state === 'cancelled'
+        ? 'cancelled'
+        : item.role === 'assistant' && item.state === 'error'
+          ? 'error'
+          : undefined,
+    errorCode,
+    errorMessage,
   };
 }
 
@@ -1485,6 +1529,27 @@ export function cancelledSendWasCommitted(
   });
   if (!cancelled) return false;
   const parent = history.find((message) => message.id === cancelled.parent_message_id);
+  return parent?.role === 'user' && parent.state === 'complete' && parent.content === content;
+}
+
+export function sendWasCommitted(
+  history: RuntimeMessage[],
+  content: string,
+  options: { assistantMessageId?: string; notBefore?: number } = {},
+): boolean {
+  const response = [...history].reverse().find((message) => {
+    if (
+      message.role !== 'assistant' ||
+      !['complete', 'cancelled', 'error'].includes(message.state ?? '')
+    )
+      return false;
+    if (options.assistantMessageId) return message.id === options.assistantMessageId;
+    if (options.notBefore === undefined || !message.created_at) return false;
+    const createdAt = Date.parse(message.created_at);
+    return Number.isFinite(createdAt) && createdAt >= options.notBefore - 5_000;
+  });
+  if (!response) return false;
+  const parent = history.find((message) => message.id === response.parent_message_id);
   return parent?.role === 'user' && parent.state === 'complete' && parent.content === content;
 }
 
@@ -2437,7 +2502,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const groupRunConversationRef = useRef(new Map<string, string>());
   const projectsRef = useRef(projects);
   const personasRef = useRef(personas);
-  const cancelledChatRef = useRef<{
+  const settledChatRef = useRef<{
     runId?: string;
     messageId: string;
     branchId: string;
@@ -2918,12 +2983,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         (runId ? groupRunConversationRef.current.get(runId) : undefined);
       const visibleConversation =
         !eventConversationId || eventConversationId === activeConversationIdRef.current;
-      if (event.type === 'message.cancelled') {
+      if (
+        event.type === 'message.completed' ||
+        event.type === 'message.cancelled' ||
+        event.type === 'message.failed'
+      ) {
         const persisted = recordValue(payload.message);
         const messageId = textValue(persisted?.id);
         const branchId = textValue(persisted?.branch_id ?? persisted?.branchId);
         if (messageId && branchId) {
-          cancelledChatRef.current = {
+          settledChatRef.current = {
             runId,
             messageId,
             branchId,
@@ -4023,8 +4092,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return true;
       } catch (reason) {
         const cancelled = reason instanceof RuntimeRequestFailure && reason.code === 'CANCELLED';
-        if (cancelled && shouldOptimisticallyAppendUser(input.mode)) {
-          const observedReceipt = cancelledChatRef.current;
+        if (shouldOptimisticallyAppendUser(input.mode)) {
+          const observedReceipt = settledChatRef.current;
           const receipt =
             observedReceipt && observedReceipt.recordedAt >= requestStartedAt
               ? observedReceipt
@@ -4035,8 +4104,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             try {
               const history = await request<RuntimeMessage[]>('chat.history', { branchId });
               if (
-                cancelledSendWasCommitted(history, input.content, {
-                  cancelledMessageId: receipt?.messageId,
+                sendWasCommitted(history, input.content, {
+                  assistantMessageId: receipt?.messageId,
                   notBefore: requestStartedAt,
                 })
               ) {

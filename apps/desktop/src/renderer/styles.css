@@ -296,49 +296,7 @@ kbd {
   height: 16px;
 }
 .cupcake-titlebar__center {
-  display: grid;
-  grid-template-columns: minmax(12px, 1fr) minmax(180px, 440px) minmax(12px, 1fr);
   min-width: 0;
-  align-items: center;
-}
-.cupcake-titlebar__drag {
-  display: block;
-  height: 100%;
-  min-width: 24px;
-  cursor: default;
-}
-.cupcake-titlebar__search {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  height: 22px;
-  min-width: 0;
-  padding: 0 9px;
-  border: 1px solid color-mix(in srgb, var(--line), var(--cocoa) 8%);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--paper), transparent 18%);
-  color: var(--muted);
-  text-align: left;
-  box-shadow: none;
-}
-.cupcake-titlebar__search:hover,
-.cupcake-titlebar__search:focus-visible {
-  border-color: color-mix(in srgb, var(--berry), var(--line) 42%);
-  background: var(--paper);
-  color: var(--cocoa);
-}
-.cupcake-titlebar__search span {
-  overflow: hidden;
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cupcake-titlebar__search kbd {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 8px;
 }
 .cupcake-titlebar__controls {
   display: grid;

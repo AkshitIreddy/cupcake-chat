@@ -19,6 +19,7 @@ import {
 } from './data';
 import { Icon, type IconName } from './icons';
 import { ConversationScrollController } from './conversation-scroll';
+import { classifyProviderError } from './provider-errors';
 import { FormDialog } from './FormDialog';
 import { RichMarkdown } from './RichMarkdown';
 import { ContentProtectionSettings } from './ContentProtectionSettings';
@@ -404,7 +405,7 @@ function useModalFocusTrap(
   }, [active, containerRef, onEscape]);
 }
 
-function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
+function CupcakeTitlebar() {
   const [maximized, setMaximized] = useState(false);
   const refreshMaximized = useCallback(async () => {
     setMaximized((await window.cupcake?.window?.isMaximized?.()) ?? false);
@@ -420,32 +421,17 @@ function CupcakeTitlebar({ onSearch }: { onSearch: () => void }) {
     setMaximized(next ?? !maximized);
   };
   return (
-    <header className="cupcake-titlebar" aria-label="Application window controls">
-      <div className="cupcake-titlebar__identity" data-tauri-drag-region aria-hidden="true" />
-      <div className="cupcake-titlebar__center">
-        <span
-          className="cupcake-titlebar__drag"
-          data-tauri-drag-region
-          onDoubleClick={() => void toggleMaximize()}
-          aria-hidden="true"
-        />
-        <button
-          className="cupcake-titlebar__search"
-          aria-label="Search Cupcake Chat"
-          type="button"
-          onClick={onSearch}
-          data-tooltip="Search your workspace (Ctrl+F)"
-        >
-          <Icon name="search" size={13} />
-          <span>Find a chat, a file, an idea…</span>
-        </button>
-        <span
-          className="cupcake-titlebar__drag"
-          data-tauri-drag-region
-          onDoubleClick={() => void toggleMaximize()}
-          aria-hidden="true"
-        />
-      </div>
+    <header
+      className="cupcake-titlebar"
+      aria-label="Application window controls"
+      onMouseDown={(event) => {
+        if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+        if (event.detail === 2) void toggleMaximize();
+        else void window.cupcake?.window?.startDragging?.();
+      }}
+    >
+      <div className="cupcake-titlebar__identity" aria-hidden="true" />
+      <div className="cupcake-titlebar__center" aria-hidden="true" />
       <div className="cupcake-titlebar__controls">
         <button
           type="button"
@@ -2368,9 +2354,21 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
   const hasDisplayContent = (message: MessageRecord) =>
     message.role !== 'assistant' ||
     Boolean(message.content.trim() || message.reasoningSummary?.trim()) ||
-    (!message.streaming &&
-      (message.responseState === 'cancelled' || message.finishReason === 'length'));
+    (!message.streaming && (Boolean(message.responseState) || message.finishReason === 'length'));
   const visible = workspace.messages.slice(start, windowEnd).filter(hasDisplayContent);
+  const latestUserIndex = workspace.messages.reduce(
+    (latest, message, index) => (message.role === 'user' ? index : latest),
+    -1,
+  );
+  const waitingForAnswer =
+    latestUserIndex >= 0 &&
+    windowEnd === workspace.messages.length &&
+    workspace.busy &&
+    (workspace.activeRunConversationId === workspace.activeConversationId ||
+      /^(group-)?user-/.test(workspace.messages[latestUserIndex]?.id ?? '')) &&
+    !workspace.messages
+      .slice(latestUserIndex + 1)
+      .some((message) => message.role === 'assistant' && hasDisplayContent(message));
   const outlineStep = Math.max(1, Math.ceil(workspace.messages.length / 60));
   const outline = workspace.messages.filter(
     (message, index) =>
@@ -2430,7 +2428,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
         ? 'Continue from the previous response.'
         : mode === 'edit'
           ? (editedContent?.trim() ?? '')
-          : message.content;
+          : message.content || 'Regenerate response.';
     if (!content) return false;
     const hasPersistedRoute = Boolean(message.modelId || message.providerId);
     const actionModel =
@@ -2651,9 +2649,7 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                     </p>
                   </div>
                 )}
-                {(message.content || message.responseState !== 'cancelled') && (
-                  <ChatResponse message={message} />
-                )}
+                {message.content && <ChatResponse message={message} />}
                 {message.responseState === 'cancelled' && !message.streaming && (
                   <div className="response-limit-notice response-stopped-notice" role="status">
                     <Icon name="pause" size={17} />
@@ -2665,6 +2661,31 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
                           : 'Your message was saved, but the response stopped before answer text was produced.'}
                       </p>
                     </div>
+                  </div>
+                )}
+                {message.responseState === 'error' && !message.streaming && (
+                  <div className="response-limit-notice" role="status">
+                    <Icon name="info" size={17} />
+                    <div>
+                      <strong>
+                        {message.content ? 'Response interrupted' : 'No response yet'}
+                      </strong>
+                      <p>
+                        {message.errorMessage ||
+                          'The provider could not finish this response. Your message is saved.'}
+                      </p>
+                    </div>
+                    {!message.groupTurnId && (
+                      <button
+                        className="button button--primary"
+                        disabled={workspace.busy}
+                        onClick={() =>
+                          void runAction(message, message.content ? 'continue' : 'retry')
+                        }
+                      >
+                        {message.content ? 'Continue response' : 'Try again'}
+                      </button>
+                    )}
                   </div>
                 )}
                 {message.finishReason === 'length' &&
@@ -2777,6 +2798,13 @@ function LiveConversation({ selectedModel }: { selectedModel: ModelDescriptor | 
           </div>
         </article>
       ))}
+      {waitingForAnswer && (
+        <div className="chat-thinking" role="status" aria-label="Cupcake is thinking">
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </div>
+      )}
       {workspace.toolActivity.slice(0, 12).map((activity) => (
         <RuntimeToolActivityCard activity={activity} key={activity.id} />
       ))}
@@ -10474,35 +10502,6 @@ function diagnosticError(value: ProviderHostResult | undefined): ProviderSheetEr
   return { ...classified, code: code ?? classified.code };
 }
 
-function classifyProviderError(reason: unknown): ProviderSheetError {
-  const message =
-    reason instanceof Error
-      ? reason.message
-      : typeof reason === 'string'
-        ? reason
-        : 'Unknown provider error';
-  const code = /^([A-Z][A-Z0-9_-]{2,}):\s*/.exec(message)?.[1];
-  if (/401|403|auth|credential|key/i.test(message))
-    return {
-      title: 'The credential was rejected',
-      detail: message,
-      code: code ?? 'AUTHENTICATION_FAILED',
-    };
-  if (/429|rate|quota/i.test(message))
-    return {
-      title: 'The provider is rate-limiting this test',
-      detail: message,
-      code: code ?? 'RATE_LIMITED',
-    };
-  if (/offline|network|dns|timeout|fetch/i.test(message))
-    return {
-      title: 'Cupcake could not reach the provider',
-      detail: message,
-      code: code ?? 'PROVIDER_OFFLINE',
-    };
-  return { title: 'The connection test did not complete', detail: message, code };
-}
-
 function ProviderDialog({ provider, close }: { provider: string | null; close: () => void }) {
   const workspace = useWorkspace();
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -10548,7 +10547,7 @@ function ProviderDialog({ provider, close }: { provider: string | null; close: (
 
   const input = (): ProviderSetupInput => ({
     provider: selected!.id,
-    apiKey,
+    apiKey: apiKey.trim(),
     endpoint: endpoint.trim() || undefined,
     accountId: accountId.trim() || undefined,
     organization: organization.trim() || undefined,
@@ -11707,7 +11706,7 @@ function LegacyFixtureApp() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <CupcakeTitlebar onSearch={() => navigate('search')} />
+      <CupcakeTitlebar />
       <Shelf
         view={view}
         setView={navigate}
@@ -13185,7 +13184,7 @@ function LiveApp() {
           )
         }
       />
-      <CupcakeTitlebar onSearch={() => navigate('search')} />
+      <CupcakeTitlebar />
       <Shelf
         view={view}
         setView={navigate}
@@ -13392,7 +13391,7 @@ function WorkspaceUnlockGate({
   };
   return (
     <div className="app-shell app-shell--locked">
-      <CupcakeTitlebar onSearch={() => undefined} />
+      <CupcakeTitlebar />
       <main className="workspace-unlock">
         <Dreamscape scene={dreamscape} />
         <section className="workspace-unlock__card">
@@ -13532,7 +13531,7 @@ export function App() {
   if (lockStatus === null || lockStatus.state === 'needs_setup') {
     return (
       <div className="app-shell app-shell--locked">
-        <CupcakeTitlebar onSearch={() => undefined} />
+        <CupcakeTitlebar />
         <WorkspaceOpening />
       </div>
     );

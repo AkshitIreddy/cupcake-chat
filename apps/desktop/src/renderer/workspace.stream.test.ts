@@ -113,7 +113,13 @@ describe('workspace runtime message stream', () => {
 
   it('settles cancelled and failed assistant rows without adding duplicate status messages', () => {
     const streaming: MessageRecord[] = [
-      { id: 'run-3', role: 'assistant', content: 'Partial', streaming: true },
+      {
+        id: 'run-3',
+        renderKey: 'run-3',
+        role: 'assistant',
+        content: 'Partial',
+        streaming: true,
+      },
     ];
     const cancelled = applyRuntimeMessageEvent(
       streaming,
@@ -126,7 +132,19 @@ describe('workspace runtime message stream', () => {
     );
     const failed = applyRuntimeMessageEvent(
       streaming,
-      event('run.failed', { runId: 'run-3', error: { message: 'Provider unavailable' } }),
+      event('message.failed', {
+        runId: 'run-3',
+        partialContent: 'Partial from the provider',
+        errorCode: 'provider_unavailable',
+        errorMessage: 'Google is temporarily unavailable. Try again shortly.',
+        error: { message: 'Provider unavailable' },
+        message: {
+          id: 'message-3',
+          branch_id: 'branch-3',
+          model_id: 'model-3',
+          provider_id: 'provider-3',
+        },
+      }),
       'run-3',
     );
 
@@ -141,7 +159,16 @@ describe('workspace runtime message stream', () => {
       }),
     ]);
     expect(failed).toEqual([
-      expect.objectContaining({ id: 'run-3', content: 'Partial', streaming: false }),
+      expect.objectContaining({
+        id: 'message-3',
+        renderKey: 'run-3',
+        branchId: 'branch-3',
+        content: 'Partial from the provider',
+        responseState: 'error',
+        errorCode: 'provider_unavailable',
+        errorMessage: 'Google is temporarily unavailable. Try again shortly.',
+        streaming: false,
+      }),
     ]);
   });
 });

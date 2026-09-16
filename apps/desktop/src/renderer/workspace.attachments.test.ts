@@ -4,6 +4,7 @@ import {
   mapConversation,
   mapRuntimeMessage,
   scopedReferenceOptions,
+  sendWasCommitted,
   shouldOptimisticallyAppendUser,
   structuredAttachments,
   structuredReferences,
@@ -55,6 +56,57 @@ describe('workspace attachment and reference contracts', () => {
         state: 'cancelled',
       }),
     ).toMatchObject({ content: '', responseState: 'cancelled' });
+  });
+
+  it('rehydrates a partial failed assistant turn with its recoverable error state', () => {
+    expect(
+      mapRuntimeMessage({
+        id: 'assistant-failed',
+        role: 'assistant',
+        content: 'A useful partial answer',
+        state: 'error',
+        canonical_metadata: {
+          finishReason: 'error',
+          errorCode: 'provider_unavailable',
+        },
+      }),
+    ).toMatchObject({
+      content: 'A useful partial answer',
+      responseState: 'error',
+      finishReason: 'error',
+      errorCode: 'provider_unavailable',
+    });
+  });
+
+  it('recognizes a persisted failed response as a committed send', () => {
+    const history = [
+      {
+        id: 'user-current',
+        role: 'user' as const,
+        content: 'Explain the supply line.',
+        state: 'complete',
+        created_at: '2026-09-16T05:00:20.000Z',
+      },
+      {
+        id: 'assistant-failed',
+        role: 'assistant' as const,
+        content: 'The first concern was food',
+        state: 'error',
+        parent_message_id: 'user-current',
+        created_at: '2026-09-16T05:00:21.000Z',
+      },
+    ];
+
+    expect(
+      sendWasCommitted(history, 'Explain the supply line.', {
+        assistantMessageId: 'assistant-failed',
+      }),
+    ).toBe(true);
+    expect(
+      sendWasCommitted(history, 'A different draft.', {
+        assistantMessageId: 'assistant-failed',
+      }),
+    ).toBe(false);
   });
 
   it('preserves the authoritative project identity for conversations', () => {
