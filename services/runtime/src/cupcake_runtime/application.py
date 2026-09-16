@@ -4473,6 +4473,7 @@ class RuntimeService:
         pieces: list[str] = []
         usage_records: list[dict[str, Any]] = []
         pending_tools: dict[str, dict[str, Any]] = {}
+        safe_failure_message: str | None = None
         continuity: ProviderContinuity | None = None
         finish_reason = "stop"
         current_task = asyncio.current_task()
@@ -4605,9 +4606,10 @@ class RuntimeService:
                 elif item.type is StreamEventType.ERROR:
                     if item.error_code == "cancelled":
                         raise asyncio.CancelledError
+                    safe_failure_message = item.text or "The provider request failed."
                     raise RuntimeCommandError(
                         item.error_code or "PROVIDER_ERROR",
-                        item.text or "The provider request failed",
+                        safe_failure_message,
                         retryable=bool(item.retryable),
                     )
                 elif item.type is StreamEventType.FINISH:
@@ -4678,6 +4680,8 @@ class RuntimeService:
                     "".join(pieces),
                     emit,
                     error_code=exc.code,
+                    error_message=safe_failure_message or "The provider request failed.",
+                    retryable=exc.retryable,
                     usage=tuple(usage_records),
                 )
             raise
@@ -4779,6 +4783,8 @@ class RuntimeService:
         emit: EventEmitter,
         *,
         error_code: str,
+        error_message: str,
+        retryable: bool,
         usage: tuple[dict[str, Any], ...],
     ) -> None:
         with self._state_lock:
@@ -4795,6 +4801,8 @@ class RuntimeService:
                 canonical_metadata={
                     "finishReason": "error",
                     "errorCode": error_code,
+                    "errorMessage": error_message,
+                    "retryable": retryable,
                     "usage": list(usage),
                     **prepared.canonical_metadata,
                 },
@@ -4807,6 +4815,8 @@ class RuntimeService:
                     "message": _public_message(failed),
                     "partialContent": content,
                     "errorCode": error_code,
+                    "errorMessage": error_message,
+                    "retryable": retryable,
                     **prepared.event_context,
                 },
             )

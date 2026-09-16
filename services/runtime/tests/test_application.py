@@ -1681,6 +1681,65 @@ class _SlowAgentEngine:
         await asyncio.sleep(60)
 
 
+class _PartialFailureAgentEngine:
+    async def stream(self, request: Any, **_kwargs: Any):
+        run_id = str(request.metadata["run_id"])
+        yield NormalizedStreamEvent(StreamEventType.START, 1, run_id)
+        yield NormalizedStreamEvent(StreamEventType.TEXT_DELTA, 2, run_id, text="partial")
+        yield NormalizedStreamEvent(
+            StreamEventType.ERROR,
+            3,
+            run_id,
+            text="The provider is temporarily unavailable.",
+            error_code="provider_unavailable",
+            retryable=True,
+        )
+
+
+def test_partial_chat_failure_persists_safe_recovery_metadata(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    runtime.agent_engine = _PartialFailureAgentEngine()  # type: ignore[assignment]
+    events: list[dict[str, Any]] = []
+    created, _ = runtime.handle("conversations.create", {"title": "Interrupted answer"})
+    branch_id = created["branch"]["id"]
+
+    async def scenario() -> None:
+        async def emit(event: dict[str, Any]) -> None:
+            events.append(event)
+
+        with pytest.raises(RuntimeCommandError) as failure:
+            await runtime.handle_stream(
+                "chat.send",
+                {
+                    "conversationId": created["conversation"]["id"],
+                    "branchId": branch_id,
+                    "content": "Keep the partial answer",
+                    "modelId": "mock:cupcake-deterministic",
+                },
+                emit,
+                cancellation=threading.Event(),
+            )
+        assert failure.value.code == "provider_unavailable"
+        assert failure.value.retryable is True
+
+    asyncio.run(scenario())
+    failed = next(event for event in events if event["type"] == "message.failed")
+    assert failed["payload"]["partialContent"] == "partial"
+    assert failed["payload"]["errorCode"] == "provider_unavailable"
+    assert failed["payload"]["errorMessage"] == "The provider is temporarily unavailable."
+    assert failed["payload"]["retryable"] is True
+
+    history, _ = runtime.handle("chat.history", {"branchId": branch_id})
+    assistant = history[-1]
+    assert assistant["state"] == "error"
+    assert assistant["content"] == "partial"
+    assert assistant["canonical_metadata"]["errorMessage"] == (
+        "The provider is temporarily unavailable."
+    )
+    assert assistant["canonical_metadata"]["retryable"] is True
+    runtime.close()
+
+
 def test_chat_continue_forwards_deltas_before_provider_completion(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     created, _ = runtime.handle("conversations.create", {"title": "Streaming continue"})

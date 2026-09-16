@@ -202,12 +202,24 @@ def build_pydantic_model(
         raise MissingProviderDependency("google", "pydantic-ai-slim[google]") from exc
     if not api_key:
         raise ValueError("Google provider requires an API key")
+    retry_options = (
+        HttpRetryOptions(attempts=1)
+        if disable_retries
+        else HttpRetryOptions(
+            attempts=3,
+            initial_delay=0.25,
+            max_delay=2.0,
+            exp_base=2.0,
+            jitter=0.25,
+            http_status_codes=[408, 429, 500, 502, 503, 504],
+        )
+    )
     return GoogleModel(
         model_name,
         provider=GoogleProvider(
             api_key=api_key,
             base_url=base_url,
-            retry_options=HttpRetryOptions(attempts=1) if disable_retries else None,
+            retry_options=retry_options,
         ),
     )
 

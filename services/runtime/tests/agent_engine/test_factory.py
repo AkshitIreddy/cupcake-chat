@@ -177,6 +177,77 @@ def test_group_google_mistral_and_cohere_clients_pin_one_attempt() -> None:
     assert cohere_client._client_wrapper._max_retries == 0
 
 
+def test_google_chat_uses_bounded_transient_retries() -> None:
+    model = gemini.build_pydantic_model(
+        "gemini-recorded",
+        api_key="recorded-test-key",
+        base_url="https://example.invalid",
+    )
+    client = cast(Any, model).provider.client
+    retry_options = client._api_client._http_options.retry_options
+
+    assert retry_options.attempts == 3
+    assert retry_options.initial_delay == 0.25
+    assert retry_options.max_delay == 2.0
+    assert retry_options.http_status_codes == [408, 429, 500, 502, 503, 504]
+
+
+@pytest.mark.asyncio
+async def test_google_chat_retries_a_transient_failure_before_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    async def capture(_request: Request) -> Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return Response(
+                503,
+                json={"error": {"code": 503, "message": "temporary", "status": "UNAVAILABLE"}},
+            )
+        return Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"role": "model", "parts": [{"text": "Recovered."}]},
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
+                "modelVersion": "gemini-recorded",
+            },
+        )
+
+    async with AsyncClient(transport=MockTransport(capture)) as http_client:
+
+        def captured_provider(**kwargs: Any) -> GoogleProvider:
+            configured = kwargs["retry_options"]
+            assert configured.attempts == 3
+            assert 503 in configured.http_status_codes
+            kwargs["http_client"] = http_client
+            kwargs["retry_options"] = HttpRetryOptions(
+                attempts=configured.attempts,
+                initial_delay=0.001,
+                max_delay=0.001,
+                jitter=0.001,
+                http_status_codes=configured.http_status_codes,
+            )
+            return GoogleProvider(**kwargs)
+
+        monkeypatch.setattr("pydantic_ai.providers.google.GoogleProvider", captured_provider)
+        model = gemini.build_pydantic_model(
+            "gemini-recorded",
+            api_key="recorded-test-key",
+            base_url="https://example.invalid",
+        )
+        result = await Agent(model).run("Answer once.")
+
+    assert result.output == "Recovered."
+    assert attempts == 2
+
+
 def test_generic_openai_compatible_requires_an_explicit_endpoint() -> None:
     descriptor = ModelDescriptor(
         id="openai-compatible:local",

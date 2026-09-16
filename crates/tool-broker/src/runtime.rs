@@ -8,7 +8,7 @@ use base64::prelude::*;
 use chrono::{SecondsFormat, Utc};
 use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -32,6 +32,7 @@ pub struct RuntimeControl {
     secret: Arc<Vec<u8>>,
     session_id: Uuid,
     sequences: Arc<Mutex<HashMap<Uuid, u64>>>,
+    pending_cancel_acks: Arc<Mutex<HashSet<Uuid>>>,
 }
 
 impl RuntimeChild {
@@ -142,6 +143,7 @@ impl RuntimeChild {
             secret: secret.clone(),
             session_id,
             sequences: Arc::new(Mutex::new(HashMap::new())),
+            pending_cancel_acks: Arc::new(Mutex::new(HashSet::new())),
         };
         let mut runtime = Self {
             child,
@@ -259,9 +261,7 @@ impl RuntimeChild {
             envelope.verify_auth(self.secret.as_slice())?;
             self.replay.accept(&envelope, Utc::now())?;
             if envelope.correlation_id != correlation {
-                if envelope.message_type == MessageType::Response {
-                    // A fire-and-forget cancellation acknowledgement may share
-                    // the pipe while another request is streaming.
+                if self.control.consume_cancel_ack(&envelope)? {
                     continue;
                 }
                 return Err(BrokerError::InvalidEnvelope(
@@ -292,6 +292,9 @@ impl RuntimeChild {
             envelope.verify_auth(self.secret.as_slice())?;
             self.replay.accept(&envelope, Utc::now())?;
             if envelope.correlation_id != correlation {
+                if self.control.consume_cancel_ack(&envelope)? {
+                    continue;
+                }
                 return Err(BrokerError::InvalidEnvelope(
                     "runtime returned an unexpected correlation id".into(),
                 ));
@@ -321,7 +324,29 @@ impl RuntimeChild {
 
 impl RuntimeControl {
     pub fn signal_cancel(&self, payload: Map<String, Value>) -> Result<()> {
-        self.send(MessageType::Cancel, uuid_v7(), payload)
+        let correlation = uuid_v7();
+        self.pending_cancel_acks
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime cancellation lock failed".into()))?
+            .insert(correlation);
+        if let Err(error) = self.send(MessageType::Cancel, correlation, payload) {
+            if let Ok(mut pending) = self.pending_cancel_acks.lock() {
+                pending.remove(&correlation);
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn consume_cancel_ack(&self, envelope: &ProtocolEnvelope) -> Result<bool> {
+        if envelope.message_type != MessageType::Response {
+            return Ok(false);
+        }
+        Ok(self
+            .pending_cancel_acks
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime cancellation lock failed".into()))?
+            .remove(&envelope.correlation_id))
     }
 
     fn send(

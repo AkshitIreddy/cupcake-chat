@@ -353,6 +353,47 @@ fn cancel_is_processed_while_runtime_request_is_still_active() {
     assert_eq!(terminal.message_type, MessageType::Response);
 }
 
+#[test]
+fn late_runtime_cancel_ack_does_not_poison_the_next_provider_request() {
+    let mut broker = BrokerProcess::launch();
+    let chat_correlation = uuid_v7();
+    broker.send(
+        chat_correlation,
+        MessageType::Request,
+        object(json!({"method":"chat.send","params":{"modelId":"mock:late-cancel-ack"}})),
+    );
+    assert_eq!(broker.read().message_type, MessageType::Event);
+
+    let cancel_correlation = uuid_v7();
+    broker.send(
+        cancel_correlation,
+        MessageType::Cancel,
+        object(json!({"targetId":"run-late-ack"})),
+    );
+    let cancelled = broker.read();
+    assert_eq!(cancelled.correlation_id, cancel_correlation);
+    assert_eq!(cancelled.payload["ok"], true);
+
+    let terminal = broker.read();
+    assert_eq!(terminal.correlation_id, chat_correlation);
+    assert_eq!(terminal.message_type, MessageType::Response);
+
+    let provider_correlation = uuid_v7();
+    broker.send(
+        provider_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"providers.test",
+            "params":{"provider":"cohere","secret":"fixture-provider-credential"}
+        })),
+    );
+    let provider = broker.read();
+    assert_eq!(provider.correlation_id, provider_correlation);
+    assert_eq!(provider.message_type, MessageType::Response);
+    assert_eq!(provider.payload["ok"], true);
+    assert_eq!(provider.payload["result"]["tested"], true);
+}
+
 fn object(value: Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap_or_default()
 }

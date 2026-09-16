@@ -41,6 +41,7 @@ fn run() -> Result<()> {
     let mut sequences: HashMap<Uuid, u64> = HashMap::new();
     let mut local_models_discovered = false;
     let mut configured_providers = std::collections::HashSet::new();
+    let mut deferred_cancel: Option<ProtocolEnvelope> = None;
 
     loop {
         let envelope: ProtocolEnvelope =
@@ -61,6 +62,16 @@ fn run() -> Result<()> {
                 object(json!({"product":"CUPCAKEAGI","protocolVersion":PROTOCOL_VERSION})),
             )?,
             MessageType::Request => {
+                if let Some(cancel) = deferred_cancel.take() {
+                    write(
+                        &mut output,
+                        &mut sequences,
+                        &secret,
+                        &cancel,
+                        MessageType::Response,
+                        object(json!({"ok":true,"result":{"cancelled":true}})),
+                    )?;
+                }
                 let method = envelope.payload.get("method").and_then(Value::as_str);
                 let model_id = envelope
                     .payload
@@ -82,6 +93,21 @@ fn run() -> Result<()> {
                         })),
                     )?;
                     thread::sleep(Duration::from_millis(1_500));
+                }
+                if method == Some("chat.send") && model_id == Some("mock:late-cancel-ack") {
+                    write(
+                        &mut output,
+                        &mut sequences,
+                        &secret,
+                        &envelope,
+                        MessageType::Event,
+                        object(json!({
+                            "type":"message.delta",
+                            "payload":{"text":"first"},
+                            "timestamp":Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+                        })),
+                    )?;
+                    thread::sleep(Duration::from_millis(150));
                 }
                 let result = match method {
                     Some("providers.configure") => {
@@ -144,6 +170,12 @@ fn run() -> Result<()> {
                     MessageType::Response,
                     object(json!({"ok":true,"result":result})),
                 )?;
+            }
+            MessageType::Cancel
+                if envelope.payload.get("targetId").and_then(Value::as_str)
+                    == Some("run-late-ack") =>
+            {
+                deferred_cancel = Some(envelope);
             }
             MessageType::Cancel => write(
                 &mut output,
