@@ -1028,6 +1028,7 @@ interface RestoredComposerDraft {
 
 function Composer({
   onSend,
+  newConversation = false,
   compact = false,
   onModel,
   selectedModel,
@@ -1038,6 +1039,7 @@ function Composer({
   onDraftRestored,
 }: {
   onSend: (input: ComposerSendInput) => Promise<boolean> | boolean;
+  newConversation?: boolean;
   compact?: boolean;
   onModel: () => void;
   selectedModel: ModelDescriptor | null;
@@ -1302,8 +1304,9 @@ function Composer({
     const conversationProjectId = activeConversation
       ? (activeConversation.projectId ?? null)
       : workspace.activeProjectId;
-    const context =
-      workspace.activeConversationId && workspace.activeBranchId
+    const context = newConversation
+      ? await workspace.createConversation(clean.slice(0, 64) || 'Attached context')
+      : workspace.activeConversationId && workspace.activeBranchId
         ? {
             conversationId: workspace.activeConversationId,
             branchId: workspace.activeBranchId,
@@ -13074,6 +13077,7 @@ function LiveApp() {
 
   const homeComposer = (
     <Composer
+      newConversation
       onSend={async (input) => {
         const submittedGeneration = composerRouteGeneration.current;
         let accepted = false;
