@@ -303,6 +303,29 @@ fn discovered_local_compatible_model_chats_without_a_cloud_credential() {
 }
 
 #[test]
+fn unloaded_cupcake_local_chat_forwards_to_runtime_for_lazy_load() {
+    // A downloaded but not yet loaded local model has no registered loopback
+    // route, so the fake runtime resolves Null. The broker must still forward
+    // chat.send so Python can start weights instead of reporting a missing
+    // cloud endpoint.
+    let mut broker = BrokerProcess::launch();
+    let correlation = uuid_v7();
+    broker.send(
+        correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"chat.send",
+            "params":{"modelId":"openai-compatible:cupcake-local/qwen3-1-7b-q8-0"}
+        })),
+    );
+    let response = broker.read();
+    assert_eq!(response.correlation_id, correlation);
+    assert_eq!(response.message_type, MessageType::Response);
+    assert_eq!(response.payload["ok"], true);
+    assert_eq!(response.payload["result"]["method"], "chat.send");
+}
+
+#[test]
 fn undiscovered_remote_compatible_model_still_requires_a_connected_endpoint() {
     let mut broker = BrokerProcess::launch();
     let correlation = uuid_v7();

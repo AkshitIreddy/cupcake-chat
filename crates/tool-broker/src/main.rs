@@ -1448,6 +1448,13 @@ fn configure_selected_provider(
             // weaken isolation and break local runtimes that need no user key.
             return Ok(());
         }
+        if model_id.starts_with("openai-compatible:cupcake-local/") {
+            // App-managed local models lazy-load in Python on chat.send and only
+            // register their loopback route once weights are running. Forward the
+            // request so a downloaded but not yet loaded model can start; Python
+            // validates installation and returns a typed load error when needed.
+            return Ok(());
+        }
         let (selected_endpoint, selected_model) = model_id
             .strip_prefix("openai-compatible:")
             .and_then(|value| value.split_once('/'))

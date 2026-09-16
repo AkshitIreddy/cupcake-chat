@@ -356,6 +356,21 @@ def test_local_chat_reloads_an_unloaded_registered_model(
     runtime.close()
 
 
+def test_local_preflight_reports_load_failure_with_typed_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    model_id = "openai-compatible:cupcake-local/qwen3-1-7b-q8-0"
+    monkeypatch.setattr(
+        runtime,
+        "_ensure_selected_local_model_loaded",
+        lambda _selected: {"attempted": True, "loaded": False, "errorType": "RuntimeError"},
+    )
+    with pytest.raises(RuntimeCommandError, match="could not start"):
+        runtime.handle("chat.preflight", {"modelId": model_id, "content": "hi"})
+    runtime.close()
+
+
 def test_streaming_chat_offloads_lazy_local_model_load_from_event_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

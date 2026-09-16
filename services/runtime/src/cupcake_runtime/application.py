@@ -3480,9 +3480,21 @@ class RuntimeService:
 
     def _chat_preflight(self, params: Mapping[str, Any]) -> Any:
         model_id = _required_string(params, "modelId")
-        self._ensure_selected_local_model_loaded(model_id)
+        outcome = self._ensure_selected_local_model_loaded(model_id)
+        if outcome["attempted"] and not outcome["loaded"]:
+            raise RuntimeCommandError(
+                "LOCAL_MODEL_LOAD_FAILED",
+                "Cupcake Local could not start this model. Check that its runtime is active and "
+                "try loading it again.",
+                retryable=True,
+            )
         self._touch_local_model_idle_timer(model_id)
-        descriptor = self.providers.catalog.select(model_id)
+        try:
+            descriptor = self.providers.catalog.select(model_id)
+        except KeyError as exc:
+            raise RuntimeCommandError(
+                "MODEL_NOT_FOUND", "This model is no longer available. Refresh the model list."
+            ) from exc
         content = str(params.get("content") or "")
         confirmation_params = self._confirmation_bound_params(params)
         outbound_intent = _outbound_intent(descriptor, confirmation_params, content)
