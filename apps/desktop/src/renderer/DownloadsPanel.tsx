@@ -462,6 +462,8 @@ export function DownloadsPanel({
         )}
       </aside>
     </div>,
-    document.body,
+    // Wallpaper palettes are scoped to the shell, not document.body. A direct
+    // shell child keeps viewport positioning and inherits every live theme token.
+    document.querySelector('.app-shell') ?? document.body,
   );
 }

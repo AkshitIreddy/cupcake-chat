@@ -17,7 +17,7 @@
   display: flex;
   justify-content: flex-end;
   padding: 10px;
-  background: color-mix(in srgb, #201918 38%, transparent);
+  background: color-mix(in srgb, var(--cocoa) 24%, transparent);
   backdrop-filter: blur(5px);
   animation: downloads-backdrop-in 160ms ease-out both;
 }
@@ -31,7 +31,7 @@
   border: 1px solid color-mix(in srgb, var(--line) 82%, var(--berry));
   border-radius: 23px;
   background: color-mix(in srgb, var(--paper) 96%, transparent);
-  box-shadow: -22px 24px 70px rgba(35, 26, 23, 0.22);
+  box-shadow: var(--wallpaper-shadow, var(--shadow));
   color: var(--cocoa);
   animation: downloads-panel-in 260ms var(--ease) both;
 }
@@ -50,13 +50,20 @@
 .downloads-panel .button--primary {
   border-color: var(--berry);
   background: var(--berry);
-  color: var(--on-accent, #fff);
+  color: var(--paper);
 }
 
 .downloads-panel .button--primary:hover:not(:disabled) {
   border-color: var(--berry-dark);
   background: var(--berry-dark);
-  color: var(--on-accent, #fff);
+  color: var(--paper);
+}
+
+.app-shell--wallpaper:not([data-wallpaper^='history-']):not(
+    [data-wallpaper='strawberry-cupcake-patisserie']
+  )
+  .downloads-layer {
+  --gold-ink: var(--gold);
 }
 
 .downloads-panel__header {
@@ -125,7 +132,7 @@
   place-items: center;
   border-radius: 11px;
   background: var(--berry);
-  color: #fff;
+  color: var(--paper);
   font:
     700 15px/1 'Bricolage Grotesque Variable',
     'Bricolage Grotesque',
