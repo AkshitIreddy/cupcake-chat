@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "cupcake-tool-broker"
-version = "1.8.2"
+version = "1.8.3"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "cupcakeagi-desktop-host"
-version = "1.8.2"
+version = "1.8.3"
 dependencies = [
  "argon2",
  "base64 0.22.1",

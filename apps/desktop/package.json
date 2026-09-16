@@ -1,6 +1,6 @@
 {
   "name": "@cupcakeagi/desktop",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "Cupcake Chat desktop application",
   "private": true,
   "scripts": {
