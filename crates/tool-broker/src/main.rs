@@ -334,6 +334,7 @@ fn prepare_migration_request(
 }
 
 enum RuntimeStreamMessage {
+    Ready,
     Event(Map<String, Value>),
     Done(Result<Map<String, Value>>),
 }
@@ -354,25 +355,63 @@ fn proxy_runtime_stream<W: Write>(
     desktop_request: &ProtocolEnvelope,
 ) -> Result<Map<String, Value>> {
     let control = runtime.control();
+    let active_is_download =
+        payload.get("method").and_then(Value::as_str) == Some("local_models.cupcake.download");
     std::thread::scope(|scope| {
         let (stream_tx, stream_rx) = mpsc::channel();
+        let stream_control = control.clone();
         scope.spawn(move || {
-            let result = runtime.request_streaming(payload, |event| {
-                stream_tx
-                    .send(RuntimeStreamMessage::Event(event))
-                    .map_err(|_| {
+            let ready_tx = stream_tx.clone();
+            let result = runtime.request_streaming_with_started(
+                payload,
+                || {
+                    if active_is_download {
+                        stream_control.open_download_control_window()?;
+                    }
+                    ready_tx.send(RuntimeStreamMessage::Ready).map_err(|_| {
                         BrokerError::InvalidConfig("desktop stream receiver stopped".into())
                     })
-            });
+                },
+                |event| {
+                    stream_tx
+                        .send(RuntimeStreamMessage::Event(event))
+                        .map_err(|_| {
+                            BrokerError::InvalidConfig("desktop stream receiver stopped".into())
+                        })
+                },
+            );
             if let Err(error) = &result {
                 eprintln!("{{\"level\":\"error\",\"component\":\"broker\",\"errorType\":\"runtime_stream\",\"message\":\"{}\"}}", error);
+            }
+            if active_is_download {
+                stream_control.close_download_control_window();
             }
             let _ = stream_tx.send(RuntimeStreamMessage::Done(result));
         });
 
+        match stream_rx.recv() {
+            Ok(RuntimeStreamMessage::Ready) => {}
+            Ok(RuntimeStreamMessage::Done(result)) => return result,
+            Ok(RuntimeStreamMessage::Event(_)) => {
+                return Err(BrokerError::InvalidEnvelope(
+                    "runtime event arrived before request readiness".into(),
+                ))
+            }
+            Err(_) => {
+                return Err(BrokerError::InvalidConfig(
+                    "runtime stream stopped before request readiness".into(),
+                ))
+            }
+        }
+
         loop {
             while let Ok(message) = stream_rx.try_recv() {
                 match message {
+                    RuntimeStreamMessage::Ready => {
+                        return Err(BrokerError::InvalidEnvelope(
+                            "runtime stream reported readiness twice".into(),
+                        ))
+                    }
                     RuntimeStreamMessage::Event(payload) => write_outbound(
                         output,
                         outgoing_sequences,
@@ -416,6 +455,54 @@ fn proxy_runtime_stream<W: Write>(
                         Map::new(),
                     )?;
                 }
+                Ok(Ok(envelope))
+                    if active_is_download
+                        && envelope.message_type == MessageType::Request
+                        && is_download_control_request(&envelope.payload) =>
+                {
+                    let response = match control.request_download_control(
+                        envelope.payload.clone(),
+                        StdDuration::from_secs(10),
+                    ) {
+                        Ok(Some(response)) => response,
+                        Ok(None) => {
+                            queued.push_back(envelope);
+                            continue;
+                        }
+                        Err(error) => failure("DOWNLOAD_CONTROL_FAILED", &safe_error(&error), true),
+                    };
+                    write_outbound(
+                        output,
+                        outgoing_sequences,
+                        secret,
+                        envelope.correlation_id,
+                        envelope.session_id,
+                        envelope.lineage,
+                        MessageType::Response,
+                        response,
+                    )?;
+                }
+                Ok(Ok(envelope))
+                    if active_is_download
+                        && envelope.message_type == MessageType::Request
+                        && envelope.payload.get("method").and_then(Value::as_str)
+                            == Some("local_models.cupcake.download") =>
+                {
+                    write_outbound(
+                        output,
+                        outgoing_sequences,
+                        secret,
+                        envelope.correlation_id,
+                        envelope.session_id,
+                        envelope.lineage,
+                        MessageType::Response,
+                        failure(
+                            "DOWNLOAD_BUSY",
+                            "Another model or runtime download is active; pause or cancel it before starting this one",
+                            true,
+                        ),
+                    )?;
+                }
                 Ok(Ok(envelope)) => queued.push_back(envelope),
                 Ok(Err(BrokerError::TruncatedFrame)) => return Err(BrokerError::TruncatedFrame),
                 Ok(Err(error)) => return Err(error),
@@ -426,6 +513,18 @@ fn proxy_runtime_stream<W: Write>(
             }
         }
     })
+}
+
+fn is_download_control_request(payload: &Map<String, Value>) -> bool {
+    matches!(
+        payload.get("method").and_then(Value::as_str),
+        Some("local_models.cupcake.download.pause" | "local_models.cupcake.download.cancel")
+    ) && payload
+        .get("params")
+        .and_then(Value::as_object)
+        .and_then(|params| params.get("artifactId"))
+        .and_then(Value::as_str)
+        .is_some_and(|artifact_id| !artifact_id.trim().is_empty())
 }
 
 #[allow(clippy::too_many_arguments)]

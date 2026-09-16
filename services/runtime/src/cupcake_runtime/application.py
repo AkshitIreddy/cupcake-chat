@@ -72,6 +72,8 @@ from cupcake_runtime.local_models import (
 from cupcake_runtime.local_models.discovery import search_huggingface_gguf
 from cupcake_runtime.local_models.recommendations import estimate_model_memory
 from cupcake_runtime.local_models.types import (
+    DownloadSnapshot,
+    DownloadState,
     InstalledModel,
     InstalledRuntimePack,
     RuntimeBackend,
@@ -180,7 +182,8 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "models.local.allow_ram_fallback": True,
     "models.local.ram_limit_mode": "auto",
     "models.local.max_ram_gb": 24.0,
-    "models.local.auto_evict": True,
+    # Legacy keys remain accepted for profile migration but are intentionally inert.
+    "models.local.auto_evict": False,
     "models.local.idle_minutes": 30.0,
     "models.local.reserve_system_ram_gb": 4.0,
     "models.local.reserve_vram_gb": 1.5,
@@ -318,7 +321,6 @@ class RuntimeService:
         self._group_preflights: dict[str, GroupPreflightAuthorization] = {}
         self._group_cancellations: dict[str, threading.Event] = {}
         self._migration_cleanup: dict[str, Path] = {}
-        self._local_model_idle_timer: threading.Timer | None = None
         self._closed = False
         self._recover_on_startup()
         default_persona_model = self.repository.get_setting(
@@ -432,9 +434,6 @@ class RuntimeService:
                 group_cancellation.set()
             self._group_cancellations.clear()
             self._group_preflights.clear()
-            if self._local_model_idle_timer is not None:
-                self._local_model_idle_timer.cancel()
-                self._local_model_idle_timer = None
         if self._task_runtime is not None:
             self._task_runtime.shutdown()
         asyncio.run(self.cupcake_local.close())
@@ -628,6 +627,11 @@ class RuntimeService:
             return await self._cupcake_local_download_stream(
                 arguments, emit, cancellation=cancellation
             )
+        if method in {
+            "local_models.cupcake.download.pause",
+            "local_models.cupcake.download.cancel",
+        }:
+            return await self._cupcake_local_download_control_stream(method, arguments)
         value, events = await asyncio.to_thread(self.handle, method, arguments)
         for event in events:
             await emit(event)
@@ -1061,16 +1065,89 @@ class RuntimeService:
                 "INVALID_ARGUMENT", "acceptedLicenseUrls must be a list of license URLs"
             )
         accepted_license_urls = tuple(cast(Sequence[str], accepted_license_url_items))
+        installed: InstalledModel | InstalledRuntimePack | None = None
         if artifact_kind == "model":
             model_artifact = self.cupcake_local.model_artifact(artifact_id)
             self.cupcake_local.begin_model_download(model_artifact)
+            snapshot = await self._drive_cupcake_local_download(
+                artifact_id,
+                artifact_kind,
+                emit,
+                cancellation=cancellation,
+            )
+            if snapshot.state == DownloadState.COMPLETED:
+                await self._emit_cupcake_local_installing(
+                    artifact_id, artifact_kind, snapshot, emit
+                )
+
+                def register_model() -> tuple[DownloadSnapshot, InstalledModel | None]:
+                    return asyncio.run(self.cupcake_local.download_model_by_id(artifact_id))
+
+                _, installed = await asyncio.to_thread(register_model)
         elif artifact_kind == "runtime":
             runtime_artifact = self.cupcake_local.runtime_artifact(artifact_id)
             self.cupcake_local.begin_runtime_download(
                 runtime_artifact, accepted_license_urls=accepted_license_urls
             )
+            snapshot = await self._drive_cupcake_local_download(
+                artifact_id,
+                artifact_kind,
+                emit,
+                cancellation=cancellation,
+            )
+            if snapshot.state == DownloadState.COMPLETED:
+                for companion in runtime_artifact.companions:
+                    self.cupcake_local.begin_runtime_companion_download(companion)
+                    snapshot = await self._drive_cupcake_local_download(
+                        companion.id,
+                        artifact_kind,
+                        emit,
+                        cancellation=cancellation,
+                    )
+                    if snapshot.state != DownloadState.COMPLETED:
+                        break
+            if snapshot.state == DownloadState.COMPLETED:
+                await self._emit_cupcake_local_installing(
+                    artifact_id, artifact_kind, snapshot, emit
+                )
+
+                def install_runtime() -> tuple[DownloadSnapshot, InstalledRuntimePack | None]:
+                    return asyncio.run(
+                        self.cupcake_local.download_runtime_by_id(
+                            artifact_id,
+                            activate=activate,
+                            accepted_license_urls=accepted_license_urls,
+                        )
+                    )
+
+                _, installed = await asyncio.to_thread(install_runtime)
         else:
             raise RuntimeCommandError("INVALID_ARGUMENT", "artifactKind must be model or runtime")
+
+        await emit(
+            _event(
+                "local_model.download.completed",
+                {
+                    "artifactKind": artifact_kind,
+                    "download": _redact_local_paths(snapshot),
+                    "installed": _redact_local_paths(installed),
+                },
+            )
+        )
+        return {
+            "artifactKind": artifact_kind,
+            "download": _redact_local_paths(snapshot),
+            "installed": _redact_local_paths(installed),
+        }
+
+    async def _drive_cupcake_local_download(
+        self,
+        artifact_id: str,
+        artifact_kind: str,
+        emit: EventEmitter,
+        *,
+        cancellation: threading.Event,
+    ) -> DownloadSnapshot:
         operation = asyncio.create_task(self.cupcake_local.resume_download(artifact_id))
         previous: Any = None
         while not operation.done():
@@ -1087,31 +1164,63 @@ class RuntimeService:
                 previous = snapshot
             await asyncio.sleep(0.1)
         snapshot = await operation
-        installed: InstalledModel | InstalledRuntimePack | None = None
-        if snapshot.state.value == "completed":
-            if artifact_kind == "model":
-                _, installed = await self.cupcake_local.download_model_by_id(artifact_id)
-            else:
-                _, installed = await self.cupcake_local.download_runtime_by_id(
-                    artifact_id,
-                    activate=activate,
-                    accepted_license_urls=accepted_license_urls,
+        if snapshot != previous:
+            await emit(
+                _event(
+                    "local_model.download.progress",
+                    {"artifactKind": artifact_kind, "download": _redact_local_paths(snapshot)},
                 )
+            )
+        return snapshot
+
+    async def _emit_cupcake_local_installing(
+        self,
+        artifact_id: str,
+        artifact_kind: str,
+        snapshot: DownloadSnapshot,
+        emit: EventEmitter,
+    ) -> None:
+        installing = cast(dict[str, Any], _redact_local_paths(snapshot))
+        installing = {**installing, "model_id": artifact_id, "state": "installing"}
         await emit(
             _event(
-                "local_model.download.completed",
-                {
-                    "artifactKind": artifact_kind,
-                    "download": _redact_local_paths(snapshot),
-                    "installed": _redact_local_paths(installed),
-                },
+                "local_model.download.progress",
+                {"artifactKind": artifact_kind, "download": installing},
             )
         )
-        return {
-            "artifactKind": artifact_kind,
-            "download": _redact_local_paths(snapshot),
-            "installed": _redact_local_paths(installed),
+
+    async def _cupcake_local_download_control_stream(
+        self, method: str, params: Mapping[str, Any]
+    ) -> Any:
+        artifact_id = _required_string(params, "artifactId")
+        try:
+            if method.endswith(".pause"):
+                snapshot = self.cupcake_local.pause_download(artifact_id)
+                expected = DownloadState.PAUSED
+            else:
+                snapshot = self.cupcake_local.cancel_download(artifact_id)
+                expected = DownloadState.CANCELLED
+        except KeyError as exc:
+            raise RuntimeCommandError(
+                "DOWNLOAD_NOT_FOUND", "No matching local-model download exists"
+            ) from exc
+        terminal = {
+            expected,
+            DownloadState.COMPLETED,
+            DownloadState.FAILED,
+            DownloadState.CANCELLED,
         }
+        deadline = asyncio.get_running_loop().time() + 5.0
+        while snapshot.state not in terminal:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeCommandError(
+                    "DOWNLOAD_CONTROL_TIMEOUT",
+                    "The download did not stop within five seconds",
+                    retryable=True,
+                )
+            await asyncio.sleep(0.02)
+            snapshot = self.cupcake_local.download_status(artifact_id)
+        return _redact_local_paths(snapshot)
 
     def _cupcake_local_download_status(self, params: Mapping[str, Any]) -> Any:
         return _redact_local_paths(
@@ -1323,32 +1432,12 @@ class RuntimeService:
         return self.packaged_local_runtime
 
     def _cupcake_local_unload(self, _params: Mapping[str, Any]) -> Any:
-        with self._state_lock:
-            if self._local_model_idle_timer is not None:
-                self._local_model_idle_timer.cancel()
-                self._local_model_idle_timer = None
         return _jsonable(asyncio.run(self.cupcake_local.unload()))
 
     def _touch_local_model_idle_timer(self, model_id: str) -> None:
-        if not model_id.startswith("openai-compatible:cupcake-local/"):
-            return
-        if not self.repository.get_setting("models.local.auto_evict", default=True):
-            return
-        idle_minutes = float(self.repository.get_setting("models.local.idle_minutes", default=30.0))
-        with self._state_lock:
-            if self._local_model_idle_timer is not None:
-                self._local_model_idle_timer.cancel()
-            timer = threading.Timer(idle_minutes * 60.0, self._unload_idle_local_model)
-            timer.daemon = True
-            self._local_model_idle_timer = timer
-            timer.start()
-
-    def _unload_idle_local_model(self) -> None:
-        try:
-            asyncio.run(self.cupcake_local.unload())
-        finally:
-            with self._state_lock:
-                self._local_model_idle_timer = None
+        # Kept as a compatibility hook for older integrations. Local models
+        # now remain loaded until the user explicitly unloads them.
+        del model_id
 
     def _cupcake_local_benchmark(self, params: Mapping[str, Any]) -> Any:
         max_tokens = int(params.get("maxTokens", 32))

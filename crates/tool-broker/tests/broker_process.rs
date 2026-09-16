@@ -394,6 +394,184 @@ fn late_runtime_cancel_ack_does_not_poison_the_next_provider_request() {
     assert_eq!(provider.payload["result"]["tested"], true);
 }
 
+#[test]
+fn download_pause_bypasses_active_stream_queue_and_second_start_is_rejected() {
+    let mut broker = BrokerProcess::launch();
+    let download_correlation = uuid_v7();
+    broker.send(
+        download_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download",
+            "params":{"artifactId":"fixture-slow-download","artifactKind":"model"}
+        })),
+    );
+    let progress = broker.read();
+    assert_eq!(progress.correlation_id, download_correlation);
+    assert_eq!(progress.message_type, MessageType::Event);
+    assert_eq!(
+        progress.payload["payload"]["download"]["state"],
+        "downloading"
+    );
+
+    let second_correlation = uuid_v7();
+    broker.send(
+        second_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download",
+            "params":{"artifactId":"fixture-second-download","artifactKind":"model"}
+        })),
+    );
+    let busy = broker.read();
+    assert_eq!(busy.correlation_id, second_correlation);
+    assert_eq!(busy.payload["ok"], false);
+    assert_eq!(busy.payload["error"]["code"], "DOWNLOAD_BUSY");
+
+    let pause_correlation = uuid_v7();
+    let started = Instant::now();
+    broker.send(
+        pause_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download.pause",
+            "params":{"artifactId":"fixture-slow-download"}
+        })),
+    );
+    let paused = broker.read();
+    assert_eq!(paused.correlation_id, pause_correlation);
+    assert_eq!(paused.payload["ok"], true);
+    assert_eq!(paused.payload["result"]["state"], "paused");
+    assert!(started.elapsed() < Duration::from_millis(500));
+
+    let terminal = broker.read();
+    assert_eq!(terminal.correlation_id, download_correlation);
+    assert_eq!(terminal.payload["result"]["download"]["state"], "paused");
+
+    let provider_correlation = uuid_v7();
+    broker.send(
+        provider_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"providers.test",
+            "params":{"provider":"cohere","secret":"fixture-provider-credential"}
+        })),
+    );
+    let provider = broker.read();
+    assert_eq!(provider.correlation_id, provider_correlation);
+    assert_eq!(provider.payload["ok"], true);
+}
+
+#[test]
+fn download_cancel_bypasses_active_stream_queue() {
+    let mut broker = BrokerProcess::launch();
+    let download_correlation = uuid_v7();
+    broker.send(
+        download_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download",
+            "params":{"artifactId":"fixture-slow-download","artifactKind":"model"}
+        })),
+    );
+    assert_eq!(broker.read().message_type, MessageType::Event);
+
+    let cancel_correlation = uuid_v7();
+    broker.send(
+        cancel_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download.cancel",
+            "params":{"artifactId":"fixture-slow-download"}
+        })),
+    );
+    let cancelled = broker.read();
+    assert_eq!(cancelled.correlation_id, cancel_correlation);
+    assert_eq!(cancelled.payload["ok"], true);
+    assert_eq!(cancelled.payload["result"]["state"], "cancelled");
+
+    let terminal = broker.read();
+    assert_eq!(terminal.correlation_id, download_correlation);
+    assert_eq!(terminal.payload["result"]["download"]["state"], "cancelled");
+}
+
+#[test]
+fn download_control_ack_after_terminal_response_is_still_correlated() {
+    let mut broker = BrokerProcess::launch();
+    let download_correlation = uuid_v7();
+    broker.send(
+        download_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download",
+            "params":{"artifactId":"fixture-terminal-first-download","artifactKind":"model"}
+        })),
+    );
+    assert_eq!(broker.read().message_type, MessageType::Event);
+
+    let pause_correlation = uuid_v7();
+    broker.send(
+        pause_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download.pause",
+            "params":{"artifactId":"fixture-terminal-first-download"}
+        })),
+    );
+    let paused = broker.read();
+    assert_eq!(paused.correlation_id, pause_correlation);
+    assert_eq!(paused.payload["result"]["state"], "paused");
+
+    let terminal = broker.read();
+    assert_eq!(terminal.correlation_id, download_correlation);
+    assert_eq!(terminal.payload["result"]["download"]["state"], "paused");
+}
+
+#[test]
+fn immediate_download_pause_is_ordered_after_the_runtime_start_frame() {
+    let mut broker = BrokerProcess::launch();
+    let download_correlation = uuid_v7();
+    let pause_correlation = uuid_v7();
+    broker.send(
+        download_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download",
+            "params":{"artifactId":"fixture-slow-download","artifactKind":"model"}
+        })),
+    );
+    // Deliberately do not wait for a progress event before sending control.
+    broker.send(
+        pause_correlation,
+        MessageType::Request,
+        object(json!({
+            "method":"local_models.cupcake.download.pause",
+            "params":{"artifactId":"fixture-slow-download"}
+        })),
+    );
+
+    let mut saw_progress = false;
+    let mut saw_pause = false;
+    let mut saw_terminal = false;
+    for _ in 0..3 {
+        let envelope = broker.read();
+        if envelope.correlation_id == pause_correlation {
+            saw_pause = envelope.payload["result"]["state"] == "paused";
+        } else if envelope.correlation_id == download_correlation
+            && envelope.message_type == MessageType::Event
+        {
+            saw_progress = true;
+        } else if envelope.correlation_id == download_correlation
+            && envelope.message_type == MessageType::Response
+        {
+            saw_terminal = envelope.payload["result"]["download"]["state"] == "paused";
+        }
+    }
+    assert!(saw_progress);
+    assert!(saw_pause);
+    assert!(saw_terminal);
+}
+
 fn object(value: Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap_or_default()
 }

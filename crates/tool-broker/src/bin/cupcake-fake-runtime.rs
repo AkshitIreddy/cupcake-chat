@@ -109,6 +109,98 @@ fn run() -> Result<()> {
                     )?;
                     thread::sleep(Duration::from_millis(150));
                 }
+                let download_artifact_id = envelope.payload["params"]["artifactId"].as_str();
+                if method == Some("local_models.cupcake.download")
+                    && matches!(
+                        download_artifact_id,
+                        Some("fixture-slow-download" | "fixture-terminal-first-download")
+                    )
+                {
+                    let download_artifact_id = download_artifact_id.unwrap_or_default();
+                    write(
+                        &mut output,
+                        &mut sequences,
+                        &secret,
+                        &envelope,
+                        MessageType::Event,
+                        object(json!({
+                            "type":"local_model.download.progress",
+                            "payload":{"download":{"model_id":download_artifact_id,"state":"downloading","bytes_downloaded":64,"bytes_total":256}},
+                            "timestamp":Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+                        })),
+                    )?;
+                    let control: ProtocolEnvelope =
+                        read_protocol_frame(&mut input, DEFAULT_MAX_FRAME_BYTES)?;
+                    control.verify_auth(&secret)?;
+                    replay.accept(&control, Utc::now())?;
+                    let control_method = control.payload.get("method").and_then(Value::as_str);
+                    if control.message_type != MessageType::Request
+                        || !matches!(
+                            control_method,
+                            Some(
+                                "local_models.cupcake.download.pause"
+                                    | "local_models.cupcake.download.cancel"
+                            )
+                        )
+                    {
+                        return Err(BrokerError::InvalidEnvelope(
+                            "fake slow download expected a pause or cancel request".into(),
+                        ));
+                    }
+                    let state = if control_method == Some("local_models.cupcake.download.pause") {
+                        "paused"
+                    } else {
+                        "cancelled"
+                    };
+                    let snapshot = json!({
+                        "model_id":download_artifact_id,
+                        "state":state,
+                        "bytes_downloaded": if state == "paused" { 64 } else { 0 },
+                        "bytes_total":256
+                    });
+                    let control_response = object(json!({"ok":true,"result":snapshot}));
+                    let download_response = object(json!({"ok":true,"result":{
+                        "artifactKind":"model",
+                        "download":snapshot,
+                        "installed":null
+                    }}));
+                    if download_artifact_id == "fixture-terminal-first-download" {
+                        write(
+                            &mut output,
+                            &mut sequences,
+                            &secret,
+                            &envelope,
+                            MessageType::Response,
+                            download_response,
+                        )?;
+                        write(
+                            &mut output,
+                            &mut sequences,
+                            &secret,
+                            &control,
+                            MessageType::Response,
+                            control_response,
+                        )?;
+                    } else {
+                        write(
+                            &mut output,
+                            &mut sequences,
+                            &secret,
+                            &control,
+                            MessageType::Response,
+                            control_response,
+                        )?;
+                        write(
+                            &mut output,
+                            &mut sequences,
+                            &secret,
+                            &envelope,
+                            MessageType::Response,
+                            download_response,
+                        )?;
+                    }
+                    continue;
+                }
                 let result = match method {
                     Some("providers.configure") => {
                         let provider = envelope.payload["params"]["provider"]

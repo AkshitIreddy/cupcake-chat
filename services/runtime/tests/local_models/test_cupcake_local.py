@@ -32,6 +32,7 @@ from cupcake_runtime.local_models.runtime_packs import (
     RuntimePackStore,
 )
 from cupcake_runtime.local_models.types import (
+    DownloadSnapshot,
     DownloadState,
     HardwareProfile,
     ModelArtifact,
@@ -890,6 +891,27 @@ def test_cupcake_local_download_lifecycle_can_cancel_and_reset(tmp_path: Path) -
     manager.reset_download(artifact.id)
     assert manager.download_snapshots() == ()
     assert manager.begin_model_download(artifact).state == DownloadState.QUEUED
+
+
+@pytest.mark.parametrize(
+    ("control", "expected"),
+    (("pause_download", DownloadState.PAUSED), ("cancel_download", DownloadState.CANCELLED)),
+)
+def test_control_between_begin_and_scheduled_resume_prevents_network_start(
+    tmp_path: Path, control: str, expected: DownloadState
+) -> None:
+    manager = CupcakeLocalManager(tmp_path / "cupcake-local")
+    artifact = _model_artifact(b"model")
+    manager.begin_model_download(artifact)
+
+    async def exercise() -> DownloadSnapshot:
+        operation = asyncio.create_task(manager.resume_download(artifact.id))
+        getattr(manager, control)(artifact.id)
+        return await asyncio.wait_for(operation, timeout=0.5)
+
+    settled = asyncio.run(exercise())
+    assert settled.state == expected
+    assert not artifact.target(manager.models.root).exists()
 
 
 def test_seed_packaged_baseline_verifies_catalog_archive_and_activates_idempotently(

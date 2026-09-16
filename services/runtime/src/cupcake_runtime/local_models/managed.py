@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+from collections.abc import Coroutine
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -469,11 +470,14 @@ class CupcakeLocalManager:
         self._downloads[artifact.id] = download
         return download
 
-    async def resume_download(self, artifact_id: str) -> DownloadSnapshot:
+    def resume_download(self, artifact_id: str) -> Coroutine[Any, Any, DownloadSnapshot]:
         download = self._downloads[artifact_id]
         if download.snapshot.state == DownloadState.COMPLETED:
-            return download.snapshot
-        return await download.run()
+            return _completed_download(download.snapshot)
+        # CheckedDownload.run captures a generation synchronously. Returning
+        # that claimed coroutine closes the begin -> create_task window where
+        # an already-requested pause/cancel could otherwise be cleared.
+        return download.run()
 
     def pause_download(self, artifact_id: str) -> DownloadSnapshot:
         download = self._downloads[artifact_id]
@@ -684,3 +688,7 @@ def run(coroutine: Any) -> Any:
     """Synchronous runtime-protocol adapter for desktop RPC handlers."""
 
     return asyncio.run(coroutine)
+
+
+async def _completed_download(snapshot: DownloadSnapshot) -> DownloadSnapshot:
+    return snapshot

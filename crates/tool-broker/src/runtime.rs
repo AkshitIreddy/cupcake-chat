@@ -12,7 +12,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(windows)]
@@ -33,6 +34,9 @@ pub struct RuntimeControl {
     session_id: Uuid,
     sequences: Arc<Mutex<HashMap<Uuid, u64>>>,
     pending_cancel_acks: Arc<Mutex<HashSet<Uuid>>>,
+    pending_control_responses:
+        Arc<Mutex<HashMap<Uuid, Option<mpsc::SyncSender<Map<String, Value>>>>>>,
+    accepts_download_controls: Arc<Mutex<bool>>,
 }
 
 impl RuntimeChild {
@@ -144,6 +148,8 @@ impl RuntimeChild {
             session_id,
             sequences: Arc::new(Mutex::new(HashMap::new())),
             pending_cancel_acks: Arc::new(Mutex::new(HashSet::new())),
+            pending_control_responses: Arc::new(Mutex::new(HashMap::new())),
+            accepts_download_controls: Arc::new(Mutex::new(false)),
         };
         let mut runtime = Self {
             child,
@@ -177,8 +183,25 @@ impl RuntimeChild {
     where
         F: FnMut(Map<String, Value>) -> Result<()>,
     {
+        self.request_streaming_with_started(payload, || Ok(()), &mut on_event)
+    }
+
+    pub fn request_streaming_with_started<F, S>(
+        &mut self,
+        payload: &Map<String, Value>,
+        on_started: S,
+        mut on_event: F,
+    ) -> Result<Map<String, Value>>
+    where
+        F: FnMut(Map<String, Value>) -> Result<()>,
+        S: FnOnce() -> Result<()>,
+    {
         let correlation = uuid_v7();
         self.send(MessageType::Request, correlation, payload.clone())?;
+        // The callback publishes readiness only after the active request frame
+        // is ordered on the runtime pipe. Download controls can then safely be
+        // sent after it, never before the worker has seen the start request.
+        on_started()?;
         self.receive_streaming(correlation, &mut on_event)
     }
 
@@ -255,11 +278,16 @@ impl RuntimeChild {
     where
         F: FnMut(Map<String, Value>) -> Result<()>,
     {
+        let mut terminal_response: Option<Map<String, Value>> = None;
         loop {
+            if terminal_response.is_some() && self.control.close_control_window_if_idle()? {
+                return terminal_response.ok_or_else(|| {
+                    BrokerError::InvalidEnvelope("runtime terminal response missing".into())
+                });
+            }
             let envelope: ProtocolEnvelope =
                 read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
             if self.accept_runtime_envelope(&envelope)? {
-                self.control.consume_cancel_ack(&envelope)?;
                 continue;
             }
             if envelope.correlation_id != correlation {
@@ -269,7 +297,17 @@ impl RuntimeChild {
             }
             match envelope.message_type {
                 MessageType::Event => on_event(envelope.payload)?,
-                MessageType::Response => return Ok(envelope.payload),
+                MessageType::Response => {
+                    if !self.control.close_control_window_if_idle()? {
+                        // The runtime may settle the active download before its
+                        // pause/cancel handler publishes the acknowledgement.
+                        // Keep the sole pipe reader alive until those exact
+                        // registered responses have been demultiplexed.
+                        terminal_response = Some(envelope.payload);
+                    } else {
+                        return Ok(envelope.payload);
+                    }
+                }
                 _ => {
                     return Err(BrokerError::InvalidEnvelope(
                         "runtime returned an unexpected message type".into(),
@@ -289,7 +327,6 @@ impl RuntimeChild {
             let envelope: ProtocolEnvelope =
                 read_protocol_frame(&mut self.input, DEFAULT_MAX_FRAME_BYTES)?;
             if self.accept_runtime_envelope(&envelope)? {
-                self.control.consume_cancel_ack(&envelope)?;
                 continue;
             }
             if envelope.correlation_id != correlation {
@@ -319,8 +356,10 @@ impl RuntimeChild {
     fn accept_runtime_envelope(&mut self, envelope: &ProtocolEnvelope) -> Result<bool> {
         envelope.verify_auth(self.secret.as_slice())?;
         let is_cancel_ack = self.control.is_pending_cancel_ack(envelope)?;
+        let is_control_response = self.control.is_pending_control_response(envelope)?;
+        let is_out_of_band_response = is_cancel_ack || is_control_response;
         let now = Utc::now();
-        let validation_time = if is_cancel_ack {
+        let validation_time = if is_out_of_band_response {
             chrono::DateTime::parse_from_rfc3339(&envelope.deadline)
                 .map(|deadline| deadline.with_timezone(&Utc))
                 .map(|deadline| if deadline < now { deadline } else { now })
@@ -329,7 +368,12 @@ impl RuntimeChild {
             now
         };
         self.replay.accept(envelope, validation_time)?;
-        Ok(is_cancel_ack)
+        if is_cancel_ack {
+            self.control.consume_cancel_ack(envelope)?;
+        } else if is_control_response {
+            self.control.consume_control_response(envelope)?;
+        }
+        Ok(is_out_of_band_response)
     }
 
     fn send(
@@ -343,6 +387,84 @@ impl RuntimeChild {
 }
 
 impl RuntimeControl {
+    pub fn open_download_control_window(&self) -> Result<()> {
+        *self
+            .accepts_download_controls
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))? = true;
+        Ok(())
+    }
+
+    pub fn close_download_control_window(&self) {
+        if let Ok(mut accepting) = self.accepts_download_controls.lock() {
+            *accepting = false;
+        }
+    }
+
+    pub fn request_download_control(
+        &self,
+        payload: Map<String, Value>,
+        timeout: Duration,
+    ) -> Result<Option<Map<String, Value>>> {
+        let method = payload.get("method").and_then(Value::as_str);
+        if !matches!(
+            method,
+            Some("local_models.cupcake.download.pause" | "local_models.cupcake.download.cancel")
+        ) {
+            return Err(BrokerError::PermissionDenied(
+                "runtime control path accepts only model download pause or cancel".into(),
+            ));
+        }
+        let correlation = uuid_v7();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        {
+            // Registration and stream-window closure share this gate. Once an
+            // active terminal response wins it, the caller queues this ordinary
+            // request for the normal broker loop instead of writing with no
+            // pipe reader left alive.
+            let accepting = self
+                .accepts_download_controls
+                .lock()
+                .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?;
+            if !*accepting {
+                return Ok(None);
+            }
+            self.pending_control_responses
+                .lock()
+                .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?
+                .insert(correlation, Some(sender));
+            if let Err(error) = self.send(MessageType::Request, correlation, payload) {
+                if let Ok(mut pending) = self.pending_control_responses.lock() {
+                    pending.remove(&correlation);
+                }
+                return Err(error);
+            }
+        }
+        match receiver.recv_timeout(timeout) {
+            Ok(response) => Ok(Some(response)),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Retain the exact authenticated correlation as discard-only so
+                // a late response cannot poison the next synchronous request.
+                if let Ok(mut pending) = self.pending_control_responses.lock() {
+                    if let Some(slot) = pending.get_mut(&correlation) {
+                        *slot = None;
+                    }
+                }
+                Err(BrokerError::InvalidConfig(
+                    "runtime download control timed out".into(),
+                ))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if let Ok(mut pending) = self.pending_control_responses.lock() {
+                    pending.remove(&correlation);
+                }
+                Err(BrokerError::InvalidConfig(
+                    "runtime download control response channel closed".into(),
+                ))
+            }
+        }
+    }
+
     pub fn signal_cancel(&self, payload: Map<String, Value>) -> Result<()> {
         let correlation = uuid_v7();
         self.pending_cancel_acks
@@ -379,6 +501,52 @@ impl RuntimeControl {
             return Err(BrokerError::InvalidEnvelope(
                 "runtime returned an unknown cancellation response".into(),
             ));
+        }
+        Ok(())
+    }
+
+    fn is_pending_control_response(&self, envelope: &ProtocolEnvelope) -> Result<bool> {
+        if envelope.message_type != MessageType::Response {
+            return Ok(false);
+        }
+        Ok(self
+            .pending_control_responses
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?
+            .contains_key(&envelope.correlation_id))
+    }
+
+    fn close_control_window_if_idle(&self) -> Result<bool> {
+        let mut accepting = self
+            .accepts_download_controls
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?;
+        let has_live = self
+            .pending_control_responses
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?
+            .values()
+            .any(Option::is_some);
+        if has_live {
+            return Ok(false);
+        }
+        *accepting = false;
+        Ok(true)
+    }
+
+    fn consume_control_response(&self, envelope: &ProtocolEnvelope) -> Result<()> {
+        let sender = self
+            .pending_control_responses
+            .lock()
+            .map_err(|_| BrokerError::InvalidConfig("runtime control lock failed".into()))?
+            .remove(&envelope.correlation_id)
+            .ok_or_else(|| {
+                BrokerError::InvalidEnvelope(
+                    "runtime returned an unknown download-control response".into(),
+                )
+            })?;
+        if let Some(sender) = sender {
+            let _ = sender.send(envelope.payload.clone());
         }
         Ok(())
     }

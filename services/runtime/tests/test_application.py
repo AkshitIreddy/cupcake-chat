@@ -25,6 +25,8 @@ from cupcake_runtime.domain.models import Setting
 from cupcake_runtime.groups.history_catalog import HISTORY_PERSONA_CATALOG
 from cupcake_runtime.local_models import CupcakeLocalManager
 from cupcake_runtime.local_models.types import (
+    DownloadSnapshot,
+    DownloadState,
     HardwareProfile,
     ModelArtifact,
     RuntimeBackend,
@@ -43,6 +45,138 @@ from cupcake_runtime.providers.types import (
 
 def service(tmp_path: Path) -> RuntimeService:
     return RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+
+
+def test_local_model_idle_settings_are_accepted_but_do_not_schedule_unload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    runtime.handle("settings.set", {"key": "models.local.auto_evict", "value": True})
+    runtime.handle("settings.set", {"key": "models.local.idle_minutes", "value": 1.0})
+
+    def unexpected_timer(*_args: object, **_kwargs: object) -> threading.Timer:
+        raise AssertionError("local models must remain loaded until explicitly unloaded")
+
+    monkeypatch.setattr(threading, "Timer", unexpected_timer)
+    runtime._touch_local_model_idle_timer(  # pyright: ignore[reportPrivateUsage]
+        "openai-compatible:cupcake-local/test"
+    )
+    runtime.close()
+
+
+def test_download_pause_waits_for_worker_to_reach_paused_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    downloading = DownloadSnapshot(
+        "model", DownloadState.DOWNLOADING, "private", bytes_downloaded=2, bytes_total=4
+    )
+    paused = DownloadSnapshot(
+        "model", DownloadState.PAUSED, "private", bytes_downloaded=2, bytes_total=4
+    )
+    status_reads = 0
+
+    monkeypatch.setattr(runtime.cupcake_local, "pause_download", lambda _artifact_id: downloading)
+
+    def download_status(_artifact_id: str) -> DownloadSnapshot:
+        nonlocal status_reads
+        status_reads += 1
+        return paused
+
+    monkeypatch.setattr(runtime.cupcake_local, "download_status", download_status)
+
+    async def exercise() -> dict[str, object]:
+        async def emit(_event: dict[str, object]) -> None:
+            return None
+
+        result = await runtime.handle_stream(
+            "local_models.cupcake.download.pause", {"artifactId": "model"}, emit
+        )
+        assert isinstance(result, dict)
+        return result
+
+    result = asyncio.run(exercise())
+    assert result["state"] == "paused"
+    assert status_reads == 1
+    runtime.close()
+
+
+def test_runtime_download_stream_reports_companion_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = service(tmp_path)
+    main = DownloadSnapshot(
+        "runtime", DownloadState.COMPLETED, "private", bytes_downloaded=4, bytes_total=4
+    )
+    companion = DownloadSnapshot(
+        "runtime-companion",
+        DownloadState.COMPLETED,
+        "private",
+        bytes_downloaded=2,
+        bytes_total=2,
+    )
+    runtime_artifact = SimpleNamespace(
+        id="runtime", companions=(SimpleNamespace(id="runtime-companion"),)
+    )
+
+    monkeypatch.setattr(runtime.cupcake_local, "runtime_artifact", lambda _id: runtime_artifact)
+    monkeypatch.setattr(
+        runtime.cupcake_local, "begin_runtime_download", lambda *_args, **_kwargs: main
+    )
+    monkeypatch.setattr(
+        runtime.cupcake_local,
+        "begin_runtime_companion_download",
+        lambda *_args, **_kwargs: companion,
+    )
+
+    async def resume_download(artifact_id: str) -> DownloadSnapshot:
+        return companion if artifact_id == "runtime-companion" else main
+
+    install_threads: list[int] = []
+
+    async def install_runtime(*_args: object, **_kwargs: object) -> tuple[DownloadSnapshot, None]:
+        install_threads.append(threading.get_ident())
+        return main, None
+
+    monkeypatch.setattr(runtime.cupcake_local, "resume_download", resume_download)
+    monkeypatch.setattr(
+        runtime.cupcake_local,
+        "download_status",
+        lambda artifact_id: companion if artifact_id == "runtime-companion" else main,
+    )
+    monkeypatch.setattr(runtime.cupcake_local, "download_runtime_by_id", install_runtime)
+
+    events: list[dict[str, object]] = []
+
+    async def exercise() -> dict[str, object]:
+        async def emit(event: dict[str, object]) -> None:
+            events.append(event)
+
+        result = await runtime.handle_stream(
+            "local_models.cupcake.download",
+            {"artifactId": "runtime", "artifactKind": "runtime"},
+            emit,
+        )
+        assert isinstance(result, dict)
+        return result
+
+    result = asyncio.run(exercise())
+    progress = [
+        (
+            event["payload"]["download"]["model_id"],  # type: ignore[index]
+            event["payload"]["download"]["state"],  # type: ignore[index]
+        )
+        for event in events
+        if event["type"] == "local_model.download.progress"
+    ]
+    assert progress == [
+        ("runtime", "completed"),
+        ("runtime-companion", "completed"),
+        ("runtime", "installing"),
+    ]
+    assert install_threads and install_threads[0] != threading.get_ident()
+    assert result["download"]["state"] == "completed"  # type: ignore[index]
+    runtime.close()
 
 
 def test_historical_profile_portraits_persist_and_reject_unknown_assets(tmp_path: Path) -> None:

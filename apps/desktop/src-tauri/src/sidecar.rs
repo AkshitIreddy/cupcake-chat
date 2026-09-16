@@ -39,6 +39,10 @@ const MIN_REQUEST_TIMEOUT_MS: u64 = 1_000;
 // readiness bound on first load. Keep a finite host ceiling with enough margin
 // for the runtime to return its own specific readiness failure.
 const MAX_REQUEST_TIMEOUT_MS: u64 = 300_000;
+// Multi-gigabyte model and runtime downloads can take hours on a slower link.
+// Keep their deadline finite while leaving every other RPC on the five-minute
+// ceiling above.
+const DOWNLOAD_REQUEST_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_RESTARTS: u32 = 3;
 
 type PendingResponses = Arc<Mutex<HashMap<Uuid, Sender<ProtocolEnvelope>>>>;
@@ -224,11 +228,7 @@ impl SidecarSupervisor {
         params: Value,
         timeout_ms: Option<u64>,
     ) -> RuntimeResponse {
-        let timeout = Duration::from_millis(
-            timeout_ms
-                .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS)
-                .clamp(MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS),
-        );
+        let timeout = request_timeout(&method, timeout_ms);
         let correlation = uuid_v7();
         let payload = object(json!({"method": method, "params": params}));
         let (receiver, generation) = {
@@ -827,6 +827,19 @@ fn normalize_response(payload: Map<String, Value>) -> RuntimeResponse {
     })
 }
 
+fn request_timeout(method: &str, requested_ms: Option<u64>) -> Duration {
+    let (default_ms, maximum_ms) = if method == "local_models.cupcake.download" {
+        (DOWNLOAD_REQUEST_TIMEOUT_MS, DOWNLOAD_REQUEST_TIMEOUT_MS)
+    } else {
+        (DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS)
+    };
+    Duration::from_millis(
+        requested_ms
+            .unwrap_or(default_ms)
+            .clamp(MIN_REQUEST_TIMEOUT_MS, maximum_ms),
+    )
+}
+
 fn object(value: Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap_or_default()
 }
@@ -871,6 +884,23 @@ mod tests {
                 .code,
             "INVALID_RUNTIME_RESPONSE"
         );
+    }
+
+    #[test]
+    fn download_timeout_policy_is_long_lived_without_widening_regular_rpcs() {
+        assert_eq!(
+            request_timeout("local_models.cupcake.download", None),
+            Duration::from_secs(24 * 60 * 60)
+        );
+        assert_eq!(
+            request_timeout("local_models.cupcake.download", Some(u64::MAX)),
+            Duration::from_secs(24 * 60 * 60)
+        );
+        assert_eq!(
+            request_timeout("chat.send", Some(u64::MAX)),
+            Duration::from_secs(5 * 60)
+        );
+        assert_eq!(request_timeout("chat.send", None), Duration::from_secs(60));
     }
 
     #[test]
