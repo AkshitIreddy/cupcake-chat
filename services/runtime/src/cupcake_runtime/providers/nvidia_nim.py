@@ -1,6 +1,6 @@
 """NVIDIA-hosted NIM text models through the OpenAI-compatible API.
 
-The hosted API catalog covers more than chat models.  Discovery therefore
+The hosted API catalog covers more than chat models. Discovery therefore
 keeps upstream capability claims separate from conservative product
 capabilities and visibly marks models whose chat compatibility is unknown.
 """
@@ -97,11 +97,9 @@ _VERIFIED_HOSTED_CHAT_MODELS: dict[str, str] = {
     model_id: f"https://build.nvidia.com/{model_id}/modelcard"
     for model_id in (
         "deepseek-ai/deepseek-v4-flash-0731",
-        "deepseek-ai/deepseek-v4-pro-0813",
         "google/diffusiongemma-26b-a4b-it",
         "google/gemma-4-31b-it",
         "meta/muse-glimmer-30b",
-        "minimaxai/minimax-m3",
         "mistralai/mistral-large-2-instruct",
         "mistralai/mistral-nemotron",
         "moonshotai/kimi-k2.6",
@@ -112,12 +110,25 @@ _VERIFIED_HOSTED_CHAT_MODELS: dict[str, str] = {
         "nvidia/nemotron-3-super-120b-a12b",
         "nvidia/nemotron-3-ultra-550b-a55b",
         "nvidia/nemotron-3.5-lightning-30b-a3b",
-        "nvidia/nemotron-nano-3-30b-a3b",
-        "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
         "poolside/laguna-xs-2.1",
     )
 }
+
+# These identities remain visible in NVIDIA's account model-list response even
+# though the hosted route has an explicit end-of-life response (HTTP 410), or,
+# in the Nano alias case, points at the retired route under a stale name. Keep
+# this narrow and evidence-based: account-specific 404s and transient failures
+# do not qualify for global removal.
+_RETIRED_HOSTED_MODEL_IDS = frozenset(
+    {
+        "deepseek-ai/deepseek-v4-pro-0813",
+        "minimaxai/minimax-m3",
+        "nvidia/nemotron-3-nano-30b-a3b",
+        "nvidia/nemotron-nano-3-30b-a3b",
+        "openai/gpt-oss-120b",
+    }
+)
 
 # Current official model cards publish these context limits even though the
 # hosted OpenAI-compatible `/v1/models` payload commonly omits them.
@@ -291,6 +302,9 @@ class NvidiaNimCatalogDiscovery:
             ):
                 continue
             seen.add(model_id)
+            if model_id in _RETIRED_HOSTED_MODEL_IDS:
+                filtered += 1
+                continue
             compatibility, evidence, declared = _classify_chat_compatibility(record, model_id)
             if compatibility is ChatCompatibility.NON_CHAT:
                 filtered += 1

@@ -236,7 +236,7 @@ def classify_provider_error(error: Exception) -> ClassifiedProviderError:
             "timeout",
             True,
         )
-    if status_code == 404:
+    if status_code in {404, 410}:
         return ClassifiedProviderError(
             "The selected model is unavailable for this provider account.",
             "model_unavailable",

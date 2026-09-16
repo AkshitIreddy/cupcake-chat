@@ -1696,6 +1696,20 @@ class _PartialFailureAgentEngine:
         )
 
 
+class _ZeroTextFailureAgentEngine:
+    async def stream(self, request: Any, **_kwargs: Any):
+        run_id = str(request.metadata["run_id"])
+        yield NormalizedStreamEvent(StreamEventType.START, 1, run_id)
+        yield NormalizedStreamEvent(
+            StreamEventType.ERROR,
+            2,
+            run_id,
+            text="The selected model rejected this request.",
+            error_code="invalid_request",
+            retryable=False,
+        )
+
+
 def test_partial_chat_failure_persists_safe_recovery_metadata(tmp_path: Path) -> None:
     runtime = service(tmp_path)
     runtime.agent_engine = _PartialFailureAgentEngine()  # type: ignore[assignment]
@@ -1737,6 +1751,57 @@ def test_partial_chat_failure_persists_safe_recovery_metadata(tmp_path: Path) ->
         "The provider is temporarily unavailable."
     )
     assert assistant["canonical_metadata"]["retryable"] is True
+    runtime.close()
+
+
+def test_zero_text_chat_failure_persists_committed_turn_and_error_receipt(tmp_path: Path) -> None:
+    runtime = service(tmp_path)
+    runtime.agent_engine = _ZeroTextFailureAgentEngine()  # type: ignore[assignment]
+    events: list[dict[str, Any]] = []
+    created, _ = runtime.handle("conversations.create", {"title": "Rejected request"})
+    branch_id = created["branch"]["id"]
+
+    async def scenario() -> None:
+        async def emit(event: dict[str, Any]) -> None:
+            events.append(event)
+
+        with pytest.raises(RuntimeCommandError) as failure:
+            await runtime.handle_stream(
+                "chat.send",
+                {
+                    "conversationId": created["conversation"]["id"],
+                    "branchId": branch_id,
+                    "content": "Keep this committed prompt",
+                    "modelId": "mock:cupcake-deterministic",
+                },
+                emit,
+                cancellation=threading.Event(),
+            )
+        assert failure.value.code == "invalid_request"
+
+    asyncio.run(scenario())
+    failed = next(event for event in events if event["type"] == "message.failed")
+    assert failed["payload"]["partialContent"] == ""
+    assert failed["payload"]["errorCode"] == "invalid_request"
+    assert failed["payload"]["errorMessage"] == "The selected model rejected this request."
+
+    history, _ = runtime.handle("chat.history", {"branchId": branch_id})
+    assert [message["role"] for message in history] == ["user", "assistant"]
+    assert history[0]["content"] == "Keep this committed prompt"
+    assistant = history[1]
+    assert assistant["state"] == "error"
+    assert assistant["content"] == ""
+    assert assistant["canonical_metadata"]["errorCode"] == "invalid_request"
+    assert assistant["canonical_metadata"]["errorMessage"] == (
+        "The selected model rejected this request."
+    )
+    traces, _ = runtime.handle("developer.traces", {"runId": history[0]["id"]})
+    failed_trace = next(trace for trace in traces if trace["name"] == "chat.stream.failed")
+    assert failed_trace["payload"] == {
+        "partialCharacters": 0,
+        "errorCode": "invalid_request",
+        "retryable": False,
+    }
     runtime.close()
 
 

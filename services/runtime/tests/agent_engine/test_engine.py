@@ -500,6 +500,7 @@ async def test_cancellation_interrupts_an_in_flight_pydantic_model_stream() -> N
     (
         (400, "invalid_request", False),
         (404, "model_unavailable", False),
+        (410, "model_unavailable", False),
         (429, "rate_limit", True),
     ),
 )

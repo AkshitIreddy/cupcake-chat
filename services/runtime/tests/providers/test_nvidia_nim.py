@@ -15,6 +15,7 @@ from cupcake_runtime.providers.nvidia_nim import (
     UNKNOWN_MAX_OUTPUT_TOKENS_FALLBACK,
     NvidiaNimAdapter,
     NvidiaNimCatalogDiscovery,
+    verified_hosted_descriptor,
 )
 from cupcake_runtime.providers.onboarding import ProviderOnboardingService, ProviderTestState
 from cupcake_runtime.providers.registry import ProviderRegistry
@@ -79,14 +80,12 @@ def test_discovery_filters_non_chat_and_does_not_invent_unknown_capabilities() -
     assert unknown.metadata["verification_state"] == "account_discoverable"
 
 
-def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
+def test_discovery_recognizes_current_official_hosted_chat_model_cards() -> None:
     model_ids = [
         "deepseek-ai/deepseek-v4-flash-0731",
-        "deepseek-ai/deepseek-v4-pro-0813",
         "google/diffusiongemma-26b-a4b-it",
         "google/gemma-4-31b-it",
         "meta/muse-glimmer-30b",
-        "minimaxai/minimax-m3",
         "mistralai/mistral-large-2-instruct",
         "mistralai/mistral-nemotron",
         "moonshotai/kimi-k2.6",
@@ -97,8 +96,6 @@ def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
         "nvidia/nemotron-3-super-120b-a12b",
         "nvidia/nemotron-3-ultra-550b-a55b",
         "nvidia/nemotron-3.5-lightning-30b-a3b",
-        "nvidia/nemotron-nano-3-30b-a3b",
-        "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
         "poolside/laguna-xs-2.1",
     ]
@@ -109,7 +106,7 @@ def test_discovery_recognizes_twenty_official_hosted_chat_model_cards() -> None:
         )
     )
 
-    assert len(result.models) == 20
+    assert len(result.models) == 16
     assert result.unknown_chat_compatibility == 0
     assert all(model.metadata["chat_compatibility"] == "chat" for model in result.models)
     assert all(
@@ -131,6 +128,21 @@ def test_verified_current_nim_card_supplies_context_when_models_api_omits_it() -
     assert result.models[0].context_window == 1_000_000
     assert result.models[0].max_output_tokens == 32_768
     assert result.models[0].metadata["max_output_tokens_known"] is True
+
+
+def test_retired_nim_catalog_alias_is_not_exposed_as_hosted_chat() -> None:
+    retired = "nvidia/nemotron-nano-3-30b-a3b"
+    result = asyncio.run(
+        NvidiaNimCatalogDiscovery().discover(
+            ProviderConfig(api_key="nvapi-recorded"),
+            client=fake_client([{"id": retired}]),
+        )
+    )
+
+    assert result.models == ()
+    assert result.filtered_non_chat == 1
+    assert result.unknown_chat_compatibility == 0
+    assert verified_hosted_descriptor(retired) is None
 
 
 def test_discovery_cache_is_bounded_and_does_not_repeat_network_call() -> None:

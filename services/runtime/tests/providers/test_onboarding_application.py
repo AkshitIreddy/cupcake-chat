@@ -14,7 +14,12 @@ from cupcake_runtime.providers.onboarding import (
     ProviderOnboardingResult,
     ProviderTestState,
 )
-from cupcake_runtime.providers.types import ReasoningEffort
+from cupcake_runtime.providers.types import (
+    ModelCapabilities,
+    ModelDescriptor,
+    PrivacyRoute,
+    ReasoningEffort,
+)
 
 SECRET_CANARY = "sk-application-onboarding-secret-canary-58302"
 
@@ -167,6 +172,49 @@ def test_trusted_nim_hydration_rebuilds_verified_selected_model_without_discover
             == SECRET_CANARY
         )
         assert fixed.seen == []
+    finally:
+        runtime.close()
+
+
+def test_trusted_nim_hydration_preserves_exact_account_discovered_model(
+    tmp_path: Any,
+) -> None:
+    runtime = RuntimeService(tmp_path, master_key=b"k" * 32, require_sqlcipher=False)
+    model = "vendor/account-discovered-chat"
+    descriptor = ModelDescriptor(
+        id=f"nvidia-nim:{model}",
+        provider="nvidia-nim",
+        model=model,
+        display_name=model,
+        family=f"nvidia-nim:{model}",
+        context_window=8_192,
+        max_output_tokens=1_024,
+        capabilities=ModelCapabilities(),
+        privacy_route=PrivacyRoute.CLOUD,
+        metadata={
+            "chat_compatibility": "unknown",
+            "verification_state": "account_discoverable",
+            "requires_compatibility_confirmation": True,
+        },
+    )
+    runtime.providers.catalog.register(descriptor)
+    try:
+        result, _ = runtime.handle(
+            "providers.configure",
+            {
+                "provider": "nvidia-nim",
+                "credentialLease": SECRET_CANARY,
+                "trustedHydration": True,
+                "modelId": model,
+            },
+        )
+
+        assert result["models"][0]["id"] == descriptor.id
+        assert result["models"][0]["metadata"]["verification_state"] == "account_discoverable"
+        assert runtime.providers.catalog.get(descriptor.id) is descriptor
+        assert runtime.providers.adapter(descriptor.id, client=object()).config.api_key == (
+            SECRET_CANARY
+        )
     finally:
         runtime.close()
 

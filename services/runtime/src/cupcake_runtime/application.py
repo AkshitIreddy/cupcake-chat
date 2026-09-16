@@ -1434,15 +1434,21 @@ class RuntimeService:
                 models = [_jsonable(descriptor)]
             elif provider == NVIDIA_NIM_PROVIDER and params.get("modelId") is not None:
                 model_id = _required_string(params, "modelId")
-                verified_descriptor = verified_hosted_descriptor(model_id)
-                if verified_descriptor is None:
-                    raise RuntimeCommandError(
-                        "MODEL_NOT_VERIFIED",
-                        "The saved NVIDIA NIM model no longer has verified hosted-chat metadata.",
-                    )
-                self.providers.catalog.register(verified_descriptor, replace=True)
+                descriptor_id = f"{NVIDIA_NIM_PROVIDER}:{model_id}"
+                try:
+                    descriptor = self.providers.catalog.get(descriptor_id)
+                except KeyError:
+                    verified = verified_hosted_descriptor(model_id)
+                    if verified is None:
+                        raise RuntimeCommandError(
+                            "MODEL_NOT_VERIFIED",
+                            "The saved NVIDIA NIM model no longer has verified "
+                            "hosted-chat metadata.",
+                        ) from None
+                    descriptor = verified
+                    self.providers.catalog.register(descriptor, replace=True)
                 self.providers.configure(provider, config)
-                models = [_jsonable(verified_descriptor)]
+                models = [_jsonable(descriptor)]
             else:
                 self.providers.configure(provider, config)
                 models = []
@@ -4645,7 +4651,11 @@ class RuntimeService:
                 prepared.run_id,
                 TraceKind.FAILURE,
                 "chat.stream.failed",
-                {"partialCharacters": sum(map(len, pieces))},
+                {
+                    "partialCharacters": sum(map(len, pieces)),
+                    "errorCode": exc.code,
+                    "retryable": exc.retryable,
+                },
             )
             if exc.retryable and prepared.fallback_model_id is not None:
                 fallback = self.providers.catalog.select(prepared.fallback_model_id)
@@ -4674,16 +4684,20 @@ class RuntimeService:
                     fallback_model_id=None,
                 )
                 return await self._execute_prepared_chat(fallback_prepared, emit, cancellation)
-            if pieces:
-                await self._finalize_failed_chat(
-                    prepared,
-                    "".join(pieces),
-                    emit,
-                    error_code=exc.code,
-                    error_message=safe_failure_message or "The provider request failed.",
-                    retryable=exc.retryable,
-                    usage=tuple(usage_records),
-                )
+            # The user turn was committed before provider execution began. A
+            # zero-token provider failure therefore still needs a durable
+            # assistant receipt; otherwise the renderer cannot distinguish it
+            # from a message that never left the composer and restores a stale
+            # draft with the generic "message not sent" state.
+            await self._finalize_failed_chat(
+                prepared,
+                "".join(pieces),
+                emit,
+                error_code=exc.code,
+                error_message=safe_failure_message or "The provider request failed.",
+                retryable=exc.retryable,
+                usage=tuple(usage_records),
+            )
             raise
         finally:
             with self._state_lock:

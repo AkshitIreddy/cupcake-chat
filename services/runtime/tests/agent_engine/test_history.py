@@ -117,6 +117,28 @@ def test_history_budget_never_keeps_an_orphan_assistant_message() -> None:
     assert history == []
 
 
+def test_empty_failed_assistant_receipt_stays_out_of_provider_history() -> None:
+    plan, history = prepare_visible_history(
+        (
+            message("user", "question whose provider failed"),
+            message("assistant", "   \n"),
+            message("user", "try this with another model"),
+        ),
+        context_token_budget=1_000,
+        max_output_tokens=100,
+    )
+
+    assert plan.prompt == "try this with another model"
+    assert plan.history_message_count == 1
+    assert plan.dropped_history_messages == 1
+    assert len(history) == 1
+    prior_user = history[0]
+    assert isinstance(prior_user, PydanticModelRequest)
+    assert isinstance(prior_user.parts[0], UserPromptPart)
+    assert prior_user.parts[0].content == "question whose provider failed"
+    assert not any(isinstance(item, ModelResponse) for item in history)
+
+
 @pytest.mark.parametrize("messages", [(), (message("assistant", "answer"),)])
 def test_current_user_prompt_is_required(messages: tuple[CanonicalMessage, ...]) -> None:
     with pytest.raises(ValueError):

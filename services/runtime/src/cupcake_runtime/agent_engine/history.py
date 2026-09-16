@@ -94,7 +94,19 @@ def prepare_visible_history(
             "the current prompt and system instructions exceed the selected model context limit"
         )
 
-    candidates = [message for message in messages[:prompt_index] if message.role != "system"]
+    candidate_messages = [
+        message for message in messages[:prompt_index] if message.role != "system"
+    ]
+    # Failed provider attempts are persisted as assistant receipts even when no
+    # text arrived. They belong in product history so the UI can explain and
+    # recover the turn, but an empty assistant part is not visible context and
+    # several provider APIs reject it as a malformed wire message. Keep the
+    # preceding user turn while omitting only the empty assistant payload.
+    candidates = [
+        message
+        for message in candidate_messages
+        if message.role != "assistant" or bool(message.content.strip())
+    ]
     selected_turns_reversed: list[list[CanonicalMessage]] = []
     used_tokens = fixed_tokens
     for turn in reversed(_visible_turns(candidates)):
@@ -149,7 +161,7 @@ def prepare_visible_history(
         prompt=prompt,
         system_instructions=system_messages,
         history_message_count=len(selected),
-        dropped_history_messages=len(candidates) - len(selected),
+        dropped_history_messages=len(candidate_messages) - len(selected),
         estimated_context_tokens=used_tokens,
         max_output_tokens=max_output_tokens,
     )
