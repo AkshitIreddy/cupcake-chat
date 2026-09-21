@@ -1,5 +1,9 @@
+<h1 align="center">Cupcake Chat</h1>
+
+<a id="see-it-in-action"></a>
+
 <p align="center">
-  <img src="docs/media/cupcake-chat-banner.png" alt="Cupcake Chat — three curious cupcake companions sharing maps, books, and ideas in a warm strawberry-pink study" width="960" />
+  <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
 <p align="center">
@@ -9,8 +13,6 @@
   <a href="#what-cupcake-chat-is-good-at"><img src="https://img.shields.io/badge/Your%20team-custom%20Cupcakes-D9B47A?style=flat-square&amp;labelColor=583344" alt="Create your own Cupcake advisors" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-BCA8D0?style=flat-square&amp;labelColor=583344" alt="MIT License" /></a>
 </p>
-
-<h1 align="center">Cupcake Chat</h1>
 
 <p align="center">
   <strong>A little curiosity. A whole team of possibilities.</strong><br />
@@ -30,10 +32,8 @@
   <a href="#for-developers-and-ai-contributors"><strong>▸ For developers</strong></a>
 </p>
 
-<a id="see-it-in-action"></a>
-
 <p align="center">
-  <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
+  <img src="docs/media/cupcake-chat-banner.png" alt="Cupcake Chat — three curious cupcake companions sharing maps, books, and ideas in a warm strawberry-pink study" width="960" />
 </p>
 
 <p align="center"><sub>Demo built with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a></sub></p>
