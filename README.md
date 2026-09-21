@@ -1,17 +1,17 @@
 <h1 align="center">Cupcake Chat</h1>
 
-<a id="see-it-in-action"></a>
-
-<p align="center">
-  <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
-</p>
-
 <p align="center">
   <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/latest"><img src="https://img.shields.io/badge/Download-Windows-E69AAE?style=flat-square&amp;labelColor=583344" alt="Download for Windows" /></a>
   <a href="https://github.com/AkshitIreddy/cupcake-chat/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/cupcake-chat?style=flat-square&amp;labelColor=583344&amp;color=C87991&amp;label=latest" alt="Latest release" /></a>
   <a href="#free-ways-to-start"><img src="https://img.shields.io/badge/Models-local%20%2B%20cloud-B3C3A0?style=flat-square&amp;labelColor=583344" alt="Local and cloud models" /></a>
   <a href="#what-cupcake-chat-is-good-at"><img src="https://img.shields.io/badge/Your%20team-custom%20Cupcakes-D9B47A?style=flat-square&amp;labelColor=583344" alt="Create your own Cupcake advisors" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-BCA8D0?style=flat-square&amp;labelColor=583344" alt="MIT License" /></a>
+</p>
+
+<a id="see-it-in-action"></a>
+
+<p align="center">
+  <img src="docs/media/cupcake-chat-demo-preview.webp" alt="Cupcake Chat: real model answers, Python generated and tested in chat, projects, providers, and historical companions" width="960" />
 </p>
 
 <p align="center">
