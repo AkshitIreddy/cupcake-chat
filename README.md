@@ -34,11 +34,11 @@
 
 <p align="center"><sub>Demo built with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a></sub></p>
 
+---
+
 <p align="center">
   <img src="docs/media/cupcake-chat-banner.png" alt="Cupcake Chat — three curious cupcake companions sharing maps, books, and ideas in a warm strawberry-pink study" width="960" />
 </p>
-
----
 
 ## For users
 
